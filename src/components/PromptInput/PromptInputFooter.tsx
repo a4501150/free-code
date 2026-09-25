@@ -37,8 +37,6 @@ type Props = {
   suppressHint: boolean
   isLoading: boolean
   tasksSelected: boolean
-  teamsSelected: boolean
-  teammateFooterIndex?: number
   isPasting?: boolean
   messages: Message[]
   isSearching: boolean
@@ -69,8 +67,6 @@ function PromptInputFooter({
   suppressHint: suppressHintFromProps,
   isLoading,
   tasksSelected,
-  teamsSelected,
-  teammateFooterIndex,
   isPasting = false,
   messages,
   isSearching,
@@ -151,8 +147,6 @@ function PromptInputFooter({
             suppressHint={suppressHint}
             isLoading={isLoading}
             tasksSelected={pillSelected}
-            teamsSelected={teamsSelected}
-            teammateFooterIndex={teammateFooterIndex}
             isPasting={isPasting}
             isSearching={isSearching}
             historyQuery={historyQuery}

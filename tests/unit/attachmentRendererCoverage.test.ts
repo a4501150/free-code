@@ -211,15 +211,8 @@ const OUT_OF_BAND_FIXTURES: Attachment[] = [
 ]
 
 // Union members with no renderer case at all — consumed by consumers
-// (runAgent reads structured_output/max_turns_reached), handled pre-switch
-// behind feature gates (teammate mailbox/team_context), or UI-only records.
-const NO_RENDERER_TYPES = [
-  'teammate_mailbox',
-  'team_context',
-  'teammate_shutdown_batch',
-  'max_turns_reached',
-  'current_session_memory',
-]
+// (runAgent reads structured_output/max_turns_reached), or UI-only records.
+const NO_RENDERER_TYPES = ['max_turns_reached', 'current_session_memory']
 
 function rendererSource(): string {
   const src = readFileSync(
@@ -281,16 +274,10 @@ describe('attachment renderer visibility contract', () => {
     expect(removed).toEqual([])
   })
 
-  test('no-renderer types stay out of the switch, mailbox handled pre-switch', () => {
+  test('no-renderer types stay out of the switch', () => {
     const cases = rendererCases()
     for (const type of NO_RENDERER_TYPES) {
       expect(cases.has(type)).toBeFalse()
     }
-    // teammate_mailbox/team_context render only behind the swarms gate —
-    // that handling lives before the switch, so it can never be lost
-    // silently.
-    const src = rendererSource()
-    expect(src).toContain("attachment.type === 'teammate_mailbox'")
-    expect(src).toContain("attachment.type === 'team_context'")
   })
 })

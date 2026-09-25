@@ -47,7 +47,7 @@ import type {
   ToolUseSummaryMessage,
   UserMessage,
 } from '../types/message.js'
-import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
+import { isCoordinatorMode } from '../coordinator/coordinatorModeGate.js'
 import { count } from './array.js'
 import {
   type Attachment,
@@ -136,7 +136,6 @@ import {
 } from './planMode.js'
 import { escapeRegExp } from './stringUtils.js'
 import { stripStrictNullInputs } from './stripStrictNullInputs.js'
-import { formatTeammateMessages } from './swarm/formatTeammateMessages.js'
 
 const MEMORY_CORRECTION_HINT =
   "\n\nNote: The user's next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they'd prefer you to work, consider saving that to memory for future sessions."
@@ -2045,7 +2044,7 @@ export function normalizeMessagesForAPI(
 
           // Find a previous assistant message with the same message ID and merge.
           // Walk backwards, skipping tool results and different-ID assistants,
-          // since concurrent agents (teammates) can interleave streaming content
+          // since concurrent agents can interleave streaming content
           // blocks from multiple API responses with different message IDs.
           for (let i = result.length - 1; i >= 0; i--) {
             const msg = result[i]!
@@ -3373,52 +3372,8 @@ function getAutoModeSparseInstructions(): UserMessage[] {
 export function normalizeAttachmentForAPI(
   attachment: Attachment,
 ): UserMessage[] {
-  if (isAgentSwarmsEnabled()) {
-    if (attachment.type === 'teammate_mailbox') {
-      return [
-        createUserMessage({
-          content: formatTeammateMessages(attachment.messages),
-          isMeta: true,
-        }),
-      ]
-    }
-    if (attachment.type === 'team_context') {
-      return [
-        createUserMessage({
-          content: `<system-reminder>
-# Team Coordination
-
-You are a teammate in team "${attachment.teamName}".
-
-**Your Identity:**
-- Name: ${attachment.agentName}
-
-**Team Resources:**
-- Team config: ${attachment.teamConfigPath}
-- Task list: ${attachment.taskListPath}
-
-**Team Leader:** The team lead's name is "team-lead". Send updates and completion notifications to them.
-
-Read the team config to discover your teammates' names. Check the task list periodically. Create new tasks when work should be divided. Mark tasks resolved when complete.
-
-**IMPORTANT:** Always refer to teammates by their NAME (e.g., "team-lead", "analyzer", "researcher"), never by UUID. When messaging, use the name directly:
-
-\`\`\`json
-{
-  "to": "team-lead",
-  "message": "Your message here",
-  "summary": "Brief 5-10 word preview"
-}
-\`\`\`
-</system-reminder>`,
-          isMeta: true,
-        }),
-      ]
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- teammate_mailbox/team_context/bagel_console handled above
-  // biome-ignore lint/nursery/useExhaustiveSwitchCases: teammate_mailbox/team_context/max_turns_reached/bagel_console handled above
+  // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- bagel_console handled above
+  // biome-ignore lint/nursery/useExhaustiveSwitchCases: max_turns_reached/bagel_console handled above
   switch (attachment.type) {
     case 'directory': {
       return wrapMessagesInSystemReminder([
@@ -3825,7 +3780,9 @@ You have exited auto mode. The user may now want to interact more directly. You 
         if (attachment.deltaSummary) {
           parts.push(`Progress: ${attachment.deltaSummary}`)
         }
-        const sendMsgSuffix = isAgentSwarmsEnabled()
+        // SendMessage is exposed only in coordinator mode, where continuing a
+        // running worker by ID is a supported follow-up.
+        const sendMsgSuffix = isCoordinatorMode()
           ? ` You can send it a message with ${SEND_MESSAGE_TOOL_NAME}.`
           : ''
         if (attachment.outputFilePath) {
@@ -3905,8 +3862,6 @@ You have exited auto mode. The user may now want to interact more directly. You 
 
       return wrapMessagesInSystemReminder(messages)
     }
-    // Note: 'teammate_mailbox' and 'team_context' are handled BEFORE switch
-    // to avoid case label strings leaking into compiled output
     case 'token_usage':
       return [
         createUserMessage({

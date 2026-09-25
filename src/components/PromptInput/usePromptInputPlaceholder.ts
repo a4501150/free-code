@@ -10,7 +10,7 @@ type Props = {
   viewingAgentName?: string
 }
 
-const MAX_TEAMMATE_NAME_LENGTH = 20
+const MAX_AGENT_NAME_LENGTH = 20
 
 export function usePromptInputPlaceholder({
   input,
@@ -24,11 +24,11 @@ export function usePromptInputPlaceholder({
       return
     }
 
-    // Show teammate hint when viewing teammate
+    // Show agent hint when viewing a named agent
     if (viewingAgentName) {
       const displayName =
-        viewingAgentName.length > MAX_TEAMMATE_NAME_LENGTH
-          ? viewingAgentName.slice(0, MAX_TEAMMATE_NAME_LENGTH - 3) + '...'
+        viewingAgentName.length > MAX_AGENT_NAME_LENGTH
+          ? viewingAgentName.slice(0, MAX_AGENT_NAME_LENGTH - 3) + '...'
           : viewingAgentName
       return `Message @${displayName}…`
     }

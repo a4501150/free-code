@@ -1,6 +1,6 @@
 import { type FSWatcher, watch } from 'fs'
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { useAppState, useSetAppState } from '../state/AppState.js'
+import { useSetAppState } from '../state/AppState.js'
 import { createSignal } from '../utils/signal.js'
 import type { Task } from '../utils/tasks.js'
 import {
@@ -10,7 +10,6 @@ import {
   onTasksUpdated,
   resetTaskList,
 } from '../utils/tasks.js'
-import { isTeamLead } from '../utils/teammate.js'
 
 const HIDE_DELAY_MS = 5000
 const DEBOUNCE_MS = 50
@@ -86,8 +85,8 @@ class TasksV2Store {
 
   /**
    * Point the file watcher at the current tasks directory. Called on start
-   * and whenever #fetch detects the task list ID has changed (e.g. when
-   * TeamCreateTool sets leaderTeamName mid-session).
+   * and on every #fetch so a failed initial watch (dir didn't exist yet)
+   * retries once the first writer creates it.
    */
   #rewatch(dir: string): void {
     // Retry even on same dir if the previous watch attempt failed (dir
@@ -114,8 +113,8 @@ class TasksV2Store {
 
   #fetch = async (): Promise<void> => {
     const taskListId = getMainTaskListId()
-    // Task list ID can change mid-session (TeamCreateTool sets
-    // leaderTeamName) — point the watcher at the current dir.
+    // Re-point the watcher each fetch so a failed initial watch retries
+    // once the directory is created by a writer.
     this.#rewatch(getTasksDir(taskListId))
     const current = (await listTasks(taskListId)).filter(
       t => !t.metadata?._internal,
@@ -155,8 +154,8 @@ class TasksV2Store {
 
   #onHideTimerFired(scheduledForTaskListId: string): void {
     this.#hideTimer = null
-    // Bail if the task list ID changed since scheduling (team created/deleted
-    // during the 5s window) — don't reset the wrong list.
+    // Re-read the ID instead of trusting the captured one — don't reset
+    // the wrong list if the resolution changed during the 5s window.
     const currentId = getMainTaskListId()
     if (currentId !== scheduledForTaskListId) return
     // Verify all tasks are still completed before clearing. Filter
@@ -208,29 +207,15 @@ function getStore(): TasksV2Store {
   return (_store ??= new TasksV2Store())
 }
 
-// Stable no-ops for the disabled path so useSyncExternalStore doesn't
-// churn its subscription on every render.
-const NOOP = (): void => {}
-const NOOP_SUBSCRIBE = (): (() => void) => NOOP
-const NOOP_SNAPSHOT = (): undefined => undefined
-
 /**
  * Hook to get the current task list for the persistent UI display.
- * Returns tasks when TodoV2 is enabled, otherwise returns undefined.
  * All hook instances share a single file watcher via TasksV2Store.
  * Hides the list after 5 seconds if there are no open tasks.
  */
 export function useTasksV2(): Task[] | undefined {
-  const teamContext = useAppState(s => s.teamContext)
+  const store = getStore()
 
-  const enabled = !teamContext || isTeamLead(teamContext)
-
-  const store = enabled ? getStore() : null
-
-  return useSyncExternalStore(
-    store ? store.subscribe : NOOP_SUBSCRIBE,
-    store ? store.getSnapshot : NOOP_SNAPSHOT,
-  )
+  return useSyncExternalStore(store.subscribe, store.getSnapshot)
 }
 
 /**

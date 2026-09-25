@@ -291,7 +291,7 @@ describe('Coordinator worker transcript view', () => {
     expect(backToLeader).not.toContain('WORKERTAILMARK')
     expect(backToLeader).not.toContain('worker filler line')
 
-    // Scroll the leader up, then re-enter. exitTeammateView cleared the task's
+    // Scroll the leader up, then re-enter. exitAgentView cleared the task's
     // messages and diskLoaded, so this re-runs the async sidechain bootstrap.
     await session.sendSpecialKey('PageUp')
     await sleep(500)

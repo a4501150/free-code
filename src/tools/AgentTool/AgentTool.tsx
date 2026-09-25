@@ -37,7 +37,6 @@ import {
 import { assembleToolPool } from './assembleToolPool.js'
 import { asAgentId } from '../../types/ids.js'
 import { runWithAgentContext } from '../../utils/agentContext.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { runWithCwdOverride } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
@@ -56,7 +55,6 @@ import {
 } from '../../utils/model/agent.js'
 import { parseUserSpecifiedModel } from '../../utils/model/model.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
-import { permissionModeSchema } from '../../utils/permissions/PermissionMode.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import {
   filterDeniedAgents,
@@ -67,8 +65,6 @@ import { writeAgentMetadata } from '../../utils/sessionStorage.js'
 import { sleep } from '../../utils/sleep.js'
 import { asSystemPrompt } from '../../utils/systemPromptType.js'
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js'
-import { getParentSessionId, isTeammate } from '../../utils/teammate.js'
-import { isInProcessTeammate } from '../../utils/teammateContext.js'
 import { getAssistantMessageContentLength } from '../../utils/tokens.js'
 import { createAgentId } from '../../utils/uuid.js'
 import {
@@ -80,7 +76,6 @@ import { BASH_TOOL_NAME } from '../BashTool/toolName.js'
 import { BackgroundHint } from '../BashTool/UI.js'
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../SendMessageTool/constants.js'
-import { spawnTeammate } from '../shared/spawnMultiAgent.js'
 import { setAgentColor } from './agentColorManager.js'
 import {
   agentToolResultSchema,
@@ -171,17 +166,6 @@ const fullInputSchema = (() => {
       .describe(
         'Name for the spawned agent, making it addressable via SendMessage while it runs.',
       ),
-    team_name: z
-      .string()
-      .optional()
-      .describe(
-        'Team name for spawning. Uses current team context if omitted.',
-      ),
-    mode: permissionModeSchema
-      .optional()
-      .describe(
-        'Permission mode for the spawned teammate (for example, "plan" to require plan approval).',
-      ),
   })
 
   return baseInputSchema.merge(multiAgentInputSchema).extend({
@@ -207,26 +191,13 @@ const fullInputSchema = (() => {
 // type, but call() destructures via the explicit AgentToolInput type below
 // which always includes all optional fields.
 export const inputSchema = (() => {
-  // Worktree isolation is compiled in unconditionally, so isolation is
-  // always in the schema. Stripping still applies to optional fields whose
-  // backing feature is off. Use ternaries (const) instead of `let`
-  // reassignment so the union return type is preserved through each step.
-  const afterWorktreeGate = fullInputSchema
-
-  // isAgentSwarmsEnabled() / isBackgroundTasksDisabled can read from disk and
-  // flip mid-session. The optional-only fields stripped here (name, team_name,
-  // mode, run_in_background) are widened back via the explicit AgentToolInput
-  // type so call() destructuring is unaffected by the gate flip.
-  const swarmsSchema = isAgentSwarmsEnabled()
-    ? afterWorktreeGate
-    : afterWorktreeGate.omit({
-        name: true,
-        team_name: true,
-        mode: true,
-      })
+  // isBackgroundTasksDisabled can read from disk and flip mid-session. The
+  // optional-only field stripped here (run_in_background) is widened back via
+  // the explicit AgentToolInput type so call() destructuring is unaffected by
+  // the gate flip.
   return isBackgroundTasksDisabled
-    ? swarmsSchema.omit({ run_in_background: true })
-    : swarmsSchema
+    ? fullInputSchema.omit({ run_in_background: true })
+    : fullInputSchema
 })()
 type InputSchema = typeof inputSchema
 
@@ -236,8 +207,6 @@ type InputSchema = typeof inputSchema
 // subagent_type is optional; call() defaults it to general-purpose.
 type AgentToolInput = z.infer<typeof baseInputSchema> & {
   name?: string
-  team_name?: string
-  mode?: z.infer<typeof permissionModeSchema>
   isolation?: 'worktree' | 'none'
   cwd?: string
 }
@@ -272,28 +241,8 @@ export const outputSchema = (() => {
 type OutputSchema = typeof outputSchema
 type Output = z.input<OutputSchema>
 
-// Private type for teammate spawn results - excluded from exported schema for dead code elimination
-// The 'teammate_spawned' status string is only included when ENABLE_AGENT_SWARMS is true
-type TeammateSpawnedOutput = {
-  status: 'teammate_spawned'
-  prompt: string
-  teammate_id: string
-  agent_id: string
-  agent_type?: string
-  model?: string
-  name: string
-  color?: string
-  tmux_session_name: string
-  tmux_window_name: string
-  tmux_pane_id: string
-  team_name?: string
-  is_splitpane?: boolean
-  plan_mode_required?: boolean
-}
-
-// Combined output type including both public and internal types
-// Note: TeammateSpawnedOutput type is fine - TypeScript types are erased at compile time
-type InternalOutput = Output | TeammateSpawnedOutput
+// Output type used by call() result mapping and the progress/UI renderers.
+type InternalOutput = Output
 
 import type { AgentToolProgress, ShellProgress } from '../../types/tools.js'
 // AgentTool forwards both its own progress events and shell progress
@@ -350,8 +299,6 @@ export const AgentTool = buildTool({
       model: modelParam,
       run_in_background,
       name,
-      team_name,
-      mode: spawnMode,
       isolation,
       cwd,
     }: AgentToolInput,
@@ -366,72 +313,10 @@ export const AgentTool = buildTool({
     // Get app state for permission mode and agent filtering
     const appState = toolUseContext.getAppState()
     const permissionMode = appState.toolPermissionContext.mode
-    // In-process teammates get a no-op setAppState; setAppStateForTasks
-    // reaches the root store so task registration/progress/kill stay visible.
+    // setAppStateForTasks reaches the root store so task registration,
+    // progress and kill stay visible even inside nested contexts.
     const rootSetAppState =
       toolUseContext.setAppStateForTasks ?? toolUseContext.setAppState
-
-    // Check if user is trying to use agent teams without access
-    if (team_name && !isAgentSwarmsEnabled()) {
-      throw new Error('Agent Teams is not yet available on your plan.')
-    }
-
-    // Teammates (in-process or tmux) passing `name` would trigger spawnTeammate()
-    // below, but TeamFile.members is a flat array with one leadAgentId — nested
-    // teammates land in the roster with no provenance and confuse the lead.
-    const teamName = resolveTeamName({ team_name }, appState)
-    if (isTeammate() && teamName && name) {
-      throw new Error(
-        'Teammates cannot spawn other teammates — the team roster is flat. To spawn a subagent instead, omit the `name` parameter.',
-      )
-    }
-    // In-process teammates cannot spawn background agents (their lifecycle is
-    // tied to the leader's process). Tmux teammates are separate processes and
-    // can manage their own background agents.
-    if (isInProcessTeammate() && teamName && run_in_background === true) {
-      throw new Error(
-        'In-process teammates cannot spawn background agents. Use run_in_background=false for synchronous subagents.',
-      )
-    }
-
-    // Check if this is a multi-agent spawn request
-    // Spawn is triggered when team_name is set (from param or context) and name is provided
-    if (teamName && name) {
-      // Set agent definition color for grouped UI display before spawning
-      const agentDef = subagent_type
-        ? toolUseContext.options.agentDefinitions.activeAgents.find(
-            a => a.agentType === subagent_type,
-          )
-        : undefined
-      if (agentDef?.color) {
-        setAgentColor(subagent_type!, agentDef.color)
-      }
-      const result = await spawnTeammate(
-        {
-          name,
-          prompt,
-          description,
-          team_name: teamName,
-          use_splitpane: true,
-          plan_mode_required: spawnMode === 'plan',
-          model: model ?? agentDef?.model,
-          agent_type: subagent_type,
-          invokingRequestId: assistantMessage?.requestId,
-        },
-        toolUseContext,
-      )
-
-      // Type assertion uses TeammateSpawnedOutput (defined above) instead of any.
-      // This type is excluded from the exported outputSchema for dead code elimination.
-      // Cast through unknown because TeammateSpawnedOutput is intentionally
-      // not part of the exported Output union (for dead code elimination purposes).
-      const spawnResult: TeammateSpawnedOutput = {
-        status: 'teammate_spawned' as const,
-        prompt,
-        ...result.data,
-      }
-      return { data: spawnResult } as unknown as { data: Output }
-    }
 
     const effectiveType = subagent_type ?? GENERAL_PURPOSE_AGENT.agentType
 
@@ -470,19 +355,6 @@ export const AgentTool = buildTool({
       )
     }
     const selectedAgent: AgentDefinition = found
-
-    // Same lifecycle constraint as the run_in_background guard above, but for
-    // agent definitions that force background via `background: true`. Checked
-    // here because selectedAgent is only now resolved.
-    if (
-      isInProcessTeammate() &&
-      teamName &&
-      selectedAgent.background === true
-    ) {
-      throw new Error(
-        `In-process teammates cannot spawn background agents. Agent '${selectedAgent.agentType}' has background: true in its definition.`,
-      )
-    }
 
     // Fork ignores a per-call model override: it must run on the parent's
     // model to share the parent's prompt cache.
@@ -802,9 +674,6 @@ export const AgentTool = buildTool({
       // Wrap async agent execution in agent context for analytics attribution
       const asyncAgentContext = {
         agentId: asyncAgentId,
-        // For subagents from teammates: use team lead's session
-        // For subagents from main REPL: undefined (no parent session)
-        parentSessionId: getParentSessionId(),
         agentType: 'subagent' as const,
         subagentName: selectedAgent.agentType,
         isBuiltIn: isBuiltInAgent(selectedAgent),
@@ -880,9 +749,6 @@ export const AgentTool = buildTool({
       // Set up agent context for sync execution (for analytics attribution)
       const syncAgentContext = {
         agentId: syncAgentId,
-        // For subagents from teammates: use team lead's session
-        // For subagents from main REPL: undefined (no parent session)
-        parentSessionId: getParentSessionId(),
         agentType: 'subagent' as const,
         subagentName: selectedAgent.agentType,
         isBuiltIn: isBuiltInAgent(selectedAgent),
@@ -1595,10 +1461,7 @@ export const AgentTool = buildTool({
   },
   toAutoClassifierInput(input) {
     const i = input as AgentToolInput
-    const tags = [
-      i.subagent_type,
-      i.mode ? `mode=${i.mode}` : undefined,
-    ].filter((t): t is string => t !== undefined)
+    const tags = [i.subagent_type].filter((t): t is string => t !== undefined)
     const prefix = tags.length > 0 ? `(${tags.join(', ')}): ` : ': '
     return `${prefix}${i.prompt}`
   },
@@ -1619,30 +1482,7 @@ export const AgentTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(data, toolUseID) {
-    // Multi-agent spawn result
     const internalData = data as InternalOutput
-    if (
-      typeof internalData === 'object' &&
-      internalData !== null &&
-      'status' in internalData &&
-      internalData.status === 'teammate_spawned'
-    ) {
-      const spawnData = internalData as TeammateSpawnedOutput
-      return {
-        tool_use_id: toolUseID,
-        type: 'tool_result',
-        content: [
-          {
-            type: 'text',
-            text: `Spawned successfully.
-agent_id: ${spawnData.teammate_id}
-name: ${spawnData.name}
-team_name: ${spawnData.team_name}
-The agent is now running and will receive instructions via mailbox.`,
-          },
-        ],
-      }
-    }
     if (
       'status' in internalData &&
       (internalData.status as string) === 'remote_launched'
@@ -1664,7 +1504,7 @@ The agent is now running and will receive instructions via mailbox.`,
       }
     }
     if (data.status === 'async_launched') {
-      const sendMsgHint = isAgentSwarmsEnabled()
+      const sendMsgHint = isCoordinatorMode()
         ? ` Use ${SEND_MESSAGE_TOOL_NAME} with to: '${data.agentId}' to continue this agent.`
         : ''
       const prefix = `Async agent launched successfully.\nagentId: ${data.agentId} (internal ID - do not mention to user.${sendMsgHint})\nThe agent is working in the background; its final report will be delivered to you as a system notification in a later turn — sleeping or polling does not change when it arrives.`
@@ -1725,7 +1565,7 @@ The agent is now running and will receive instructions via mailbox.`,
           content: contentOrMarker,
         }
       }
-      const sendMsgHint = isAgentSwarmsEnabled()
+      const sendMsgHint = isCoordinatorMode()
         ? ` (use ${SEND_MESSAGE_TOOL_NAME} with to: '${data.agentId}' to continue this agent)`
         : ''
       return {
@@ -1756,11 +1596,3 @@ duration_ms: ${data.totalDurationMs}</usage>`,
   renderToolUseErrorMessage,
   renderGroupedToolUse: renderGroupedAgentToolUse,
 } satisfies ToolDef<InputSchema, Output, Progress>)
-
-function resolveTeamName(
-  input: { team_name?: string },
-  appState: { teamContext?: { teamName: string } },
-): string | undefined {
-  if (!isAgentSwarmsEnabled()) return undefined
-  return input.team_name || appState.teamContext?.teamName
-}

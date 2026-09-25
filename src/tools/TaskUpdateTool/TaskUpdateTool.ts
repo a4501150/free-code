@@ -1,12 +1,7 @@
 import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
-import {
-  executeTaskCompletedHooks,
-  getTaskCompletedHookMessage,
-} from '../../utils/hooks.js'
 import {
   blockTask,
   deleteTask,
@@ -17,13 +12,6 @@ import {
   type TaskStatus,
   updateTask,
 } from '../../utils/tasks.js'
-import {
-  getAgentId,
-  getAgentName,
-  getTeammateColor,
-  getTeamName,
-} from '../../utils/teammate.js'
-import { writeToMailbox } from '../../utils/teammateMailbox.js'
 import { VERIFICATION_AGENT_TYPE } from '../AgentTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
@@ -173,20 +161,6 @@ export const TaskUpdateTool = buildTool({
       updates.activeForm = activeForm
       updatedFields.push('activeForm')
     }
-    // Ownership is harness-managed: the model never names an owner. A task
-    // becomes owned by whoever marks it in_progress first, which is what the
-    // task list uses to match todo items to teammates for activity status.
-    if (
-      isAgentSwarmsEnabled() &&
-      status === 'in_progress' &&
-      !existingTask.owner
-    ) {
-      const agentName = getAgentName()
-      if (agentName) {
-        updates.owner = agentName
-        updatedFields.push('owner')
-      }
-    }
     if (metadata !== undefined) {
       const merged = { ...(existingTask.metadata ?? {}) }
       for (const [key, value] of Object.entries(metadata)) {
@@ -218,42 +192,6 @@ export const TaskUpdateTool = buildTool({
 
       // For regular status updates, validate and apply if different
       if (status !== existingTask.status) {
-        // Run TaskCompleted hooks when marking a task as completed
-        if (status === 'completed') {
-          const blockingErrors: string[] = []
-
-          const generator = executeTaskCompletedHooks(
-            taskId,
-            existingTask.subject,
-            existingTask.description,
-            getAgentName(),
-            getTeamName(),
-            undefined,
-            context?.abortController?.signal,
-            undefined,
-            context,
-          )
-
-          for await (const result of generator) {
-            if (result.blockingError) {
-              blockingErrors.push(
-                getTaskCompletedHookMessage(result.blockingError),
-              )
-            }
-          }
-
-          if (blockingErrors.length > 0) {
-            return {
-              data: {
-                success: false,
-                taskId,
-                updatedFields: [],
-                error: blockingErrors.join('\n'),
-              },
-            }
-          }
-        }
-
         updates.status = status
         updatedFields.push('status')
       }
@@ -261,30 +199,6 @@ export const TaskUpdateTool = buildTool({
 
     if (Object.keys(updates).length > 0) {
       await updateTask(taskListId, taskId, updates)
-    }
-
-    // Notify new owner via mailbox when ownership changes
-    if (updates.owner && isAgentSwarmsEnabled()) {
-      const senderName = getAgentName() || 'team-lead'
-      const senderColor = getTeammateColor()
-      const assignmentMessage = JSON.stringify({
-        type: 'task_assignment',
-        taskId,
-        subject: existingTask.subject,
-        description: existingTask.description,
-        assignedBy: senderName,
-        timestamp: new Date().toISOString(),
-      })
-      await writeToMailbox(
-        updates.owner,
-        {
-          from: senderName,
-          text: assignmentMessage,
-          timestamp: new Date().toISOString(),
-          color: senderColor,
-        },
-        taskListId,
-      )
     }
 
     // Add blocks if provided and not already present
@@ -351,14 +265,8 @@ export const TaskUpdateTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(content, toolUseID) {
-    const {
-      success,
-      taskId,
-      updatedFields,
-      error,
-      statusChange,
-      verificationNudgeNeeded,
-    } = content as Output
+    const { success, taskId, updatedFields, error, verificationNudgeNeeded } =
+      content as Output
     if (!success) {
       // Return as non-error so it doesn't trigger sibling tool cancellation
       // in StreamingToolExecutor. "Task not found" is a benign condition
@@ -371,16 +279,6 @@ export const TaskUpdateTool = buildTool({
     }
 
     let resultContent = `Updated task #${taskId} ${updatedFields.join(', ')}`
-
-    // Add reminder for teammates when they complete a task (supports in-process teammates)
-    if (
-      statusChange?.to === 'completed' &&
-      getAgentId() &&
-      isAgentSwarmsEnabled()
-    ) {
-      resultContent +=
-        '\n\nTask completed. Call TaskList now to find your next available task or see if your work unblocked others.'
-    }
 
     if (verificationNudgeNeeded) {
       resultContent += `\n\nNOTE: You just closed out 3+ tasks and none of them was a verification step. Before writing your final summary, spawn the verification agent (subagent_type="${VERIFICATION_AGENT_TYPE}"). You cannot self-assign PARTIAL by listing caveats in your summary — only the verifier issues a verdict.`

@@ -232,7 +232,7 @@ export type LocalAgentTaskState = TaskStateBase & {
   // Messages queued mid-turn via SendMessage, drained at tool-round boundaries
   pendingMessages: string[]
   // UI is holding this task: blocks eviction, enables stream-append, triggers
-  // disk bootstrap. Set by enterTeammateView. Separate from viewingAgentTaskId
+  // disk bootstrap. Set by enterAgentView. Separate from viewingAgentTaskId
   // (which is "what am I LOOKING at") — retain is "what am I HOLDING."
   retain: boolean
   // Bootstrap has read the sidechain JSONL and UUID-merged into messages.
@@ -716,7 +716,7 @@ export function failAgentTask(
  *
  * @param parentAbortController - Optional parent abort controller. If provided,
  *   the agent's abort controller will be a child that auto-aborts when parent aborts.
- *   This ensures subagents are aborted when their parent (e.g., in-process teammate) aborts.
+ *   This ensures subagents are aborted when their parent aborts.
  */
 export function registerAsyncAgent({
   agentId,

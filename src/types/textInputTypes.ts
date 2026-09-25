@@ -310,7 +310,7 @@ export type QueuedCommand = {
   /**
    * When true, the resulting UserMessage gets `isMeta: true` — hidden in the
    * transcript UI but visible to the model. Used by system-generated prompts
-   * (scheduled tasks, teammate messages, resource updates) that route through
+   * (scheduled tasks, agent messages, resource updates) that route through
    * the queue instead of calling `onQuery` directly.
    */
   isMeta?: boolean

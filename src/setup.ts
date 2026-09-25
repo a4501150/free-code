@@ -16,7 +16,6 @@ import {
 import { getCommands } from './commands.js'
 import { initSessionMemory } from './services/SessionMemory/sessionMemory.js'
 import { asSessionId } from './types/ids.js'
-import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js'
 import { prefetchApiKeyFromApiKeyHelperIfSafe } from './utils/auth.js'
 import { clearMemoryFileCaches } from './utils/claudemd.js'
 import { getCurrentProjectConfig } from './utils/config.js'
@@ -44,7 +43,6 @@ import type { PermissionMode } from './utils/permissions/PermissionMode.js'
 import { getPlanSlug } from './utils/plans.js'
 import { saveWorktreeState } from './utils/sessionStorage.js'
 import { profileCheckpoint } from './utils/startupProfiler.js'
-import { captureTeammateModeSnapshot } from './utils/swarm/backends/teammateModeSnapshot.js'
 import {
   createTmuxSessionForWorktree,
   createWorktreeForSession,
@@ -79,11 +77,6 @@ export async function setup(
   // Set custom session ID if provided
   if (customSessionId) {
     switchSession(asSessionId(customSessionId))
-  }
-
-  // Teammate snapshot — SIMPLE-only gate (swarm not used in bare)
-  if (!isBareMode() && isAgentSwarmsEnabled()) {
-    captureTeammateModeSnapshot()
   }
 
   // IMPORTANT: setCwd() must be called before any other code that depends on the cwd

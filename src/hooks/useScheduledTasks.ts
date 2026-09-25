@@ -1,16 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { useAppStateStore, useSetAppState } from '../state/AppState.js'
-import { isTerminalTaskStatus } from '../Task.js'
-import {
-  findTeammateTaskByAgentId,
-  injectUserMessageToTeammate,
-} from '../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import { isAssistantCronEnabled } from '../tools/ScheduleCronTool/prompt.js'
 import type { Message } from '../types/message.js'
 import { getCronJitterConfig } from '../utils/cronJitterConfig.js'
 import { createCronScheduler } from '../utils/cronScheduler.js'
-import { removeCronTasks } from '../utils/cronTasks.js'
-import { logForDebugging } from '../utils/debug.js'
 import { enqueuePendingNotification } from '../utils/messageQueueManager.js'
 import { createScheduledTaskFireMessage } from '../utils/messages.js'
 import { WORKLOAD_CRON } from '../utils/workloadContext.js'
@@ -47,9 +39,6 @@ export function useScheduledTasks({
   const isLoadingRef = useRef(isLoading)
   isLoadingRef.current = isLoading
 
-  const store = useAppStateStore()
-  const setAppState = useSetAppState()
-
   useEffect(() => {
     // Runtime gate checked here (not at the hook call site) so the hook
     // stays unconditionally mounted — rules-of-hooks forbid wrapping the
@@ -82,31 +71,11 @@ export function useScheduledTasks({
       })
 
     const scheduler = createCronScheduler({
-      // Missed-task surfacing (onFire fallback). Teammate crons are always
-      // session-only (durable:false) so they never appear in the missed list,
-      // which is populated from disk at scheduler startup — this path only
-      // handles team-lead durable crons.
+      // Missed-task surfacing (onFire fallback). The missed list is populated
+      // from disk at scheduler startup — durable crons only.
       onFire: enqueueForLead,
-      // Normal fires receive the full CronTask so we can route by agentId.
+      // Normal fires receive the full CronTask.
       onFireTask: task => {
-        if (task.agentId) {
-          const teammate = findTeammateTaskByAgentId(
-            task.agentId,
-            store.getState().tasks,
-          )
-          if (teammate && !isTerminalTaskStatus(teammate.status)) {
-            injectUserMessageToTeammate(teammate.id, task.prompt, setAppState)
-            return
-          }
-          // Teammate is gone — clean up the orphaned cron so it doesn't keep
-          // firing into nowhere every tick. One-shots would auto-delete on
-          // fire anyway, but recurring crons would loop until auto-expiry.
-          logForDebugging(
-            `[ScheduledTasks] teammate ${task.agentId} gone, removing orphaned cron ${task.id}`,
-          )
-          void removeCronTasks([task.id])
-          return
-        }
         const msg = createScheduledTaskFireMessage(
           `Running scheduled task (${formatCronFireTime(new Date())})`,
         )
@@ -120,8 +89,8 @@ export function useScheduledTasks({
     })
     scheduler.start()
     return () => scheduler.stop()
-    // assistantMode is stable for the session lifetime; store/setAppState are
-    // stable refs from useSyncExternalStore; setMessages is a stable useCallback.
+    // assistantMode is stable for the session lifetime; setMessages is a
+    // stable useCallback.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assistantMode])
 }

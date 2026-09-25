@@ -5,7 +5,6 @@ import React, {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { MailboxProvider } from '../context/mailbox.js'
 import { useSettingsChange } from '../hooks/useSettingsChange.js'
 import { logForDebugging } from '../utils/debug.js'
 import {
@@ -103,9 +102,7 @@ export function AppStateProvider({
   return (
     <HasAppStateContext.Provider value={true}>
       <AppStoreContext.Provider value={store}>
-        <MailboxProvider>
-          <VoiceProvider>{children}</VoiceProvider>
-        </MailboxProvider>
+        <VoiceProvider>{children}</VoiceProvider>
       </AppStoreContext.Provider>
     </HasAppStateContext.Provider>
   )

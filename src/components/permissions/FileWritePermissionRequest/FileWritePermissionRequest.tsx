@@ -64,7 +64,6 @@ export function FileWritePermissionRequest(
       toolUseContext={props.toolUseContext}
       onDone={props.onDone}
       onReject={props.onReject}
-      workerBadge={props.workerBadge}
       title={fileExists ? 'Overwrite file' : 'Create file'}
       subtitle={relative(getCwd(), file_path)}
       question={

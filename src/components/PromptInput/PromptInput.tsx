@@ -71,28 +71,20 @@ import {
   type ActiveSpeculationState,
   abortSpeculation,
 } from '../../services/PromptSuggestion/speculation.js'
+import { getActiveAgentForInput } from '../../state/selectors.js'
 import {
-  getActiveAgentForInput,
-  getViewedTeammateTask,
-} from '../../state/selectors.js'
-import {
-  enterTeammateView,
-  exitTeammateView,
+  enterAgentView,
+  exitAgentView,
   stopOrDismissAgent,
-} from '../../state/teammateViewHelpers.js'
+} from '../../state/agentViewHelpers.js'
 import type { ToolPermissionContext } from '../../Tool.js'
-import { getRunningTeammatesSorted } from '../../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
-import type { InProcessTeammateTaskState } from '../../tasks/InProcessTeammateTask/types.js'
 import {
+  isLocalAgentTask,
   isPanelAgentTask,
   type LocalAgentTaskState,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { isBackgroundTask } from '../../tasks/types.js'
-import {
-  AGENT_COLOR_TO_THEME_COLOR,
-  AGENT_COLORS,
-  type AgentColorName,
-} from '../../tools/AgentTool/agentColorManager.js'
+import { getAgentColor } from '../../tools/AgentTool/agentColorManager.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import type { Message } from '../../types/message.js'
 import type {
@@ -100,15 +92,10 @@ import type {
   PromptInputMode,
   VimMode,
 } from '../../types/textInputTypes.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { count } from '../../utils/array.js'
 import { Cursor } from '../../utils/Cursor.js'
 import type { PastedContent } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
-import {
-  parseDirectMemberMessage,
-  sendDirectMemberMessage,
-} from '../../utils/directMemberMessage.js'
 import type { EffortLevel } from '../../utils/effort.js'
 import { env } from '../../utils/env.js'
 import { errorMessage } from '../../utils/errors.js'
@@ -148,12 +135,6 @@ import {
   hasSlackMcpServer,
   subscribeKnownChannels,
 } from '../../utils/suggestions/slackChannelSuggestions.js'
-import { isInProcessEnabled } from '../../utils/swarm/backends/registry.js'
-import { syncTeammateMode } from '../../utils/swarm/teamHelpers.js'
-import type { TeamSummary } from '../../utils/teamDiscovery.js'
-import { getTeammateColor } from '../../utils/teammate.js'
-import { isInProcessTeammate } from '../../utils/teammateContext.js'
-import { writeToMailbox } from '../../utils/teammateMailbox.js'
 import type { TextHighlight } from '../../utils/textHighlighting.js'
 import type { Theme } from '../../utils/theme.js'
 import {
@@ -174,8 +155,6 @@ import { ModelPicker } from '../ModelPicker.js'
 import { QuickOpenDialog } from '../QuickOpenDialog.js'
 import TextInput from '../TextInput.js'
 import { ThinkingToggle } from '../ThinkingToggle.js'
-import { shouldHideTasksFooter } from '../tasks/taskStatusUtils.js'
-import { TeamsDialog } from '../teams/TeamsDialog.js'
 import VimTextInput from '../VimTextInput.js'
 import { getModeFromInput, getValueFromInput } from './inputModes.js'
 import { Notifications } from './Notifications.js'
@@ -186,7 +165,7 @@ import { PromptInputStashNotice } from './PromptInputStashNotice.js'
 import { useMaybeTruncateInput } from './useMaybeTruncateInput.js'
 import { usePromptInputPlaceholder } from './usePromptInputPlaceholder.js'
 import { useShowFastIconHint } from './useShowFastIconHint.js'
-import { useSwarmBanner } from './useSwarmBanner.js'
+import { useAgentBanner } from './useAgentBanner.js'
 import { isNonSpacePrintable, isVimModeEnabled } from './utils.js'
 
 type Props = {
@@ -252,7 +231,7 @@ type Props = {
   ) => Promise<void>
   onAgentSubmit?: (
     input: string,
-    task: InProcessTeammateTaskState | LocalAgentTaskState,
+    task: LocalAgentTaskState,
     helpers: PromptInputHelpers,
   ) => Promise<void>
   isSearchingHistory: boolean
@@ -382,7 +361,6 @@ function PromptInput({
   const tasks = useAppState(s => s.tasks)
   // WebBrowser pill — visible when a browser is open
   const bagelFooterVisible = useAppState(s => false)
-  const teamContext = useAppState(s => s.teamContext)
   const queuedCommands = useCommandQueue()
   const promptSuggestionState = useAppState(s => s.promptSuggestion)
   const speculation = useAppState(s => s.speculation)
@@ -391,11 +369,10 @@ function PromptInput({
   )
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const viewSelectionMode = useAppState(s => s.viewSelectionMode)
-  const showSpinnerTree = useAppState(s => s.expandedView) === 'teammates'
   // Brief mode: BriefSpinner/BriefIdleStatus own the 2-row footprint above
   // the input. Dropping marginTop here lets the spinner sit flush against
   // the input bar. viewingAgentTaskId mirrors the gate on both (Spinner.tsx,
-  // REPL.tsx) — teammate view falls back to SpinnerWithVerbInner which has
+  // REPL.tsx) — agent view falls back to SpinnerWithVerbInner which has
   // its own marginTop, so the gap stays even without ours.
   const briefOwnsGap = useAppState(s => s.isBriefOnly) && !viewingAgentTaskId
   const mainLoopModel_ = useAppState(s => s.mainLoopModel)
@@ -404,36 +381,21 @@ function PromptInput({
   const isFastMode = useAppState(s =>
     isFastModeEnabled() ? s.fastMode : false,
   )
-  const viewedTeammate = getViewedTeammateTask(store.getState())
-  const viewingAgentName = viewedTeammate?.identity.agentName
-  // identity.color is typed as `string | undefined` (not AgentColorName) because
-  // teammate identity comes from file-based config. Validate before casting to
-  // ensure we only use valid color names (falls back to cyan if invalid).
-  const viewingAgentColor =
-    viewedTeammate?.identity.color &&
-    AGENT_COLORS.includes(viewedTeammate.identity.color as AgentColorName)
-      ? (viewedTeammate.identity.color as AgentColorName)
-      : undefined
-  // In-process teammates sorted alphabetically for footer team selector
-  const inProcessTeammates = useMemo(
-    () => getRunningTeammatesSorted(tasks),
-    [tasks],
-  )
-
-  // Team mode: all background tasks are in-process teammates
-  const isTeammateMode =
-    inProcessTeammates.length > 0 || viewedTeammate !== undefined
-
-  // When viewing a teammate, show their permission mode in the footer instead of the leader's
-  const effectiveToolPermissionContext = useMemo((): ToolPermissionContext => {
-    if (viewedTeammate) {
-      return {
-        ...toolPermissionContext,
-        mode: viewedTeammate.permissionMode,
-      }
-    }
-    return toolPermissionContext
-  }, [viewedTeammate, toolPermissionContext])
+  // Viewing a background agent: show @name on the prompt in the agent's color.
+  const viewedLocalAgent = viewingAgentTaskId
+    ? (() => {
+        const t = tasks[viewingAgentTaskId]
+        return t && isLocalAgentTask(t) ? t : undefined
+      })()
+    : undefined
+  const viewingAgentName = viewedLocalAgent
+    ? [...store.getState().agentNameRegistry.entries()].find(
+        ([, id]) => id === viewedLocalAgent.id,
+      )?.[0]
+    : undefined
+  const viewingAgentColor = viewedLocalAgent
+    ? getAgentColor(viewedLocalAgent.agentType)
+    : undefined
   const { historyQuery, setHistoryQuery, historyMatch, historyFailedMatch } =
     useHistorySearch(
       entry => {
@@ -465,8 +427,6 @@ function PromptInput({
   // (arrow, escape, backspace, paste, space) disarms without inserting.
   const pendingSpaceAfterPillRef = useRef(false)
 
-  const [showTeamsDialog, setShowTeamsDialog] = useState(false)
-  const [teammateFooterIndex, setTeammateFooterIndex] = useState(0)
   // -1 sentinel: tasks pill is selected but no specific agent row is selected yet.
   // First ↓ selects the pill, second ↓ moves to row 0. Prevents double-select
   // of pill + row when both bg tasks (pill) and forked agents (rows) are visible.
@@ -532,29 +492,6 @@ function PromptInput({
     return cursorOffset > lastNewlineIndex
   }, [input, cursorOffset])
 
-  // Derive team info from teamContext (no filesystem I/O needed)
-  // A session can only lead one team at a time
-  const cachedTeams: TeamSummary[] = useMemo(() => {
-    if (!isAgentSwarmsEnabled()) return []
-    // In-process mode uses Shift+Down/Up navigation instead of footer menu
-    if (isInProcessEnabled()) return []
-    if (!teamContext) {
-      return []
-    }
-    const teammateCount = count(
-      Object.values(teamContext.teammates),
-      t => t.name !== 'team-lead',
-    )
-    return [
-      {
-        name: teamContext.teamName,
-        memberCount: teammateCount,
-        runningCount: 0,
-        idleCount: 0,
-      },
-    ]
-  }, [teamContext])
-
   // ─── Footer pill navigation ─────────────────────────────────────────────
   // Which pills render below the input box. Order here IS the nav order
   // (down/right = forward, up/left = back). Selection lives in AppState so
@@ -566,19 +503,14 @@ function PromptInput({
   // Panel shows retained-completed agents too (getVisibleAgentTasks), so the
   // pill must stay navigable whenever the panel has rows — not just when
   // something is running.
-  const tasksFooterVisible =
-    (runningTaskCount > 0 || coordinatorTaskCount > 0) &&
-    !shouldHideTasksFooter(tasks, showSpinnerTree)
-  const teamsFooterVisible = cachedTeams.length > 0
+  const tasksFooterVisible = runningTaskCount > 0 || coordinatorTaskCount > 0
 
   const footerItems = useMemo(
     () =>
-      [
-        tasksFooterVisible && 'tasks',
-        bagelFooterVisible && 'bagel',
-        teamsFooterVisible && 'teams',
-      ].filter(Boolean) as FooterItem[],
-    [tasksFooterVisible, bagelFooterVisible, teamsFooterVisible],
+      [tasksFooterVisible && 'tasks', bagelFooterVisible && 'bagel'].filter(
+        Boolean,
+      ) as FooterItem[],
+    [tasksFooterVisible, bagelFooterVisible],
   )
 
   // Effective selection: null if the selected pill stopped rendering (e.g.
@@ -603,13 +535,11 @@ function PromptInput({
 
   const tasksSelected = footerItemSelected === 'tasks'
   const bagelSelected = footerItemSelected === 'bagel'
-  const teamsSelected = footerItemSelected === 'teams'
   function selectFooterItem(item: FooterItem | null): void {
     setAppState(prev =>
       prev.footerSelection === item ? prev : { ...prev, footerSelection: item },
     )
     if (item === 'tasks') {
-      setTeammateFooterIndex(0)
       setCoordinatorTaskIndex(minCoordinatorIndex)
     }
   }
@@ -695,50 +625,6 @@ function PromptInput({
     [displayedValue, knownChannelsVersion],
   )
 
-  // Find @name mentions and highlight with team member's color
-  const memberMentionHighlights = useMemo((): Array<{
-    start: number
-    end: number
-    themeColor: keyof Theme
-  }> => {
-    if (!isAgentSwarmsEnabled()) return []
-    if (!teamContext?.teammates) return []
-
-    const highlights: Array<{
-      start: number
-      end: number
-      themeColor: keyof Theme
-    }> = []
-    const members = teamContext.teammates
-    if (!members) return highlights
-
-    // Find all @name patterns in the input
-    const regex = /(^|\s)@([\w-]+)/g
-    const memberValues = Object.values(members)
-    let match
-    while ((match = regex.exec(displayedValue)) !== null) {
-      const leadingSpace = match[1] ?? ''
-      const nameStart = match.index + leadingSpace.length
-      const fullMatch = match[0].trimStart()
-      const name = match[2]
-
-      // Check if this name matches a team member
-      const member = memberValues.find(t => t.name === name)
-      if (member?.color) {
-        const themeColor =
-          AGENT_COLOR_TO_THEME_COLOR[member.color as AgentColorName]
-        if (themeColor) {
-          highlights.push({
-            start: nameStart,
-            end: nameStart + fullMatch.length,
-            themeColor,
-          })
-        }
-      }
-    }
-    return highlights
-  }, [displayedValue, teamContext])
-
   const imageRefPositions = useMemo(
     () =>
       parseReferences(displayedValue)
@@ -822,16 +708,6 @@ function PromptInput({
       })
     }
 
-    // Add @name highlighting with team member's color
-    for (const mention of memberMentionHighlights) {
-      highlights.push({
-        start: mention.start,
-        end: mention.end,
-        color: mention.themeColor,
-        priority: 5,
-      })
-    }
-
     // Dim interim voice dictation text
     if (voiceInterimRange) {
       highlights.push({
@@ -880,7 +756,6 @@ function PromptInput({
     cursorOffset,
     btwTriggers,
     imageRefPositions,
-    memberMentionHighlights,
     slashCommandTriggers,
     slackChannelTriggers,
     displayedValue,
@@ -1138,7 +1013,7 @@ function PromptInput({
       // If input is empty OR matches the suggestion, submit it
       // But if there are images attached, don't auto-accept the suggestion -
       // the user wants to submit just the image(s).
-      // Only in leader view — promptSuggestion is leader-context, not teammate.
+      // Only in main view — promptSuggestion is main-session context only.
       const suggestionText = promptSuggestionState.text
       const inputMatchesSuggestion =
         inputParam.trim() === '' || inputParam === suggestionText
@@ -1177,38 +1052,6 @@ function PromptInput({
         }
       }
 
-      // Handle @name direct message
-      if (isAgentSwarmsEnabled()) {
-        const directMessage = parseDirectMemberMessage(inputParam)
-        if (directMessage) {
-          const result = await sendDirectMemberMessage(
-            directMessage.recipientName,
-            directMessage.message,
-            teamContext,
-            writeToMailbox,
-          )
-
-          if (result.success) {
-            addNotification({
-              key: 'direct-message-sent',
-              text: `Sent to @${result.recipientName}`,
-              priority: 'immediate',
-              timeoutMs: 3000,
-            })
-            trackAndSetInput('')
-            setCursorOffset(0)
-            clearBuffer()
-            resetHistory()
-            return
-          } else if (result.error === 'no_team_context') {
-            // No team context - fall through to normal prompt submission
-          } else {
-            // Unknown recipient - fall through to normal prompt submission
-            // This allows e.g. "@utils explain this code" to be sent as a prompt
-          }
-        }
-      }
-
       // Allow submission if there are images attached, even without text
       if (inputParam.trim() === '' && !hasImages) {
         return
@@ -1239,7 +1082,7 @@ function PromptInput({
       // Clear stash hint notification on submit
       removeNotification('stash-hint')
 
-      // Route input to viewed agent (in-process teammate or named local_agent).
+      // Route input to viewed background agent.
       const activeAgent = getActiveAgentForInput(store.getState())
       if (activeAgent.type !== 'leader' && onAgentSubmit) {
         await onAgentSubmit(inputParam, activeAgent.task, {
@@ -1261,7 +1104,6 @@ function PromptInput({
       promptSuggestionState,
       speculation,
       speculationSessionTimeSavedMs,
-      teamContext,
       store,
       footerItems,
       suggestionsState.suggestions,
@@ -1300,7 +1142,7 @@ function PromptInput({
   })
 
   // Track if prompt suggestion should be shown (computed later with terminal width).
-  // Hidden in teammate view — suggestion is leader-context only.
+  // Hidden in agent view — suggestion is main-session context only.
   const showPromptSuggestion =
     mode === 'prompt' &&
     suggestions.length === 0 &&
@@ -1311,8 +1153,8 @@ function PromptInput({
   }
 
   // If suggestion was generated but can't be shown due to timing, log suppression.
-  // Exclude teammate view: markShown() is gated above, so shownAt stays 0 there —
-  // but that's not a timing failure, the suggestion is valid when returning to leader.
+  // Exclude agent view: markShown() is gated above, so shownAt stays 0 there —
+  // but that's not a timing failure, the suggestion is valid when returning to the main view.
   if (
     promptSuggestionState.text &&
     !promptSuggestion &&
@@ -1624,51 +1466,14 @@ function PromptInput({
 
   // Handler for chat:cycleMode - cycle through permission modes
   const handleCycleMode = useCallback(() => {
-    // When viewing a teammate, cycle their mode instead of the leader's
-    if (isAgentSwarmsEnabled() && viewedTeammate && viewingAgentTaskId) {
-      const teammateContext: ToolPermissionContext = {
-        ...toolPermissionContext,
-        mode: viewedTeammate.permissionMode,
-      }
-      // Pass undefined for teamContext (unused but kept for API compatibility)
-      const nextMode = getNextPermissionMode(teammateContext, undefined)
-
-      const teammateTaskId = viewingAgentTaskId
-      setAppState(prev => {
-        const task = prev.tasks[teammateTaskId]
-        if (!task || task.type !== 'in_process_teammate') {
-          return prev
-        }
-        if (task.permissionMode === nextMode) {
-          return prev
-        }
-        return {
-          ...prev,
-          tasks: {
-            ...prev.tasks,
-            [teammateTaskId]: {
-              ...task,
-              permissionMode: nextMode,
-            },
-          },
-        }
-      })
-
-      if (helpOpen) {
-        setHelpOpen(false)
-      }
-      return
-    }
-
     // Compute the next mode without triggering side effects first
     logForDebugging(
       `[auto-mode] handleCycleMode: currentMode=${toolPermissionContext.mode} isAutoModeAvailable=${toolPermissionContext.isAutoModeAvailable}`,
     )
-    const nextMode = getNextPermissionMode(toolPermissionContext, teamContext)
+    const nextMode = getNextPermissionMode(toolPermissionContext)
 
     const { context: preparedContext } = cyclePermissionMode(
       toolPermissionContext,
-      teamContext,
     )
 
     // Set the mode via setAppState directly because setToolPermissionContext
@@ -1687,18 +1492,13 @@ function PromptInput({
       mode: nextMode,
     })
 
-    // If this is a teammate, update config.json so team lead sees the change
-    syncTeammateMode(nextMode, teamContext?.teamName)
-
     // Close help tips if they're open when mode is cycled
     if (helpOpen) {
       setHelpOpen(false)
     }
   }, [
     toolPermissionContext,
-    teamContext,
     viewingAgentTaskId,
-    viewedTeammate,
     setAppState,
     setToolPermissionContext,
     helpOpen,
@@ -1873,7 +1673,7 @@ function PromptInput({
           }
           return
         }
-        if (tasksSelected && !isTeammateMode) {
+        if (tasksSelected) {
           setShowBashesDialog(true)
           selectFooterItem(null)
           return
@@ -1881,20 +1681,9 @@ function PromptInput({
         navigateFooter(1)
       },
       'footer:next': () => {
-        // Teammate mode: ←/→ cycles within the team member list
-        if (tasksSelected && isTeammateMode) {
-          const totalAgents = 1 + inProcessTeammates.length
-          setTeammateFooterIndex(prev => (prev + 1) % totalAgents)
-          return
-        }
         navigateFooter(1)
       },
       'footer:previous': () => {
-        if (tasksSelected && isTeammateMode) {
-          const totalAgents = 1 + inProcessTeammates.length
-          setTeammateFooterIndex(prev => (prev - 1 + totalAgents) % totalAgents)
-          return
-        }
         navigateFooter(-1)
       },
       'footer:openSelected': () => {
@@ -1903,21 +1692,13 @@ function PromptInput({
         }
         switch (footerItemSelected) {
           case 'tasks':
-            if (isTeammateMode) {
-              // Enter switches to the selected agent's view
-              if (teammateFooterIndex === 0) {
-                exitTeammateView(setAppState)
-              } else {
-                const teammate = inProcessTeammates[teammateFooterIndex - 1]
-                if (teammate) enterTeammateView(teammate.id, setAppState)
-              }
-            } else if (coordinatorTaskIndex === 0 && coordinatorTaskCount > 0) {
-              exitTeammateView(setAppState)
+            if (coordinatorTaskIndex === 0 && coordinatorTaskCount > 0) {
+              exitAgentView(setAppState)
             } else {
               const selectedTaskId =
                 getVisibleAgentTasks(tasks)[coordinatorTaskIndex - 1]?.id
               if (selectedTaskId) {
-                enterTeammateView(selectedTaskId, setAppState)
+                enterAgentView(selectedTaskId, setAppState)
               } else {
                 setShowBashesDialog(true)
                 selectFooterItem(null)
@@ -1925,10 +1706,6 @@ function PromptInput({
             }
             break
           case 'bagel':
-            break
-          case 'teams':
-            setShowTeamsDialog(true)
-            selectFooterItem(null)
             break
         }
       },
@@ -1971,12 +1748,7 @@ function PromptInput({
     // Skip all input handling when a full-screen dialog is open. These dialogs
     // render via early return, but hooks run unconditionally — so without this
     // guard, Escape inside a dialog leaks to the double-press message-selector.
-    if (
-      showTeamsDialog ||
-      showQuickOpen ||
-      showGlobalSearch ||
-      showHistoryPicker
-    ) {
+    if (showQuickOpen || showGlobalSearch || showHistoryPicker) {
       return
     }
 
@@ -2086,7 +1858,7 @@ function PromptInput({
     }
   })
 
-  const swarmBanner = useSwarmBanner()
+  const agentBanner = useAgentBanner()
 
   const fastModeCooldown = isFastModeEnabled() ? isFastModeCooldown() : false
   const showFastIcon = isFastModeEnabled()
@@ -2317,17 +2089,6 @@ function PromptInput({
     return null
   }
 
-  if (isAgentSwarmsEnabled() && showTeamsDialog) {
-    return (
-      <TeamsDialog
-        initialTeams={cachedTeams}
-        onDone={() => {
-          setShowTeamsDialog(false)
-        }}
-      />
-    )
-  }
-
   const insertWithSpacing = (text: string) => {
     const cursorChar = input[cursorOffset - 1] ?? ' '
     insertTextAtCursor(/\s/.test(cursorChar) ? text : ` ${text}`)
@@ -2435,23 +2196,8 @@ function PromptInput({
       bash: 'bashBorder',
     }
 
-    // Mode colors take priority, then teammate color, then default
     if (modeColors[mode]) {
       return modeColors[mode]
-    }
-
-    // In-process teammates run headless - don't apply teammate colors to leader UI
-    if (isInProcessTeammate()) {
-      return 'promptBorder'
-    }
-
-    // Check for teammate color from environment
-    const teammateColorName = getTeammateColor()
-    if (
-      teammateColorName &&
-      AGENT_COLORS.includes(teammateColorName as AgentColorName)
-    ) {
-      return AGENT_COLOR_TO_THEME_COLOR[teammateColorName as AgentColorName]
     }
 
     return 'promptBorder'
@@ -2495,17 +2241,17 @@ function PromptInput({
         </Box>
       )}
       <PromptInputStashNotice hasStash={stashedPrompt !== undefined} />
-      {swarmBanner ? (
+      {agentBanner ? (
         <>
-          <Text color={swarmBanner.bgColor}>
-            {swarmBanner.text ? (
+          <Text color={agentBanner.bgColor}>
+            {agentBanner.text ? (
               <>
                 {'─'.repeat(
-                  Math.max(0, columns - stringWidth(swarmBanner.text) - 4),
+                  Math.max(0, columns - stringWidth(agentBanner.text) - 4),
                 )}
-                <Text backgroundColor={swarmBanner.bgColor} color="inverseText">
+                <Text backgroundColor={agentBanner.bgColor} color="inverseText">
                   {' '}
-                  {swarmBanner.text}{' '}
+                  {agentBanner.text}{' '}
                 </Text>
                 {'──'}
               </>
@@ -2524,7 +2270,7 @@ function PromptInput({
               {textInputElement}
             </Box>
           </Box>
-          <Text color={swarmBanner.bgColor}>{'─'.repeat(columns)}</Text>
+          <Text color={agentBanner.bgColor}>{'─'.repeat(columns)}</Text>
         </>
       ) : (
         <Box
@@ -2561,13 +2307,11 @@ function PromptInput({
         suggestions={suggestions}
         selectedSuggestion={selectedSuggestion}
         maxColumnWidth={maxColumnWidth}
-        toolPermissionContext={effectiveToolPermissionContext}
+        toolPermissionContext={toolPermissionContext}
         helpOpen={helpOpen}
         suppressHint={input.length > 0}
         isLoading={isLoading}
         tasksSelected={tasksSelected}
-        teamsSelected={teamsSelected}
-        teammateFooterIndex={teammateFooterIndex}
         isPasting={isPasting}
         messages={messages}
         isSearching={isSearchingHistory}

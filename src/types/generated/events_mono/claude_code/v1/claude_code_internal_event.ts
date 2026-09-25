@@ -117,13 +117,12 @@ export interface ClaudeCodeInternalEvent {
   swe_bench_instance_id?: string | undefined
   swe_bench_task_id?: string | undefined
   email?: string | undefined
-  /** Swarm/team agent identification for analytics attribution */
+  /** Agent identification for analytics attribution */
   agent_id?: string | undefined
   parent_session_id?: string | undefined
   agent_type?: string | undefined
   /** Claude-in-Slack context (only present for cis_* events) */
   slack?: SlackContext | undefined
-  team_name?: string | undefined
   skill_name?: string | undefined
   plugin_name?: string | undefined
   marketplace_name?: string | undefined
@@ -576,7 +575,6 @@ function createBaseClaudeCodeInternalEvent(): ClaudeCodeInternalEvent {
     parent_session_id: '',
     agent_type: '',
     slack: undefined,
-    team_name: '',
     skill_name: '',
     plugin_name: '',
     marketplace_name: '',
@@ -653,9 +651,6 @@ export const ClaudeCodeInternalEvent: MessageFns<ClaudeCodeInternalEvent> = {
       slack: isSet(object.slack)
         ? SlackContext.fromJSON(object.slack)
         : undefined,
-      team_name: isSet(object.team_name)
-        ? globalThis.String(object.team_name)
-        : '',
       skill_name: isSet(object.skill_name)
         ? globalThis.String(object.skill_name)
         : '',
@@ -745,9 +740,6 @@ export const ClaudeCodeInternalEvent: MessageFns<ClaudeCodeInternalEvent> = {
     if (message.slack !== undefined) {
       obj.slack = SlackContext.toJSON(message.slack)
     }
-    if (message.team_name !== undefined) {
-      obj.team_name = message.team_name
-    }
     if (message.skill_name !== undefined) {
       obj.skill_name = message.skill_name
     }
@@ -803,7 +795,6 @@ export const ClaudeCodeInternalEvent: MessageFns<ClaudeCodeInternalEvent> = {
       object.slack !== undefined && object.slack !== null
         ? SlackContext.fromPartial(object.slack)
         : undefined
-    message.team_name = object.team_name ?? ''
     message.skill_name = object.skill_name ?? ''
     message.plugin_name = object.plugin_name ?? ''
     message.marketplace_name = object.marketplace_name ?? ''

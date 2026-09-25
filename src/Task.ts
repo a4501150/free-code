@@ -7,7 +7,6 @@ export type TaskType =
   | 'local_bash'
   | 'local_agent'
   | 'remote_agent'
-  | 'in_process_teammate'
   | 'monitor_mcp'
   | 'dream'
 
@@ -20,7 +19,7 @@ export type TaskStatus =
 
 /**
  * True when a task is in a terminal state and will not transition further.
- * Used to guard against injecting messages into dead teammates, evicting
+ * Used to guard against injecting messages into dead agents, evicting
  * finished tasks from AppState, and orphan-cleanup paths.
  */
 export function isTerminalTaskStatus(status: TaskStatus): boolean {
@@ -79,7 +78,6 @@ const TASK_ID_PREFIXES: Record<string, string> = {
   local_bash: 'b', // Keep as 'b' for backward compatibility
   local_agent: 'a',
   remote_agent: 'r',
-  in_process_teammate: 't',
   monitor_mcp: 'm',
   dream: 'd',
 }

@@ -95,8 +95,8 @@ function PromptInputQueuedCommandsImpl(): React.ReactNode {
   const viewingAgent = useAppState(s => !!s.viewingAgentTaskId)
   // Brief layout: dim queue items + skip the paddingX (brief messages
   // already indent themselves). Gate mirrors the brief-spinner/message
-  // check elsewhere — no teammate-view override needed since this
-  // component early-returns when viewing a teammate.
+  // check elsewhere — no agent-view override needed since this
+  // component early-returns when viewing an agent.
   const useBriefLayout = useAppState(s => s.isBriefOnly)
 
   // createUserMessage mints a fresh UUID per call; without memoization, streaming

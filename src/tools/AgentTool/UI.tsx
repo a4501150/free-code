@@ -327,7 +327,6 @@ export function renderToolResultMessage(
   }
 
   const {
-    agentId,
     totalDurationMs,
     totalToolUseCount,
     totalTokens,
@@ -1010,11 +1009,6 @@ export function renderToolUseRejectedMessage(
     isTranscriptMode?: boolean
   },
 ): React.ReactNode {
-  // Get agentId from progress messages if available (agent was running before rejection)
-  const firstData = progressMessagesForMessage[0]?.data
-  const agentId =
-    firstData && hasProgressMessage(firstData) ? firstData.agentId : undefined
-
   return (
     <>
       {renderToolUseProgressMessage(progressMessagesForMessage, {
@@ -1354,45 +1348,17 @@ function GroupedAgentToolUseView({
       const compactStatus = agentCompactStatusFromTasks(tasks, progressMessages)
       const parsedInput = inputSchema.safeParse(param.input)
 
-      // teammate_spawned is not part of the exported Output type (cast through unknown
-      // for dead code elimination), so check via string comparison on the raw value
-      const isTeammateSpawn =
-        (result?.output?.status as string) === 'teammate_spawned'
-
-      // For teammate spawns, show @name with type in parens and description as status
       let agentType: string
       let description: string | undefined
       let color: keyof Theme | undefined
-      let descriptionColor: keyof Theme | undefined
-      let taskDescription: string | undefined
-      // Widen the inferred schema type: `name` is omit()ed when the agent-
-      // swarms gate is off, but at runtime the field can still be present on
-      // teammate-spawn inputs. Cast to reveal the optional field.
-      const widenedInput = parsedInput.success
-        ? (parsedInput.data as typeof parsedInput.data & { name?: string })
-        : undefined
-      if (isTeammateSpawn && widenedInput?.name) {
-        agentType = `@${widenedInput.name}`
-        const subagentType = widenedInput.subagent_type
-        description = isCustomSubagentType(subagentType)
-          ? subagentType
-          : undefined
-        taskDescription = widenedInput.description
-        // Use the custom agent definition's color on the type, not the name
-        descriptionColor = isCustomSubagentType(subagentType)
-          ? (getAgentColor(subagentType) as keyof Theme | undefined)
-          : undefined
-      } else {
-        const displayInput = parsedInput.success
-          ? parsedInput.data
-          : (param.input as
-              | Partial<{ subagent_type: string; description: string }>
-              | undefined)
-        agentType = userFacingName(displayInput)
-        description = displayInput?.description
-        color = userFacingNameBackgroundColor(displayInput)
-        taskDescription = undefined
-      }
+      const displayInput = parsedInput.success
+        ? parsedInput.data
+        : (param.input as
+            | Partial<{ subagent_type: string; description: string }>
+            | undefined)
+      agentType = userFacingName(displayInput)
+      description = displayInput?.description
+      color = userFacingNameBackgroundColor(displayInput)
 
       // Check if this was launched as a background agent OR backgrounded mid-execution
       const launchedAsAsync =
@@ -1402,10 +1368,9 @@ function GroupedAgentToolUseView({
       const outputStatus = (result?.output as { status?: string } | undefined)
         ?.status
       const backgroundedMidExecution = outputStatus === 'async_launched'
-      const isAsync =
-        launchedAsAsync || backgroundedMidExecution || isTeammateSpawn
+      const isAsync = launchedAsAsync || backgroundedMidExecution
 
-      const name = widenedInput?.name
+      const name = parsedInput.success ? parsedInput.data.name : undefined
 
       // Resolve effective model; show tag only when it differs from the main
       // loop model. Matches single-agent behavior in renderAgentToolUseTag.
@@ -1437,10 +1402,8 @@ function GroupedAgentToolUseView({
         isError,
         isAsync,
         color,
-        descriptionColor,
         lastToolInfo,
         compactStatus,
-        taskDescription,
         name,
       }
     },
@@ -1479,8 +1442,6 @@ function GroupedAgentToolUseView({
         <AgentProgressLine
           agentType={stat.agentType}
           description={stat.description}
-          descriptionColor={stat.descriptionColor}
-          taskDescription={stat.taskDescription}
           toolUseCount={stat.toolUseCount}
           tokens={stat.tokens}
           durationMs={stat.durationMs}
@@ -1689,7 +1650,6 @@ export function userFacingName(
         prompt: string
         subagent_type: string
         name: string
-        team_name: string
       }>
     | undefined,
 ): string {
@@ -1819,14 +1779,4 @@ export function extractLastToolInfo(
   }
 
   return null
-}
-
-function isCustomSubagentType(
-  subagentType: string | undefined,
-): subagentType is string {
-  return (
-    !!subagentType &&
-    subagentType !== GENERAL_PURPOSE_AGENT.agentType &&
-    subagentType !== 'worker'
-  )
 }

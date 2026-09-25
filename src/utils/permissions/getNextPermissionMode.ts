@@ -29,7 +29,6 @@ function canCycleToAuto(ctx: ToolPermissionContext): boolean {
  */
 export function getNextPermissionMode(
   toolPermissionContext: ToolPermissionContext,
-  _teamContext?: { leadAgentId: string },
 ): PermissionMode {
   switch (toolPermissionContext.mode) {
     case 'default':
@@ -72,9 +71,8 @@ export function getNextPermissionMode(
  */
 export function cyclePermissionMode(
   toolPermissionContext: ToolPermissionContext,
-  teamContext?: { leadAgentId: string },
 ): { nextMode: PermissionMode; context: ToolPermissionContext } {
-  const nextMode = getNextPermissionMode(toolPermissionContext, teamContext)
+  const nextMode = getNextPermissionMode(toolPermissionContext)
   return {
     nextMode,
     context: transitionPermissionMode(

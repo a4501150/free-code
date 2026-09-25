@@ -33,7 +33,7 @@ export function UserPromptMessage({
   isTranscriptMode,
   timestamp,
 }: Props): React.ReactNode {
-  // REPL.tsx passes isBriefOnly={viewedTeammateTask ? false : isBriefOnly}
+  // REPL.tsx passes isBriefOnly={viewedAgentTask ? false : isBriefOnly}
   // but that prop isn't threaded this deep — replicate the override by
   // reading viewingAgentTaskId directly. Computed here (not in the child)
   // so the parent Box can drop its backgroundColor: in brief mode the

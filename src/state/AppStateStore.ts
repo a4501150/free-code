@@ -27,7 +27,6 @@ import type { DenialTrackingState } from '../utils/permissions/denialTracking.js
 import type { PermissionMode } from '../utils/permissions/PermissionMode.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import type { SettingsJson } from '../utils/settings/types.js'
-import { isPlanModeRequired, isTeammate } from '../utils/teammate.js'
 import { shouldEnableThinkingByDefault } from '../utils/thinking.js'
 import type { Store } from './store.js'
 
@@ -80,10 +79,8 @@ export type AppState = DeepImmutable<{
   mainLoopModel: ModelSetting
   mainLoopModelForSession: ModelSetting
   statusLineText: string | undefined
-  expandedView: 'none' | 'tasks' | 'teammates'
+  expandedView: 'none' | 'tasks'
   isBriefOnly: boolean
-  // Optional - only present when ENABLE_AGENT_SWARMS is true (for dead code elimination)
-  showTeammateMessagePreview?: boolean
   selectedIPAgentIndex: number
   // CoordinatorTaskPanel selection: -1 = pill, 0 = main, 1..N = agent rows.
   // AppState (not local) so the panel can read it directly without prop-drilling
@@ -115,7 +112,7 @@ export type AppState = DeepImmutable<{
   expandedAgentToolUseIds: Set<string>
   // Task ID that has been foregrounded - its messages are shown in main view
   foregroundedTaskId?: string
-  // Task ID of in-process teammate whose transcript is being viewed (undefined = leader's view)
+  // Task ID of the background agent whose transcript is being viewed (undefined = main view)
   viewingAgentTaskId?: string
   // TODO (ashwin): see if we can use utility-types DeepReadonly for this
   mcp: {
@@ -203,51 +200,11 @@ export type AppState = DeepImmutable<{
       clear: () => void
     }
   }
-  teamContext?: {
-    teamName: string
-    teamFilePath: string
-    leadAgentId: string
-    // Self-identity for swarm members (separate processes in tmux panes)
-    // Note: This is different from toolUseContext.agentId which is for in-process subagents
-    selfAgentId?: string // Swarm member's own ID (same as leadAgentId for leaders)
-    selfAgentName?: string // Swarm member's name ('team-lead' for leaders)
-    isLeader?: boolean // True if this swarm member is the team leader
-    selfAgentColor?: string // Assigned color for UI (used by dynamically joined sessions)
-    teammates: {
-      [teammateId: string]: {
-        name: string
-        agentType?: string
-        color?: string
-        tmuxSessionName: string
-        tmuxPaneId: string
-        cwd: string
-        worktreePath?: string
-        spawnedAt: number
-      }
-    }
-  }
-  // Standalone agent context for non-swarm sessions with custom name/color
+  // Agent name/color set via /rename or /color
   standaloneAgentContext?: {
     name: string
     color?: AgentColorName
   }
-  inbox: {
-    messages: Array<{
-      id: string
-      from: string
-      text: string
-      timestamp: string
-      status: 'pending' | 'processing' | 'processed'
-      color?: string
-      summary?: string
-    }>
-  }
-  // Pending permission request on worker side (shown while waiting for leader approval)
-  pendingWorkerRequest: {
-    toolName: string
-    toolUseId: string
-    description: string
-  } | null
   promptSuggestion: {
     text: string | null
     promptId: 'user_intent' | 'stated_intent' | null
@@ -302,10 +259,6 @@ export type AppState = DeepImmutable<{
 export type AppStateStore = Store<AppState>
 
 export function getDefaultAppState(): AppState {
-  // Determine initial permission mode for teammates spawned with plan_mode_required
-  const initialMode: PermissionMode =
-    isTeammate() && isPlanModeRequired() ? 'plan' : 'default'
-
   return {
     settings: getInitialSettings(),
     tasks: {},
@@ -318,7 +271,6 @@ export function getDefaultAppState(): AppState {
     statusLineText: undefined,
     expandedView: 'none',
     isBriefOnly: false,
-    showTeammateMessagePreview: false,
     selectedIPAgentIndex: -1,
     coordinatorTaskIndex: -1,
     viewSelectionMode: 'none',
@@ -326,7 +278,7 @@ export function getDefaultAppState(): AppState {
     assistantEnabled: false,
     toolPermissionContext: {
       ...getEmptyToolPermissionContext(),
-      mode: initialMode,
+      mode: 'default',
     },
     agent: undefined,
     agentDefinitions: { activeAgents: [], allAgents: [] },
@@ -363,10 +315,6 @@ export function getDefaultAppState(): AppState {
     thinkingEnabled: shouldEnableThinkingByDefault(),
     promptSuggestionEnabled: shouldEnablePromptSuggestion(),
     sessionHooks: new Map(),
-    inbox: {
-      messages: [],
-    },
-    pendingWorkerRequest: null,
     promptSuggestion: {
       text: null,
       promptId: null,

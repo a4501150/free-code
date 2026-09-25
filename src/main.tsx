@@ -49,7 +49,6 @@ import {
 } from './tools/SyntheticOutputTool/SyntheticOutputTool.js'
 import { getTools } from './tools.js'
 import { isAdvisorEnabled } from './utils/advisor.js'
-import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js'
 import { count, uniq } from './utils/array.js'
 import {
   getSubscriptionType,
@@ -75,10 +74,6 @@ import { getBaseRenderOptions } from './utils/renderOptions.js'
 import { settingsChangeDetector } from './utils/settings/changeDetector.js'
 import { skillChangeDetector } from './utils/skills/skillChangeDetector.js'
 import { jsonParse, writeFileSync_DEPRECATED } from './utils/slowOperations.js'
-import { setCliTeammateModeOverride } from './utils/swarm/backends/teammateModeSnapshot.js'
-import { computeInitialTeamContext } from './utils/swarm/reconnection.js'
-import { TEAMMATE_SYSTEM_PROMPT_ADDENDUM } from './utils/swarm/teammatePromptAddendum.js'
-import { isPlanModeRequired, setDynamicTeamContext } from './utils/teammate.js'
 import { initializeWarningHandler } from './utils/warningHandler.js'
 import { isWorktreeModeEnabled } from './utils/worktreeModeEnabled.js'
 import * as assistantModule from './assistant/index.js'
@@ -1261,9 +1256,6 @@ async function run(): Promise<CommanderCommand> {
       // ride the transcript. Refuse to activate until the directory has
       // been explicitly trusted.
       let assistantEnabled = false
-      let assistantTeamContext:
-        | Awaited<ReturnType<typeof assistantModule.initializeAssistantTeam>>
-        | undefined
       if (
         (options as { assistant?: boolean }).assistant &&
         getIsNonInteractiveSession()
@@ -1274,16 +1266,7 @@ async function run(): Promise<CommanderCommand> {
         // activation.
         assistantModule.markAssistantForced()
       }
-      if (
-        getIsNonInteractiveSession() &&
-        assistantModule.isAssistantMode() &&
-        // Spawned teammates share the leader's cwd + freecode.json, so
-        // isAssistantMode() is true for them too. --agent-id being set
-        // means we ARE a spawned teammate (extractTeammateOptions runs
-        // ~170 lines later so check the raw commander option) — don't
-        // re-init the team or override teammateMode/brief.
-        !(options as { agentId?: unknown }).agentId
-      ) {
+      if (getIsNonInteractiveSession() && assistantModule.isAssistantMode()) {
         if (!checkHasTrustDialogAccepted()) {
           // biome-ignore lint/suspicious/noConsole:: intentional console output
           console.warn(
@@ -1293,20 +1276,11 @@ async function run(): Promise<CommanderCommand> {
           )
         } else {
           // Assistant mode is enabled unconditionally once the module's own
-          // mode check passes (trust dialog accepted, not a spawned
-          // teammate).
+          // mode check passes (trust dialog accepted).
           assistantEnabled = true
-          if (assistantEnabled) {
-            const opts = options as { brief?: boolean }
-            opts.brief = true
-            setAssistantActive(true)
-            // Pre-seed an in-process team so Agent(name: "foo") spawns
-            // teammates without TeamCreate. Must run BEFORE setup() captures
-            // the teammateMode snapshot (initializeAssistantTeam calls
-            // setCliTeammateModeOverride internally).
-            assistantTeamContext =
-              await assistantModule.initializeAssistantTeam()
-          }
+          const opts = options as { brief?: boolean }
+          opts.brief = true
+          setAssistantActive(true)
         }
       }
 
@@ -1406,57 +1380,6 @@ async function run(): Promise<CommanderCommand> {
             ),
           )
           process.exit(1)
-        }
-      }
-
-      // Extract teammate options (for tmux-spawned agents)
-      // Declared outside the if block so it's accessible later for system prompt addendum
-      let storedTeammateOpts: TeammateOptions | undefined
-      if (isAgentSwarmsEnabled()) {
-        // Extract agent identity options (for tmux-spawned agents)
-        // These replace the CLAUDE_CODE_* environment variables
-        const teammateOpts = extractTeammateOptions(options)
-        storedTeammateOpts = teammateOpts
-
-        // If any teammate identity option is provided, all three required ones must be present
-        const hasAnyTeammateOpt =
-          teammateOpts.agentId ||
-          teammateOpts.agentName ||
-          teammateOpts.teamName
-        const hasAllRequiredTeammateOpts =
-          teammateOpts.agentId &&
-          teammateOpts.agentName &&
-          teammateOpts.teamName
-
-        if (hasAnyTeammateOpt && !hasAllRequiredTeammateOpts) {
-          process.stderr.write(
-            chalk.red(
-              'Error: --agent-id, --agent-name, and --team-name must all be provided together\n',
-            ),
-          )
-          process.exit(1)
-        }
-
-        // If teammate identity is provided via CLI, set up dynamicTeamContext
-        if (
-          teammateOpts.agentId &&
-          teammateOpts.agentName &&
-          teammateOpts.teamName
-        ) {
-          setDynamicTeamContext({
-            agentId: teammateOpts.agentId,
-            agentName: teammateOpts.agentName,
-            teamName: teammateOpts.teamName,
-            color: teammateOpts.agentColor,
-            planModeRequired: teammateOpts.planModeRequired ?? false,
-            parentSessionId: teammateOpts.parentSessionId,
-          })
-        }
-
-        // Set teammate mode CLI override if provided
-        // This must be done before setup() captures the snapshot
-        if (teammateOpts.teammateMode) {
-          setCliTeammateModeOverride(teammateOpts.teammateMode)
         }
       }
 
@@ -1573,19 +1496,6 @@ async function run(): Promise<CommanderCommand> {
           )
           process.exit(1)
         }
-      }
-
-      // Add teammate-specific system prompt addendum for tmux teammates
-      if (
-        isAgentSwarmsEnabled() &&
-        storedTeammateOpts?.agentId &&
-        storedTeammateOpts?.agentName &&
-        storedTeammateOpts?.teamName
-      ) {
-        const addendum = TEAMMATE_SYSTEM_PROMPT_ADDENDUM
-        appendSystemPrompt = appendSystemPrompt
-          ? `${appendSystemPrompt}\n\n${addendum}`
-          : addendum
       }
 
       const { mode: permissionMode, notification: permissionModeNotification } =
@@ -2208,47 +2118,6 @@ async function run(): Promise<CommanderCommand> {
           logForDebugging(`[AdvisorTool] Advisor model: ${resolvedAdvisor}`)
         } else {
           logForDebugging(`[AdvisorTool] Advisor enabled from settings`)
-        }
-      }
-
-      // For tmux teammates with --agent-type, append the custom agent's prompt
-      if (
-        isAgentSwarmsEnabled() &&
-        storedTeammateOpts?.agentId &&
-        storedTeammateOpts?.agentName &&
-        storedTeammateOpts?.teamName &&
-        storedTeammateOpts?.agentType
-      ) {
-        // Look up the custom agent definition
-        const customAgent = agentDefinitions.activeAgents.find(
-          a => a.agentType === storedTeammateOpts.agentType,
-        )
-        if (customAgent) {
-          // Get the prompt - need to handle both built-in and custom agents
-          let customPrompt: string | undefined
-          if (customAgent.source === 'built-in') {
-            // Built-in agents have getSystemPrompt that takes toolUseContext
-            // We can't access full toolUseContext here, so skip for now
-            logForDebugging(
-              `[teammate] Built-in agent ${storedTeammateOpts.agentType} - skipping custom prompt (not supported)`,
-            )
-          } else {
-            // Custom agents have getSystemPrompt that takes no args
-            customPrompt = customAgent.getSystemPrompt()
-          }
-
-          // Log agent memory loaded event for tmux teammates
-
-          if (customPrompt) {
-            const customInstructions = `\n# Custom Agent Instructions\n${customPrompt}`
-            appendSystemPrompt = appendSystemPrompt
-              ? `${appendSystemPrompt}\n\n${customInstructions}`
-              : customInstructions
-          }
-        } else {
-          logForDebugging(
-            `[teammate] Custom agent ${storedTeammateOpts.agentType} not found in available agents`,
-          )
         }
       }
 
@@ -2985,13 +2854,7 @@ async function run(): Promise<CommanderCommand> {
         })
       }
 
-      const effectiveToolPermissionContext = {
-        ...toolPermissionContext,
-        mode:
-          isAgentSwarmsEnabled() && isPlanModeRequired()
-            ? ('plan' as const)
-            : toolPermissionContext.mode,
-      }
+      const effectiveToolPermissionContext = toolPermissionContext
       // All startup opt-in paths (--tools, --brief, defaultView) have fired
       // above; initialIsBriefOnly just reads the resulting state.
       const initialIsBriefOnly = getUserMsgOptIn()
@@ -3007,12 +2870,7 @@ async function run(): Promise<CommanderCommand> {
         mainLoopModelForSession: null,
         isBriefOnly: initialIsBriefOnly,
         expandedView:
-          (initialSettings.showSpinnerTree ?? false)
-            ? 'teammates'
-            : (initialSettings.showExpandedTodos ?? false)
-              ? 'tasks'
-              : 'none',
-        showTeammateMessagePreview: isAgentSwarmsEnabled() ? false : undefined,
+          (initialSettings.showExpandedTodos ?? false) ? 'tasks' : 'none',
         selectedIPAgentIndex: -1,
         coordinatorTaskIndex: -1,
         viewSelectionMode: 'none',
@@ -3059,9 +2917,6 @@ async function run(): Promise<CommanderCommand> {
         thinkingEnabled,
         promptSuggestionEnabled: shouldEnablePromptSuggestion(),
         sessionHooks: new Map(),
-        inbox: {
-          messages: [],
-        },
         promptSuggestion: {
           text: null,
           promptId: null,
@@ -3074,20 +2929,12 @@ async function run(): Promise<CommanderCommand> {
         skillImprovement: {
           suggestion: null,
         },
-        pendingWorkerRequest: null,
         authVersion: 0,
         initialMessage: inputPrompt
           ? { message: createUserMessage({ content: String(inputPrompt) }) }
           : null,
         activeOverlays: new Set<string>(),
         fastMode: getInitialFastModeSetting(resolvedInitialModel),
-        // Compute teamContext synchronously to avoid useEffect setState during render.
-        // assistantTeamContext takes precedence — set earlier in the assistant
-        // startup block so Agent(name: "foo") can spawn in-process teammates
-        // without TeamCreate. computeInitialTeamContext() is for tmux-spawned
-        // teammates reading their own identity, not the assistant-mode leader.
-        teamContext: (assistantTeamContext ??
-          computeInitialTeamContext?.()) as any,
       }
 
       // Add CLI initial prompt to history
@@ -3425,12 +3272,6 @@ async function run(): Promise<CommanderCommand> {
       .argParser(String)
       .hideHelp(),
   )
-  program.option(
-    '--agent-teams',
-    'Force Claude to use multi-agent mode for solving problems',
-    () => true,
-  )
-
   program.addOption(
     new Option('--enable-auto-mode', 'Opt in to auto mode').hideHelp(),
   )
@@ -3460,50 +3301,6 @@ async function run(): Promise<CommanderCommand> {
     new Option(
       '--dangerously-load-development-channels <servers...>',
       'Load channel servers not on the approved allowlist. For local channel development only. Shows a confirmation dialog at startup.',
-    ).hideHelp(),
-  )
-
-  // Teammate identity options (set by leader when spawning tmux teammates)
-  // These replace the CLAUDE_CODE_* environment variables
-  program.addOption(
-    new Option('--agent-id <id>', 'Teammate agent ID').hideHelp(),
-  )
-  program.addOption(
-    new Option('--agent-name <name>', 'Teammate display name').hideHelp(),
-  )
-  program.addOption(
-    new Option(
-      '--team-name <name>',
-      'Team name for swarm coordination',
-    ).hideHelp(),
-  )
-  program.addOption(
-    new Option('--agent-color <color>', 'Teammate UI color').hideHelp(),
-  )
-  program.addOption(
-    new Option(
-      '--plan-mode-required',
-      'Require plan mode before implementation',
-    ).hideHelp(),
-  )
-  program.addOption(
-    new Option(
-      '--parent-session-id <id>',
-      'Parent session ID for analytics correlation',
-    ).hideHelp(),
-  )
-  program.addOption(
-    new Option(
-      '--teammate-mode <mode>',
-      'How to spawn teammates: "tmux", "in-process", or "auto"',
-    )
-      .choices(['auto', 'tmux', 'in-process'])
-      .hideHelp(),
-  )
-  program.addOption(
-    new Option(
-      '--agent-type <type>',
-      'Custom agent type for this teammate',
     ).hideHelp(),
   )
 
@@ -4257,45 +4054,4 @@ function resetCursor() {
       ? process.stdout
       : undefined
   terminal?.write(SHOW_CURSOR)
-}
-
-type TeammateOptions = {
-  agentId?: string
-  agentName?: string
-  teamName?: string
-  agentColor?: string
-  planModeRequired?: boolean
-  parentSessionId?: string
-  teammateMode?: 'auto' | 'tmux' | 'in-process'
-  agentType?: string
-}
-
-function extractTeammateOptions(options: unknown): TeammateOptions {
-  if (typeof options !== 'object' || options === null) {
-    return {}
-  }
-  const opts = options as Record<string, unknown>
-  const teammateMode = opts.teammateMode
-  return {
-    agentId: typeof opts.agentId === 'string' ? opts.agentId : undefined,
-    agentName: typeof opts.agentName === 'string' ? opts.agentName : undefined,
-    teamName: typeof opts.teamName === 'string' ? opts.teamName : undefined,
-    agentColor:
-      typeof opts.agentColor === 'string' ? opts.agentColor : undefined,
-    planModeRequired:
-      typeof opts.planModeRequired === 'boolean'
-        ? opts.planModeRequired
-        : undefined,
-    parentSessionId:
-      typeof opts.parentSessionId === 'string'
-        ? opts.parentSessionId
-        : undefined,
-    teammateMode:
-      teammateMode === 'auto' ||
-      teammateMode === 'tmux' ||
-      teammateMode === 'in-process'
-        ? teammateMode
-        : undefined,
-    agentType: typeof opts.agentType === 'string' ? opts.agentType : undefined,
-  }
 }

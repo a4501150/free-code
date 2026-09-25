@@ -11,7 +11,6 @@ import {
 } from '../../bootstrap/state.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import type { AppState } from '../../state/AppState.js'
-import { isInProcessTeammateTask } from '../../tasks/InProcessTeammateTask/types.js'
 import {
   isLocalAgentTask,
   type LocalAgentTaskState,
@@ -88,8 +87,6 @@ export async function clearConversation({
       if (isLocalAgentTask(task)) {
         preservedAgentIds.add(task.agentId)
         preservedLocalAgents.push(task)
-      } else if (isInProcessTeammateTask(task)) {
-        preservedAgentIds.add(task.identity.agentId)
       }
     }
   }

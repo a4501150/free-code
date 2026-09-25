@@ -41,11 +41,9 @@ import {
   type ActiveSpeculationState,
 } from '../../services/PromptSuggestion/speculation.js'
 import {
-  isLocalAgentTask,
   queuePendingMessage,
   appendMessageToLocalAgent,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
-import { injectUserMessageToTeammate } from '../../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import { resumeAgentBackground } from '../../tools/AgentTool/resumeAgent.js'
 import {
   getCommandName,
@@ -64,7 +62,6 @@ import type {
 import type { PastedContent } from '../../utils/config.js'
 import type { SetAppState } from '../../utils/messageQueueManager.js'
 import type { LocalAgentTaskState } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
-import type { InProcessTeammateTaskState } from '../../tasks/InProcessTeammateTask/types.js'
 
 export function useReplSubmission(deps: {
   // All dependencies from REPL closure
@@ -516,10 +513,10 @@ export function useReplSubmission(deps: {
   const onAgentSubmit = useCallback(
     async (
       input: string,
-      task: InProcessTeammateTaskState | LocalAgentTaskState,
+      task: LocalAgentTaskState,
       helpers: PromptInputHelpers,
     ) => {
-      if (isLocalAgentTask(task)) {
+      {
         appendMessageToLocalAgent(
           task.id,
           createUserMessage({ content: input }),
@@ -553,8 +550,6 @@ export function useReplSubmission(deps: {
             })
           })
         }
-      } else {
-        injectUserMessageToTeammate(task.id, input, setAppState)
       }
       d.setInputValue('')
       helpers.setCursorOffset(0)

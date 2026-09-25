@@ -1,8 +1,6 @@
 import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { getAgentModelDisplay as getAgentModelDisplayName } from '../../utils/model/agent.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
-import { isTeammate } from '../../utils/teammate.js'
-import { isInProcessTeammate } from '../../utils/teammateContext.js'
 import { AGENT_TOOL_NAME } from './constants.js'
 import { isForkAgentEnabled } from './built-in/forkAgent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
@@ -139,13 +137,5 @@ Backgrounding is not a parallelism mechanism — to run agents in parallel whose
  - ${forkAvailable ? 'Any agent other than a fork starts with zero context. ' : ''}Brief the agent like a colleague who just entered the room — it has not seen this conversation. Explain the goal, what you already ruled out, the exact file paths, and whether to write code or only research. Never delegate understanding: "based on your findings, fix the bug" pushes the reasoning onto the agent.
  - The agent works on its own task list and cannot change yours. Put everything the agent must act on in the prompt, not in a task description it has to look up.
  - The agent returns a single message and the user sees it only by expanding the agent's result, so send a concise summary yourself. Do not use an agent to retrieve full file contents — what it reads is summarized in the handoff; use the Read tool directly.
- - Avoid duplicating work that active agents are already doing. If you delegate research, do not run the same searches yourself.${forkBullet}${
-   isInProcessTeammate()
-     ? `
- - The run_in_background, name, team_name, and mode parameters are not available in this context. Only synchronous subagents are supported.`
-     : isTeammate()
-       ? `
- - The name, team_name, and mode parameters are not available in this context — teammates cannot spawn other teammates. Omit them to spawn a subagent.`
-       : ''
- }`
+- Avoid duplicating work that active agents are already doing. If you delegate research, do not run the same searches yourself.${forkBullet}`
 }

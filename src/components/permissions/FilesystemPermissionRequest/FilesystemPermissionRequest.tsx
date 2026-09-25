@@ -26,7 +26,6 @@ export function FilesystemPermissionRequest({
   onReject,
   verbose,
   toolUseContext,
-  workerBadge,
 }: PermissionRequestProps): React.ReactNode {
   const [theme] = useTheme()
   const path = pathFromToolUse(toolUseConfirm)
@@ -52,7 +51,6 @@ export function FilesystemPermissionRequest({
         onDone={onDone}
         onReject={onReject}
         verbose={verbose}
-        workerBadge={workerBadge}
       />
     )
   }
@@ -77,7 +75,6 @@ export function FilesystemPermissionRequest({
       toolUseContext={toolUseContext}
       onDone={onDone}
       onReject={onReject}
-      workerBadge={workerBadge}
       title={title}
       content={content}
       path={path}

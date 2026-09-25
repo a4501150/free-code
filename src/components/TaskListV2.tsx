@@ -1,21 +1,11 @@
 import figures from 'figures'
 import * as React from 'react'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
-import { stringWidth } from '../ink/stringWidth.js'
 import { Box, Text } from '../ink.js'
-import { useAppState } from '../state/AppState.js'
-import { isInProcessTeammateTask } from '../tasks/InProcessTeammateTask/types.js'
-import {
-  AGENT_COLOR_TO_THEME_COLOR,
-  type AgentColorName,
-} from '../tools/AgentTool/agentColorManager.js'
-import { isAgentSwarmsEnabled } from '../utils/agentSwarmsEnabled.js'
 import { count } from '../utils/array.js'
-import { summarizeRecentActivities } from '../utils/collapseReadSearch.js'
 import { truncateToWidth } from '../utils/format.js'
 import type { Task } from '../utils/tasks.js'
 import type { Theme } from '../utils/theme.js'
-import ThemedText from './design-system/ThemedText.js'
 
 type Props = {
   tasks: Task[]
@@ -37,8 +27,6 @@ export function TaskListV2({
   tasks,
   isStandalone = false,
 }: Props): React.ReactNode {
-  const teamContext = useAppState(s => s.teamContext)
-  const appStateTasks = useAppState(s => s.tasks)
   const [, forceUpdate] = React.useState(0)
   const { rows, columns } = useTerminalSize()
 
@@ -97,44 +85,6 @@ export function TaskListV2({
 
   if (tasks.length === 0) {
     return null
-  }
-
-  // Build a map of teammate name -> theme color
-  const teammateColors: Record<string, keyof Theme> = {}
-  if (isAgentSwarmsEnabled() && teamContext?.teammates) {
-    for (const teammate of Object.values(teamContext.teammates)) {
-      if (teammate.color) {
-        const themeColor =
-          AGENT_COLOR_TO_THEME_COLOR[teammate.color as AgentColorName]
-        if (themeColor) {
-          teammateColors[teammate.name] = themeColor
-        }
-      }
-    }
-  }
-
-  // Build a map of teammate name -> current activity description
-  // Map both agentName ("researcher") and agentId ("researcher@team") so
-  // task owners match regardless of which format the model used.
-  // Rolls up consecutive search/read tool uses into a compact summary.
-  // Also track which teammates are still running (not shut down).
-  const teammateActivity: Record<string, string> = {}
-  const activeTeammates = new Set<string>()
-  if (isAgentSwarmsEnabled()) {
-    for (const bgTask of Object.values(appStateTasks)) {
-      if (isInProcessTeammateTask(bgTask) && bgTask.status === 'running') {
-        activeTeammates.add(bgTask.identity.agentName)
-        activeTeammates.add(bgTask.identity.agentId)
-        const activities = bgTask.progress?.recentActivities
-        const desc =
-          (activities && summarizeRecentActivities(activities)) ??
-          bgTask.progress?.lastActivity?.activityDescription
-        if (desc) {
-          teammateActivity[bgTask.identity.agentName] = desc
-          teammateActivity[bgTask.identity.agentId] = desc
-        }
-      }
-    }
   }
 
   // Get task counts for display
@@ -218,10 +168,7 @@ export function TaskListV2({
         <TaskItem
           key={task.id}
           task={task}
-          ownerColor={task.owner ? teammateColors[task.owner] : undefined}
           openBlockers={task.blockedBy.filter(id => unresolvedTaskIds.has(id))}
-          activity={task.owner ? teammateActivity[task.owner] : undefined}
-          ownerActive={task.owner ? activeTeammates.has(task.owner) : false}
           columns={columns}
         />
       ))}
@@ -258,10 +205,7 @@ export function TaskListV2({
 
 type TaskItemProps = {
   task: Task
-  ownerColor?: keyof Theme
   openBlockers: string[]
-  activity?: string
-  ownerActive: boolean
   columns: number
 }
 
@@ -281,10 +225,7 @@ function getTaskIcon(status: Task['status']): {
 
 function TaskItem({
   task,
-  ownerColor,
   openBlockers,
-  activity,
-  ownerActive,
   columns,
 }: TaskItemProps): React.ReactNode {
   const isCompleted = task.status === 'completed'
@@ -293,22 +234,10 @@ function TaskItem({
 
   const { icon, color } = getTaskIcon(task.status)
 
-  const showActivity = isInProgress && !isBlocked && activity
-
-  // Responsive layout: hide owner on narrow screens (<60 cols)
-  // Truncate subject based on available space
-  const showOwner = columns >= 60 && task.owner && ownerActive
-  const ownerWidth = showOwner ? stringWidth(` (@${task.owner})`) : 0
-  // Account for: icon(2) + indentation(~8 when nested under spinner) + owner + safety
-  // Use columns - 15 as a conservative estimate for nested layouts
-  const maxSubjectWidth = Math.max(15, columns - 15 - ownerWidth)
+  // Truncate subject based on available space. Account for: icon(2) +
+  // indentation(~8 when nested under spinner) + safety.
+  const maxSubjectWidth = Math.max(15, columns - 15)
   const displaySubject = truncateToWidth(task.subject, maxSubjectWidth)
-
-  // Truncate activity for narrow screens
-  const maxActivityWidth = Math.max(15, columns - 15)
-  const displayActivity = activity
-    ? truncateToWidth(activity, maxActivityWidth)
-    : undefined
 
   return (
     <Box flexDirection="column">
@@ -321,17 +250,6 @@ function TaskItem({
         >
           {displaySubject}
         </Text>
-        {showOwner && (
-          <Text dimColor>
-            {' ('}
-            {ownerColor ? (
-              <ThemedText color={ownerColor}>@{task.owner}</ThemedText>
-            ) : (
-              `@${task.owner}`
-            )}
-            {')'}
-          </Text>
-        )}
         {isBlocked && (
           <Text dimColor>
             {' '}
@@ -343,15 +261,6 @@ function TaskItem({
           </Text>
         )}
       </Box>
-      {showActivity && displayActivity && (
-        <Box>
-          <Text dimColor>
-            {'  '}
-            {displayActivity}
-            {figures.ellipsis}
-          </Text>
-        </Box>
-      )}
     </Box>
   )
 }

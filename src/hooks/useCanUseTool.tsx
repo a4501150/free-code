@@ -15,7 +15,6 @@ import { hasPermissionsToUseTool } from '../utils/permissions/permissions.js'
 import { jsonStringify } from '../utils/slowOperations.js'
 import { handleCoordinatorPermission } from './toolPermission/handlers/coordinatorHandler.js'
 import { handleInteractivePermission } from './toolPermission/handlers/interactiveHandler.js'
-import { handleSwarmWorkerPermission } from './toolPermission/handlers/swarmWorkerHandler.js'
 import {
   createPermissionContext,
   createPermissionQueueOps,
@@ -166,18 +165,6 @@ function useCanUseTool(
                 // After awaiting automated checks, verify the request wasn't aborted
                 // while we were waiting. Without this check, a stale dialog could appear.
                 if (ctx.resolveIfAborted(resolve)) return
-
-                // For swarm workers, forward permission requests to the leader via mailbox.
-                const swarmDecision = await handleSwarmWorkerPermission({
-                  ctx,
-                  description,
-                  updatedInput: result.updatedInput,
-                  suggestions: result.suggestions,
-                })
-                if (swarmDecision) {
-                  resolve(swarmDecision)
-                  return
-                }
 
                 // Show dialog and start hooks/classifier in background
                 handleInteractivePermission(

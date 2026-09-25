@@ -16,7 +16,6 @@ import {
   getUserContext,
 } from '../../context.js'
 import { clearFileSuggestionCaches } from '../../hooks/fileSuggestions.js'
-import { clearAllPendingCallbacks } from '../../hooks/useSwarmPermissionPoller.js'
 import { clearAllDumpState } from '../../services/api/dumpPrompts.js'
 import { resetPromptCacheBreakDetection } from '../../services/api/promptCacheBreakDetection.js'
 import { runPostCompactCleanup } from '../../services/compact/postCompactCleanup.js'
@@ -78,9 +77,6 @@ export function clearSessionCaches(
 
   // Clear stored image paths cache
   clearStoredImagePaths()
-
-  // Clear swarm permission pending callbacks
-  if (!hasPreserved) clearAllPendingCallbacks()
 
   // Clear repository detection caches
   clearRepositoryCaches()

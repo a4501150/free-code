@@ -1,7 +1,6 @@
 import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import type { AppState } from '../../state/AppState.js'
 import type { Message } from '../../types/message.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { count } from '../../utils/array.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
@@ -17,7 +16,6 @@ import {
   createUserMessage,
   getLastAssistantMessage,
 } from '../../utils/messages.js'
-import { isTeammate } from '../../utils/teammate.js'
 import { currentLimits } from '../claudeAiLimits.js'
 import { isSpeculationEnabled, startSpeculation } from './speculation.js'
 
@@ -39,11 +37,6 @@ export function shouldEnablePromptSuggestion(): boolean {
     return false
   }
 
-  // Disable for swarm teammates (only leader should show suggestions)
-  if (isAgentSwarmsEnabled() && isTeammate()) {
-    return false
-  }
-
   const enabled = getInitialSettings()?.promptSuggestionEnabled !== false
   return enabled
 }
@@ -61,7 +54,6 @@ export function abortPromptSuggestion(): void {
  */
 export function getSuggestionSuppressReason(appState: AppState): string | null {
   if (!appState.promptSuggestionEnabled) return 'disabled'
-  if (appState.pendingWorkerRequest) return 'pending_permission'
   if (appState.elicitation.queue.length > 0) return 'elicitation_active'
   if (appState.toolPermissionContext.mode === 'plan') return 'plan_mode'
   if (currentLimits.status !== 'allowed') return 'rate_limit'

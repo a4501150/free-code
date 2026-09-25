@@ -25,7 +25,6 @@ import type {
 import { collapseBackgroundBashNotifications } from '../utils/collapseBackgroundBashNotifications.js'
 import { collapseHookSummaries } from '../utils/collapseHookSummaries.js'
 import { collapseReadSearchGroups } from '../utils/collapseReadSearch.js'
-import { collapseTeammateShutdowns } from '../utils/collapseTeammateShutdowns.js'
 import { USER_CONTEXT_ROW_UUID } from '../constants/messages.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import { applyGrouping } from '../utils/groupToolUses.js'
@@ -569,11 +568,7 @@ const MessagesImpl = ({
       )
 
       const collapsed = collapseBackgroundBashNotifications(
-        collapseHookSummaries(
-          collapseTeammateShutdowns(
-            collapseReadSearchGroups(groupedMessages, tools),
-          ),
-        ),
+        collapseHookSummaries(collapseReadSearchGroups(groupedMessages, tools)),
         verbose,
       )
 

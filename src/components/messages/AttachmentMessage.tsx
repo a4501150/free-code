@@ -7,7 +7,6 @@ import {
   rendersNoSummaryLine,
   type AttachmentWithoutSummaryLine,
 } from './attachmentVisibility.js'
-import { useAppState } from '../../state/AppState.js'
 import { getDisplayPath } from 'src/utils/file.js'
 import { formatFileSize } from 'src/utils/format.js'
 import { MessageResponse } from '../MessageResponse.js'
@@ -21,17 +20,8 @@ import {
 import { InjectedContextMessage } from './InjectedContextMessage.js'
 import type { Theme } from 'src/utils/theme.js'
 import { UserImageMessage } from './UserImageMessage.js'
-import { toInkColor } from '../../utils/ink.js'
-import { jsonParse } from '../../utils/slowOperations.js'
 import { plural } from '../../utils/stringUtils.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
-import {
-  tryRenderPlanApprovalMessage,
-  formatTeammateMessageContent,
-} from './PlanApprovalMessage.js'
 import { BLACK_CIRCLE } from '../../constants/figures.js'
-import { TeammateMessageContent } from './UserTeammateMessage.js'
-import { isShutdownApproved } from '../../utils/teammateMailbox.js'
 import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { FilePathLink } from '../FilePathLink.js'
 import { useSelectedMessageBg } from '../messageActions.js'
@@ -81,89 +71,7 @@ function AttachmentMessageContent({
   showInjectedContext,
 }: Props): React.ReactNode {
   const bg = useSelectedMessageBg()
-  // Handle teammate_mailbox BEFORE switch
-  if (isAgentSwarmsEnabled() && attachment.type === 'teammate_mailbox') {
-    // Filter out idle notifications BEFORE counting - they are hidden in the UI
-    // so showing them in the count would be confusing ("2 messages in mailbox:" with nothing shown)
-    const visibleMessages = attachment.messages.filter(msg => {
-      if (isShutdownApproved(msg.text)) {
-        return false
-      }
-      try {
-        const parsed = jsonParse(msg.text)
-        return (
-          parsed?.type !== 'idle_notification' &&
-          parsed?.type !== 'teammate_terminated'
-        )
-      } catch {
-        return true // Non-JSON messages are visible
-      }
-    })
-
-    if (visibleMessages.length === 0) {
-      return null
-    }
-    return (
-      <Box flexDirection="column">
-        {visibleMessages.map((msg, idx) => {
-          // Try to parse as JSON for task_assignment messages
-          let parsedMsg: {
-            type?: string
-            taskId?: string
-            subject?: string
-            assignedBy?: string
-          } | null = null
-          try {
-            parsedMsg = jsonParse(msg.text)
-          } catch {
-            // Not JSON, treat as plain text
-          }
-
-          if (parsedMsg?.type === 'task_assignment') {
-            return (
-              <Box key={idx} paddingLeft={2}>
-                <Text>{BLACK_CIRCLE} </Text>
-                <Text>Task assigned: </Text>
-                <Text bold>#{parsedMsg.taskId}</Text>
-                <Text> - {parsedMsg.subject}</Text>
-                <Text dimColor> (from {parsedMsg.assignedBy || msg.from})</Text>
-              </Box>
-            )
-          }
-
-          // Note: idle_notification messages already filtered out above
-
-          // Try to render as plan approval message (request or response)
-          const planApprovalElement = tryRenderPlanApprovalMessage(
-            msg.text,
-            msg.from,
-          )
-          if (planApprovalElement) {
-            return (
-              <React.Fragment key={idx}>{planApprovalElement}</React.Fragment>
-            )
-          }
-
-          // Plain text message - sender header with chevron, truncated content
-          const inkColor = toInkColor(msg.color)
-          const formattedContent =
-            formatTeammateMessageContent(msg.text) ?? msg.text
-          return (
-            <TeammateMessageContent
-              key={idx}
-              displayName={msg.from}
-              inkColor={inkColor}
-              content={formattedContent}
-              summary={msg.summary}
-              isTranscriptMode={isTranscriptMode}
-            />
-          )
-        })}
-      </Box>
-    )
-  }
-
-  // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- teammate_mailbox handled before switch
+  // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
   switch (attachment.type) {
     case 'directory':
       return (
@@ -441,21 +349,6 @@ function AttachmentMessageContent({
     }
     case 'task_status':
       return <TaskStatusMessage attachment={attachment} />
-    case 'teammate_shutdown_batch':
-      return (
-        <Box
-          flexDirection="row"
-          width="100%"
-          marginTop={1}
-          backgroundColor={bg}
-        >
-          <Text dimColor>{BLACK_CIRCLE} </Text>
-          <Text dimColor>
-            {attachment.count} {plural(attachment.count, 'teammate')} shut down
-            gracefully
-          </Text>
-        </Box>
-      )
     default:
       // Exhaustiveness: every type reaching here must be in
       // TYPES_WITHOUT_SUMMARY_LINE. If TS errors, a new Attachment type was
@@ -463,13 +356,7 @@ function AttachmentMessageContent({
       // something (add a case) or render no line of its own (add to the array).
       // Messages.tsx pre-filters these so this branch is defense-in-depth for
       // other render paths.
-      //
-      // teammate_mailbox is handled BEFORE the switch in a runtime-gated block
-      // that TS can't narrow through — excluded here via type union.
-      attachment.type satisfies
-        | AttachmentWithoutSummaryLine
-        | 'teammate_mailbox'
-        | 'bagel_console'
+      attachment.type satisfies AttachmentWithoutSummaryLine | 'bagel_console'
       return null
   }
 }
@@ -485,13 +372,6 @@ function TaskStatusMessage({
   // Don't render it again in the chat.
   if (attachment.status === 'killed') {
     return null
-  }
-
-  // Only access teammate-specific code when swarms are enabled.
-  // TeammateTaskStatus subscribes to AppState; by gating the mount we
-  // avoid adding a store listener for every non-teammate attachment.
-  if (isAgentSwarmsEnabled() && attachment.taskType === 'in_process_teammate') {
-    return <TeammateTaskStatus attachment={attachment} />
   }
 
   return <GenericTaskStatus attachment={attachment} />
@@ -521,36 +401,6 @@ function GenericTaskStatus({
   )
 }
 
-function TeammateTaskStatus({
-  attachment,
-}: {
-  attachment: TaskStatusAttachment
-}): React.ReactNode {
-  const bg = useSelectedMessageBg()
-  // Narrow selector: only re-render when this specific task changes.
-  const task = useAppState(s => s.tasks[attachment.taskId])
-  if (task?.type !== 'in_process_teammate') {
-    // Fall through to generic rendering (task not yet in store, or wrong type)
-    return <GenericTaskStatus attachment={attachment} />
-  }
-  const agentColor = toInkColor(task.identity.color)
-  const statusText =
-    attachment.status === 'completed'
-      ? 'shut down gracefully'
-      : attachment.status
-  return (
-    <Box flexDirection="row" width="100%" marginTop={1} backgroundColor={bg}>
-      <Text dimColor>{BLACK_CIRCLE} </Text>
-      <Text dimColor>
-        Teammate{' '}
-        <Text color={agentColor} bold dimColor={false}>
-          @{task.identity.agentName}
-        </Text>{' '}
-        {statusText}
-      </Text>
-    </Box>
-  )
-}
 // We allow setting dimColor to false here to help work around the dim-bold bug.
 // https://github.com/chalk/chalk/issues/290
 function Line({

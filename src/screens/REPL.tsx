@@ -1,6 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import type { Screen } from '../types/repl.js'
-import { count } from '../utils/array.js'
 import { Box, Text, useStdin, useTheme } from '../ink.js'
 import * as React from 'react'
 import {
@@ -39,13 +38,6 @@ import { logForDebugging } from '../utils/debug.js'
 import { QueryGuard } from '../utils/QueryGuard.js'
 import { truncateToWidth } from '../utils/format.js'
 
-import { setMemberActive } from '../utils/swarm/teamHelpers.js'
-import { isSwarmWorker } from '../utils/swarm/permissionSync.js'
-import { getTeamName, getAgentName } from '../utils/teammate.js'
-import {
-  injectUserMessageToTeammate,
-  getAllInProcessTeammateTasks,
-} from '../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import {
   isLocalAgentTask,
   isPanelAgentTask,
@@ -53,12 +45,6 @@ import {
   appendMessageToLocalAgent,
   type LocalAgentTaskState,
 } from '../tasks/LocalAgentTask/LocalAgentTask.js'
-import {
-  registerLeaderToolUseConfirmQueue,
-  unregisterLeaderToolUseConfirmQueue,
-  registerLeaderSetToolPermissionContext,
-  unregisterLeaderSetToolPermissionContext,
-} from '../utils/swarm/leaderPermissionBridge.js'
 import { endInteractionSpan } from '../utils/telemetry/sessionTracing.js'
 import { useLogMessages } from '../hooks/useLogMessages.js'
 import {
@@ -122,8 +108,6 @@ import { prependToShellHistoryCache } from '../utils/suggestions/shellHistoryCom
 import { useApiKeyVerification } from '../hooks/useApiKeyVerification.js'
 import { getShortcutDisplay } from '../keybindings/shortcutFormat.js'
 import { useBackgroundTaskNavigation } from '../hooks/useBackgroundTaskNavigation.js'
-import { useSwarmInitialization } from '../hooks/useSwarmInitialization.js'
-import { useTeammateViewAutoExit } from '../hooks/useTeammateViewAutoExit.js'
 import { errorMessage } from '../utils/errors.js'
 import { logError } from '../utils/log.js'
 import { useVoiceIntegration } from '../hooks/useVoiceIntegration.js'
@@ -154,7 +138,6 @@ import {
   getContentText,
   createUserMessage,
   createAssistantMessage,
-  createTurnDurationMessage,
   createAgentsKilledMessage,
   createSystemMessage,
   createCommandInputMessage,
@@ -175,7 +158,6 @@ import {
   type PromptInputHelpers,
 } from '../utils/handlePromptSubmit.js'
 import { useQueueProcessor } from '../hooks/useQueueProcessor.js'
-import { useMailboxBridge } from '../hooks/useMailboxBridge.js'
 import {
   queryCheckpoint,
   logQueryProfileReport,
@@ -197,7 +179,6 @@ import { useSkillsChange } from '../hooks/useSkillsChange.js'
 import { useManagePlugins } from '../hooks/useManagePlugins.js'
 import { Messages } from '../components/Messages.js'
 import { TaskListV2 } from '../components/TaskListV2.js'
-import { TeammateViewHeader } from '../components/TeammateViewHeader.js'
 import { useTasksV2WithCollapseEffect } from '../hooks/useTasksV2.js'
 import { maybeMarkProjectOnboardingComplete } from '../projectOnboardingState.js'
 import type { MCPServerConnection } from '../services/mcp/types.js'
@@ -276,16 +257,10 @@ import {
   exitRestoredWorktree,
 } from '../utils/sessionRestore.js'
 import { updateSessionName } from '../utils/concurrentSessions.js'
-import {
-  isInProcessTeammateTask,
-  type InProcessTeammateTaskState,
-} from '../tasks/InProcessTeammateTask/types.js'
-import { useInboxPoller } from '../hooks/useInboxPoller.js'
 import { useScheduledTasks } from '../hooks/useScheduledTasks.js'
 import * as webuiAttachModule from '../webui/attach/hostSingleton.js'
 import { useReplAttachBridge } from '../webui/attach/replBridge.js'
 const SUGGEST_BG_PR_NOOP = (_p: string, _n: string): boolean => false
-import { isAgentSwarmsEnabled } from '../utils/agentSwarmsEnabled.js'
 import { useTaskListWatcher } from '../hooks/useTaskListWatcher.js'
 
 import {
@@ -341,7 +316,6 @@ import { useRateLimitWarningNotification } from 'src/hooks/notifs/useRateLimitWa
 import { useDeprecationWarningNotification } from 'src/hooks/notifs/useDeprecationWarningNotification.js'
 import { useNpmDeprecationNotification } from 'src/hooks/notifs/useNpmDeprecationNotification.js'
 import { useIDEStatusIndicator } from 'src/hooks/notifs/useIDEStatusIndicator.js'
-import { useTeammateLifecycleNotification } from 'src/hooks/notifs/useTeammateShutdownNotification.js'
 import { useFastModeNotification } from 'src/hooks/notifs/useFastModeNotification.js'
 import type { HookProgress } from '../types/hooks.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -499,8 +473,6 @@ export function REPL({
   const initialMessage = useAppState(s => s.initialMessage)
   const queuedCommands = useCommandQueue()
   const spinnerTip = useAppState(s => s.spinnerTip)
-  const pendingWorkerRequest = useAppState(s => s.pendingWorkerRequest)
-  const teamContext = useAppState(s => s.teamContext)
   const tasks = useAppState(s => s.tasks)
   const elicitation = useAppState(s => s.elicitation)
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
@@ -616,7 +588,6 @@ export function REPL({
   useFastModeNotification()
   useDeprecationWarningNotification(mainLoopModel)
   useNpmDeprecationNotification()
-  useTeammateLifecycleNotification()
   // Memoize the combined initial tools array to prevent reference changes
   const combinedInitialTools = useMemo(() => {
     return [...localTools, ...initialTools]
@@ -638,12 +609,6 @@ export function REPL({
   useEffect(() => {
     void performStartupChecks(setAppState)
   }, [setAppState])
-
-  // Initialize swarm features: teammate hooks and context
-  // Handles both fresh spawns and resumed teammate sessions
-  useSwarmInitialization(setAppState, initialMessages, {
-    enabled: true,
-  })
 
   const mergedTools = useMergedTools(
     combinedInitialTools,
@@ -786,7 +751,6 @@ export function REPL({
     totalPausedMsRef,
     pauseStartTimeRef,
     resetTimingRefs,
-    swarmStartTimeRef,
     lastQueryCompletionTime,
     setLastQueryCompletionTime,
     resetLoadingState,
@@ -923,36 +887,11 @@ export function REPL({
 
   // Session backgrounding — hook is below, after getToolUseContext
 
-  const hasRunningTeammates = useMemo(
-    () => getAllInProcessTeammateTasks(tasks).some(t => t.status === 'running'),
-    [tasks],
-  )
-
   // The viewed subagent drives its own thinking/elapsed/tokens readout in
   // SpinnerWithVerb, so keep the progress row visible while it runs even when
   // the leader's turn has ended (agent backgrounded via ctrl+b, leader idle).
   const viewedSubagentRunning =
     isPanelAgentTask(viewedLocalAgent) && viewedLocalAgent.status === 'running'
-
-  // Show deferred turn duration message once all swarm teammates finish
-  useEffect(() => {
-    if (!hasRunningTeammates && swarmStartTimeRef.current !== null) {
-      const totalMs = Date.now() - swarmStartTimeRef.current
-      swarmStartTimeRef.current = null
-      setMessages(prev => [
-        ...prev,
-        createTurnDurationMessage(
-          totalMs,
-          // Count only what recordTranscript will persist — ephemeral
-          // progress ticks and non-ant attachments are filtered by
-          // isLoggableMessage and never reach disk. Using raw prev.length
-          // would make checkResumeConsistency report false delta<0 for
-          // every turn that ran a progress-emitting tool.
-          count(prev, isLoggableMessage),
-        ),
-      ])
-    }
-  }, [hasRunningTeammates, setMessages])
 
   // Show auto permissions warning once per session when entering auto mode.
   const safeYoloMessageShownRef = useRef(false)
@@ -1067,7 +1006,6 @@ export function REPL({
     isHelpOpen,
     inputMode,
     screen,
-    pendingWorkerRequest,
   })
 
   // ── Terminal title (needs isWaitingForApproval from dialogs hook) ──
@@ -1109,19 +1047,16 @@ export function REPL({
     (!toolJSX || toolJSX.showSpinner === true) &&
     toolUseConfirmQueue.length === 0 &&
     promptQueue.length === 0 &&
-    // Show spinner during input processing, API call, while teammates are running,
+    // Show spinner during input processing, API call,
     // or while pending task notifications are queued (prevents spinner bounce between consecutive notifications)
     (isLoading ||
       userInputOnProcessing ||
-      hasRunningTeammates ||
       // Keep spinner visible while task notifications are queued for processing.
       // Without this, the spinner briefly disappears between consecutive notifications
       // (e.g., multiple background agents completing in rapid succession) because
       // isLoading goes false momentarily between processing each one.
       getCommandQueueLength() > 0 ||
-      viewedSubagentRunning) &&
-    // Hide spinner when waiting for leader to approve permission request
-    !pendingWorkerRequest
+      viewedSubagentRunning)
 
   const spinnerMounted = useUnmountDebounce(
     !!spinnerActive,
@@ -1300,7 +1235,6 @@ export function REPL({
       inputValueRef,
       loadingStartTimeRef,
       totalPausedMsRef,
-      swarmStartTimeRef,
       restoreMessageSyncRef,
       getToolUseContext,
       mainThreadAgentDefinition,
@@ -1707,15 +1641,6 @@ export function REPL({
     insertTextRef,
   })
 
-  useInboxPoller({
-    enabled: isAgentSwarmsEnabled(),
-    isLoading,
-    focusedInputDialog,
-    onSubmitMessage: handleIncomingPrompt,
-  })
-
-  useMailboxBridge({ isLoading, onSubmitMessage: handleIncomingPrompt })
-
   // Mirror this session onto its attach socket so a browser can watch and
   // drive it.
   useReplAttachBridge({
@@ -1761,10 +1686,6 @@ export function REPL({
   // in a dynamic condition would break rules-of-hooks.
   const assistantMode = store.getState().assistantEnabled
   useScheduledTasks({ isLoading, assistantMode, setMessages })
-
-  // Note: Permission polling is now handled by useInboxPoller
-  // - Workers receive permission responses via mailbox messages
-  // - Leaders receive permission requests via mailbox messages
 
   // Tasks mode: watch for tasks and auto-process them
   useTaskListWatcher({
@@ -1820,7 +1741,7 @@ export function REPL({
 
   // stopHookSpinnerSuffix → useReplStreaming
 
-  // Handle shift+down for teammate navigation and background task management.
+  // Handle shift+down for background task management.
   // Guard onOpenBackgroundTasks when a local-jsx dialog (e.g. /mcp) is open —
   // otherwise Shift+Down stacks BackgroundTasksDialog on top and deadlocks input.
   useBackgroundTaskNavigation({
@@ -1828,8 +1749,6 @@ export function REPL({
       ? undefined
       : () => setShowBashesDialog(true),
   })
-  // Auto-exit viewing mode when teammate completes or errors
-  useTeammateViewAutoExit()
 
   if (screen === 'transcript') {
     // Virtual scroll replaces the 30-message cap: everything is scrollable
@@ -1951,15 +1870,10 @@ export function REPL({
   }
 
   // Get viewed agent task (inlined from selectors for explicit data flow).
-  // viewedAgentTask: teammate OR local_agent — drives the boolean checks
-  // below. viewedTeammateTask: teammate-only narrowed, for teammate-specific
-  // field access (inProgressToolUseIDs).
+  // viewedAgentTask: the local_agent whose transcript is on screen.
   const viewedTask = viewingAgentTaskId ? tasks[viewingAgentTaskId] : undefined
-  const viewedTeammateTask =
-    viewedTask && isInProcessTeammateTask(viewedTask) ? viewedTask : undefined
   const viewedAgentTask =
-    viewedTeammateTask ??
-    (viewedTask && isLocalAgentTask(viewedTask) ? viewedTask : undefined)
+    viewedTask && isLocalAgentTask(viewedTask) ? viewedTask : undefined
 
   // Bypass useDeferredValue when streaming text is showing so Messages renders
   // the final message in the same frame streaming text clears. Also bypass when
@@ -2004,7 +1918,6 @@ export function REPL({
           mainLoopModel,
         )}
         verbose={verbose}
-        workerBadge={toolUseConfirmQueue[0]?.workerBadge}
         setStickyFooter={setPermissionStickyFooter}
       />
     ) : null
@@ -2092,7 +2005,6 @@ export function REPL({
           }}
           scrollable={
             <>
-              <TeammateViewHeader />
               <Messages
                 key={viewingAgentTaskId ?? 'leader'}
                 messages={displayedMessages}
@@ -2103,8 +2015,7 @@ export function REPL({
                 toolUseConfirmQueue={toolUseConfirmQueue}
                 inProgressToolUseIDs={
                   viewedAgentTask
-                    ? (viewedTeammateTask?.inProgressToolUseIDs ??
-                      EMPTY_IN_PROGRESS_TOOL_USE_IDS)
+                    ? EMPTY_IN_PROGRESS_TOOL_USE_IDS
                     : inProgressToolUseIDs
                 }
                 isMessageSelectorVisible={isMessageSelectorVisible}
@@ -2139,9 +2050,7 @@ export function REPL({
                 cursor={cursor}
                 setCursor={setCursor}
                 cursorNavRef={cursorNavRef}
-                showRequestOnlyUserContext={
-                  !viewedAgentTask && !viewedTeammateTask
-                }
+                showRequestOnlyUserContext={!viewedAgentTask}
               />
               <AwsAuthStatusBox />
               {!disabled && placeholderText && !centeredModal && (
@@ -2179,14 +2088,12 @@ export function REPL({
                     viewedAgentTask ? null : compactingStartTime
                   }
                   hasActiveTools={inProgressToolUseIDs.size > 0}
-                  leaderIsIdle={!isLoading}
                   streamingThinking={streamingThinking}
                 />
               )}
               {!spinnerVisible &&
                 !isLoading &&
                 !userInputOnProcessing &&
-                !hasRunningTeammates &&
                 isBriefOnly &&
                 !viewedAgentTask && <BriefIdleStatus />}
               <PromptInputQueuedCommands />
@@ -2200,7 +2107,6 @@ export function REPL({
                   setAppState={setAppState}
                   promptQueue={promptQueue}
                   setPromptQueue={setPromptQueue}
-                  pendingWorkerRequest={pendingWorkerRequest}
                   elicitation={elicitation}
                   showIdeOnboarding={showIdeOnboarding}
                   setShowIdeOnboarding={setShowIdeOnboarding}

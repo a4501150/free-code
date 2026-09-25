@@ -270,7 +270,7 @@ export async function* runAgent({
   canUseTool: CanUseToolFn
   isAsync: boolean
   /** Whether this agent can show permission prompts. Defaults to !isAsync.
-   * Set to true for in-process teammates that run async but share the terminal. */
+   * Set to true for agents that run async but may show permission prompts. */
   canShowPermissionPrompts?: boolean
   forkContextMessages?: Message[]
   querySource: QuerySource
@@ -702,7 +702,7 @@ export async function* runAgent({
         : undefined,
   })
 
-  // Preserve tool use results for subagents with viewable transcripts (in-process teammates)
+  // Preserve tool use results for subagents with viewable transcripts
   if (preserveToolUseResults) {
     agentToolUseContext.preserveToolUseResults = true
   }

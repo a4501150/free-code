@@ -27,7 +27,6 @@ import { SkillPermissionRequest } from './SkillPermissionRequest/SkillPermission
 import type { DomainUserContentBlock } from '../../types/domain.js'
 import type { z } from 'zod/v4'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
-import type { WorkerBadgeProps } from './WorkerBadge.js'
 
 function permissionComponentForTool(
   tool: Tool,
@@ -62,7 +61,6 @@ export type PermissionRequestProps<Input extends AnyObject = AnyObject> = {
   onDone(): void
   onReject(): void
   verbose: boolean
-  workerBadge: WorkerBadgeProps | undefined
   /**
    * Register JSX to render in a sticky footer below the scrollable area.
    * Fullscreen mode only (non-fullscreen has no sticky area — terminal
@@ -87,7 +85,6 @@ export type ToolUseConfirm<Input extends AnyObject = AnyObject> = {
   permissionResult: PermissionDecision
   permissionPromptStartTimeMs: number
   /** Called when user interacts with the permission dialog (e.g., arrow keys, tab, typing). */
-  workerBadge?: WorkerBadgeProps
   onUserInteraction(): void
   onAbort(): void
   onAllow(
@@ -127,7 +124,6 @@ export function PermissionRequest({
   onDone,
   onReject,
   verbose,
-  workerBadge,
   setStickyFooter,
 }: PermissionRequestProps): React.ReactNode {
   // Handle Ctrl+C (app:interrupt) to reject
@@ -153,7 +149,6 @@ export function PermissionRequest({
       onDone={onDone}
       onReject={onReject}
       verbose={verbose}
-      workerBadge={workerBadge}
       setStickyFooter={setStickyFooter}
     />
   )

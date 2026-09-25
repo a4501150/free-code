@@ -24,7 +24,6 @@ export function renderToolResultMessage(
   const { plan, filePath } = output
   const isEmpty = !plan || plan.trim() === ''
   const displayPath = filePath ? getDisplayPath(filePath) : ''
-  const awaitingLeaderApproval = output.awaitingLeaderApproval
 
   // Simplified message for empty plans
   if (isEmpty) {
@@ -34,24 +33,6 @@ export function renderToolResultMessage(
           <Text color={getModeColor('plan')}>{BLACK_CIRCLE}</Text>
           <Text> Exited plan mode</Text>
         </Box>
-      </Box>
-    )
-  }
-
-  // When awaiting leader approval, show a different message
-  if (awaitingLeaderApproval) {
-    return (
-      <Box flexDirection="column" marginTop={1}>
-        <Box flexDirection="row">
-          <Text color={getModeColor('plan')}>{BLACK_CIRCLE}</Text>
-          <Text> Plan submitted for team lead approval</Text>
-        </Box>
-        <MessageResponse>
-          <Box flexDirection="column">
-            {filePath && <Text dimColor>Plan file: {displayPath}</Text>}
-            <Text dimColor>Waiting for team lead to review and approve...</Text>
-          </Box>
-        </MessageResponse>
       </Box>
     )
   }

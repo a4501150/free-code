@@ -10,7 +10,6 @@ import {
   nextCronRunMs,
 } from '../../utils/cronTasks.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
-import { getTeammateContext } from '../../utils/teammateContext.js'
 import {
   buildCronCreateDescription,
   buildCronCreatePrompt,
@@ -94,29 +93,13 @@ export const CronCreateTool = buildTool({
         errorCode: 3,
       }
     }
-    // Teammates don't persist across sessions, so a durable teammate cron
-    // would orphan on restart (agentId would point to a nonexistent teammate).
-    if (input.durable && getTeammateContext()) {
-      return {
-        result: false,
-        message:
-          'durable crons are not supported for teammates (teammates do not persist across sessions)',
-        errorCode: 4,
-      }
-    }
     return { result: true }
   },
   async call({ cron, prompt, recurring = true, durable = false }) {
     // Kill switch forces session-only; schema stays stable so the model sees
     // no validation errors when the gate flips mid-session.
     const effectiveDurable = durable && isDurableCronEnabled()
-    const id = await addCronTask(
-      cron,
-      prompt,
-      recurring,
-      effectiveDurable,
-      getTeammateContext()?.agentId,
-    )
+    const id = await addCronTask(cron, prompt, recurring, effectiveDurable)
     // Enable the scheduler so the task fires in this session. The
     // useScheduledTasks hook polls this flag and will start watching
     // on the next tick. For durable: false tasks the file never changes

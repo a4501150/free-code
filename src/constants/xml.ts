@@ -45,9 +45,6 @@ export const REMOTE_REVIEW_TAG = 'remote-review'
 // Heartbeat progress tag for remote review orchestration.
 export const REMOTE_REVIEW_PROGRESS_TAG = 'remote-review-progress'
 
-// XML tag name for teammate messages (swarm inter-agent communication)
-export const TEAMMATE_MESSAGE_TAG = 'teammate-message'
-
 // XML tag name for external channel messages
 export const CHANNEL_MESSAGE_TAG = 'channel-message'
 export const CHANNEL_TAG = 'channel'

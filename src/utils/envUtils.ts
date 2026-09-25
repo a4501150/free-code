@@ -16,10 +16,6 @@ export const getClaudeConfigHomeDir = memoize(
   () => `${process.env.FREECODE_CONFIG_DIR}:${process.env.CLAUDE_CONFIG_DIR}`,
 )
 
-export function getTeamsDir(): string {
-  return join(getClaudeConfigHomeDir(), 'teams')
-}
-
 /**
  * User-friendly display path for the global config directory.
  * Returns `~/.freecode` when the default is used, or the raw

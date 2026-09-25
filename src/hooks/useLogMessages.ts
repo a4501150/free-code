@@ -1,8 +1,6 @@
 import type { UUID } from 'crypto'
 import { useEffect, useRef } from 'react'
-import { useAppState } from '../state/AppState.js'
 import type { Message } from '../types/message.js'
-import { isAgentSwarmsEnabled } from '../utils/agentSwarmsEnabled.js'
 import {
   cleanMessagesForLogging,
   isChainParticipant,
@@ -17,8 +15,6 @@ import {
  * @param ignore When true, messages will not be recorded to the transcript
  */
 export function useLogMessages(messages: Message[], ignore: boolean = false) {
-  const teamContext = useAppState(s => s.teamContext)
-
   // messages is append-only between compactions, so track where we left off
   // and only pass the new tail to recordTranscript. Avoids O(n) filter+scan
   // on every setMessages (~20x/turn, so n=3000 was ~120k wasted iterations).
@@ -66,16 +62,7 @@ export function useLogMessages(messages: Message[], ignore: boolean = false) {
 
     // Fire and forget - we don't want to block the UI.
     const seq = ++callSeqRef.current
-    void recordTranscript(
-      slice,
-      isAgentSwarmsEnabled()
-        ? {
-            teamName: teamContext?.teamName,
-            agentName: teamContext?.selfAgentName,
-          }
-        : {},
-      parentHint,
-    ).then(lastRecordedUuid => {
+    void recordTranscript(slice, parentHint).then(lastRecordedUuid => {
       // For compaction/full array case (!isIncremental): use the async return
       // value. After compaction, messagesToKeep in the array are skipped
       // (already in transcript), so the sync loop would find a wrong UUID.
@@ -109,5 +96,5 @@ export function useLogMessages(messages: Message[], ignore: boolean = false) {
 
     lastRecordedLengthRef.current = messages.length
     firstMessageUuidRef.current = currentFirstUuid
-  }, [messages, ignore, teamContext?.teamName, teamContext?.selfAgentName])
+  }, [messages, ignore])
 }

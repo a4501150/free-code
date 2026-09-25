@@ -13,7 +13,6 @@ import {
   getTranscriptPath,
   saveAgentColor,
 } from '../../utils/sessionStorage.js'
-import { isTeammate } from '../../utils/teammate.js'
 
 const RESET_ALIASES = ['default', 'reset', 'none', 'gray', 'grey'] as const
 
@@ -22,15 +21,6 @@ export async function call(
   context: ToolUseContext & LocalJSXCommandContext,
   args: string,
 ): Promise<null> {
-  // Teammates cannot set their own color
-  if (isTeammate()) {
-    onDone(
-      'Cannot set color: This session is a swarm teammate. Teammate colors are assigned by the team leader.',
-      { display: 'system' },
-    )
-    return null
-  }
-
   if (!args || args.trim() === '') {
     const colorList = AGENT_COLORS.join(', ')
     onDone(`Please provide a color. Available colors: ${colorList}, default`, {

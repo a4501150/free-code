@@ -42,7 +42,6 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
       'ctrl+t': 'app:toggleTodos',
       'ctrl+o': 'app:toggleTranscript',
       'ctrl+shift+b': 'app:toggleBrief',
-      'ctrl+shift+o': 'app:toggleTeammatePreview',
       'ctrl+r': 'history:search',
       // File navigation. Legacy terminals report ctrl+shift+<letter> without
       // shift, so these chords only fire on kitty-protocol terminals

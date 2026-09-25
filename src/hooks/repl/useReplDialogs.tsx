@@ -7,12 +7,6 @@ import {
 } from 'react'
 import * as React from 'react'
 import { logForDebugging } from '../../utils/debug.js'
-import {
-  registerLeaderToolUseConfirmQueue,
-  unregisterLeaderToolUseConfirmQueue,
-  registerLeaderSetToolPermissionContext,
-  unregisterLeaderSetToolPermissionContext,
-} from '../../utils/swarm/leaderPermissionBridge.js'
 import { popAllEditable } from '../../utils/messageQueueManager.js'
 import {
   createAssistantMessage,
@@ -65,7 +59,6 @@ export function useReplDialogs({
   isHelpOpen,
   inputMode,
   screen,
-  pendingWorkerRequest,
 }: {
   toolJSX: any
   isShowingLocalJSXCommand: boolean
@@ -106,7 +99,6 @@ export function useReplDialogs({
   isHelpOpen: boolean
   inputMode: PromptInputMode
   screen: any
-  pendingWorkerRequest: any
 }) {
   // ── Permission queues ──
   const [toolUseConfirmQueue, setToolUseConfirmQueue] = useState<
@@ -125,20 +117,12 @@ export function useReplDialogs({
   >([])
 
   const isWaitingForApproval =
-    toolUseConfirmQueue.length > 0 ||
-    promptQueue.length > 0 ||
-    pendingWorkerRequest
+    toolUseConfirmQueue.length > 0 || promptQueue.length > 0
 
   const hasActivePrompt =
     toolUseConfirmQueue.length > 0 ||
     promptQueue.length > 0 ||
     elicitation.queue.length > 0
-
-  // Register the leader's setToolUseConfirmQueue
-  useEffect(() => {
-    registerLeaderToolUseConfirmQueue(setToolUseConfirmQueue)
-    return () => unregisterLeaderToolUseConfirmQueue()
-  }, [setToolUseConfirmQueue])
 
   // ── Dialog focus ──
   function getFocusedInputDialog():
@@ -330,11 +314,6 @@ export function useReplDialogs({
     },
     [setAppState, setToolUseConfirmQueue],
   )
-
-  useEffect(() => {
-    registerLeaderSetToolPermissionContext(setToolPermissionContext)
-    return () => unregisterLeaderSetToolPermissionContext()
-  }, [setToolPermissionContext])
 
   const canUseTool = useCanUseTool(
     setToolUseConfirmQueue,

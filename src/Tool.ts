@@ -291,7 +291,7 @@ export type ToolUseContext = {
   toolUseId?: string
   criticalSystemReminder_EXPERIMENTAL?: string
   /** When true, preserve toolUseResult on messages even for subagents.
-   * Used by in-process teammates whose transcripts are viewable by the user. */
+   * Used by subagents whose transcripts are viewable by the user. */
   preserveToolUseResults?: boolean
   /** Local denial tracking state for async subagents whose setAppState is a
    *  no-op. Without this, the denial counter never accumulates and the

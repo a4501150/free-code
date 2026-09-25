@@ -1,11 +1,6 @@
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import {
-  executeTaskCreatedHooks,
-  getTaskCreatedHookMessage,
-} from '../../utils/hooks.js'
-import { createTask, deleteTask, getTaskListId } from '../../utils/tasks.js'
-import { getAgentName, getTeamName } from '../../utils/teammate.js'
+import { createTask, getTaskListId } from '../../utils/tasks.js'
 import { TASK_CREATE_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, getPrompt } from './prompt.js'
 
@@ -76,29 +71,6 @@ export const TaskCreateTool = buildTool({
       blockedBy: [],
       metadata,
     })
-
-    const blockingErrors: string[] = []
-    const generator = executeTaskCreatedHooks(
-      taskId,
-      subject,
-      description,
-      getAgentName(),
-      getTeamName(),
-      undefined,
-      context?.abortController?.signal,
-      undefined,
-      context,
-    )
-    for await (const result of generator) {
-      if (result.blockingError) {
-        blockingErrors.push(getTaskCreatedHookMessage(result.blockingError))
-      }
-    }
-
-    if (blockingErrors.length > 0) {
-      await deleteTask(getTaskListId(), taskId)
-      throw new Error(blockingErrors.join('\n'))
-    }
 
     // Auto-expand task list when creating tasks
     context.setAppState(prev => {

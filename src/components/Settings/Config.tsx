@@ -81,12 +81,6 @@ import type {
   LocalJSXCommandContext,
   CommandResultDisplay,
 } from '../../commands.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
-import {
-  getCliTeammateModeOverride,
-  clearCliTeammateModeOverride,
-} from '../../utils/swarm/backends/teammateModeSnapshot.js'
-import { getHardcodedTeammateModelFallback } from '../../utils/swarm/teammateModel.js'
 import { useSearchInput } from '../../hooks/useSearchInput.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import {
@@ -149,7 +143,6 @@ type Setting =
 type SubMenu =
   | 'Theme'
   | 'Model'
-  | 'TeammateModel'
   | 'ExternalIncludes'
   | 'ChannelDowngrade'
   | 'Language'
@@ -1178,45 +1171,6 @@ export function Config({
           },
         ]
       : []),
-    // Teammate mode (only shown when agent swarms are enabled)
-    ...(isAgentSwarmsEnabled()
-      ? (() => {
-          const cliOverride = getCliTeammateModeOverride()
-          const label = cliOverride
-            ? `Teammate mode [overridden: ${cliOverride}]`
-            : 'Teammate mode'
-          return [
-            {
-              id: 'teammateMode',
-              label,
-              value: settingsData?.teammateMode ?? 'auto',
-              options: ['auto', 'tmux', 'in-process'],
-              type: 'enum' as const,
-              onChange(mode: string) {
-                if (
-                  mode !== 'auto' &&
-                  mode !== 'tmux' &&
-                  mode !== 'in-process'
-                ) {
-                  return
-                }
-                // Clear CLI override and set new mode (pass mode to avoid race condition)
-                clearCliTeammateModeOverride(mode)
-                updateUserSettings({ teammateMode: mode })
-              },
-            },
-            {
-              id: 'teammateDefaultModel',
-              label: 'Default teammate model',
-              value: teammateModelDisplayString(
-                settingsData?.teammateDefaultModel,
-              ),
-              type: 'managedEnum' as const,
-              onChange() {},
-            },
-          ]
-        })()
-      : []),
     ...(shouldShowExternalIncludesToggle
       ? [
           {
@@ -1497,8 +1451,6 @@ export function Config({
       diffTool: iu?.diffTool,
       autoConnectIde: iu?.autoConnectIde,
       autoInstallIdeExtension: iu?.autoInstallIdeExtension,
-      teammateMode: iu?.teammateMode,
-      teammateDefaultModel: iu?.teammateDefaultModel,
       fileCheckpointingEnabled: iu?.fileCheckpointingEnabled,
       terminalProgressBarEnabled: iu?.terminalProgressBarEnabled,
       showStatusInTerminalTab: iu?.showStatusInTerminalTab,
@@ -1628,7 +1580,6 @@ export function Config({
     if (
       setting.id === 'theme' ||
       setting.id === 'model' ||
-      setting.id === 'teammateDefaultModel' ||
       setting.id === 'showExternalIncludesDialog' ||
       setting.id === 'language' ||
       setting.id === 'autoCompactPercentage' ||
@@ -1643,10 +1594,6 @@ export function Config({
           return
         case 'model':
           setShowSubmenu('Model')
-          setTabsHidden(true)
-          return
-        case 'teammateDefaultModel':
-          setShowSubmenu('TeammateModel')
           setTabsHidden(true)
           return
         case 'showExternalIncludesDialog':
@@ -1872,48 +1819,6 @@ export function Config({
                   isFastModeAvailable()
                 : false
             }
-          />
-          <Text dimColor>
-            <Byline>
-              <KeyboardShortcutHint shortcut="Enter" action="confirm" />
-              <ConfigurableShortcutHint
-                action="confirm:no"
-                context="Confirmation"
-                fallback="Esc"
-                description="cancel"
-              />
-            </Byline>
-          </Text>
-        </>
-      ) : showSubmenu === 'TeammateModel' ? (
-        <>
-          <ModelPicker
-            initial={settingsData?.teammateDefaultModel ?? null}
-            skipSettingsWrite
-            headerText="Default model for newly spawned teammates. The leader can override via the tool call's model parameter."
-            onSelect={(model, _effort) => {
-              setShowSubmenu(null)
-              setTabsHidden(false)
-              // First-open-then-Enter from unset: picker highlights "Default"
-              // (initial=null) and confirming would write null, silently
-              // switching Opus-fallback → follow-leader. Treat as no-op.
-              if (
-                settingsData?.teammateDefaultModel === undefined &&
-                model === null
-              ) {
-                return
-              }
-              isDirty.current = true
-              updateUserSettings({ teammateDefaultModel: model })
-              setChanges(prev => ({
-                ...prev,
-                teammateDefaultModel: teammateModelDisplayString(model),
-              }))
-            }}
-            onCancel={() => {
-              setShowSubmenu(null)
-              setTabsHidden(false)
-            }}
           />
           <Text dimColor>
             <Byline>
@@ -2307,14 +2212,6 @@ export function Config({
       )}
     </Box>
   )
-}
-
-function teammateModelDisplayString(value: string | null | undefined): string {
-  if (value === undefined) {
-    return modelDisplayString(getHardcodedTeammateModelFallback())
-  }
-  if (value === null) return "Default (leader's model)"
-  return modelDisplayString(value)
 }
 
 const THEME_LABELS: Record<string, string> = {

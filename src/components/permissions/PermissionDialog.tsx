@@ -2,7 +2,6 @@ import * as React from 'react'
 import { Box } from '../../ink.js'
 import type { Theme } from '../../utils/theme.js'
 import { PermissionRequestTitle } from './PermissionRequestTitle.js'
-import type { WorkerBadgeProps } from './WorkerBadge.js'
 
 type Props = {
   title: string
@@ -10,7 +9,6 @@ type Props = {
   color?: keyof Theme
   titleColor?: keyof Theme
   innerPaddingX?: number
-  workerBadge?: WorkerBadgeProps
   titleRight?: React.ReactNode
   children: React.ReactNode
 }
@@ -21,7 +19,6 @@ export function PermissionDialog({
   color = 'permission',
   titleColor,
   innerPaddingX = 1,
-  workerBadge,
   titleRight,
   children,
 }: Props): React.ReactNode {
@@ -41,7 +38,6 @@ export function PermissionDialog({
             title={title}
             subtitle={subtitle}
             color={titleColor}
-            workerBadge={workerBadge}
           />
           {titleRight}
         </Box>

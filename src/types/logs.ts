@@ -29,11 +29,9 @@ export type LogOption = {
   isSidechain: boolean
   isLite?: boolean // True for lite logs (messages not loaded)
   sessionId?: string // Session ID for lite logs
-  teamName?: string // Team name if this is a spawned agent session
-  agentName?: string // Agent's custom name (from /rename or swarm)
-  agentColor?: string // Agent's color (from /rename or swarm)
+  agentName?: string // Agent's custom name (from /rename)
+  agentColor?: string // Agent's color (from /rename, /color)
   agentSetting?: string // Agent definition used (from --agent flag or settings.agent)
-  isTeammate?: boolean // Whether this session was created by a swarm teammate
   leafUuid?: UUID // If given, this uuid must appear in the DB
   summary?: string // Optional conversation summary
   customTitle?: string // Optional user-set custom title
@@ -209,9 +207,8 @@ export type TranscriptMessage = SerializedMessage & {
   isSidechain: boolean
   gitBranch?: string
   agentId?: string // Agent ID for sidechain transcripts to enable resuming agents
-  teamName?: string // Team name if this is a spawned agent session
-  agentName?: string // Agent's custom name (from /rename or swarm)
-  agentColor?: string // Agent's color (from /rename or swarm)
+  agentName?: string // Agent's custom name (from /rename)
+  agentColor?: string // Agent's color (from /rename, /color)
   promptId?: string // Correlates with OTel prompt.id for user prompt messages
 }
 

@@ -7,7 +7,7 @@
  * NOTE: This feature is ant-only and eliminated from external builds.
  *
  * The trace file includes:
- * - Agent hierarchy (parent-child relationships in a swarm)
+ * - Agent hierarchy (parent-child spawn relationships)
  * - API requests with TTFT, TTLT, prompt length, cache stats, msg ID, speculative flag
  * - Tool executions with name, duration, and token usage
  * - User input waiting time
@@ -37,7 +37,7 @@ import {
 import { errorMessage } from '../errors.js'
 import { djb2Hash } from '../hash.js'
 import { jsonStringify } from '../slowOperations.js'
-import { getAgentId, getAgentName, getParentSessionId } from '../teammate.js'
+import { getAgentContext } from '../agentContext.js'
 
 /**
  * Chrome Trace Event format types
@@ -145,9 +145,9 @@ function getProcessIdForAgent(agentId: string): number {
  * Get current agent info
  */
 function getCurrentAgentInfo(): AgentInfo {
-  const agentId = getAgentId() ?? getSessionId()
-  const agentName = getAgentName() ?? 'main'
-  const parentSessionId = getParentSessionId()
+  const ctx = getAgentContext()
+  const agentId = ctx?.agentId ?? getSessionId()
+  const agentName = ctx?.subagentName ?? 'main'
 
   // Check if we've already registered this agent
   const existing = agentRegistry.get(agentId)
@@ -156,7 +156,6 @@ function getCurrentAgentInfo(): AgentInfo {
   const info: AgentInfo = {
     agentId,
     agentName,
-    parentAgentId: parentSessionId,
     processId: agentId === getSessionId() ? 1 : getProcessIdForAgent(agentId),
     threadId: stringToNumericHash(agentName),
   }
@@ -382,7 +381,7 @@ export function isPerfettoTracingEnabled(): boolean {
 
 /**
  * Register a new agent in the trace
- * Call this when a subagent/teammate is spawned
+ * Call this when a subagent is spawned
  */
 export function registerAgent(
   agentId: string,

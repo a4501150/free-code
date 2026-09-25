@@ -11,7 +11,6 @@ export function EnterPlanModePermissionRequest({
   toolUseConfirm,
   onDone,
   onReject,
-  workerBadge,
 }: PermissionRequestProps): React.ReactNode {
   const toolPermissionContextMode = useAppState(
     s => s.toolPermissionContext.mode,
@@ -32,11 +31,7 @@ export function EnterPlanModePermissionRequest({
   }
 
   return (
-    <PermissionDialog
-      color="planMode"
-      title="Enter plan mode?"
-      workerBadge={workerBadge}
-    >
+    <PermissionDialog color="planMode" title="Enter plan mode?">
       <Box flexDirection="column" marginTop={1} paddingX={1}>
         <Text>
           Claude wants to enter plan mode to explore and design an

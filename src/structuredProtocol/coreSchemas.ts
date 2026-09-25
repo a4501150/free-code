@@ -315,9 +315,6 @@ export const HOOK_EVENTS = [
   'PermissionRequest',
   'PermissionDenied',
   'Setup',
-  'TeammateIdle',
-  'TaskCreated',
-  'TaskCompleted',
   'Elicitation',
   'ElicitationResult',
   'ConfigChange',
@@ -513,36 +510,6 @@ export const PostCompactHookInputSchema = BaseHookInputSchema.and(
   }),
 )
 
-export const TeammateIdleHookInputSchema = BaseHookInputSchema.and(
-  z.object({
-    hook_event_name: z.literal('TeammateIdle'),
-    teammate_name: z.string(),
-    team_name: z.string(),
-  }),
-)
-
-export const TaskCreatedHookInputSchema = BaseHookInputSchema.and(
-  z.object({
-    hook_event_name: z.literal('TaskCreated'),
-    task_id: z.string(),
-    task_subject: z.string(),
-    task_description: z.string().optional(),
-    teammate_name: z.string().optional(),
-    team_name: z.string().optional(),
-  }),
-)
-
-export const TaskCompletedHookInputSchema = BaseHookInputSchema.and(
-  z.object({
-    hook_event_name: z.literal('TaskCompleted'),
-    task_id: z.string(),
-    task_subject: z.string(),
-    task_description: z.string().optional(),
-    teammate_name: z.string().optional(),
-    team_name: z.string().optional(),
-  }),
-)
-
 export const ElicitationHookInputSchema = BaseHookInputSchema.and(
   z.object({
     hook_event_name: z.literal('Elicitation'),
@@ -672,9 +639,6 @@ export const HookInputSchema = z.union([
   PostCompactHookInputSchema,
   PermissionRequestHookInputSchema,
   SetupHookInputSchema,
-  TeammateIdleHookInputSchema,
-  TaskCreatedHookInputSchema,
-  TaskCompletedHookInputSchema,
   ElicitationHookInputSchema,
   ElicitationResultHookInputSchema,
   ConfigChangeHookInputSchema,

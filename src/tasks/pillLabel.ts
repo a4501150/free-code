@@ -25,14 +25,6 @@ export function getPillLabel(tasks: BackgroundTaskState[]): string {
           parts.push(monitors === 1 ? '1 monitor' : `${monitors} monitors`)
         return parts.join(', ')
       }
-      case 'in_process_teammate': {
-        const teamCount = new Set(
-          tasks.map(t =>
-            t.type === 'in_process_teammate' ? t.identity.teamName : '',
-          ),
-        ).size
-        return teamCount === 1 ? '1 team' : `${teamCount} teams`
-      }
       case 'local_agent':
         return n === 1 ? '1 local agent' : `${n} local agents`
       case 'monitor_mcp':

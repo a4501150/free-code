@@ -10,7 +10,6 @@ import {
   isPolicyLimitsEligible,
 } from '../services/policyLimits/index.js'
 import { preconnectAnthropicApi } from '../utils/apiPreconnect.js'
-import { cleanupSessionTeams } from '../utils/swarm/teamHelpers.js'
 import { cleanupSessionTaskList, gcStaleTaskLists } from '../utils/tasks.js'
 import { applyExtraCACertsFromConfig } from '../utils/caCertsConfig.js'
 import { registerCleanup } from '../utils/cleanupRegistry.js'
@@ -116,13 +115,6 @@ export const init = memoize(async (): Promise<void> => {
 
     // Set up git-bash if relevant
     setShellIfWindows()
-
-    // gh-32730: teams created by subagents (or main agent without
-    // explicit TeamDelete) were left on disk forever. Register cleanup
-    // for all teams created this session.
-    registerCleanup(async () => {
-      await cleanupSessionTeams()
-    })
 
     // Task lists are session-scoped scratch: remove this session's list on
     // exit (a resume starts a new session and must not inherit old tasks),

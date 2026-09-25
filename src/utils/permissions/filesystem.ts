@@ -1712,7 +1712,7 @@ export function checkReadableInternalPath(
     }
   }
 
-  // Tasks directory (~/.freecode/tasks/) for swarm task coordination
+  // Tasks directory (~/.freecode/tasks/) for task-list coordination
   const tasksDir = join(getClaudeConfigHomeDir(), 'tasks') + sep
   if (
     normalizedPath === tasksDir.slice(0, -1) ||
@@ -1724,22 +1724,6 @@ export function checkReadableInternalPath(
       decisionReason: {
         type: 'other',
         reason: 'Task files are allowed for reading',
-      },
-    }
-  }
-
-  // Teams directory (~/.freecode/teams/) for swarm coordination
-  const teamsReadDir = join(getClaudeConfigHomeDir(), 'teams') + sep
-  if (
-    normalizedPath === teamsReadDir.slice(0, -1) ||
-    normalizedPath.startsWith(teamsReadDir)
-  ) {
-    return {
-      behavior: 'allow',
-      updatedInput: input,
-      decisionReason: {
-        type: 'other',
-        reason: 'Team files are allowed for reading',
       },
     }
   }

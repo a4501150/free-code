@@ -64,17 +64,13 @@ import { useTerminalSize } from '../hooks/useTerminalSize.js'
 import { getDefaultCharacters, type SpinnerMode } from './Spinner/index.js'
 import { SpinnerAnimationRow } from './Spinner/SpinnerAnimationRow.js'
 import { useSettings } from '../hooks/useSettings.js'
-import { isInProcessTeammateTask } from '../tasks/InProcessTeammateTask/types.js'
 import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
 import { isBackgroundTask } from '../tasks/types.js'
-import { getAllInProcessTeammateTasks } from '../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import { getEffortSuffix } from '../utils/effort.js'
 import { getMainLoopModel } from '../utils/model/model.js'
 import type { StreamingThinking } from '../utils/messages.js'
-import { getViewedTeammateTask } from '../state/selectors.js'
 import { TEARDROP_ASTERISK } from '../constants/figures.js'
 
-import { TeammateSpinnerTree } from './Spinner/TeammateSpinnerTree.js'
 import { useAnimationFrame } from '../ink.js'
 import { ProgressBar } from './design-system/ProgressBar.js'
 import { compactProgressPercent } from './Spinner/compactProgress.js'
@@ -100,8 +96,6 @@ type Props = {
   spinnerSuffix?: string | null
   verbose: boolean
   hasActiveTools?: boolean
-  /** Leader's turn has completed (no active query). Used to suppress stall-red spinner when only teammates are running. */
-  leaderIsIdle?: boolean
   /** When the LEADER's compaction is in flight, the ms timestamp it began.
    * Drives the progress bar. The REPL nulls this (and the compaction color/
    * message overrides) while an agent transcript view is up — a compacting
@@ -120,10 +114,9 @@ type Props = {
 // violate Rules of Hooks (the inner variant calls ~10 more hooks).
 export function SpinnerWithVerb(props: Props): React.ReactNode {
   const isBriefOnly = useAppState(s => s.isBriefOnly)
-  // REPL overrides isBriefOnly→false when viewing a teammate transcript
-  // (see isBriefOnly={viewedTeammateTask ? false : isBriefOnly}). That
-  // prop isn't threaded here, so replicate the gate from the store —
-  // teammate view needs the real spinner (which shows teammate status).
+  // REPL overrides isBriefOnly→false when viewing an agent transcript. That
+  // prop isn't threaded here, so replicate the gate from the store — the
+  // agent view needs the real spinner (which shows the agent's status).
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
 
   // Runtime gate mirrors isBriefEnabled() but inlined — importing from
@@ -159,7 +152,6 @@ function SpinnerWithVerbInner({
   spinnerSuffix,
   verbose,
   hasActiveTools = false,
-  leaderIsIdle = false,
   compactingStartTime = null,
   streamingThinking = null,
 }: Props): React.ReactNode {
@@ -176,28 +168,19 @@ function SpinnerWithVerbInner({
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const expandedView = useAppState(s => s.expandedView)
   const showExpandedTodos = expandedView === 'tasks'
-  const showSpinnerTree = expandedView === 'teammates'
-  const selectedIPAgentIndex = useAppState(s => s.selectedIPAgentIndex)
-  const viewSelectionMode = useAppState(s => s.viewSelectionMode)
-  // Get foregrounded teammate (if viewing a teammate's transcript)
-  const foregroundedTeammate = viewingAgentTaskId
-    ? getViewedTeammateTask({ viewingAgentTaskId, tasks })
+  // Get viewed local agent (coordinator panel subagent).
+  const viewedLocalAgent = viewingAgentTaskId
+    ? (() => {
+        const t = tasks[viewingAgentTaskId]
+        return isLocalAgentTask(t) ? t : undefined
+      })()
     : undefined
-  // Get viewed local agent (coordinator panel subagent) — separate from
-  // foregroundedTeammate which is for in-process teammates only.
-  const viewedLocalAgent =
-    !foregroundedTeammate && viewingAgentTaskId
-      ? (() => {
-          const t = tasks[viewingAgentTaskId]
-          return isLocalAgentTask(t) ? t : undefined
-        })()
-      : undefined
   const { columns } = useTerminalSize()
   const mainTasksV2 = useTasksV2()
   const subagentTasksV2 = useSubagentTasksV2(viewingAgentTaskId)
   // Viewing a local agent shows that agent's own list — a viewing context
   // must never borrow the main session's list (the main session's todos would
-  // render as the agent's). Teammates are different: they legitimately share
+  // render as the agent's). Concurrent agents legitimately share
   // the leader's list, so the fallback stays for non-local-agent views.
   const tasksV2 = viewedLocalAgent
     ? subagentTasksV2
@@ -259,7 +242,7 @@ function SpinnerWithVerbInner({
   // so mount == turn here: the verb rotates per turn but never mid-turn.
   const [randomVerb] = useState(() => sample(getSpinnerVerbs()) ?? 'Working')
 
-  // Leader's own verb (always the leader's, regardless of who is foregrounded)
+  // The main session's own verb
   const leaderVerb =
     overrideMessage ??
     currentTodo?.activeForm ??
@@ -267,16 +250,14 @@ function SpinnerWithVerbInner({
     randomVerb
 
   // A viewed subagent shows its own label (panel precedence: summary >
-  // description), not the leader's todo verb.
+  // description), not the main session's todo verb.
   const effectiveVerb =
     viewedLocalAgent?.compacting?.label ??
     (viewedLocalAgent
       ? viewedLocalAgent.progress?.summary ||
         viewedLocalAgent.description ||
         leaderVerb
-      : foregroundedTeammate && !foregroundedTeammate.isIdle
-        ? (foregroundedTeammate.spinnerVerb ?? randomVerb)
-        : leaderVerb)
+      : leaderVerb)
   const message = effectiveVerb + '…'
 
   // Track CLI activity when spinner is active
@@ -292,26 +273,6 @@ function SpinnerWithVerbInner({
     viewedLocalAgent?.model ?? getMainLoopModel(),
   )
 
-  // Check if any running in-process teammates exist (needed for both modes)
-  const runningTeammates = getAllInProcessTeammateTasks(tasks).filter(
-    t => t.status === 'running',
-  )
-  const hasRunningTeammates = runningTeammates.length > 0
-  const allIdle = hasRunningTeammates && runningTeammates.every(t => t.isIdle)
-
-  // Gather aggregate token stats from all running swarm teammates
-  // In spinner-tree mode, skip aggregation (teammates have their own lines in the tree)
-  let teammateTokens = 0
-  if (!showSpinnerTree) {
-    for (const task of Object.values(tasks)) {
-      if (isInProcessTeammateTask(task) && task.status === 'running') {
-        if (task.progress?.tokenCount) {
-          teammateTokens += task.progress.tokenCount
-        }
-      }
-    }
-  }
-
   // Stale read of the refs below — we're off the 50ms clock
   // so this only updates when props/app state change, which is sufficient for
   // coarse thresholds.
@@ -321,11 +282,6 @@ function SpinnerWithVerbInner({
         loadingStartTimeRef.current -
         totalPausedMsRef.current
       : Date.now() - loadingStartTimeRef.current - totalPausedMsRef.current
-
-  // Leader token count for TeammateSpinnerTree — read raw (non-animated) from
-  // the ref. The tree is only shown when teammates are running; teammate
-  // progress updates to s.tasks trigger re-renders that keep this fresh.
-  const leaderTokenCount = Math.round(responseLengthRef.current / 4)
 
   const defaultColor: keyof Theme = 'claude'
   const defaultShimmerColor = 'claudeShimmer'
@@ -342,32 +298,6 @@ function SpinnerWithVerbInner({
     ? 'claudeBlueShimmer_FOR_SYSTEM_SPINNER'
     : (overrideShimmerColor ?? defaultShimmerColor)
 
-  // When leader is idle but teammates are running (and we're viewing the leader),
-  // show a static dim idle display instead of the animated spinner — otherwise
-  // useStalledAnimation detects no new tokens after 3s and turns the spinner red.
-  if (leaderIsIdle && hasRunningTeammates && !foregroundedTeammate) {
-    return (
-      <Box flexDirection="column" width="100%" alignItems="flex-start">
-        <Box flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
-          <Text dimColor>
-            {TEARDROP_ASTERISK} Idle
-            {!allIdle && ' · teammates running'}
-          </Text>
-        </Box>
-        {showSpinnerTree && (
-          <TeammateSpinnerTree
-            selectedIndex={selectedIPAgentIndex}
-            isInSelectionMode={viewSelectionMode === 'selecting-agent'}
-            allIdle={allIdle}
-            leaderTokenCount={leaderTokenCount}
-            leaderIdleText="Idle"
-          />
-        )}
-        {panel}
-      </Box>
-    )
-  }
-
   // When viewing a completed/failed local agent, show static status
   if (viewedLocalAgent && viewedLocalAgent.status !== 'running') {
     const elapsed = formatDuration(
@@ -382,31 +312,6 @@ function SpinnerWithVerbInner({
             {TEARDROP_ASTERISK} Worked for {elapsed}
           </Text>
         </Box>
-        {panel}
-      </Box>
-    )
-  }
-
-  // When viewing an idle teammate, show static idle display instead of animated spinner
-  if (foregroundedTeammate?.isIdle) {
-    const idleText = allIdle
-      ? `${TEARDROP_ASTERISK} Worked for ${formatDuration(Date.now() - foregroundedTeammate.startTime)}`
-      : `${TEARDROP_ASTERISK} Idle`
-    return (
-      <Box flexDirection="column" width="100%" alignItems="flex-start">
-        <Box flexDirection="row" flexWrap="wrap" marginTop={1} width="100%">
-          <Text dimColor>{idleText}</Text>
-        </Box>
-        {showSpinnerTree && hasRunningTeammates && (
-          <TeammateSpinnerTree
-            selectedIndex={selectedIPAgentIndex}
-            isInSelectionMode={viewSelectionMode === 'selecting-agent'}
-            allIdle={allIdle}
-            leaderVerb={leaderIsIdle ? undefined : leaderVerb}
-            leaderIdleText={leaderIsIdle ? 'Idle' : undefined}
-            leaderTokenCount={leaderTokenCount}
-          />
-        )}
         {panel}
       </Box>
     )
@@ -441,10 +346,6 @@ function SpinnerWithVerbInner({
           spinnerSuffix={spinnerSuffix}
           verbose={verbose}
           columns={columns}
-          hasRunningTeammates={hasRunningTeammates}
-          teammateTokens={teammateTokens}
-          foregroundedTeammate={foregroundedTeammate}
-          leaderIsIdle={leaderIsIdle}
           thinkingStatus={thinkingStatus}
           effortSuffix={effortSuffix}
           viewedLocalAgent={viewedLocalAgent}
@@ -456,15 +357,6 @@ function SpinnerWithVerbInner({
               columns={columns}
             />
           </Box>
-        ) : showSpinnerTree && hasRunningTeammates ? (
-          <TeammateSpinnerTree
-            selectedIndex={selectedIPAgentIndex}
-            isInSelectionMode={viewSelectionMode === 'selecting-agent'}
-            allIdle={allIdle}
-            leaderVerb={leaderIsIdle ? undefined : leaderVerb}
-            leaderIdleText={leaderIsIdle ? 'Idle' : undefined}
-            leaderTokenCount={leaderTokenCount}
-          />
         ) : !showExpandedTodos && (nextTask || effectiveTip) ? (
           // The expanded task list renders as `panel` below instead of this
           // summary line; when the panel is gone (collapsed view, store hide

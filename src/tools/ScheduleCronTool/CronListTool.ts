@@ -3,7 +3,6 @@ import { buildTool, type ToolDef } from '../../Tool.js'
 import { cronToHuman } from '../../utils/cron.js'
 import { listAllCronTasks } from '../../utils/cronTasks.js'
 import { truncate } from '../../utils/format.js'
-import { getTeammateContext } from '../../utils/teammateContext.js'
 import {
   buildCronListPrompt,
   CRON_LIST_DESCRIPTION,
@@ -56,12 +55,7 @@ export const CronListTool = buildTool({
   },
   async call() {
     const allTasks = await listAllCronTasks()
-    // Teammates only see their own crons; team lead (no ctx) sees all.
-    const ctx = getTeammateContext()
-    const tasks = ctx
-      ? allTasks.filter(t => t.agentId === ctx.agentId)
-      : allTasks
-    const jobs = tasks.map(t => ({
+    const jobs = allTasks.map(t => ({
       id: t.id,
       humanSchedule: cronToHuman(t.cron),
       prompt: t.prompt,

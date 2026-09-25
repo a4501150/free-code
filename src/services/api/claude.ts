@@ -861,7 +861,7 @@ export async function* executeNonStreamingRequest(
  * join them for cache-hit-rate analysis and incremental token tracking.
  *
  * Deriving this from the message array (rather than global state) ensures each
- * query chain (main thread, subagent, teammate) tracks its own request chain
+ * query chain (main thread, subagent) tracks its own request chain
  * independently, and rollback/undo naturally updates the value.
  */
 function getPreviousRequestIdFromMessages(
@@ -972,7 +972,7 @@ async function* queryModel(
   void
 > {
   // Derive previous request ID from the last assistant message in this query chain.
-  // This is scoped per message array (main thread, subagent, teammate each have their own),
+  // This is scoped per message array (main thread and each subagent has its own),
   // so concurrent agents don't clobber each other's request chain tracking.
   // Also naturally handles rollback/undo since removed messages won't be in the array.
   const previousRequestId = getPreviousRequestIdFromMessages(messages)

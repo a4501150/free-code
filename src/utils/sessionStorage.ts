@@ -956,7 +956,6 @@ class Project {
     isSidechain: boolean = false,
     agentId?: string,
     startingParentUuid?: UUID | null,
-    teamInfo?: { teamName?: string; agentName?: string },
   ) {
     return this.trackWrite(async () => {
       let parentUuid: UUID | null = startingParentUuid ?? null
@@ -1003,8 +1002,6 @@ class Project {
             ? (parentUuid ?? undefined)
             : undefined,
           isSidechain,
-          teamName: teamInfo?.teamName,
-          agentName: teamInfo?.agentName,
           promptId:
             message.type === 'user' ? (getPromptId() ?? undefined) : undefined,
           agentId,
@@ -1250,11 +1247,6 @@ class Project {
   }
 }
 
-export type TeamInfo = {
-  teamName?: string
-  agentName?: string
-}
-
 // Filter out already-recorded messages before passing to insertMessageChain.
 // Without this, after compaction messagesToKeep (same UUIDs as pre-compact
 // messages) are dedup-skipped by appendEntry but still advance the parentUuid
@@ -1274,7 +1266,6 @@ export type TeamInfo = {
 //    (correct: truncates --continue chain at compact boundary).
 export async function recordTranscript(
   messages: Message[],
-  teamInfo?: TeamInfo,
   startingParentUuidHint?: UUID,
 ): Promise<UUID | null> {
   const cleanedMessages = cleanMessagesForLogging(messages)
@@ -1301,7 +1292,6 @@ export async function recordTranscript(
       false,
       undefined,
       startingParentUuid,
-      teamInfo,
     )
   }
   // Return the last ACTUALLY recorded chain-participant's UUID, OR the
@@ -2078,7 +2068,6 @@ function convertToLogOption(
     firstPrompt,
     messageCount: countVisibleMessages(transcript),
     isSidechain: firstMessage.isSidechain,
-    teamName: firstMessage.teamName,
     agentName: firstMessage.agentName,
     agentSetting,
     leafUuid: lastMessage.uuid,
@@ -2600,7 +2589,6 @@ export async function loadFullLog(log: LogOption): Promise<LogOption> {
         : log.prRepository,
       gitBranch: mostRecentLeaf?.gitBranch ?? log.gitBranch,
       isSidechain: transcript[0]?.isSidechain ?? log.isSidechain,
-      teamName: transcript[0]?.teamName ?? log.teamName,
       leafUuid: mostRecentLeaf?.uuid ?? log.leafUuid,
       fileHistorySnapshots: buildFileHistorySnapshotChain(
         fileHistorySnapshots,
@@ -3782,35 +3770,6 @@ export function extractAgentIdsFromMessages(messages: Message[]): string[] {
 }
 
 /**
- * Extract teammate transcripts directly from AppState tasks.
- * In-process teammates store their messages in task.messages,
- * which is more reliable than loading from disk since each teammate turn
- * uses a random agentId for transcript storage.
- */
-export function extractTeammateTranscriptsFromTasks(tasks: {
-  [taskId: string]: {
-    type: string
-    identity?: { agentId: string }
-    messages?: Message[]
-  }
-}): { [agentId: string]: Message[] } {
-  const transcripts: { [agentId: string]: Message[] } = {}
-
-  for (const task of Object.values(tasks)) {
-    if (
-      task.type === 'in_process_teammate' &&
-      task.identity?.agentId &&
-      task.messages &&
-      task.messages.length > 0
-    ) {
-      transcripts[task.identity.agentId] = task.messages
-    }
-  }
-
-  return transcripts
-}
-
-/**
  * Load subagent transcripts for the given agent IDs
  */
 export async function loadSubagentTranscripts(
@@ -4013,7 +3972,6 @@ type LiteMetadata = {
   gitBranch?: string
   isSidechain: boolean
   projectPath?: string
-  teamName?: string
   customTitle?: string
   summary?: string
   tag?: string
@@ -4160,7 +4118,7 @@ async function getLogsWithoutIndex(
 /**
  * Reads the first and last ~64KB of a JSONL file and extracts lite metadata.
  *
- * Head (first 64KB): isSidechain, projectPath, teamName, firstPrompt.
+ * Head (first 64KB): isSidechain, projectPath, firstPrompt.
  * Tail (last 64KB): customTitle, tag, PR link, latest gitBranch.
  *
  * Accepts a shared buffer to avoid per-file allocation overhead.
@@ -4178,7 +4136,6 @@ async function readLiteMetadata(
   const isSidechain =
     head.includes('"isSidechain":true') || head.includes('"isSidechain": true')
   const projectPath = extractJsonStringField(head, 'cwd')
-  const teamName = extractJsonStringField(head, 'teamName')
   const agentSetting = extractJsonStringField(head, 'agentSetting')
 
   // Prefer the last-prompt tail entry — captured by extractFirstPrompt at
@@ -4230,7 +4187,6 @@ async function readLiteMetadata(
     gitBranch,
     isSidechain,
     projectPath,
-    teamName,
     customTitle,
     summary,
     tag,
@@ -4458,7 +4414,6 @@ async function enrichLog(
     firstPrompt: meta.firstPrompt,
     gitBranch: meta.gitBranch,
     isSidechain: meta.isSidechain,
-    teamName: meta.teamName,
     customTitle: meta.customTitle,
     summary: meta.summary,
     tag: meta.tag,
@@ -4480,12 +4435,6 @@ async function enrichLog(
   if (enriched.isSidechain) {
     logForDebugging(
       `Session ${log.sessionId} filtered from /resume: isSidechain=true`,
-    )
-    return null
-  }
-  if (enriched.teamName) {
-    logForDebugging(
-      `Session ${log.sessionId} filtered from /resume: teamName=${enriched.teamName}`,
     )
     return null
   }

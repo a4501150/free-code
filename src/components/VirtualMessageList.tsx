@@ -133,7 +133,7 @@ type Props = {
 /**
  * Returns the text of a real user prompt, or null for anything else.
  * "Real" = what the human typed: not tool results, not XML-wrapped payloads
- * (<bash-stdout>, <command-message>, <teammate-message>, etc.), not meta.
+ * (<bash-stdout>, <command-message>, etc.), not meta.
  *
  * Two shapes land here: NormalizedUserMessage (normal prompts) and
  * AttachmentMessage with type==='queued_command' (prompts sent mid-turn

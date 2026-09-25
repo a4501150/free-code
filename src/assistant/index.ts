@@ -14,10 +14,8 @@ import { existsSync, readFileSync, statSync } from 'fs'
 import { getProjectRoot } from '../bootstrap/state.js'
 import { AGENT_REPORT_CONTRACT } from '../coordinator/agentReportContract.js'
 import { isCoordinatorMode } from '../coordinator/coordinatorModeGate.js'
-import { logError } from '../utils/log.js'
 import { getExistingOrPreferredProjectConfigPath } from '../utils/projectConfigPaths.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
-import { setCliTeammateModeOverride } from '../utils/swarm/backends/teammateModeSnapshot.js'
 import { isAutoMemoryEnabled } from '../memdir/paths.js'
 import { buildAssistantDailyLogBlock } from '../memdir/memdir.js'
 import { BRIEF_PROACTIVE_SECTION } from '../tools/BriefTool/prompt.js'
@@ -57,48 +55,6 @@ export function getAssistantName(): string | undefined {
  */
 export function markAssistantForced(): void {
   forced = true
-}
-
-/**
- * Initialize the assistant team context.
- *
- * Reads the preferred/existing project agents assistant.md for team configuration, sets teammate
- * mode to in-process so Agent(name: "foo") spawns teammates without
- * TeamCreate.
- *
- * @returns Team context with teammate names, or undefined if no team config.
- */
-export async function initializeAssistantTeam(): Promise<
-  { teammates: string[] } | undefined
-> {
-  try {
-    const mdPath = getAssistantMdPath()
-    if (!existsSync(mdPath)) return undefined
-
-    const content = readFileSync(mdPath, 'utf-8')
-
-    // Parse teammate definitions from assistant.md
-    // Format: ## Team\n- name: description
-    const teammates: string[] = []
-    const teamSection = content.match(/## Team\s*\n([\s\S]*?)(?=\n##|$)/)
-    if (teamSection) {
-      const lines = teamSection[1]!.split('\n')
-      for (const line of lines) {
-        const match = line.match(/^-\s+(\w+)/)
-        if (match?.[1]) {
-          teammates.push(match[1])
-        }
-      }
-    }
-
-    // Set teammate mode to in-process for assistant mode
-    setCliTeammateModeOverride('in-process')
-
-    return teammates.length > 0 ? { teammates } : undefined
-  } catch (err) {
-    logError(err)
-    return undefined
-  }
 }
 
 // The attachment getter rebuilds the block on every tool-loop iteration:

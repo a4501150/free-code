@@ -125,7 +125,6 @@ function SedEditPermissionRequestInner({
       path={filePath}
       completionType="str_replace_single"
       parseInput={parseInput}
-      workerBadge={props.workerBadge}
     />
   )
 }

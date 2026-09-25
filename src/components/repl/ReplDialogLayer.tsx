@@ -2,7 +2,6 @@ import * as React from 'react'
 import { feature } from 'bun:bundle'
 import { Box } from '../../ink.js'
 import { PromptDialog } from '../hooks/PromptDialog.js'
-import { WorkerPendingPermission } from '../permissions/WorkerPendingPermission.js'
 import { ElicitationDialog } from '../mcp/ElicitationDialog.js'
 import { IdeOnboardingDialog } from '../IdeOnboardingDialog.js'
 import type { PromptRequest, PromptResponse } from '../../types/hooks.js'
@@ -12,7 +11,6 @@ export function ReplDialogLayer({
   setAppState,
   promptQueue,
   setPromptQueue,
-  pendingWorkerRequest,
   elicitation,
   showIdeOnboarding,
   setShowIdeOnboarding,
@@ -43,7 +41,6 @@ export function ReplDialogLayer({
       }>
     >
   >
-  pendingWorkerRequest: any
   elicitation: any
   showIdeOnboarding: boolean
   setShowIdeOnboarding: (v: boolean) => void
@@ -85,12 +82,6 @@ export function ReplDialogLayer({
             item.reject(new Error('Prompt cancelled by user'))
             setPromptQueue(([, ...tail]) => tail)
           }}
-        />
-      )}
-      {pendingWorkerRequest && (
-        <WorkerPendingPermission
-          toolName={pendingWorkerRequest.toolName}
-          description={pendingWorkerRequest.description}
         />
       )}
       {focusedInputDialog === 'elicitation' && (

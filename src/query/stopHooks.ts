@@ -14,14 +14,7 @@ import type {
 import { createAttachmentMessage } from '../utils/attachments.js'
 import { errorMessage } from '../utils/errors.js'
 import type { REPLHookContext } from '../utils/hooks/postSamplingHooks.js'
-import {
-  executeStopHooks,
-  executeTaskCompletedHooks,
-  executeTeammateIdleHooks,
-  getStopHookMessage,
-  getTaskCompletedHookMessage,
-  getTeammateIdleHookMessage,
-} from '../utils/hooks.js'
+import { executeStopHooks, getStopHookMessage } from '../utils/hooks.js'
 import {
   createStopHookSummaryMessage,
   createSystemMessage,
@@ -29,8 +22,6 @@ import {
   createUserMessage,
 } from '../utils/messages.js'
 import type { SystemPrompt } from '../utils/systemPromptType.js'
-import { getTaskListId, listTasks } from '../utils/tasks.js'
-import { getAgentName, getTeamName, isTeammate } from '../utils/teammate.js'
 
 import { executeExtractMemories } from '../services/extractMemories/extractMemories.js'
 import type { QuerySource } from '../constants/querySource.js'
@@ -252,127 +243,6 @@ export async function* handleStopHooks(
     // Collect blocking errors from stop hooks
     if (blockingErrors.length > 0) {
       return { blockingErrors, preventContinuation: false }
-    }
-
-    // After Stop hooks pass, run TeammateIdle and TaskCompleted hooks if this is a teammate
-    if (isTeammate()) {
-      const teammateName = getAgentName() ?? ''
-      const teamName = getTeamName() ?? ''
-      const teammateBlockingErrors: Message[] = []
-      let teammatePreventedContinuation = false
-      let teammateStopReason: string | undefined
-      // Each hook executor generates its own toolUseID — capture from progress
-      // messages (same pattern as stopHookToolUseID at L142), not the Stop ID.
-      let teammateHookToolUseID = ''
-
-      // Run TaskCompleted hooks for any in-progress tasks owned by this teammate
-      const taskListId = getTaskListId()
-      const tasks = await listTasks(taskListId)
-      const inProgressTasks = tasks.filter(
-        t => t.status === 'in_progress' && t.owner === teammateName,
-      )
-
-      for (const task of inProgressTasks) {
-        const taskCompletedGenerator = executeTaskCompletedHooks(
-          task.id,
-          task.subject,
-          task.description,
-          teammateName,
-          teamName,
-          permissionMode,
-          toolUseContext.abortController.signal,
-          undefined,
-          toolUseContext,
-        )
-
-        for await (const result of taskCompletedGenerator) {
-          if (result.message) {
-            if (
-              result.message.type === 'progress' &&
-              result.message.toolUseID
-            ) {
-              teammateHookToolUseID = result.message.toolUseID
-            }
-            yield result.message
-          }
-          if (result.blockingError) {
-            const userMessage = createUserMessage({
-              content: getTaskCompletedHookMessage(result.blockingError),
-              isMeta: true,
-            })
-            teammateBlockingErrors.push(userMessage)
-            yield userMessage
-          }
-          // Match Stop hook behavior: allow preventContinuation/stopReason
-          if (result.preventContinuation) {
-            teammatePreventedContinuation = true
-            teammateStopReason =
-              result.stopReason || 'TaskCompleted hook prevented continuation'
-            yield createAttachmentMessage({
-              type: 'hook_stopped_continuation',
-              message: teammateStopReason,
-              hookName: 'TaskCompleted',
-              toolUseID: teammateHookToolUseID,
-              hookEvent: 'TaskCompleted',
-            })
-          }
-          if (toolUseContext.abortController.signal.aborted) {
-            return { blockingErrors: [], preventContinuation: true }
-          }
-        }
-      }
-
-      // Run TeammateIdle hooks
-      const teammateIdleGenerator = executeTeammateIdleHooks(
-        teammateName,
-        teamName,
-        permissionMode,
-        toolUseContext.abortController.signal,
-      )
-
-      for await (const result of teammateIdleGenerator) {
-        if (result.message) {
-          if (result.message.type === 'progress' && result.message.toolUseID) {
-            teammateHookToolUseID = result.message.toolUseID
-          }
-          yield result.message
-        }
-        if (result.blockingError) {
-          const userMessage = createUserMessage({
-            content: getTeammateIdleHookMessage(result.blockingError),
-            isMeta: true,
-          })
-          teammateBlockingErrors.push(userMessage)
-          yield userMessage
-        }
-        // Match Stop hook behavior: allow preventContinuation/stopReason
-        if (result.preventContinuation) {
-          teammatePreventedContinuation = true
-          teammateStopReason =
-            result.stopReason || 'TeammateIdle hook prevented continuation'
-          yield createAttachmentMessage({
-            type: 'hook_stopped_continuation',
-            message: teammateStopReason,
-            hookName: 'TeammateIdle',
-            toolUseID: teammateHookToolUseID,
-            hookEvent: 'TeammateIdle',
-          })
-        }
-        if (toolUseContext.abortController.signal.aborted) {
-          return { blockingErrors: [], preventContinuation: true }
-        }
-      }
-
-      if (teammatePreventedContinuation) {
-        return { blockingErrors: [], preventContinuation: true }
-      }
-
-      if (teammateBlockingErrors.length > 0) {
-        return {
-          blockingErrors: teammateBlockingErrors,
-          preventContinuation: false,
-        }
-      }
     }
 
     return { blockingErrors: [], preventContinuation: false }

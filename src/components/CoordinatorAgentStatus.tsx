@@ -17,10 +17,7 @@ import {
   useAppState,
   useSetAppState,
 } from '../state/AppState.js'
-import {
-  enterTeammateView,
-  exitTeammateView,
-} from '../state/teammateViewHelpers.js'
+import { enterAgentView, exitAgentView } from '../state/agentViewHelpers.js'
 import {
   isPanelAgentTask,
   type LocalAgentTaskState,
@@ -100,7 +97,7 @@ export function CoordinatorTaskPanel(): React.ReactNode {
       <MainLine
         isSelected={selectedIndex === 0}
         isViewed={viewingAgentTaskId === undefined}
-        onClick={() => exitTeammateView(setAppState)}
+        onClick={() => exitAgentView(setAppState)}
       />
       {visibleTasks.map((task, i) => (
         <AgentLine
@@ -109,7 +106,7 @@ export function CoordinatorTaskPanel(): React.ReactNode {
           name={nameByAgentId.get(task.id)}
           isSelected={selectedIndex === i + 1}
           isViewed={viewingAgentTaskId === task.id}
-          onClick={() => enterTeammateView(task.id, setAppState)}
+          onClick={() => enterAgentView(task.id, setAppState)}
         />
       ))}
     </Box>

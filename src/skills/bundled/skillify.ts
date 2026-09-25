@@ -130,7 +130,7 @@ IMPORTANT: see the next section below for the per-step annotations you can optio
 
 **Per-step annotations**:
 - **Success criteria** is REQUIRED on every step. This helps the model understand what the user expects from their workflow, and when it should have the confidence to move on.
-- **Execution**: \`Direct\` (default), \`Task agent\` (straightforward subagents), \`Teammate\` (agent with true parallelism and inter-agent communication), or \`[human]\` (user does it). Only needs specifying if not Direct.
+- **Execution**: \`Direct\` (default), \`Task agent\` (straightforward subagents), or \`[human]\` (user does it). Only needs specifying if not Direct.
 - **Artifacts**: Data this step produces that later steps need (e.g., PR number, commit SHA). Only include if later steps depend on it.
 - **Human checkpoint**: When to pause and ask the user before proceeding. Include for irreversible actions (merging, sending messages), error judgment (merge conflicts), or output review.
 - **Rules**: Hard rules for the workflow. User corrections during the reference session can be especially useful here.

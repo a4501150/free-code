@@ -22,7 +22,6 @@ export function FallbackPermissionRequest({
   onDone,
   onReject,
   verbose: _verbose,
-  workerBadge,
 }: PermissionRequestProps): React.ReactNode {
   const [theme] = useTheme()
   // TODO: Avoid these special cases
@@ -120,7 +119,7 @@ export function FallbackPermissionRequest({
   )
 
   return (
-    <PermissionDialog title="Tool use" workerBadge={workerBadge}>
+    <PermissionDialog title="Tool use">
       <Box flexDirection="column" paddingX={2} paddingY={1}>
         <Text>
           {userFacingName}(

@@ -20,10 +20,6 @@ import { isBackgroundTask } from '../../tasks/types.js'
 import { isPanelAgentTask } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { getVisibleAgentTasks } from '../CoordinatorAgentStatus.js'
 import { count } from '../../utils/array.js'
-import { shouldHideTasksFooter } from '../tasks/taskStatusUtils.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
-import { TeamStatus } from '../teams/TeamStatus.js'
-import { isInProcessEnabled } from '../../utils/swarm/backends/registry.js'
 import { useAppState } from 'src/state/AppState.js'
 import HistorySearchInput from './HistorySearchInput.js'
 import { usePrStatus } from '../../hooks/usePrStatus.js'
@@ -53,8 +49,6 @@ type Props = {
   isLoading: boolean
   showMemoryTypeSelector?: boolean
   tasksSelected: boolean
-  teamsSelected: boolean
-  teammateFooterIndex?: number
   isPasting?: boolean
   isSearching: boolean
   historyQuery: string
@@ -71,8 +65,6 @@ export function PromptInputFooterLeftSide({
   suppressHint,
   isLoading,
   tasksSelected,
-  teamsSelected,
-  teammateFooterIndex,
   isPasting,
   isSearching,
   historyQuery,
@@ -117,8 +109,6 @@ export function PromptInputFooterLeftSide({
         showHint={!suppressHint && !showVim}
         isLoading={isLoading}
         tasksSelected={tasksSelected}
-        teamsSelected={teamsSelected}
-        teammateFooterIndex={teammateFooterIndex}
         onOpenTasksDialog={onOpenTasksDialog}
       />
     </Box>
@@ -131,8 +121,6 @@ type ModeIndicatorProps = {
   showHint: boolean
   isLoading: boolean
   tasksSelected: boolean
-  teamsSelected: boolean
-  teammateFooterIndex?: number
   onOpenTasksDialog?: (taskId?: string) => void
 }
 
@@ -142,8 +130,6 @@ function ModeIndicator({
   showHint,
   isLoading,
   tasksSelected,
-  teamsSelected,
-  teammateFooterIndex,
   onOpenTasksDialog,
 }: ModeIndicatorProps): React.ReactNode {
   const { columns } = useTerminalSize()
@@ -153,11 +139,7 @@ function ModeIndicator({
     'shift+tab',
   )
   const tasks = useAppState(s => s.tasks)
-  const teamContext = useAppState(s => s.teamContext)
-  const viewSelectionMode = useAppState(s => s.viewSelectionMode)
-  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const expandedView = useAppState(s => s.expandedView)
-  const showSpinnerTree = expandedView === 'teammates'
   const prStatus = usePrStatus(isLoading, isPrStatusEnabled())
 
   const voiceEnabled = useVoiceEnabled()
@@ -201,34 +183,17 @@ function ModeIndicator({
     s => s.notifications.current?.key === 'kill-agents-confirm',
   )
 
-  // Derive team info from teamContext (no filesystem I/O needed)
-  // Match the same logic as TeamStatus to avoid trailing separator
-  // In-process mode uses Shift+Down/Up navigation, not footer teams menu
-  const hasTeams =
-    isAgentSwarmsEnabled() &&
-    !isInProcessEnabled() &&
-    teamContext !== undefined &&
-    count(Object.values(teamContext.teammates), t => t.name !== 'team-lead') > 0
-
   if (mode === 'bash') {
     return <Text color="bashBorder">! for bash mode</Text>
   }
 
   const currentMode = toolPermissionContext?.mode
   const hasActiveMode = !isDefaultMode(currentMode)
-  const viewedTask = viewingAgentTaskId ? tasks[viewingAgentTaskId] : undefined
-  const isViewingTeammate =
-    viewSelectionMode === 'viewing-agent' &&
-    viewedTask?.type === 'in_process_teammate'
-  const isViewingCompletedTeammate =
-    isViewingTeammate && viewedTask != null && viewedTask.status !== 'running'
-  const hasBackgroundTasks = runningTaskCount > 0 || isViewingTeammate
+  const hasBackgroundTasks = runningTaskCount > 0
 
-  // Count primary items (permission mode or coordinator mode, background tasks, and teams)
+  // Count primary items (permission mode or coordinator mode, background tasks)
   const primaryItemCount =
-    (isCoordinator || hasActiveMode ? 1 : 0) +
-    (hasBackgroundTasks ? 1 : 0) +
-    (hasTeams ? 1 : 0)
+    (isCoordinator || hasActiveMode ? 1 : 0) + (hasBackgroundTasks ? 1 : 0)
 
   // PR indicator is short (~10 chars) — unlike the old diff indicator the
   // >=100 threshold was tuned for. Now that auto mode is effectively the
@@ -244,15 +209,6 @@ function ModeIndicator({
 
   // Hide the shift+tab hint when there are 2 primary items
   const shouldShowModeHint = primaryItemCount < 2
-
-  // Check if we have in-process teammates (showing pills)
-  // In spinner-tree mode, pills are disabled - teammates appear in the spinner tree instead
-  const hasInProcessTeammates =
-    !showSpinnerTree &&
-    hasBackgroundTasks &&
-    Object.values(tasks).some(t => t.type === 'in_process_teammate')
-  const hasTeammatePills =
-    hasInProcessTeammates || (!showSpinnerTree && isViewingTeammate)
 
   const modePart =
     currentMode && hasActiveMode ? (
@@ -272,29 +228,17 @@ function ModeIndicator({
       </Text>
     ) : currentMode ? (
       // Manual mode's label lives here rather than in PERMISSION_MODE_CONFIG: the
-      // shared symbol/title also feed TeamsDialog (which gates a glyph on the
-      // symbol being non-empty) and the permission debug readout (which appends
-      // its own " mode"), and both read wrong with a pause glyph or "Manual mode".
+      // shared symbol/title also feed the permission debug readout (which appends
+      // its own " mode"), and it reads wrong with a pause glyph or "Manual mode".
       <Text dimColor key="mode">
         {PAUSE_ICON} manual mode on
       </Text>
     ) : null
 
-  // Build parts array - exclude BackgroundTaskStatus when we have teammate pills
-  // (teammate pills get their own row)
   const parts = [
     // BackgroundTaskStatus is NOT in parts — it renders as a Box sibling so
     // its click-target Box isn't nested inside the <Text wrap="truncate">
     // wrapper (reconciler throws on Box-in-Text).
-    ...(isAgentSwarmsEnabled() && hasTeams
-      ? [
-          <TeamStatus
-            key="teams"
-            teamsSelected={teamsSelected}
-            showHint={showHint && !hasBackgroundTasks}
-          />,
-        ]
-      : []),
     ...(shouldShowPrStatus
       ? [
           <PrBadge
@@ -307,10 +251,6 @@ function ModeIndicator({
       : []),
   ]
 
-  // Check if any in-process teammates exist (for hint text cycling)
-  const hasAnyInProcessTeammates = Object.values(tasks).some(
-    t => t.type === 'in_process_teammate' && t.status === 'running',
-  )
   const hasRunningAgentTasks = Object.values(tasks).some(
     t => t.type === 'local_agent' && t.status === 'running',
   )
@@ -324,52 +264,13 @@ function ModeIndicator({
         killAgentsShortcut,
         hasTaskItems,
         expandedView,
-        hasAnyInProcessTeammates,
         hasRunningAgentTasks,
         isKillAgentsConfirmShowing,
       )
     : []
 
-  if (isViewingCompletedTeammate) {
-    parts.push(
-      <Text dimColor key="esc-return">
-        <KeyboardShortcutHint
-          shortcut={escShortcut}
-          action="return to team lead"
-        />
-      </Text>,
-    )
-  } else if (!hasTeammatePills && showHint) {
+  if (showHint) {
     parts.push(...hintParts)
-  }
-
-  // When we have teammate pills, always render them on their own line above other parts
-  if (hasTeammatePills) {
-    // Don't append spinner hints when viewing a completed teammate —
-    // the "esc to return to team lead" hint already replaces "esc to interrupt"
-    const otherParts = [
-      ...(modePart ? [modePart] : []),
-      ...parts,
-      ...(isViewingCompletedTeammate ? [] : hintParts),
-    ]
-    return (
-      <Box flexDirection="column">
-        <Box>
-          <BackgroundTaskStatus
-            tasksSelected={tasksSelected}
-            isViewingTeammate={isViewingTeammate}
-            teammateFooterIndex={teammateFooterIndex}
-            isLeaderIdle={!isLoading}
-            onOpenDialog={onOpenTasksDialog}
-          />
-        </Box>
-        {otherParts.length > 0 && (
-          <Box>
-            <Byline>{otherParts}</Byline>
-          </Box>
-        )}
-      </Box>
-    )
   }
 
   // Add "↓ to manage tasks" hint when panel has visible rows
@@ -379,18 +280,12 @@ function ModeIndicator({
   // click-target Box isn't nested inside <Text wrap="truncate"> — the
   // reconciler throws on Box-in-Text. Computed here so the empty-checks
   // below still treat "pill present" as non-empty.
-  const tasksPart =
-    hasBackgroundTasks &&
-    !hasTeammatePills &&
-    !shouldHideTasksFooter(tasks, showSpinnerTree) ? (
-      <BackgroundTaskStatus
-        tasksSelected={tasksSelected}
-        isViewingTeammate={isViewingTeammate}
-        teammateFooterIndex={teammateFooterIndex}
-        isLeaderIdle={!isLoading}
-        onOpenDialog={onOpenTasksDialog}
-      />
-    ) : null
+  const tasksPart = hasBackgroundTasks ? (
+    <BackgroundTaskStatus
+      tasksSelected={tasksSelected}
+      onOpenDialog={onOpenTasksDialog}
+    />
+  ) : null
 
   // Manual mode is the baseline, not a state worth trading the shortcuts hint
   // for, so it renders alongside it. Every other mode still displaces the hint.
@@ -463,7 +358,7 @@ function ModeIndicator({
     )
   }
 
-  if ((tasksPart || hasCoordinatorTasks) && showHint && !hasTeams) {
+  if ((tasksPart || hasCoordinatorTasks) && showHint) {
     parts.push(
       <Text dimColor key="manage-tasks">
         {tasksSelected ? (
@@ -518,32 +413,11 @@ function getSpinnerHintParts(
   todosShortcut: string,
   killAgentsShortcut: string,
   hasTaskItems: boolean,
-  expandedView: 'none' | 'tasks' | 'teammates',
-  hasTeammates: boolean,
+  expandedView: 'none' | 'tasks',
   hasRunningAgentTasks: boolean,
   isKillAgentsConfirmShowing: boolean,
 ): React.ReactElement[] {
-  let toggleAction: string
-  if (hasTeammates) {
-    // Cycling: none → tasks → teammates → none
-    switch (expandedView) {
-      case 'none':
-        toggleAction = 'show tasks'
-        break
-      case 'tasks':
-        toggleAction = 'show teammates'
-        break
-      case 'teammates':
-        toggleAction = 'hide'
-        break
-    }
-  } else {
-    toggleAction = expandedView === 'tasks' ? 'hide tasks' : 'show tasks'
-  }
-
-  // Show the toggle hint only when there are task items to display or
-  // teammates to cycle to
-  const showToggleHint = hasTaskItems || hasTeammates
+  const toggleAction = expandedView === 'tasks' ? 'hide tasks' : 'show tasks'
 
   return [
     ...(isLoading
@@ -563,7 +437,7 @@ function getSpinnerHintParts(
           </Text>,
         ]
       : []),
-    ...(showToggleHint
+    ...(hasTaskItems
       ? [
           <Text dimColor key="toggle-tasks">
             <KeyboardShortcutHint

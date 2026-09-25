@@ -15,7 +15,6 @@ import { ShowInIDEPrompt } from '../../ShowInIDEPrompt.js'
 import { usePermissionRequestLogging } from '../hooks.js'
 import { PermissionDialog } from '../PermissionDialog.js'
 import type { ToolUseConfirm } from '../PermissionRequest.js'
-import type { WorkerBadgeProps } from '../WorkerBadge.js'
 import type { IDEDiffSupport } from './ideDiffConfig.js'
 import type {
   FileOperationType,
@@ -50,9 +49,6 @@ export type FilePermissionDialogProps<T extends ToolInput = ToolInput> = {
 
   // IDE diff support
   ideDiffSupport?: IDEDiffSupport<T>
-
-  // Worker badge for teammate permission requests
-  workerBadge: WorkerBadgeProps | undefined
 }
 
 export function FilePermissionDialog<T extends ToolInput = ToolInput>({
@@ -69,7 +65,6 @@ export function FilePermissionDialog<T extends ToolInput = ToolInput>({
   parseInput,
   operationType = 'write',
   ideDiffSupport,
-  workerBadge,
   languageName: languageNameOverride,
 }: FilePermissionDialogProps<T>): React.ReactNode {
   // Derive from path unless caller provided an explicit override.
@@ -211,12 +206,7 @@ export function FilePermissionDialog<T extends ToolInput = ToolInput>({
 
   return (
     <>
-      <PermissionDialog
-        title={title}
-        subtitle={subtitle}
-        innerPaddingX={0}
-        workerBadge={workerBadge}
-      >
+      <PermissionDialog title={title} subtitle={subtitle} innerPaddingX={0}>
         {symlinkWarning}
         {content}
         <Box flexDirection="column" paddingX={1}>

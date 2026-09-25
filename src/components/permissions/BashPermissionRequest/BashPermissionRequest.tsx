@@ -32,14 +32,7 @@ import { bashToolUseOptions } from './bashToolUseOptions.js'
 export function BashPermissionRequest(
   props: PermissionRequestProps,
 ): React.ReactNode {
-  const {
-    toolUseConfirm,
-    toolUseContext,
-    onDone,
-    onReject,
-    verbose,
-    workerBadge,
-  } = props
+  const { toolUseConfirm, toolUseContext, onDone, onReject, verbose } = props
 
   const { command, description } = BashTool.inputSchema.parse(
     toolUseConfirm.input,
@@ -57,7 +50,6 @@ export function BashPermissionRequest(
         onDone={onDone}
         onReject={onReject}
         verbose={verbose}
-        workerBadge={workerBadge}
         sedInfo={sedInfo}
       />
     )
@@ -71,7 +63,6 @@ export function BashPermissionRequest(
       onDone={onDone}
       onReject={onReject}
       verbose={verbose}
-      workerBadge={workerBadge}
       command={command}
       description={description}
     />
@@ -85,7 +76,6 @@ function BashPermissionRequestInner({
   onDone,
   onReject,
   verbose: _verbose,
-  workerBadge,
   command,
   description,
 }: PermissionRequestProps & {
@@ -297,7 +287,7 @@ function BashPermissionRequestInner({
   }
 
   return (
-    <PermissionDialog workerBadge={workerBadge} title="Bash command">
+    <PermissionDialog title="Bash command">
       <Box flexDirection="column" paddingX={2} paddingY={1}>
         <Text dimColor={explainerState.visible}>
           {BashTool.renderToolUseMessage(

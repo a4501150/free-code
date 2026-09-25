@@ -11,49 +11,17 @@ import {
 import { join } from 'path'
 import { getSessionId } from '../bootstrap/state.js'
 import { getAgentContext, isSubagentContext } from './agentContext.js'
-import { uniq } from './array.js'
 import { logForDebugging } from './debug.js'
-import { getClaudeConfigHomeDir, getTeamsDir } from './envUtils.js'
+import { getClaudeConfigHomeDir } from './envUtils.js'
 import { errorMessage, getErrnoCode } from './errors.js'
 import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
 import { getLiveSessionHolders } from './concurrentSessions.js'
 import { createSignal } from './signal.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
-import { getTeamName } from './teammate.js'
-import { getTeammateContext } from './teammateContext.js'
 
 // Listeners for task list updates (used for immediate UI refresh in same process)
 const tasksUpdated = createSignal()
-
-/**
- * Team name set by the leader when creating a team.
- * Used by getTaskListId() so the leader's tasks are stored under the team name
- * (matching where tmux/iTerm2 teammates look), not under the session ID.
- */
-let leaderTeamName: string | undefined
-
-/**
- * Sets the leader's team name for task list resolution.
- * Called by TeamCreateTool when a team is created.
- */
-export function setLeaderTeamName(teamName: string): void {
-  if (leaderTeamName === teamName) return
-  leaderTeamName = teamName
-  // Changing the task list ID is a "tasks updated" event for subscribers —
-  // they're now looking at a different directory.
-  notifyTasksUpdated()
-}
-
-/**
- * Clears the leader's team name.
- * Called when a team is deleted.
- */
-export function clearLeaderTeamName(): void {
-  if (leaderTeamName === undefined) return
-  leaderTeamName = undefined
-  notifyTasksUpdated()
-}
 
 /**
  * Register a listener to be called when tasks are updated in this process.
@@ -88,11 +56,11 @@ export {
 const HIGH_WATER_MARK_FILE = '.highwatermark'
 
 // Lock options: retry with backoff so concurrent callers (multiple Claudes
-// in a swarm) wait for the lock instead of failing immediately. The sync
-// lockSync API blocked the event loop; the async API needs explicit retries
-// to achieve the same serialization semantics.
+// sharing a task list) wait for the lock instead of failing immediately. The
+// async API needs explicit retries to achieve the same serialization
+// semantics.
 //
-// Budget sized for ~10+ concurrent swarm agents: each critical section does
+// Budget sized for ~10+ concurrent claimants: each critical section does
 // readdir + N×readFile + writeFile (~50-100ms on slow disks), so the last
 // caller in a 10-way race needs ~900ms. retries=30 gives ~2.6s total wait.
 const LOCK_OPTIONS = {
@@ -127,9 +95,9 @@ async function writeHighWaterMark(
 }
 
 /**
- * Resets the task list for a new swarm - clears any existing tasks.
+ * Resets a task list - clears any existing tasks.
  * Writes a high water mark file to prevent ID reuse after reset.
- * Should be called when a new swarm is created to ensure task numbering starts at 1.
+ * Use when starting a fresh work queue so task numbering starts at 1.
  * Uses file locking to prevent race conditions when multiple Claudes run in parallel.
  */
 export async function resetTaskList(taskListId: string): Promise<void> {
@@ -190,7 +158,7 @@ const ownedSessionScopedListIds = new Set<string>()
  * resume or a fresh start must not inherit a previous run's tasks. Guards
  * for the sharing cases (session IDs are not exclusive — see
  * concurrentSessions.ts):
- * - a stable-name list (team name, tasks-mode queue, CLAUDE_CODE_TASK_LIST_ID)
+ * - a stable-name list (tasks-mode queue, CLAUDE_CODE_TASK_LIST_ID)
  *   is never registered here, so it is never touched;
  * - a list still held by another live CLI process (concurrent resume, or a
  *   webui-attached child that outlives this process) is skipped;
@@ -275,14 +243,10 @@ export async function cleanupSubagentTaskList(agentId: string): Promise<void> {
  * Priority:
  * 0. Subagent isolation: subagents get their own task list scoped by agentId
  * 1. CLAUDE_CODE_TASK_LIST_ID - explicit task list ID
- * 2. In-process teammate: leader's team name (so teammates share the leader's task list)
- * 3. CLAUDE_CODE_TEAM_NAME - set when running as a process-based teammate
- * 4. Leader team name - set when the leader creates a team via TeamCreate
- * 5. Session ID - fallback for standalone sessions
+ * 2. Session ID - fallback for standalone sessions
  */
 export function getTaskListId(): string {
   // Subagents get isolated task lists to prevent cross-context leakage.
-  // Teammates are NOT subagents — they continue to share via team name.
   const agentCtx = getAgentContext()
   if (isSubagentContext(agentCtx)) {
     return `subagent-${agentCtx.agentId}`
@@ -308,14 +272,6 @@ export function getMainTaskListId(): string {
   if (process.env.CLAUDE_CODE_TASK_LIST_ID) {
     return process.env.CLAUDE_CODE_TASK_LIST_ID
   }
-  // In-process teammates use the leader's team name so they share the same
-  // task list that tmux/iTerm2 teammates also resolve to.
-  const teammateCtx = getTeammateContext()
-  if (teammateCtx) {
-    return teammateCtx.teamName
-  }
-  const teamOrLeader = getTeamName() || leaderTeamName
-  if (teamOrLeader) return teamOrLeader
   // Session-scoped fallback: track ownership so exit cleanup covers this ID
   // and IDs rotated away from by /resume or /clear.
   const sessionId = getSessionId()
@@ -788,174 +744,6 @@ async function claimTaskWithBusyCheck(
     if (release) {
       await release()
     }
-  }
-}
-
-/**
- * Team member info (subset of TeamFile member structure)
- */
-export type TeamMember = {
-  agentId: string
-  name: string
-  agentType?: string
-}
-
-/**
- * Agent status based on task ownership
- */
-export type AgentStatus = {
-  agentId: string
-  name: string
-  agentType?: string
-  status: 'idle' | 'busy'
-  currentTasks: string[] // task IDs the agent owns
-}
-
-/**
- * Sanitizes a name for use in file paths
- */
-function sanitizeName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
-}
-
-/**
- * Reads team members from the team file
- */
-async function readTeamMembers(
-  teamName: string,
-): Promise<{ leadAgentId: string; members: TeamMember[] } | null> {
-  const teamsDir = getTeamsDir()
-  const teamFilePath = join(teamsDir, sanitizeName(teamName), 'config.json')
-  try {
-    const content = await readFile(teamFilePath, 'utf-8')
-    const teamFile = jsonParse(content) as {
-      leadAgentId: string
-      members: TeamMember[]
-    }
-    return {
-      leadAgentId: teamFile.leadAgentId,
-      members: teamFile.members.map(m => ({
-        agentId: m.agentId,
-        name: m.name,
-        agentType: m.agentType,
-      })),
-    }
-  } catch (e) {
-    const code = getErrnoCode(e)
-    if (code === 'ENOENT') {
-      return null
-    }
-    logForDebugging(
-      `[Tasks] Failed to read team file for ${teamName}: ${errorMessage(e)}`,
-    )
-    return null
-  }
-}
-
-/**
- * Gets the status of all agents in a team based on task ownership.
- * An agent is considered "idle" if they don't own any open tasks.
- * An agent is considered "busy" if they own at least one open task.
- *
- * @param teamName - The name of the team (also used as taskListId)
- * @returns Array of agent statuses, or null if team not found
- */
-export async function getAgentStatuses(
-  teamName: string,
-): Promise<AgentStatus[] | null> {
-  const teamData = await readTeamMembers(teamName)
-  if (!teamData) {
-    return null
-  }
-
-  const taskListId = sanitizeName(teamName)
-  const allTasks = await listTasks(taskListId)
-
-  // Get unresolved tasks grouped by owner (open or in_progress)
-  const unresolvedTasksByOwner = new Map<string, string[]>()
-  for (const task of allTasks) {
-    if (task.status !== 'completed' && task.owner) {
-      const existing = unresolvedTasksByOwner.get(task.owner) || []
-      existing.push(task.id)
-      unresolvedTasksByOwner.set(task.owner, existing)
-    }
-  }
-
-  // Build status for each agent (leader is already in members)
-  return teamData.members.map(member => {
-    // Check both name (new) and agentId (legacy) for backwards compatibility
-    const tasksByName = unresolvedTasksByOwner.get(member.name) || []
-    const tasksById = unresolvedTasksByOwner.get(member.agentId) || []
-    const currentTasks = uniq([...tasksByName, ...tasksById])
-    return {
-      agentId: member.agentId,
-      name: member.name,
-      agentType: member.agentType,
-      status: currentTasks.length === 0 ? 'idle' : 'busy',
-      currentTasks,
-    }
-  })
-}
-
-/**
- * Result of unassigning tasks from a teammate
- */
-export type UnassignTasksResult = {
-  unassignedTasks: Array<{ id: string; subject: string }>
-  notificationMessage: string
-}
-
-/**
- * Unassigns all open tasks from a teammate and builds a notification message.
- * Used when a teammate is killed or gracefully shuts down.
- *
- * @param teamName - The team/task list name
- * @param teammateId - The teammate's agent ID
- * @param teammateName - The teammate's display name
- * @param reason - How the teammate exited ('terminated' | 'shutdown')
- * @returns The unassigned tasks and a formatted notification message
- */
-export async function unassignTeammateTasks(
-  teamName: string,
-  teammateId: string,
-  teammateName: string,
-  reason: 'terminated' | 'shutdown',
-): Promise<UnassignTasksResult> {
-  const tasks = await listTasks(teamName)
-  const unresolvedAssignedTasks = tasks.filter(
-    t =>
-      t.status !== 'completed' &&
-      (t.owner === teammateId || t.owner === teammateName),
-  )
-
-  // Unassign each task and reset status to open
-  for (const task of unresolvedAssignedTasks) {
-    await updateTask(teamName, task.id, { owner: undefined, status: 'pending' })
-  }
-
-  if (unresolvedAssignedTasks.length > 0) {
-    logForDebugging(
-      `[Tasks] Unassigned ${unresolvedAssignedTasks.length} task(s) from ${teammateName}`,
-    )
-  }
-
-  // Build notification message
-  const actionVerb =
-    reason === 'terminated' ? 'was terminated' : 'has shut down'
-  let notificationMessage = `${teammateName} ${actionVerb}.`
-  if (unresolvedAssignedTasks.length > 0) {
-    const taskList = unresolvedAssignedTasks
-      .map(t => `#${t.id} "${t.subject}"`)
-      .join(', ')
-    notificationMessage += ` ${unresolvedAssignedTasks.length} task(s) were unassigned: ${taskList}. Use TaskList to check availability and TaskUpdate with owner to reassign them to idle teammates.`
-  }
-
-  return {
-    unassignedTasks: unresolvedAssignedTasks.map(t => ({
-      id: t.id,
-      subject: t.subject,
-    })),
-    notificationMessage,
   }
 }
 

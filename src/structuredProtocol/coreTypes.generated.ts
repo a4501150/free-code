@@ -58,9 +58,6 @@ import type {
   SubagentStartHookInputSchema,
   SubagentStopHookInputSchema,
   SyncHookJSONOutputSchema,
-  TaskCompletedHookInputSchema,
-  TaskCreatedHookInputSchema,
-  TeammateIdleHookInputSchema,
   UserPromptSubmitHookInputSchema,
   WorktreeCreateHookInputSchema,
   WorktreeRemoveHookInputSchema,
@@ -157,11 +154,6 @@ export type SubagentStartHookInput = z.infer<
 export type SubagentStopHookInput = z.infer<typeof SubagentStopHookInputSchema>
 export type PreCompactHookInput = z.infer<typeof PreCompactHookInputSchema>
 export type PostCompactHookInput = z.infer<typeof PostCompactHookInputSchema>
-export type TeammateIdleHookInput = z.infer<typeof TeammateIdleHookInputSchema>
-export type TaskCreatedHookInput = z.infer<typeof TaskCreatedHookInputSchema>
-export type TaskCompletedHookInput = z.infer<
-  typeof TaskCompletedHookInputSchema
->
 export type ElicitationHookInput = z.infer<typeof ElicitationHookInputSchema>
 export type ElicitationResultHookInput = z.infer<
   typeof ElicitationResultHookInputSchema

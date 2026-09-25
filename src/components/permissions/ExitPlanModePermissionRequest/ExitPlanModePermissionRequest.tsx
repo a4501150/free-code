@@ -24,8 +24,6 @@ import type { KeyboardEvent } from '../../../ink/events/keyboard-event.js'
 import { Box, Text } from '../../../ink.js'
 import type { AppState } from '../../../state/AppStateStore.js'
 import { AGENT_TOOL_NAME } from '../../../tools/AgentTool/constants.js'
-import { TEAM_CREATE_TOOL_NAME } from '../../../tools/TeamCreateTool/constants.js'
-import { isAgentSwarmsEnabled } from '../../../utils/agentSwarmsEnabled.js'
 import {
   calculateContextPercentages,
   getContextWindowForModel,
@@ -148,7 +146,6 @@ export function ExitPlanModePermissionRequest({
   toolUseConfirm,
   onDone,
   onReject,
-  workerBadge,
   setStickyFooter,
 }: PermissionRequestProps): React.ReactNode {
   const toolPermissionContext = useAppState(s => s.toolPermissionContext)
@@ -350,10 +347,6 @@ export function ExitPlanModePermissionRequest({
       const transcriptPath = getTranscriptPath()
       const transcriptHint = `\n\nIf you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: ${transcriptPath}`
 
-      const teamHint = isAgentSwarmsEnabled()
-        ? `\n\nIf this plan can be broken down into multiple independent tasks, consider using the ${TEAM_CREATE_TOOL_NAME} tool to create a team and parallelize the work.`
-        : ''
-
       const feedbackSuffix = acceptFeedback
         ? `\n\nUser feedback on this plan: ${acceptFeedback}`
         : ''
@@ -362,8 +355,8 @@ export function ExitPlanModePermissionRequest({
       // folds this to the non-verify template and DCEs the long verification
       // instruction literal out of the bundle.
       const content = feature('VERIFY_PLAN')
-        ? `Implement the following plan:\n\n${currentPlan}\n\nIMPORTANT: When you have finished implementing the plan, you MUST call the "VerifyPlanExecution" tool directly (NOT the ${AGENT_TOOL_NAME} tool or an agent) to trigger background verification.${transcriptHint}${teamHint}${feedbackSuffix}`
-        : `Implement the following plan:\n\n${currentPlan}${transcriptHint}${teamHint}${feedbackSuffix}`
+        ? `Implement the following plan:\n\n${currentPlan}\n\nIMPORTANT: When you have finished implementing the plan, you MUST call the "VerifyPlanExecution" tool directly (NOT the ${AGENT_TOOL_NAME} tool or an agent) to trigger background verification.${transcriptHint}${feedbackSuffix}`
+        : `Implement the following plan:\n\n${currentPlan}${transcriptHint}${feedbackSuffix}`
 
       setAppState(prev => ({
         ...prev,
@@ -592,11 +585,7 @@ export function ExitPlanModePermissionRequest({
     }
 
     return (
-      <PermissionDialog
-        color="planMode"
-        title="Exit plan mode?"
-        workerBadge={workerBadge}
-      >
+      <PermissionDialog color="planMode" title="Exit plan mode?">
         <Box flexDirection="column" paddingX={1} marginTop={1}>
           <Text>Claude wants to exit plan mode</Text>
           <Box marginTop={1}>
@@ -629,7 +618,6 @@ export function ExitPlanModePermissionRequest({
         color="planMode"
         title="Ready to code?"
         innerPaddingX={0}
-        workerBadge={workerBadge}
       >
         <Box flexDirection="column" marginTop={1}>
           <Box paddingX={1} flexDirection="column">

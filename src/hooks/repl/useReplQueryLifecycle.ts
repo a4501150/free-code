@@ -49,8 +49,6 @@ export function useReplQueryLifecycle({
     [resetTimingRefs],
   )
 
-  const swarmStartTimeRef = React.useRef<number | null>(null)
-
   const [lastQueryCompletionTime, setLastQueryCompletionTime] = useState(0)
 
   const resetLoadingState = useCallback(() => {
@@ -72,7 +70,6 @@ export function useReplQueryLifecycle({
     totalPausedMsRef,
     pauseStartTimeRef,
     resetTimingRefs,
-    swarmStartTimeRef,
     lastQueryCompletionTime,
     setLastQueryCompletionTime,
     resetLoadingState,

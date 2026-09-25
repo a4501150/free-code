@@ -5,10 +5,8 @@ import {
   COMMAND_MESSAGE_TAG,
   COMMAND_NAME_TAG,
   LOCAL_COMMAND_CAVEAT_TAG,
-  TEAMMATE_MESSAGE_TAG,
   TICK_TAG,
 } from '../../constants/xml.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import {
   extractSystemReminderBody,
   extractTag,
@@ -29,7 +27,6 @@ import { UserMemoryInputMessage } from './UserMemoryInputMessage.js'
 import { UserPlanMessage } from './UserPlanMessage.js'
 import { UserPromptMessage } from './UserPromptMessage.js'
 import { UserResourceUpdateMessage } from './UserResourceUpdateMessage.js'
-import { UserTeammateMessage } from './UserTeammateMessage.js'
 import * as userChannelNs from './UserChannelMessage.js'
 
 type Props = {
@@ -104,7 +101,7 @@ export function UserTextMessage({
 
   // Bash inputs!
   // startsWith (not includes): synthetic messages always begin with the tag —
-  // see processBashCommand.tsx, processSlashCommand.tsx, swarm/inProcessRunner.ts,
+  // see processBashCommand.tsx, processSlashCommand.tsx,
   // tasks/*/notifications, services/mcp/channelNotification.ts.
   // Using `.includes()` here would route any user-pasted prompt that mentions
   // these tag names into a synthetic-message renderer, which then returns null
@@ -134,20 +131,6 @@ export function UserTextMessage({
 
   if (param.text.includes('<user-memory-input>')) {
     return <UserMemoryInputMessage addMargin={addMargin} text={param.text} />
-  }
-
-  // Teammate messages - only check when swarms enabled
-  if (
-    isAgentSwarmsEnabled() &&
-    param.text.startsWith(`<${TEAMMATE_MESSAGE_TAG}`)
-  ) {
-    return (
-      <UserTeammateMessage
-        addMargin={addMargin}
-        param={param}
-        isTranscriptMode={isTranscriptMode}
-      />
-    )
   }
 
   // Task notifications (agent completions, bash completions, etc.)

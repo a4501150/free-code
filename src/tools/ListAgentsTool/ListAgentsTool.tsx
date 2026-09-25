@@ -9,7 +9,6 @@ import { isLocalAgentTask } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { isMainSessionTask } from '../../tasks/LocalMainSessionTask.js'
 import type { TaskState } from '../../tasks/types.js'
 import { listLiveSessions } from '../../utils/concurrentSessions.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { LIST_AGENTS_TOOL_NAME, DESCRIPTION } from './constants.js'
 
 const inputSchema = z.strictObject({})
@@ -80,7 +79,7 @@ export const ListAgentsTool = buildTool({
   isEnabled() {
     // Mirrors SendMessage: the orchestrating modes must be able to discover
     // what they may message.
-    return isAgentSwarmsEnabled() || isCoordinatorMode()
+    return isCoordinatorMode()
   },
   isReadOnly() {
     return true

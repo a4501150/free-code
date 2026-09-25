@@ -22,13 +22,7 @@ type SkillOptionValue = 'yes' | 'yes-exact' | 'yes-prefix' | 'no'
 export function SkillPermissionRequest(
   props: PermissionRequestProps,
 ): React.ReactNode {
-  const {
-    toolUseConfirm,
-    onDone,
-    onReject,
-    verbose: _verbose,
-    workerBadge,
-  } = props
+  const { toolUseConfirm, onDone, onReject, verbose: _verbose } = props
   const parseInput = (input: unknown): string => {
     const result = SkillTool.inputSchema.safeParse(input)
     if (!result.success) {
@@ -178,7 +172,7 @@ export function SkillPermissionRequest(
   }, [toolUseConfirm, onDone, onReject])
 
   return (
-    <PermissionDialog title={`Use skill "${skill}"?`} workerBadge={workerBadge}>
+    <PermissionDialog title={`Use skill "${skill}"?`}>
       <Text>Claude may use instructions, code, or files from this Skill.</Text>
       <Box flexDirection="column" paddingX={2} paddingY={1}>
         <Text dimColor>{commandObj?.description}</Text>

@@ -3,7 +3,6 @@ import {
   ALL_AGENT_DISALLOWED_TOOLS,
   ASYNC_AGENT_ALLOWED_TOOLS,
   CUSTOM_AGENT_DISALLOWED_TOOLS,
-  IN_PROCESS_TEAMMATE_ALLOWED_TOOLS,
 } from '../../constants/tools.js'
 import { startAgentSummarization } from '../../services/AgentSummary/agentSummary.js'
 import { clearDumpState } from '../../services/api/dumpPrompts.js'
@@ -36,7 +35,6 @@ import type {
   Message as MessageType,
   StreamEvent,
 } from '../../types/message.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { AbortError, errorMessage } from '../../utils/errors.js'
 import type { CacheSafeParams } from '../../utils/forkedAgent.js'
@@ -51,7 +49,6 @@ import {
   classifyYoloAction,
 } from '../../utils/permissions/yoloClassifier.js'
 import { emitTaskProgress as emitTaskProgressEvent } from '../../utils/task/structuredProgress.js'
-import { isInProcessTeammate } from '../../utils/teammateContext.js'
 import { getTokenCountFromUsage } from '../../utils/tokens.js'
 import { EXIT_PLAN_MODE_TOOL_NAME } from '../ExitPlanModeTool/constants.js'
 import { AGENT_TOOL_NAME, LEGACY_AGENT_TOOL_NAME } from './constants.js'
@@ -80,7 +77,7 @@ export function filterToolsForAgent({
     if (tool.name.startsWith('mcp__')) {
       return true
     }
-    // Allow ExitPlanMode for agents in plan mode (e.g., in-process teammates)
+    // Allow ExitPlanMode for agents in plan mode
     // This bypasses both the ALL_AGENT_DISALLOWED_TOOLS and async tool filters
     if (
       toolMatchesName(tool, EXIT_PLAN_MODE_TOOL_NAME) &&
@@ -95,17 +92,6 @@ export function filterToolsForAgent({
       return false
     }
     if (isAsync && !ASYNC_AGENT_ALLOWED_TOOLS.has(tool.name)) {
-      if (isAgentSwarmsEnabled() && isInProcessTeammate()) {
-        // Allow AgentTool for in-process teammates to spawn sync subagents.
-        // Validation in AgentTool.call() prevents background agents and teammate spawning.
-        if (toolMatchesName(tool, AGENT_TOOL_NAME)) {
-          return true
-        }
-        // Allow task tools for in-process teammates to coordinate via shared task list
-        if (IN_PROCESS_TEAMMATE_ALLOWED_TOOLS.has(tool.name)) {
-          return true
-        }
-      }
       return false
     }
     return true

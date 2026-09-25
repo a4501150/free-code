@@ -1,8 +1,5 @@
 import type { Tool, ToolPermissionContext, Tools } from '../Tool.js'
-import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
-import { EXIT_PLAN_MODE_TOOL_NAME } from '../tools/ExitPlanModeTool/constants.js'
-import { isAgentSwarmsEnabled } from './agentSwarmsEnabled.js'
 import { logForDebugging } from './debug.js'
 import { getInitialSettings } from './settings/settings.js'
 import { getProviderRegistry } from './model/providerRegistry.js'
@@ -34,39 +31,6 @@ type ToolSchemaWithExtras = ToolSchema & {
     ttl?: '5m' | '1h'
   }
   eager_input_streaming?: boolean
-}
-
-// Fields to filter from tool schemas when swarms are not enabled
-const SWARM_FIELDS_BY_TOOL: Record<string, string[]> = {
-  [EXIT_PLAN_MODE_TOOL_NAME]: ['launchSwarm', 'teammateCount'],
-  [AGENT_TOOL_NAME]: ['name', 'team_name', 'mode'],
-}
-
-/**
- * Filter swarm-related fields from a tool's input schema.
- * Called at runtime when isAgentSwarmsEnabled() returns false.
- */
-function filterSwarmFieldsFromSchema(
-  toolName: string,
-  schema: APIToolInputSchema,
-): APIToolInputSchema {
-  const fieldsToRemove = SWARM_FIELDS_BY_TOOL[toolName]
-  if (!fieldsToRemove || fieldsToRemove.length === 0) {
-    return schema
-  }
-
-  // Clone the schema to avoid mutating the original
-  const filtered = { ...schema }
-  const props = filtered.properties
-  if (props && typeof props === 'object') {
-    const filteredProps = { ...(props as Record<string, unknown>) }
-    for (const field of fieldsToRemove) {
-      delete filteredProps[field]
-    }
-    filtered.properties = filteredProps
-  }
-
-  return filtered
 }
 
 export async function toolToAPISchema(
@@ -108,10 +72,6 @@ export async function toolToAPISchema(
     // Zod-derived schemas are sent as natural JSON Schema — optional fields
     // stay optional, validation keywords (minimum, maximum, etc.) are preserved.
     let input_schema = modelInputSchema as APIToolInputSchema
-
-    if (!isAgentSwarmsEnabled()) {
-      input_schema = filterSwarmFieldsFromSchema(tool.name, input_schema)
-    }
 
     base = {
       name: tool.name,

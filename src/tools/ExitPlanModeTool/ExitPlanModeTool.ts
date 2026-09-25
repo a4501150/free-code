@@ -10,35 +10,14 @@ import {
   setNeedsPlanModeExitAttachment,
 } from '../../bootstrap/state.js'
 
-import {
-  buildTool,
-  type Tool,
-  type ToolDef,
-  toolMatchesName,
-} from '../../Tool.js'
-import { formatAgentId, generateRequestId } from '../../utils/agentId.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
+import { buildTool, type Tool, type ToolDef } from '../../Tool.js'
 import { logForDebugging } from '../../utils/debug.js'
-import {
-  findInProcessTeammateTaskId,
-  setAwaitingPlanApproval,
-} from '../../utils/inProcessTeammateHelpers.js'
 import { logError } from '../../utils/log.js'
 import {
   getPlan,
   getPlanFilePath,
   persistFileSnapshotIfRemote,
 } from '../../utils/plans.js'
-import { jsonStringify } from '../../utils/slowOperations.js'
-import {
-  getAgentName,
-  getTeamName,
-  isPlanModeRequired,
-  isTeammate,
-} from '../../utils/teammate.js'
-import { writeToMailbox } from '../../utils/teammateMailbox.js'
-import { AGENT_TOOL_NAME } from '../AgentTool/constants.js'
-import { TEAM_CREATE_TOOL_NAME } from '../TeamCreateTool/constants.js'
 import { EXIT_PLAN_MODE_TOOL_NAME } from './constants.js'
 import { EXIT_PLAN_MODE_TOOL_PROMPT } from './prompt.js'
 import {
@@ -76,28 +55,12 @@ export const outputSchema = z.object({
     .string()
     .optional()
     .describe('The file path where the plan was saved'),
-  hasTaskTool: z
-    .boolean()
-    .optional()
-    .describe(
-      'Whether Agent Teams spawning is available (Agent tool present and Agent Teams enabled)',
-    ),
   planWasEdited: z
     .boolean()
     .optional()
     .describe(
       'True when the user edited the plan (CCR web UI or Ctrl+G); determines whether the plan is echoed back in tool_result',
     ),
-  awaitingLeaderApproval: z
-    .boolean()
-    .optional()
-    .describe(
-      'When true, the teammate has sent a plan approval request to the team leader',
-    ),
-  requestId: z
-    .string()
-    .optional()
-    .describe('Unique identifier for the plan approval request'),
 })
 type OutputSchema = typeof outputSchema
 
@@ -137,21 +100,9 @@ export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
     return false // Now writes to disk
   },
   requiresUserInteraction() {
-    // For ALL teammates, no local user interaction needed:
-    // - If isPlanModeRequired(): team lead approves via mailbox
-    // - Otherwise: exits locally without approval (voluntary plan mode)
-    if (isTeammate()) {
-      return false
-    }
-    // For non-teammates, require user confirmation to exit plan mode
     return true
   },
-  async validateInput(_input, { getAppState, options }) {
-    // Teammate AppState may show leader's mode (runAgent.ts skips override in
-    // acceptEdits/bypassPermissions/auto); isPlanModeRequired() is the real source
-    if (isTeammate()) {
-      return { result: true }
-    }
+  async validateInput(_input, { getAppState }) {
     // Reject before checkPermissions to avoid showing the approval dialog.
     const mode = getAppState().toolPermissionContext.mode
     if (mode !== 'plan') {
@@ -164,19 +115,8 @@ export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
     }
     return { result: true }
   },
-  async checkPermissions(input, context) {
-    // For ALL teammates, bypass the permission UI to avoid sending permission_request
-    // The call() method handles the appropriate behavior:
-    // - If isPlanModeRequired(): sends plan_approval_request to leader
-    // - Otherwise: exits plan mode locally (voluntary plan mode)
-    if (isTeammate()) {
-      return {
-        behavior: 'allow' as const,
-        updatedInput: input,
-      }
-    }
-
-    // For non-teammates, require user confirmation to exit plan mode
+  async checkPermissions(input, _context) {
+    // Require user confirmation to exit plan mode
     return {
       behavior: 'ask' as const,
       message: 'Exit plan mode?',
@@ -204,58 +144,6 @@ export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
     if (inputPlan !== undefined && filePath) {
       await writeFile(filePath, inputPlan, 'utf-8').catch(e => logError(e))
       void persistFileSnapshotIfRemote()
-    }
-
-    // Check if this is a teammate that requires leader approval
-    if (isTeammate() && isPlanModeRequired()) {
-      // Plan is required for plan_mode_required teammates
-      if (!plan) {
-        throw new Error(
-          `No plan file found at ${filePath}. Please write your plan to this file before calling ExitPlanMode.`,
-        )
-      }
-      const agentName = getAgentName() || 'unknown'
-      const teamName = getTeamName()
-      const requestId = generateRequestId(
-        'plan_approval',
-        formatAgentId(agentName, teamName || 'default'),
-      )
-
-      const approvalRequest = {
-        type: 'plan_approval_request',
-        from: agentName,
-        timestamp: new Date().toISOString(),
-        planFilePath: filePath,
-        planContent: plan,
-        requestId,
-      }
-
-      await writeToMailbox(
-        'team-lead',
-        {
-          from: agentName,
-          text: jsonStringify(approvalRequest),
-          timestamp: new Date().toISOString(),
-        },
-        teamName,
-      )
-
-      // Update task state to show awaiting approval (for in-process teammates)
-      const appState = context.getAppState()
-      const agentTaskId = findInProcessTeammateTaskId(agentName, appState)
-      if (agentTaskId) {
-        setAwaitingPlanApproval(agentTaskId, context.setAppState, true)
-      }
-
-      return {
-        data: {
-          plan,
-          isAgent: true,
-          filePath,
-          awaitingLeaderApproval: true,
-          requestId,
-        },
-      }
     }
 
     // Note on plan verification (VERIFY_PLAN feature): after context clear,
@@ -339,53 +227,19 @@ export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
       }
     })
 
-    const hasTaskTool =
-      isAgentSwarmsEnabled() &&
-      context.options.tools.some(t => toolMatchesName(t, AGENT_TOOL_NAME))
-
     return {
       data: {
         plan,
         isAgent,
         filePath,
-        hasTaskTool: hasTaskTool || undefined,
         planWasEdited: inputPlan !== undefined || undefined,
       },
     }
   },
   mapToolResultToToolResultBlockParam(
-    {
-      isAgent,
-      plan,
-      filePath,
-      hasTaskTool,
-      planWasEdited,
-      awaitingLeaderApproval,
-      requestId,
-    },
+    { isAgent, plan, filePath, planWasEdited },
     toolUseID,
   ) {
-    // Handle teammate awaiting leader approval
-    if (awaitingLeaderApproval) {
-      return {
-        type: 'tool_result',
-        content: `Your plan has been submitted to the team lead for approval.
-
-Plan file: ${filePath}
-
-**What happens next:**
-1. Wait for the team lead to review your plan
-2. You will receive a message in your inbox with approval/rejection
-3. If approved, you can proceed with implementation
-4. If rejected, refine your plan based on the feedback
-
-**Important:** Do NOT proceed until you receive approval. Check your inbox for response.
-
-Request ID: ${requestId}`,
-        tool_use_id: toolUseID,
-      }
-    }
-
     if (isAgent) {
       return {
         type: 'tool_result',
@@ -404,10 +258,6 @@ Request ID: ${requestId}`,
       }
     }
 
-    const teamHint = hasTaskTool
-      ? `\n\nIf this plan can be broken down into multiple independent tasks, consider using the ${TEAM_CREATE_TOOL_NAME} tool to create a team and parallelize the work.`
-      : ''
-
     // Label edited plans so the model knows the user changed something.
     const planLabel = planWasEdited
       ? 'Approved Plan (edited by user)'
@@ -418,7 +268,7 @@ Request ID: ${requestId}`,
       content: `User has approved your plan. You can now start coding. Start with updating your todo list if applicable
 
 Your plan has been saved to: ${filePath}
-You can refer back to it if needed during implementation.${teamHint}
+You can refer back to it if needed during implementation.
 
 ## ${planLabel}:
 ${plan}`,

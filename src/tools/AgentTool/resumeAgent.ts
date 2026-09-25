@@ -24,7 +24,6 @@ import {
   readAgentMetadata,
 } from '../../utils/sessionStorage.js'
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js'
-import { getParentSessionId } from '../../utils/teammate.js'
 import { reconstructForSubagentResume } from '../../utils/toolResultStorage.js'
 import { runAsyncAgentLifecycle } from './agentToolUtils.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
@@ -52,8 +51,8 @@ export async function resumeAgentBackground({
 }): Promise<ResumeAgentResult> {
   const startTime = Date.now()
   const appState = toolUseContext.getAppState()
-  // In-process teammates get a no-op setAppState; setAppStateForTasks
-  // reaches the root store so task registration/progress/kill stay visible.
+  // setAppStateForTasks reaches the root store so task registration,
+  // progress and kill stay visible even inside nested contexts.
   const rootSetAppState =
     toolUseContext.setAppStateForTasks ?? toolUseContext.setAppState
   const permissionMode = appState.toolPermissionContext.mode
@@ -168,7 +167,6 @@ export async function resumeAgentBackground({
 
   const asyncAgentContext = {
     agentId,
-    parentSessionId: getParentSessionId(),
     agentType: 'subagent' as const,
     subagentName: selectedAgent.agentType,
     isBuiltIn: isBuiltInAgent(selectedAgent),

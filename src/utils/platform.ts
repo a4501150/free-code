@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { release as osRelease } from 'os'
+import { env } from './env.js'
 import { getFsImplementation } from './fsOperations.js'
 import { logError } from './log.js'
 
@@ -125,6 +126,21 @@ const VCS_MARKERS: Array<[string, string]> = [
   ['.jj', 'jujutsu'],
   ['.sl', 'sapling'],
 ]
+
+/**
+ * Checks if we're currently running inside iTerm2.
+ * Uses multiple detection methods:
+ * 1. TERM_PROGRAM env var set to "iTerm.app"
+ * 2. ITERM_SESSION_ID env var is present
+ * 3. env.terminal detection from utils/env.ts
+ */
+export const isInITerm2 = memoize((): boolean => {
+  const termProgram = process.env.TERM_PROGRAM
+  const hasItermSessionId = !!process.env.ITERM_SESSION_ID
+  const terminalIsITerm = env.terminal === 'iTerm.app'
+
+  return termProgram === 'iTerm.app' || hasItermSessionId || terminalIsITerm
+})
 
 export async function detectVcs(dir?: string): Promise<string[]> {
   const detected = new Set<string>()

@@ -9,8 +9,6 @@ import { TASK_GET_TOOL_NAME } from '../../tools/TaskGetTool/constants.js'
 import { TASK_LIST_TOOL_NAME } from '../../tools/TaskListTool/constants.js'
 import { TASK_STOP_TOOL_NAME } from '../../tools/TaskStopTool/prompt.js'
 import { TASK_UPDATE_TOOL_NAME } from '../../tools/TaskUpdateTool/constants.js'
-import { TEAM_CREATE_TOOL_NAME } from '../../tools/TeamCreateTool/constants.js'
-import { TEAM_DELETE_TOOL_NAME } from '../../tools/TeamDeleteTool/constants.js'
 const YOLO_CLASSIFIER_TOOL_NAME = 'classify_result'
 
 /**
@@ -35,11 +33,6 @@ const SAFE_YOLO_ALLOWLISTED_TOOLS = new Set([
   ASK_USER_QUESTION_TOOL_NAME,
   ENTER_PLAN_MODE_TOOL_NAME,
   EXIT_PLAN_MODE_TOOL_NAME,
-  // Swarm coordination (internal mailbox/team state only — teammates have
-  // their own permission checks, so no actual security bypass).
-  TEAM_CREATE_TOOL_NAME,
-  // Agent cleanup
-  TEAM_DELETE_TOOL_NAME,
   SEND_MESSAGE_TOOL_NAME,
   // Internal classifier tool
   YOLO_CLASSIFIER_TOOL_NAME,

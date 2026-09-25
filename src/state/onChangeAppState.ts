@@ -102,18 +102,11 @@ export function onChangeAppState({
     setMainLoopModelOverride(newState.mainLoopModel)
   }
 
-  // expandedView → persist as showExpandedTodos + showSpinnerTree for backwards compat
+  // expandedView → persist as showExpandedTodos for backwards compat
   if (newState.expandedView !== oldState.expandedView) {
     const showExpandedTodos = newState.expandedView === 'tasks'
-    const showSpinnerTree = newState.expandedView === 'teammates'
-    if (
-      (settings.showExpandedTodos ?? false) !== showExpandedTodos ||
-      (settings.showSpinnerTree ?? false) !== showSpinnerTree
-    ) {
-      updateSettingsForSource('userSettings', {
-        showExpandedTodos,
-        showSpinnerTree,
-      })
+    if ((settings.showExpandedTodos ?? false) !== showExpandedTodos) {
+      updateSettingsForSource('userSettings', { showExpandedTodos })
     }
   }
 

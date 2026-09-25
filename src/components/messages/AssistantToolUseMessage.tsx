@@ -17,7 +17,6 @@ import {
 import type { ProgressMessage } from '../../types/message.js'
 import { logError } from '../../utils/log.js'
 import type { buildMessageLookups } from '../../utils/messages.js'
-import { MessageResponse } from '../MessageResponse.js'
 import { renderToolCallParams } from './ToolCallParams.js'
 import { useSelectedMessageBg } from '../messageActions.js'
 import { SentryErrorBoundary } from '../SentryErrorBoundary.js'
@@ -53,9 +52,6 @@ export function AssistantToolUseMessage({
 }: Props): React.ReactNode {
   const terminalSize = useTerminalSize()
   const bg = useSelectedMessageBg()
-  const pendingWorkerRequest = useAppStateMaybeOutsideOfProvider(
-    state => state.pendingWorkerRequest,
-  )
   const permissionMode = useAppStateMaybeOutsideOfProvider(
     state => state.toolPermissionContext.mode,
   )
@@ -147,7 +143,6 @@ export function AssistantToolUseMessage({
 
   const isResolved = lookups.resolvedToolUseIDs.has(param.id)
   const isQueued = !inProgressToolUseIDs.has(param.id) && !isResolved
-  const isWaitingForPermission = pendingWorkerRequest?.toolUseId === param.id
 
   if (isTransparentWrapper) {
     if (isQueued || isResolved) return null
@@ -243,26 +238,20 @@ export function AssistantToolUseMessage({
         </Box>
         {!isResolved &&
           !isQueued &&
-          (isWaitingForPermission ? (
-            <MessageResponse height={1}>
-              <Text dimColor>Waiting for permission…</Text>
-            </MessageResponse>
-          ) : (
-            renderToolUseProgressMessage(
-              tool,
-              tools,
-              lookups,
-              param.id,
-              progressMessagesForMessage,
-              {
-                verbose,
-                inProgressToolCallCount,
-                isTranscriptMode,
-                input: param.input,
-              },
-              terminalSize,
-            )
-          ))}
+          renderToolUseProgressMessage(
+            tool,
+            tools,
+            lookups,
+            param.id,
+            progressMessagesForMessage,
+            {
+              verbose,
+              inProgressToolCallCount,
+              isTranscriptMode,
+              input: param.input,
+            },
+            terminalSize,
+          )}
         {!isResolved && isQueued && renderToolUseQueuedMessage(tool)}
       </Box>
     </Box>

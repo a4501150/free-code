@@ -26,8 +26,7 @@ import { powershellToolUseOptions } from './powershellToolUseOptions.js'
 export function PowerShellPermissionRequest(
   props: PermissionRequestProps,
 ): React.ReactNode {
-  const { toolUseConfirm, toolUseContext, onDone, onReject, workerBadge } =
-    props
+  const { toolUseConfirm, toolUseContext, onDone, onReject } = props
 
   const { command, description } = PowerShellTool.inputSchema.parse(
     toolUseConfirm.input,
@@ -201,7 +200,7 @@ export function PowerShellPermissionRequest(
   }
 
   return (
-    <PermissionDialog workerBadge={workerBadge} title="PowerShell command">
+    <PermissionDialog title="PowerShell command">
       <Box flexDirection="column" paddingX={2} paddingY={1}>
         <Text dimColor={explainerState.visible}>
           {PowerShellTool.renderToolUseMessage(

@@ -65,12 +65,6 @@ export type CronTask = {
    * the on-disk shape stays { id, cron, prompt, createdAt, lastFiredAt?, recurring?, permanent? }.
    */
   durable?: boolean
-  /**
-   * Runtime-only. When set, the task was created by an in-process teammate.
-   * The scheduler routes fires to that teammate's queue instead of the main
-   * REPL's. Never written to disk (teammate crons are always session-only).
-   */
-  agentId?: string
 }
 
 type CronFile = { tasks: CronTask[] }
@@ -237,7 +231,6 @@ export async function addCronTask(
   prompt: string,
   recurring: boolean,
   durable: boolean,
-  agentId?: string,
 ): Promise<string> {
   // Short ID — 8 hex chars is plenty for MAX_JOBS=50, avoids slice/prefix
   // juggling between the tool layer (shows short IDs) and disk.
@@ -250,7 +243,7 @@ export async function addCronTask(
     ...(recurring ? { recurring: true } : {}),
   }
   if (!durable) {
-    addSessionCronTask({ ...task, ...(agentId ? { agentId } : {}) })
+    addSessionCronTask(task)
     return id
   }
   const tasks = await readCronTasks()

@@ -883,15 +883,6 @@ const _settingsSchemaValue = z
       .boolean()
       .optional()
       .describe('Enable prompt speculation.'),
-    teammateMode: z
-      .enum(['auto', 'tmux', 'in-process'])
-      .optional()
-      .describe('How to spawn teammates. Defaults to auto.'),
-    teammateDefaultModel: z
-      .string()
-      .nullable()
-      .optional()
-      .describe('Default model for teammates. null = leader model.'),
     prStatusFooterEnabled: z
       .boolean()
       .optional()
@@ -908,10 +899,6 @@ const _settingsSchemaValue = z
       .boolean()
       .optional()
       .describe('Show todos expanded even when empty.'),
-    showSpinnerTree: z
-      .boolean()
-      .optional()
-      .describe('Show teammate spinner tree instead of pills.'),
     showAgentPanel: z
       .boolean()
       .optional()
@@ -1197,12 +1184,6 @@ const _settingsSchemaValue = z
       .optional()
       .describe(
         'Update the terminal tab title with session info (default: true)',
-      ),
-    agentTeamsEnabled: z
-      .boolean()
-      .optional()
-      .describe(
-        'Enable the experimental agent-teams feature (same as the --agent-teams flag)',
       ),
     forkSubagentEnabled: z
       .boolean()

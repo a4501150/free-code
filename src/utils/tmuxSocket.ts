@@ -144,7 +144,7 @@ export function getClaudeTmuxEnv(): string | null {
  * This is checked once and cached for the lifetime of the process.
  *
  * When tmux is not available:
- * - TeammateTool will not work (it uses tmux for pane management)
+ * - Worktree tmux integration will not work (it uses tmux for pane management)
  * - Bash commands will run without tmux isolation
  */
 export async function checkTmuxAvailable(): Promise<boolean> {
@@ -161,7 +161,7 @@ export async function checkTmuxAvailable(): Promise<boolean> {
     tmuxAvailable = result.code === 0
     if (!tmuxAvailable) {
       logForDebugging(
-        `[Socket] tmux is not installed. The Tmux tool and Teammate tool will not be available.`,
+        `[Socket] tmux is not installed. The Tmux tool will not be available.`,
       )
     }
     tmuxAvailabilityChecked = true

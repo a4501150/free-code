@@ -582,7 +582,7 @@ function collectCandidatesByMessage(
   //   • Consecutive: streamingToolExecution yields one AssistantMessage per
   //     content_block_stop (same id); a fast tool drains between blocks;
   //     abort/hook-stop leaves [asst(X), user(trA), asst(X), user(trB)].
-  //   • Interleaved: coordinator/teammate streams mix different responses
+  //   • Interleaved: coordinator/worker streams mix different responses
   //     so [asst(X), user(trA), asst(Y), user(trB), asst(X), user(trC)].
   // In both, normalizeMessagesForAPI merges the X fragments into one wire
   // assistant, and their following tool_results merge into one wire user

@@ -16,7 +16,6 @@ import { errorMessage, isFsInaccessible } from './errors.js'
 import { isProcessRunning } from './genericProcessUtils.js'
 import { getPlatform } from './platform.js'
 import { jsonParse, jsonStringify } from './slowOperations.js'
-import { getAgentId } from './teammate.js'
 import { isWebuiManagedProcess } from './webuiManagedProcess.js'
 
 export const SESSION_KINDS = [
@@ -48,15 +47,12 @@ export function isBgSession(): boolean {
  *
  * Registers all top-level sessions — interactive CLI, SDK (vscode, desktop,
  * typescript, python, -p), and daemon spawns — so concurrency checks see
- * active sessions. Skips only teammates/subagents, which would
- * conflate swarm usage with genuine concurrency and pollute ps with noise.
+ * active sessions.
  *
  * Returns true if registered, false if skipped.
  * Errors logged to debug, never thrown.
  */
 export async function registerSession(): Promise<boolean> {
-  if (getAgentId() != null) return false
-
   const kind: SessionKind = envSessionKind() ?? 'interactive'
   const dir = getSessionsDir()
   const pidFile = join(dir, `${process.pid}.json`)

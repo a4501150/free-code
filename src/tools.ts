@@ -20,8 +20,6 @@ const cronTools = [CronCreateTool, CronDeleteTool, CronListTool]
 import { ExitPlanModeTool } from './tools/ExitPlanModeTool/ExitPlanModeTool.js'
 import { SendMessageTool } from './tools/SendMessageTool/SendMessageTool.js'
 import { ListAgentsTool } from './tools/ListAgentsTool/ListAgentsTool.js'
-import { TeamCreateTool } from './tools/TeamCreateTool/TeamCreateTool.js'
-import { TeamDeleteTool } from './tools/TeamDeleteTool/TeamDeleteTool.js'
 import { AskUserQuestionTool } from './tools/AskUserQuestionTool/AskUserQuestionTool.js'
 import { ListMcpResourcesTool } from './tools/ListMcpResourcesTool/ListMcpResourcesTool.js'
 import { ReadMcpResourceTool } from './tools/ReadMcpResourceTool/ReadMcpResourceTool.js'
@@ -50,7 +48,6 @@ import * as powerShellMod from './tools/PowerShellTool/PowerShellTool.js'
 import type { ToolPermissionContext } from './Tool.js'
 import { isEnvTruthy } from './utils/envUtils.js'
 import { isPowerShellToolEnabled } from './utils/shell/shellToolUtils.js'
-import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js'
 import { isWorktreeModeEnabled } from './utils/worktreeModeEnabled.js'
 const getPowerShellTool = () =>
   isPowerShellToolEnabled() ? powerShellMod.PowerShellTool : null
@@ -112,7 +109,6 @@ export function getAllBaseTools(): Tools {
     ...(isWorktreeModeEnabled() ? [EnterWorktreeTool, ExitWorktreeTool] : []),
     SendMessageTool,
     ListAgentsTool,
-    ...(isAgentSwarmsEnabled() ? [TeamCreateTool, TeamDeleteTool] : []),
     ...(VerifyPlanExecutionTool ? [VerifyPlanExecutionTool] : []),
     ...cronTools,
     BriefTool,

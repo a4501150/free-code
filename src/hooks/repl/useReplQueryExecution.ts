@@ -54,9 +54,6 @@ import {
   COMMAND_NAME_TAG,
   LOCAL_COMMAND_STDOUT_TAG,
 } from '../../constants/xml.js'
-import { setMemberActive } from '../../utils/swarm/teamHelpers.js'
-import { getTeamName, getAgentName } from '../../utils/teammate.js'
-import { isAgentSwarmsEnabled } from '../../utils/agentSwarmsEnabled.js'
 import {
   enqueue,
   getCommandQueue,
@@ -67,7 +64,6 @@ import {
   messagesAfterAreOnlySynthetic,
 } from '../../components/MessageSelector.js'
 import { removeLastFromHistory } from '../../history.js'
-import { getAllInProcessTeammateTasks } from '../../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import { createAbortController } from '../../utils/abortController.js'
 import type {
   Message as MessageType,
@@ -123,7 +119,6 @@ export function useReplQueryExecution({
   inputValueRef,
   loadingStartTimeRef,
   totalPausedMsRef,
-  swarmStartTimeRef,
   restoreMessageSyncRef,
   getToolUseContext,
   mainThreadAgentDefinition,
@@ -171,7 +166,6 @@ export function useReplQueryExecution({
   inputValueRef: React.RefObject<string>
   loadingStartTimeRef: React.RefObject<number>
   totalPausedMsRef: React.RefObject<number>
-  swarmStartTimeRef: React.MutableRefObject<number | null>
   restoreMessageSyncRef: React.MutableRefObject<(m: UserMessage) => void>
   getToolUseContext: (
     messages: MessageType[],
@@ -466,14 +460,6 @@ export function useReplQueryExecution({
       input?: string,
       effort?: EffortValue,
     ): Promise<void> => {
-      if (isAgentSwarmsEnabled()) {
-        const teamName = getTeamName()
-        const agentName = getAgentName()
-        if (teamName && agentName) {
-          void setMemberActive(teamName, agentName, true)
-        }
-      }
-
       const thisGeneration = queryGuard.tryStart()
       if (thisGeneration === null) {
         newMessages
@@ -534,22 +520,13 @@ export function useReplQueryExecution({
           const turnDurationMs =
             Date.now() - loadingStartTimeRef.current - totalPausedMsRef.current
           if (turnDurationMs > 30000 && !abortController.signal.aborted) {
-            const hasRunningSwarmAgents = getAllInProcessTeammateTasks(
-              store.getState().tasks,
-            ).some(t => t.status === 'running')
-            if (hasRunningSwarmAgents) {
-              if (swarmStartTimeRef.current === null) {
-                swarmStartTimeRef.current = loadingStartTimeRef.current
-              }
-            } else {
-              setMessages(prev => [
-                ...prev,
-                createTurnDurationMessage(
-                  turnDurationMs,
-                  count(prev, isLoggableMessage),
-                ),
-              ])
-            }
+            setMessages(prev => [
+              ...prev,
+              createTurnDurationMessage(
+                turnDurationMs,
+                count(prev, isLoggableMessage),
+              ),
+            ])
           }
 
           setAbortController(null)
@@ -593,7 +570,6 @@ export function useReplQueryExecution({
       inputValueRef,
       loadingStartTimeRef,
       totalPausedMsRef,
-      swarmStartTimeRef,
       restoreMessageSyncRef,
       store,
     ],

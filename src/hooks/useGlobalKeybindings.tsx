@@ -9,8 +9,6 @@ import instances from '../ink/instances.js'
 import { useKeybinding } from '../keybindings/useKeybinding.js'
 import type { Screen } from '../types/repl.js'
 import { useAppState, useSetAppState } from '../state/AppState.js'
-import { count } from '../utils/array.js'
-import { getAllInProcessTeammateTasks } from '../tasks/InProcessTeammateTask/InProcessTeammateTask.js'
 import * as briefToolNs from '../tools/BriefTool/BriefTool.js'
 
 type Props = {
@@ -41,33 +39,11 @@ export function GlobalKeybindingHandlers({
 
   // Toggle todo list (ctrl+t) - cycles through views
   const handleToggleTodos = useCallback(() => {
-    setAppState(prev => {
-      const hasTeammates =
-        count(
-          getAllInProcessTeammateTasks(prev.tasks),
-          t => t.status === 'running',
-        ) > 0
-
-      if (hasTeammates) {
-        // Both exist: none → tasks → teammates → none
-        switch (prev.expandedView) {
-          case 'none':
-            return { ...prev, expandedView: 'tasks' as const }
-          case 'tasks':
-            return { ...prev, expandedView: 'teammates' as const }
-          case 'teammates':
-            return { ...prev, expandedView: 'none' as const }
-        }
-      }
-      // Only tasks: none ↔ tasks
-      return {
-        ...prev,
-        expandedView:
-          prev.expandedView === 'tasks'
-            ? ('none' as const)
-            : ('tasks' as const),
-      }
-    })
+    setAppState(prev => ({
+      ...prev,
+      expandedView:
+        prev.expandedView === 'tasks' ? ('none' as const) : ('tasks' as const),
+    }))
   }, [expandedView, setAppState])
 
   // Toggle transcript mode (ctrl+o). Two-way prompt ↔ transcript.
@@ -138,20 +114,6 @@ export function GlobalKeybindingHandlers({
   useKeybinding('app:toggleBrief', handleToggleBrief, {
     context: 'Global',
   })
-
-  // Register teammate keybinding
-  useKeybinding(
-    'app:toggleTeammatePreview',
-    () => {
-      setAppState(prev => ({
-        ...prev,
-        showTeammateMessagePreview: !prev.showTeammateMessagePreview,
-      }))
-    },
-    {
-      context: 'Global',
-    },
-  )
 
   // Clear screen and force full redraw (ctrl+l). Recovery path when the
   // terminal was cleared externally (macOS Cmd+K) and Ink's diff engine

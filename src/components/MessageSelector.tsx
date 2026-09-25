@@ -50,7 +50,6 @@ import {
   LOCAL_COMMAND_STDERR_TAG,
   LOCAL_COMMAND_STDOUT_TAG,
   TASK_NOTIFICATION_TAG,
-  TEAMMATE_MESSAGE_TAG,
   TICK_TAG,
 } from '../constants/xml.js'
 import { count } from '../utils/array.js'
@@ -906,8 +905,7 @@ export function selectableUserMessagesFilter(
     messageText.indexOf(`<${BASH_STDOUT_TAG}>`) !== -1 ||
     messageText.indexOf(`<${BASH_STDERR_TAG}>`) !== -1 ||
     messageText.indexOf(`<${TASK_NOTIFICATION_TAG}>`) !== -1 ||
-    messageText.indexOf(`<${TICK_TAG}>`) !== -1 ||
-    messageText.indexOf(`<${TEAMMATE_MESSAGE_TAG}`) !== -1
+    messageText.indexOf(`<${TICK_TAG}>`) !== -1
   ) {
     return false
   }

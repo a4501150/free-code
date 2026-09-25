@@ -94,8 +94,6 @@ export const PROCESS_MECHANICS_ENV_VARS = new Set([
   'CLAUDE_CODE_ACTION',
   'CLAUDE_CODE_ADDITIONAL_PROTECTION',
   'CLAUDE_CODE_QUESTION_PREVIEW_FORMAT',
-  // Agent-teams spawn IPC (leader -> teammate)
-  'CLAUDE_CODE_PLAN_MODE_REQUIRED',
   // Host-injected transport base URL (claude ssh remote, cowork subprocess).
   // Settings-based routing lives in the providers block; this is spawn-time.
   'ANTHROPIC_BASE_URL',

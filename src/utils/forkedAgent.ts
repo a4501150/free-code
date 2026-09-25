@@ -396,7 +396,7 @@ export function createSubagentContext(
     // — clone is a harmless no-op.
     //
     // Override: AgentTool resume (reconstructed from sidechain records)
-    // and inProcessRunner (per-teammate persistent loop state).
+    // and resumed-agent state.
     contentReplacementState:
       overrides?.contentReplacementState ??
       (parentContext.contentReplacementState

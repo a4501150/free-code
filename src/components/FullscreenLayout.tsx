@@ -80,7 +80,7 @@ type Props = {
   dividerYRef?: RefObject<number | null>
   /** Force-hide the pill (e.g. viewing a sub-agent task). */
   hidePill?: boolean
-  /** Force-hide the sticky prompt header (e.g. viewing a teammate task). */
+  /** Force-hide the sticky prompt header (e.g. viewing an agent task). */
   hideSticky?: boolean
   /** Count for the pill text. 0 → "Jump to bottom", >0 → "N new messages". */
   newMessageCount?: number
@@ -191,7 +191,7 @@ export function useUnseenDivider(messageCount: number): {
   // useEffect guarantees the ref stays non-null until React has committed
   // the null dividerIndex, blocking the if-null guard in onScrollAway.
   //
-  // Also handles /clear, rewind, teammate-view swap — if the count drops
+  // Also handles /clear, rewind, agent-view swap — if the count drops
   // below the divider index, the divider would point at nothing.
   useEffect(() => {
     if (dividerIndex === null) {

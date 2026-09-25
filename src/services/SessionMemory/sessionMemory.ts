@@ -265,7 +265,7 @@ const extractSessionMemory = sequential(async function (
 
   // Only run session memory on main REPL thread
   if (querySource !== 'repl_main_thread') {
-    // Don't log this - it's expected for subagents, teammates, etc.
+    // Don't log this - it's expected for subagents, etc.
     return
   }
 

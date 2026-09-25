@@ -32,7 +32,6 @@ import type {
   InlineGhostText,
   PromptInputMode,
 } from '../types/textInputTypes.js'
-import { isAgentSwarmsEnabled } from '../utils/agentSwarmsEnabled.js'
 import {
   generateProgressiveArgumentHint,
   parseArguments,
@@ -63,7 +62,6 @@ import {
   getSlackChannelSuggestions,
   hasSlackMcpServer,
 } from '../utils/suggestions/slackChannelSuggestions.js'
-import { TEAM_LEAD_NAME } from '../utils/swarm/constants.js'
 import {
   applyFileSuggestion,
   findLongestCommonPrefix,
@@ -492,9 +490,9 @@ export function useTypeahead({
   const mcpResources = useAppState(s => s.mcp.resources)
   const store = useAppStateStore()
   const promptSuggestion = useAppState(s => s.promptSuggestion)
-  // PromptInput hides suggestion ghost text in teammate view — mirror that
+  // PromptInput hides suggestion ghost text in agent view — mirror that
   // gate here so Tab/rightArrow can't accept what isn't displayed.
-  const isViewingTeammate = useAppState(s => !!s.viewingAgentTaskId)
+  const isViewingAgent = useAppState(s => !!s.viewingAgentTaskId)
 
   // Access keybinding context to check for pending chord sequences
   const keybindingContext = useOptionalKeybindingContext()
@@ -753,26 +751,11 @@ export function useTypeahead({
       if (atMatch) {
         const partialName = (atMatch[2] ?? '').toLowerCase()
         // Imperative read — reading at call-time fixes staleness for
-        // teammates/subagents added mid-session.
+        // named subagents added mid-session.
         const state = store.getState()
         const members: SuggestionItem[] = []
-        const seen = new Set<string>()
-
-        if (isAgentSwarmsEnabled() && state.teamContext) {
-          for (const t of Object.values(state.teamContext.teammates ?? {})) {
-            if (t.name === TEAM_LEAD_NAME) continue
-            if (!t.name.toLowerCase().startsWith(partialName)) continue
-            seen.add(t.name)
-            members.push({
-              id: `dm-${t.name}`,
-              displayText: `@${t.name}`,
-              description: 'send message',
-            })
-          }
-        }
 
         for (const [name, agentId] of state.agentNameRegistry) {
-          if (seen.has(name)) continue
           if (!name.toLowerCase().startsWith(partialName)) continue
           const status = state.tasks[agentId]?.status
           members.push({
@@ -1780,7 +1763,7 @@ export function useTypeahead({
   // Handle keyboard input for behaviors not covered by keybindings
   const handleKeyDown = (e: KeyboardEvent): void => {
     // Handle right arrow to accept prompt suggestion ghost text
-    if (e.key === 'right' && !isViewingTeammate) {
+    if (e.key === 'right' && !isViewingAgent) {
       const suggestionText = promptSuggestion.text
       const suggestionShownAt = promptSuggestion.shownAt
       if (suggestionText && suggestionShownAt > 0 && input === '') {
@@ -1805,7 +1788,7 @@ export function useTypeahead({
         suggestionText &&
         suggestionShownAt > 0 &&
         input === '' &&
-        !isViewingTeammate
+        !isViewingAgent
       ) {
         e.preventDefault()
         markAccepted()

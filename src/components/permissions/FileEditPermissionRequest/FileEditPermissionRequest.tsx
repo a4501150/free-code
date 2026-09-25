@@ -74,7 +74,6 @@ export function FileEditPermissionRequest(
       toolUseContext={props.toolUseContext}
       onDone={props.onDone}
       onReject={props.onReject}
-      workerBadge={props.workerBadge}
       title="Edit file"
       subtitle={relative(getCwd(), file_path)}
       question={
