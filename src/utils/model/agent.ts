@@ -24,9 +24,9 @@ import { getPublicModelDisplayName } from './modelDisplay.js'
 export const UTILITY_MODEL_SENTINEL = 'utility'
 
 /**
- * Keywords the Agent tool's `model` param accepts as an explicit
- * "run on the parent's model" (instead of a model ID). Checked BEFORE any
- * registry lookup so these never look like unknown models.
+ * Keywords the skill/slash-command frontmatter `model` field accepts as an
+ * explicit "run on the parent's model" (instead of a model ID). Checked
+ * BEFORE any registry lookup so these never look like unknown models.
  */
 export function isModelInheritKeyword(model: string): boolean {
   return /^(inherit|default|parent)$/i.test(model.trim())
@@ -51,8 +51,12 @@ export function getDefaultSubagentModel(): string {
 export function getAgentModel(
   agentModel: string | undefined,
   parentModel: string,
-  toolSpecifiedModel?: string,
-  permissionMode?: PermissionMode,
+  options?: {
+    /** Model override from skill/slash-command frontmatter (user-decided;
+     * the Agent tool has no model param — the LLM cannot pick a subagent model). */
+    commandModel?: string
+    permissionMode?: PermissionMode
+  },
 ): string {
   // Priority: modelSettings.json defaultSubagentModel > model defaults
   const configSubagent =
@@ -63,6 +67,8 @@ export function getAgentModel(
   }
 
   const registry = getProviderRegistry()
+  const permissionMode = options?.permissionMode ?? 'default'
+  const commandModel = options?.commandModel
 
   // Helper to propagate region prefix from parent model for Bedrock cross-region inference.
   // Operates on the bare model ID, then re-qualifies with the provider prefix.
@@ -76,20 +82,20 @@ export function getAgentModel(
     return qualifyModel(parsed.provider, prefixed)
   }
 
-  // Keyword aliases for an explicit "no override" from the Agent tool:
+  // Keyword aliases for an explicit "no override" from frontmatter:
   // resolve like the agent-definition 'inherit' sentinel — i.e. the parent's
   // runtime model, overriding even a model set in the agent definition.
-  if (toolSpecifiedModel && isModelInheritKeyword(toolSpecifiedModel)) {
+  if (commandModel && isModelInheritKeyword(commandModel)) {
     return getRuntimeMainLoopModel({
-      permissionMode: permissionMode ?? 'default',
+      permissionMode,
       mainLoopModel: parentModel,
       exceeds200kTokens: false,
     })
   }
 
-  // Prioritize tool-specified model if provided
-  if (toolSpecifiedModel) {
-    const model = parseUserSpecifiedModel(toolSpecifiedModel)
+  // Prioritize the frontmatter model if provided
+  if (commandModel) {
+    const model = parseUserSpecifiedModel(commandModel)
     return applyParentRegionPrefix(model)
   }
 
@@ -98,7 +104,7 @@ export function getAgentModel(
   if (agentModelWithExp === 'inherit') {
     // Apply runtime model resolution for inherit to get the effective model
     return getRuntimeMainLoopModel({
-      permissionMode: permissionMode ?? 'default',
+      permissionMode,
       mainLoopModel: parentModel,
       exceeds200kTokens: false,
     })

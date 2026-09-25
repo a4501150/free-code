@@ -48,17 +48,19 @@ describe('getAgentModel with inherit keywords', () => {
     })
 
   for (const keyword of ['inherit', 'default', 'parent']) {
-    test(`"${keyword}" as a tool-specified model resolves to the parent`, () => {
-      expect(getAgentModel(undefined, parent, keyword)).toBe(
+    test(`"${keyword}" as a frontmatter model resolves to the parent`, () => {
+      expect(getAgentModel(undefined, parent, { commandModel: keyword })).toBe(
         expectedRuntimeModel(),
       )
     })
 
     test(`"${keyword}" overrides a model set in the agent definition`, () => {
       // Explicit inherit must beat the agent definition's own model.
-      expect(getAgentModel('anthropic:claude-opus-4-1', parent, keyword)).toBe(
-        expectedRuntimeModel(),
-      )
+      expect(
+        getAgentModel('anthropic:claude-opus-4-1', parent, {
+          commandModel: keyword,
+        }),
+      ).toBe(expectedRuntimeModel())
     })
   }
 })

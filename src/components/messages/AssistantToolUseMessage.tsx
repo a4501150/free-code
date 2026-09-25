@@ -65,7 +65,7 @@ export function AssistantToolUseMessage({
   const isAgentTool = param.name === AGENT_TOOL_NAME
 
   // Look up the agent definition model for AgentTool so renderAgentToolUseTag
-  // can show the effective model even when the LLM doesn't pass model explicitly.
+  // can show the effective model tag.
   const agentDefinitionModel = useAppStateMaybeOutsideOfProvider(state => {
     if (param.name !== AGENT_TOOL_NAME) return undefined
     const subagentType = (param.input as { subagent_type?: string })
@@ -233,7 +233,7 @@ export function AssistantToolUseMessage({
           {/* Render tool-specific tags (timeout, model, resume ID, etc.) */}
           {input.success &&
             (param.name === AGENT_TOOL_NAME
-              ? renderAgentToolUseTag(input.data, agentDefinitionModel)
+              ? renderAgentToolUseTag(agentDefinitionModel)
               : tool.renderToolUseTag?.(input.data))}
         </Box>
         {!isResolved &&

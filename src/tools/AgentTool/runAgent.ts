@@ -281,6 +281,9 @@ export async function* runAgent({
     abortController?: AbortController
     agentId?: AgentId
   }
+  /** Model override from skill/slash-command frontmatter, set by the caller.
+   * The Agent tool never passes this — subagent models are decided by the
+   * agent definition, not by the main model. */
   model?: string
   maxTurns?: number
   /** Preserve toolUseResult on messages for subagents with viewable transcripts */
@@ -340,8 +343,7 @@ export async function* runAgent({
   const resolvedAgentModel = getAgentModel(
     agentDefinition.model,
     toolUseContext.options.mainLoopModel,
-    model,
-    permissionMode,
+    { commandModel: model, permissionMode },
   )
 
   const agentId = override?.agentId ? override.agentId : createAgentId()

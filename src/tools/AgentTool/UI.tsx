@@ -46,11 +46,7 @@ import {
   EMPTY_LOOKUPS,
 } from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
-import {
-  getMainLoopModel,
-  parseUserSpecifiedModel,
-  renderModelName,
-} from '../../utils/model/model.js'
+import { getMainLoopModel } from '../../utils/model/model.js'
 import type { Theme, ThemeName } from '../../utils/theme.js'
 import type { outputSchema, Progress } from './AgentTool.js'
 import { inputSchema } from './AgentTool.js'
@@ -541,56 +537,15 @@ export function renderToolUseMessage({
   return description
 }
 
-export function renderToolUseTag(
-  input: Partial<{
-    description: string
-    prompt: string
-    subagent_type: string
-    model?: string
-  }>,
-): React.ReactNode {
-  const tags: React.ReactNode[] = []
-
-  if (input.model) {
-    const mainModel = getMainLoopModel()
-    const agentModel = parseUserSpecifiedModel(input.model)
-    if (agentModel !== mainModel) {
-      tags.push(
-        <Box key="model" flexWrap="nowrap" marginLeft={1}>
-          <Text dimColor>{renderModelName(agentModel)}</Text>
-        </Box>,
-      )
-    }
-  }
-
-  if (tags.length === 0) {
-    return null
-  }
-
-  return <>{tags}</>
-}
-
 /**
- * Agent-aware version of renderToolUseTag that resolves the effective model
- * using the agent definition's model field. Called from AssistantToolUseMessage
- * when the tool is AgentTool, so the model tag shows even when the LLM
- * doesn't explicitly pass a model parameter.
+ * Model tag for Agent tool calls, resolved from the agent definition's model
+ * field. Called from AssistantToolUseMessage when the tool is AgentTool.
  */
 export function renderAgentToolUseTag(
-  input: Partial<{
-    description: string
-    prompt: string
-    subagent_type: string
-    model?: string
-  }>,
   agentDefinitionModel: string | undefined,
 ): React.ReactNode {
   const mainModel = getMainLoopModel()
-  const effectiveModel = getAgentModel(
-    agentDefinitionModel,
-    mainModel,
-    input.model,
-  )
+  const effectiveModel = getAgentModel(agentDefinitionModel, mainModel)
 
   if (effectiveModel !== mainModel) {
     return (
@@ -1380,14 +1335,7 @@ function GroupedAgentToolUseView({
       const agentDefinitionModel = subagentType
         ? activeAgents?.find(a => a.agentType === subagentType)?.model
         : undefined
-      const toolSpecifiedModel = parsedInput.success
-        ? parsedInput.data.model
-        : undefined
-      const resolvedModel = getAgentModel(
-        agentDefinitionModel,
-        mainModel,
-        toolSpecifiedModel,
-      )
+      const resolvedModel = getAgentModel(agentDefinitionModel, mainModel)
       const effectiveModel = resolvedModel !== mainModel ? resolvedModel : null
 
       return {

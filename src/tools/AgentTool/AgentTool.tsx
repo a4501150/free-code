@@ -49,12 +49,7 @@ import {
   isSyntheticMessage,
   normalizeMessages,
 } from '../../utils/messages.js'
-import {
-  getAgentModel,
-  isModelInheritKeyword,
-} from '../../utils/model/agent.js'
-import { parseUserSpecifiedModel } from '../../utils/model/model.js'
-import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
+import { getAgentModel } from '../../utils/model/agent.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import {
   filterDeniedAgents,
@@ -114,7 +109,6 @@ import {
   renderToolUseMessage,
   renderToolUseProgressMessage,
   renderToolUseRejectedMessage,
-  renderToolUseTag,
   userFacingName,
   userFacingNameBackgroundColor,
 } from './UI.js'
@@ -144,13 +138,6 @@ const baseInputSchema = z.object({
     .string()
     .optional()
     .describe('The type of specialized agent to use for this task'),
-  model: z
-    .string()
-    .optional()
-    .describe(
-      "Optional model override for this agent. Use a provider-qualified model ID (for example 'anthropic:claude-sonnet-4-6'). " +
-        "Takes precedence over the agent definition's model; pass 'inherit' to run the agent on the parent's model.",
-    ),
   run_in_background: z
     .boolean()
     .optional()
@@ -296,7 +283,6 @@ export const AgentTool = buildTool({
       prompt,
       subagent_type,
       description,
-      model: modelParam,
       run_in_background,
       name,
       isolation,
@@ -308,7 +294,6 @@ export const AgentTool = buildTool({
     onProgress?,
   ) {
     const startTime = Date.now()
-    let model = isCoordinatorMode() ? undefined : modelParam
 
     // Get app state for permission mode and agent filtering
     const appState = toolUseContext.getAppState()
@@ -355,12 +340,6 @@ export const AgentTool = buildTool({
       )
     }
     const selectedAgent: AgentDefinition = found
-
-    // Fork ignores a per-call model override: it must run on the parent's
-    // model to share the parent's prompt cache.
-    if (selectedAgent.agentType === FORK_AGENT.agentType) {
-      model = undefined
-    }
 
     // Capture for type narrowing — `let selectedAgent` prevents TS from
     // narrowing property types across the if-else assignment above.
@@ -445,28 +424,11 @@ export const AgentTool = buildTool({
       setAgentColor(selectedAgent.agentType, selectedAgent.color)
     }
 
-    // Validate model if specified — fail early if it doesn't resolve in the
-    // registry. The inherit keywords are not model IDs: getAgentModel
-    // resolves them to the parent's runtime model, so skip the lookup.
-    if (model && !isModelInheritKeyword(model)) {
-      const parsed = parseUserSpecifiedModel(model)
-      const resolved = getProviderRegistry().getProviderForModel(parsed)
-      if (!resolved) {
-        const available = getProviderRegistry().getAvailableSubagentModels()
-        const hint =
-          available.length > 0
-            ? ` Available models: ${available.join(', ')}. Pass 'inherit' to run on the parent's model.`
-            : ''
-        throw new Error(`Unknown model "${model}".${hint}`)
-      }
-    }
-
     // Resolve agent params for logging (these are already resolved in runAgent)
     const resolvedAgentModel = getAgentModel(
       selectedAgent.model,
       toolUseContext.options.mainLoopModel,
-      model,
-      permissionMode,
+      { permissionMode },
     )
 
     // Resolve effective isolation mode (explicit param overrides agent def;
@@ -586,7 +548,6 @@ export const AgentTool = buildTool({
           selectedAgent.agentType,
           isBuiltInAgent(selectedAgent),
         ),
-      model,
       // When a cwd override is in effect (worktree isolation or explicit cwd),
       // skip the pre-built system prompt so runAgent's buildAgentSystemPrompt()
       // runs inside wrapWithCwd where getCwd() returns the override path.
@@ -1590,7 +1551,6 @@ duration_ms: ${data.totalDurationMs}</usage>`,
   },
   renderToolResultMessage,
   renderToolUseMessage,
-  renderToolUseTag,
   renderToolUseProgressMessage,
   renderToolUseRejectedMessage,
   renderToolUseErrorMessage,
