@@ -125,7 +125,8 @@ export type ProtectedResourceMetadata = {
 
 /**
  * RFC 9728 PRM discovery via SDK, plus RFC 9728 §3.3 resource-mismatch
- * validation (mix-up protection — TODO: upstream to SDK).
+ * validation (mix-up protection). The v1 SDK does not validate this; SDK v2
+ * (@modelcontextprotocol/client) does — drop the local check on that migration.
  */
 export async function discoverProtectedResource(
   serverUrl: string,
@@ -168,7 +169,9 @@ export type AuthorizationServerMetadata = {
 
 /**
  * AS metadata discovery via SDK (RFC 8414 + OIDC fallback), plus RFC 8414
- * §3.3 issuer-mismatch validation (mix-up protection — TODO: upstream to SDK).
+ * §3.3 issuer-mismatch validation (mix-up protection). The v1 SDK does not
+ * validate the issuer; SDK v2 does (validateAuthorizationResponseIssuer) —
+ * drop the local check on that migration.
  */
 export async function discoverAuthorizationServer(
   asUrl: string,

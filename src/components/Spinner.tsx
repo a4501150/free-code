@@ -362,9 +362,10 @@ function SpinnerWithVerbInner({
           // summary line; when the panel is gone (collapsed view, store hide
           // after all-complete) the store also collapses expandedView, so
           // suppressing on showExpandedTodos alone is enough.
-          // IMPORTANT: we need this width="100%" to avoid an Ink bug where the
-          // tip gets duplicated over and over while the spinner is running if
-          // the terminal is very small. TODO: fix this in Ink.
+          // IMPORTANT: we need this width="100%" to avoid a bug in our vendored
+          // renderer (src/ink incremental diffing) where the tip gets duplicated
+          // over and over while the spinner is running if the terminal is very
+          // small. TODO(ink-fork): fix in the incremental renderer.
           <Box width="100%" flexDirection="column">
             {(nextTask || effectiveTip) && (
               <MessageResponse>

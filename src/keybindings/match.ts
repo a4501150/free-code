@@ -93,13 +93,9 @@ export function matchesKeystroke(
 
   const inkMods = getInkModifiers(key)
 
-  // QUIRK: Ink sets key.meta=true when escape is pressed (see input-event.ts).
-  // This is a legacy behavior from how escape sequences work in terminals.
-  // We need to ignore the meta modifier when matching the escape key itself,
-  // otherwise bindings like "escape" (without modifiers) would never match.
-  if (key.escape) {
-    return modifiersMatch({ ...inkMods, meta: false }, target)
-  }
+  // A plain Escape arrives with meta=false (the parser sets meta only for
+  // Alt+Escape / ESC-ESC sequences), so an unmodified "escape" binding
+  // matches naturally and "meta+escape" matches Alt+Escape.
 
   return modifiersMatch(inkMods, target)
 }

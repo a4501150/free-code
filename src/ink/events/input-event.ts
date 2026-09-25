@@ -44,11 +44,11 @@ function parseKey(keypress: ParsedKey): [Key, string] {
     tab: keypress.name === 'tab',
     backspace: keypress.name === 'backspace',
     delete: keypress.name === 'delete',
-    // `parseKeypress` parses \u001B\u001B[A (meta + up arrow) as meta = false
-    // but with option = true, so we need to take this into account here
-    // to avoid breaking changes in Ink.
-    // TODO(vadimdemedes): consider removing this in the next major version.
-    meta: keypress.meta || keypress.name === 'escape' || keypress.option,
+    // `parseKeypress` already distinguishes a plain Escape press (meta=false)
+    // from Alt+Escape / ESC-ESC-prefixed sequences (meta=true). No escape-key
+    // shim on top: upstream ink removed it in v7.0.0 ("key.meta is no longer
+    // set to true when Escape is pressed"), and this fork matches that.
+    meta: keypress.meta,
     // Super (Cmd on macOS / Win key) — only arrives via kitty keyboard
     // protocol CSI u sequences. Distinct from meta (Alt/Option) so
     // bindings like cmd+c can be expressed separately from opt+c.
@@ -79,8 +79,8 @@ function parseKey(keypress: ParsedKey): [Key, string] {
     input = ''
   }
 
-  // Strip meta if it's still remaining after `parseKeypress`
-  // TODO(vadimdemedes): remove this in the next major version.
+  // Strip the Alt/Meta ESC prefix from the raw sequence so Alt+char arrives
+  // as the bare character (matching upstream ink's parsing behavior).
   if (input.startsWith('\u001B')) {
     input = input.slice(1)
   }
