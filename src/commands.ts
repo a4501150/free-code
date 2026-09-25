@@ -1,5 +1,6 @@
 import addDir from './commands/add-dir/index.js'
 import btw from './commands/btw/index.js'
+import buddy from './commands/buddy/index.js'
 import clear from './commands/clear/index.js'
 import color from './commands/color/index.js'
 import copy from './commands/copy/index.js'
@@ -133,6 +134,7 @@ const COMMANDS = memoize((): Command[] => [
   agents,
   branch,
   btw,
+  buddy,
   clear,
   color,
   compact,

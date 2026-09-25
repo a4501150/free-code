@@ -320,6 +320,11 @@ import { useFastModeNotification } from 'src/hooks/notifs/useFastModeNotificatio
 import type { HookProgress } from '../types/hooks.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
 import { FullscreenLayout } from '../components/FullscreenLayout.js'
+import {
+  CompanionFloatingBubble,
+  CompanionSprite,
+} from '../buddy/CompanionSprite.js'
+import { useBuddyNotification } from '../buddy/useBuddyNotification.js'
 import { BackgroundTasksDialog } from '../components/tasks/BackgroundTasksDialog.js'
 import {
   isMouseTrackingEnabled,
@@ -562,6 +567,7 @@ export function REPL({
   )
 
   const { addNotification, removeNotification } = useNotifications()
+  useBuddyNotification()
 
   // eslint-disable-next-line prefer-const
   let trySuggestBgPRIntercept = SUGGEST_BG_PR_NOOP
@@ -1994,6 +2000,7 @@ export function REPL({
           scrollRef={scrollRef}
           overlay={toolPermissionOverlay}
           modal={centeredModal}
+          bottomFloat={<CompanionFloatingBubble />}
           modalScrollRef={modalScrollRef}
           dividerYRef={dividerYRef}
           hidePill={!!viewedAgentTask}
@@ -2311,6 +2318,9 @@ export function REPL({
                   />
                 )}
               </Box>
+              {/* Ambient companion lives beside the prompt box. Self-nulls
+                  when unhatched or muted. */}
+              <CompanionSprite />
             </Box>
           }
         />

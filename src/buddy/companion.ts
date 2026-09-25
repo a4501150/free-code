@@ -13,7 +13,7 @@ import {
 } from './types.js'
 
 // Mulberry32 — tiny seeded PRNG, good enough for picking ducks
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0
   return function () {
     a |= 0
@@ -24,7 +24,7 @@ function mulberry32(seed: number): () => number {
   }
 }
 
-function hashString(s: string): number {
+export function hashString(s: string): number {
   if (typeof Bun !== 'undefined') {
     return Number(BigInt(Bun.hash(s)) & 0xffffffffn)
   }
@@ -130,4 +130,9 @@ export function getCompanion(): Companion | undefined {
   const { bones } = roll(companionUserId())
   // bones last so stale bones fields in old-format configs get overridden
   return { ...stored, ...bones }
+}
+
+// Hatched and not muted — gates the footer item, sprite and floating bubble.
+export function isCompanionVisible(): boolean {
+  return getCompanion() !== undefined && !getGlobalConfig().companionMuted
 }

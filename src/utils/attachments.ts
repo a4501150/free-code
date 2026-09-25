@@ -11,6 +11,7 @@ import {
   type Output as FileReadToolOutput,
   readImageWithTokenBudget,
 } from '../tools/FileReadTool/FileReadTool.js'
+import { getCompanionIntroAttachment } from '../buddy/prompt.js'
 import { FileTooLargeError, readFileInRange } from './readFileInRange.js'
 import { expandPath } from './path.js'
 import { countCharInString } from './stringUtils.js'
@@ -772,7 +773,7 @@ export async function getAttachments(
     ),
     // Context-group ordering (same in compact.ts re-announce and the
     // runAgent.ts turn-0 seed): assistant_mode (main-thread only, so absent
-    // from the seed), session_guidance, git_instructions,
+    // from the seed), session_guidance, git_instructions, companion_intro,
     // mcp_instructions_delta, mcp_tools_delta, agent_listing_delta, then
     // skill_listing below.
     maybe('assistant_mode', () =>
@@ -783,6 +784,9 @@ export async function getAttachments(
     ),
     maybe('git_instructions', () =>
       Promise.resolve(getGitInstructionsAttachment(toolUseContext, messages)),
+    ),
+    maybe('companion_intro', () =>
+      Promise.resolve(getCompanionIntroAttachment(messages)),
     ),
     maybe('mcp_instructions_delta', () =>
       Promise.resolve(

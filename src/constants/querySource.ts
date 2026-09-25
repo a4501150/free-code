@@ -18,6 +18,7 @@ export type QuerySource =
   | 'auto_mode_critique'
   | 'away_summary'
   | 'bash_extract_prefix'
+  | 'buddy_hatch'
   | 'extract_memories'
   | 'feedback'
   | 'generate_session_title'

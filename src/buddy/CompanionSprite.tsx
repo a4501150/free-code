@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import figures from 'figures'
 import React, { useEffect, useRef, useState } from 'react'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
@@ -152,7 +151,6 @@ export function CompanionSprite(): React.ReactNode {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tick intentionally captured at reaction-change, not tracked
   }, [reaction, setAppState])
 
-  if (!feature('BUDDY')) return null
   const companion = getCompanion()
   if (!companion || getGlobalConfig().companionMuted) return null
 
@@ -293,7 +291,7 @@ export function CompanionFloatingBubble(): React.ReactNode {
     return () => clearInterval(timer)
   }, [reaction])
 
-  if (!feature('BUDDY') || !reaction) return null
+  if (!reaction) return null
   const companion = getCompanion()
   if (!companion || getGlobalConfig().companionMuted) return null
 

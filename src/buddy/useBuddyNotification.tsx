@@ -1,4 +1,3 @@
-import { feature } from 'bun:bundle'
 import React, { useEffect } from 'react'
 import { useNotifications } from '../context/notifications.js'
 import { Text } from '../ink.js'
@@ -34,7 +33,6 @@ export function useBuddyNotification(): void {
   const { addNotification, removeNotification } = useNotifications()
 
   useEffect(() => {
-    if (!feature('BUDDY')) return
     const config = getGlobalConfig()
     if (config.companion || !isBuddyTeaserWindow()) return
     addNotification({
@@ -50,7 +48,6 @@ export function useBuddyNotification(): void {
 export function findBuddyTriggerPositions(
   text: string,
 ): Array<{ start: number; end: number }> {
-  if (!feature('BUDDY')) return []
   const triggers: Array<{ start: number; end: number }> = []
   const re = /\/buddy\b/g
   let m: RegExpExecArray | null

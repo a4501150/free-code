@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { randomUUID } from 'crypto'
+import { fireCompanionObserver } from '../../buddy/observer.js'
 import { count } from '../../utils/array.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { logError } from '../../utils/log.js'
@@ -421,6 +422,11 @@ export function useReplQueryExecution({
       resetLoadingState()
       logQueryProfileReport()
       await onTurnComplete?.(messagesRef.current)
+      // Companion keyword reactions on the finished turn (self-debounced,
+      // no-ops unhatched/muted).
+      void fireCompanionObserver(messagesRef.current, reaction =>
+        setAppState(prev => ({ ...prev, companionReaction: reaction })),
+      )
     },
     [
       initialMcpClients,

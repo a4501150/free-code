@@ -23,6 +23,8 @@ import {
   useSetAppState,
 } from 'src/state/AppState.js'
 import type { FooterItem } from 'src/state/AppStateStore.js'
+import { isCompanionVisible } from '../../buddy/companion.js'
+import { BuddyMenu } from '../../buddy/BuddyMenu.js'
 import { getCwd } from 'src/utils/cwd.js'
 import {
   isQueuedCommandEditable,
@@ -361,6 +363,10 @@ function PromptInput({
   const tasks = useAppState(s => s.tasks)
   // WebBrowser pill — visible when a browser is open
   const bagelFooterVisible = useAppState(s => false)
+  // Recomputed per render; PromptInput re-renders on every keystroke and the
+  // companion hatch/mute transitions all land here via a state update.
+  const companionFooterVisible = isCompanionVisible()
+  const [showBuddyMenu, setShowBuddyMenu] = useState(false)
   const queuedCommands = useCommandQueue()
   const promptSuggestionState = useAppState(s => s.promptSuggestion)
   const speculation = useAppState(s => s.speculation)
@@ -507,10 +513,12 @@ function PromptInput({
 
   const footerItems = useMemo(
     () =>
-      [tasksFooterVisible && 'tasks', bagelFooterVisible && 'bagel'].filter(
-        Boolean,
-      ) as FooterItem[],
-    [tasksFooterVisible, bagelFooterVisible],
+      [
+        tasksFooterVisible && 'tasks',
+        bagelFooterVisible && 'bagel',
+        companionFooterVisible && 'companion',
+      ].filter(Boolean) as FooterItem[],
+    [tasksFooterVisible, bagelFooterVisible, companionFooterVisible],
   )
 
   // Effective selection: null if the selected pill stopped rendering (e.g.
@@ -1707,6 +1715,10 @@ function PromptInput({
             break
           case 'bagel':
             break
+          case 'companion':
+            setShowBuddyMenu(true)
+            selectFooterItem(null)
+            break
         }
       },
       'footer:clearSelection': () => {
@@ -2124,6 +2136,26 @@ function PromptInput({
           setShowHistoryPicker(false)
         }}
         onCancel={() => setShowHistoryPicker(false)}
+      />
+    )
+  }
+
+  // Buddy menu from footer:openSelected on the companion item. Its result
+  // line rides a notification since there's no command onDone to route to.
+  if (showBuddyMenu) {
+    return (
+      <BuddyMenu
+        onDone={result => {
+          setShowBuddyMenu(false)
+          if (result) {
+            addNotification({
+              key: 'buddy-menu-result',
+              text: result,
+              priority: 'immediate',
+              timeoutMs: 6000,
+            })
+          }
+        }}
       />
     )
   }

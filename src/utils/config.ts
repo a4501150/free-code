@@ -4,6 +4,7 @@ import memoize from 'lodash-es/memoize.js'
 import pickBy from 'lodash-es/pickBy.js'
 import { basename, dirname, join, resolve } from 'path'
 import { getOriginalCwd, getSessionTrustAccepted } from '../bootstrap/state.js'
+import type { StoredCompanion } from '../buddy/types.js'
 import { getAutoMemEntrypoint } from '../memdir/paths.js'
 import type { McpServerConfig } from '../services/mcp/types.js'
 import { getCwd } from '../utils/cwd.js'
@@ -124,7 +125,7 @@ export type GlobalConfig = {
   firstStartTime?: string
   mcpServers?: Record<string, McpServerConfig>
   oauthAccount?: { accountUuid?: string }
-  companion?: { name: string; personality: string; hatchedAt: number }
+  companion?: StoredCompanion
   companionMuted?: boolean
   hasUserClaudeMdMigrationPromptShown?: boolean
   customApiKeyResponses?: {

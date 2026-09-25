@@ -108,6 +108,7 @@ const VISIBLE_NOT_FIXTURE_TESTED = [
   'auto_mode_exit',
   'budget_usd',
   'compact_file_reference',
+  'companion_intro',
   'critical_system_reminder',
   'date_change',
   'deferred_tools_delta',

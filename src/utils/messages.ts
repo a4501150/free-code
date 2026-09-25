@@ -4,6 +4,7 @@ import isObject from 'lodash-es/isObject.js'
 import last from 'lodash-es/last.js'
 import type { AgentId } from 'src/types/ids.js'
 import { NO_CONTENT_MESSAGE } from '../constants/messages.js'
+import { companionIntroText } from '../buddy/prompt.js'
 import { toolCatalogDir } from '../services/toolCatalog/writer.js'
 import { isAutoMemoryEnabled } from '../memdir/paths.js'
 import { getInitialSettings } from './settings/settings.js'
@@ -4075,6 +4076,14 @@ You have exited auto mode. The user may now want to interact more directly. You 
     case 'git_instructions': {
       return wrapMessagesInSystemReminder([
         createUserMessage({ content: attachment.text, isMeta: true }),
+      ])
+    }
+    case 'companion_intro': {
+      return wrapMessagesInSystemReminder([
+        createUserMessage({
+          content: companionIntroText(attachment.name, attachment.species),
+          isMeta: true,
+        }),
       ])
     }
     case 'mcp_instructions_delta': {
