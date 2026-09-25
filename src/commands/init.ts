@@ -1,9 +1,9 @@
 import type { Command } from '../commands.js'
 import { maybeMarkProjectOnboardingComplete } from '../projectOnboardingState.js'
 
-const INIT_PROMPT = `Analyze this codebase and write a CLAUDE.md file that future instances of Claude Code working in this repository will read.
+const INIT_PROMPT = `Analyze this codebase and write an AGENTS.md file that future instances of Claude Code (and any other coding agent reading the repo) working in this repository will read.
 
-The one design rule: CLAUDE.md contains only facts the agent cannot reliably infer from the repo — put it another way, keep only what its absence would turn into an error or a silent bug. The file is injected into every session, so keep it short, and prefer exact commands and hard constraints over architecture essays. Anything a future instance can figure out on its own goes stale and wastes context.
+The one design rule: AGENTS.md contains only facts the agent cannot reliably infer from the repo — put it another way, keep only what its absence would turn into an error or a silent bug. The file is injected into every session, so keep it short, and prefer exact commands and hard constraints over architecture essays. Anything a future instance can figure out on its own goes stale and wastes context.
 
 What can earn a place (include only categories with real findings):
 1. One or two sentences of purpose, plus the boundaries that are expensive to get wrong — the "big picture" a future instance cannot get from reading any single file (e.g., "the upload service reads files raw; do not go through the API layer").
@@ -18,7 +18,7 @@ Where to look:
 - For monorepos, note the workspace layout and per-package commands.
 - List every Makefile target, not just the obvious ones.
 - Mention real-world use cases only when genuinely non-obvious.
-- If there are Cursor rules (in .cursor/rules/ or .cursorrules), GitHub Copilot rules (in .github/copilot-instructions.md), AGENTS.md, existing .freecode/rules/ (or legacy .claude/rules/), or similar from other assistants, include the important parts.
+- If there are Cursor rules (in .cursor/rules/ or .cursorrules), GitHub Copilot rules (in .github/copilot-instructions.md), existing .freecode/rules/ (or legacy .claude/rules/), or similar from other assistants, include the important parts.
 
 What to cut:
 - Obvious instructions like "Provide helpful error messages to users", "Write unit tests for all new utilities", or "Never include sensitive information (API keys, tokens) in code or commits".
@@ -29,22 +29,25 @@ What to cut:
 - Do not make up sections such as "Project Overview", "Project Administration", "Testing Procedures", "Tips for Development", "Support and Documentation" unless expressly present in another file you read.
 
 Usage notes:
-- If a CLAUDE.md already exists, suggest improvements to it: fill in the missing pieces, flag what is outdated or bloated, and do not repeat what is already there.
-- If CLAUDE.md is just a stub pointing at other files, only improve those target files.
+- Check first whether AGENTS.md and/or CLAUDE.md already exist at the repo root. Either way, AGENTS.md is the final home for the content:
+  - If neither exists, write the new file to AGENTS.md.
+  - If one or both exist, read what is there first, suggest improvements to it — fill in the missing pieces, flag what is outdated or bloated, and do not repeat what is already there — and write the single improved result to AGENTS.md. If CLAUDE.md is a real file, fold the important parts of its content in too.
+  - If the existing file is just a stub pointing at other files, only improve those target files.
+- When the content is final, make CLAUDE.md a relative symlink pointing at AGENTS.md by running \`ln -sf AGENTS.md CLAUDE.md\` in the repo root (skip if CLAUDE.md is already that symlink). Never leave CLAUDE.md as a second copy of the content. If symlinks are unsupported on this platform, instead write CLAUDE.md containing exactly one line: \`@AGENTS.md\`.
 - Be specific: "Use 2-space indentation in TypeScript" is better than "Format code properly."
 - Be sure to prefix the file with the following text:
 
 \`\`\`
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI coding agents (including Claude Code) when working with code in this repository.
 \`\`\``
 
 const command = {
   type: 'prompt',
   name: 'init',
   get description() {
-    return 'Initialize a new CLAUDE.md file with codebase documentation'
+    return 'Initialize a new AGENTS.md file with codebase documentation (CLAUDE.md becomes a symlink to it)'
   },
   contentLength: 0, // Dynamic content
   progressMessage: 'analyzing your codebase',
