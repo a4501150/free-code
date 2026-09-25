@@ -194,17 +194,19 @@ export function AgentsList({
     }
   }
 
+  // The built-in heading rides the divider line itself; padding={4} matches
+  // the Pane's paddingX so the rule never wraps inside the padded body.
   const renderBuiltInAgentsSection = (
-    title = 'Built-in (always available):',
+    title = 'Built-in agents (always available)',
   ) => {
     const builtInAgents = sortedAgents.filter(a => a.source === 'built-in')
     return (
-      <Box flexDirection="column" marginBottom={1} paddingLeft={2}>
-        <Text bold dimColor>
-          {title}
-        </Text>
-        {builtInAgents.map(renderAgent)}
-      </Box>
+      <>
+        <Divider padding={4} title={title} />
+        <Box flexDirection="column" paddingLeft={2}>
+          {builtInAgents.map(renderAgent)}
+        </Box>
+      </>
     )
   }
 
@@ -251,24 +253,16 @@ export function AgentsList({
         >
           {onCreateNew && <Box>{renderCreateNewOption()}</Box>}
           <Text dimColor>
-            No agents found. Create specialized subagents that Claude can
-            delegate to.
+            Specialized subagents each get their own context window, system
+            prompt, and tool access.
           </Text>
           <Text dimColor>
-            Each subagent has its own context window, custom system prompt, and
-            specific tools.
-          </Text>
-          <Text dimColor>
-            Try creating: Code Reviewer, Code Simplifier, Security Reviewer,
-            Tech Lead, or UX Reviewer.
+            Try: Code Reviewer · Code Simplifier · Security Reviewer · Tech Lead
+            · UX Reviewer
           </Text>
           {source !== 'built-in' &&
-            sortedAgents.some(a => a.source === 'built-in') && (
-              <>
-                <Divider />
-                {renderBuiltInAgentsSection()}
-              </>
-            )}
+            sortedAgents.some(a => a.source === 'built-in') &&
+            renderBuiltInAgentsSection()}
         </Box>
       </Dialog>
     )
@@ -328,12 +322,8 @@ export function AgentsList({
             {sortedAgents
               .filter(a => a.source !== 'built-in')
               .map(agent => renderAgent(agent))}
-            {sortedAgents.some(a => a.source === 'built-in') && (
-              <>
-                <Divider />
-                {renderBuiltInAgentsSection()}
-              </>
-            )}
+            {sortedAgents.some(a => a.source === 'built-in') &&
+              renderBuiltInAgentsSection()}
           </>
         )}
       </Box>
