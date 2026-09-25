@@ -18,12 +18,7 @@ import { addFileGlobRuleToGitignore } from '../git/gitignore.js'
 import { patchJsoncFile, safeParseJSONC, SETTINGS_DEEP_KEYS } from '../json.js'
 import { logError } from '../log.js'
 import { clone, jsonStringify } from '../slowOperations.js'
-import {
-  getExistingOrPreferredProjectConfigPath,
-  getPreferredProjectConfigPath,
-  getPreferredProjectConfigRelativePath,
-  getProjectConfigRelativePaths,
-} from '../projectConfigPaths.js'
+import { getPreferredProjectConfigRelativePath } from '../projectConfigPaths.js'
 import { getModelSettingsFilePath } from './modelSettings.js'
 import { MODEL_SETTINGS_KEYS } from './modelSettingsKeys.js'
 import { profileCheckpoint } from '../startupProfiler.js'
@@ -220,8 +215,8 @@ export function getRelativeSettingsFilePathForSource(
 
 /**
  * Returns all candidate file paths for a source, in precedence order (last wins).
- * For project settings, returns both .claude/ and .freecode/ paths.
- * For local settings, only .freecode/ is used.
+ * Project and local settings only use .freecode/ (the legacy .claude/ dir is
+ * not a settings source — it still hosts skills/rules/CLAUDE.md).
  * For user settings, returns freecode.json and modelSettings.json.
  */
 export function getSettingsFilePathsForSource(source: SettingSource): string[] {
@@ -234,9 +229,9 @@ export function getSettingsFilePathsForSource(source: SettingSource): string[] {
     }
     case 'projectSettings': {
       const root = getSettingsRootPathForSource(source)
-      return getProjectConfigRelativePaths('freecode.json').map(rel =>
-        join(root, rel),
-      )
+      return [
+        join(root, getPreferredProjectConfigRelativePath('freecode.json')),
+      ]
     }
     case 'localSettings': {
       const root = getSettingsRootPathForSource(source)
@@ -255,26 +250,14 @@ export function getSettingsFilePathsForSource(source: SettingSource): string[] {
 }
 
 /**
- * Returns the write path for a source. For project/local settings, uses the
- * existing .freecode/ path if present, else existing .claude/ path, else .freecode/.
+ * Returns the write path for a source. For project/local settings this is
+ * always the .freecode/ path — the legacy .claude/ dir is not a settings
+ * source, so an existing .claude/freecode.json is neither read nor written.
  */
 function getSettingsWritePathForSource(
   source: EditableSettingSource,
 ): string | undefined {
-  switch (source) {
-    case 'projectSettings':
-      return getExistingOrPreferredProjectConfigPath(
-        getOriginalCwd(),
-        'freecode.json',
-      )
-    case 'localSettings':
-      return getPreferredProjectConfigPath(
-        getOriginalCwd(),
-        'freecode.local.json',
-      )
-    default:
-      return getSettingsFilePathForSource(source)
-  }
+  return getSettingsFilePathForSource(source)
 }
 
 export function getSettingsForSource(
@@ -290,7 +273,8 @@ export function getSettingsForSource(
 function getSettingsForSourceUncached(
   source: SettingSource,
 ): SettingsJson | null {
-  // Merge all candidate files for this source (handles .claude/ + .freecode/)
+  // Merge all candidate files for this source (e.g. user freecode.json
+  // plus modelSettings.json)
   const filePaths = getSettingsFilePathsForSource(source)
   let merged: SettingsJson | null = null
   for (const filePath of filePaths) {
