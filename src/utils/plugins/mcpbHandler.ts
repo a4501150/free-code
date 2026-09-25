@@ -15,6 +15,7 @@ import { logError } from '../log.js'
 import { getSecureStorage } from '../secureStorage/index.js'
 import {
   getSettings_DEPRECATED,
+  getSettingsForSource,
   updateSettingsForSource,
 } from '../settings/settings.js'
 import { jsonParse, jsonStringify } from '../slowOperations.js'
@@ -285,9 +286,14 @@ export function saveMcpServerUserConfig(
     // sensitive keys doesn't scrub them, the disk copy merges back in. Instead:
     // set each sensitive key to explicit `undefined` — mergeWith (with the
     // customizer at settings.ts:349) treats explicit undefined as a delete.
-    const settings = getSettings_DEPRECATED()
+    // Read and write ONLY the user-scope file's
+    // pluginConfigs[pluginId].mcpServers[serverName] subtree: the merged
+    // all-scope settings would leak other scopes' keys into
+    // ~/.freecode/freecode.json. updateSettingsForSource merges onto the
+    // file's current contents, so a minimal subtree loses nothing else.
+    const userSettings = getSettingsForSource('userSettings')
     const existingInSettings =
-      settings.pluginConfigs?.[pluginId]?.mcpServers?.[serverName] ?? {}
+      userSettings?.pluginConfigs?.[pluginId]?.mcpServers?.[serverName] ?? {}
     const keysToScrubFromSettings = Object.keys(existingInSettings).filter(k =>
       sensitiveKeysInThisSave.has(k),
     )
@@ -295,15 +301,6 @@ export function saveMcpServerUserConfig(
       Object.keys(nonSensitive).length > 0 ||
       keysToScrubFromSettings.length > 0
     ) {
-      if (!settings.pluginConfigs) {
-        settings.pluginConfigs = {}
-      }
-      if (!settings.pluginConfigs[pluginId]) {
-        settings.pluginConfigs[pluginId] = {}
-      }
-      if (!settings.pluginConfigs[pluginId].mcpServers) {
-        settings.pluginConfigs[pluginId].mcpServers = {}
-      }
       // Build the scrub-via-undefined map. The UserConfigValues type doesn't
       // include undefined, but updateSettingsForSource's mergeWith customizer
       // needs explicit undefined to delete — cast is deliberate internal
@@ -312,13 +309,20 @@ export function saveMcpServerUserConfig(
       const scrubbed = Object.fromEntries(
         keysToScrubFromSettings.map(k => [k, undefined]),
       ) as Record<string, undefined>
-      settings.pluginConfigs[pluginId].mcpServers![serverName] = {
-        ...nonSensitive,
-        ...scrubbed,
-      } as UserConfigValues
-      const result = updateSettingsForSource('userSettings', settings)
-      if (result.error) {
-        throw result.error
+      const { error } = updateSettingsForSource('userSettings', {
+        pluginConfigs: {
+          [pluginId]: {
+            mcpServers: {
+              [serverName]: {
+                ...nonSensitive,
+                ...scrubbed,
+              } as UserConfigValues,
+            },
+          },
+        },
+      })
+      if (error) {
+        throw error
       }
       if (keysToScrubFromSettings.length > 0) {
         logForDebugging(

@@ -334,16 +334,36 @@ function readStateFromDisk(): GlobalConfig {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return createDefaultGlobalConfig()
     }
-    return {
+    return normalizeLegacyProjectConfigs({
       ...createDefaultGlobalConfig(),
       ...(parsed as Partial<GlobalConfig>),
-    }
+    })
   } catch (error) {
     if (getErrnoCode(error) === 'ENOENT') {
       return createDefaultGlobalConfig()
     }
     throw error
   }
+}
+
+/**
+ * Legacy/external writers have produced projects[*].allowedTools as a JSON
+ * string instead of an array. Normalize at load so every consumer sees the
+ * declared type (this used to be patched ad hoc inside
+ * getCurrentProjectConfig, which only covered that one reader).
+ */
+function normalizeLegacyProjectConfigs(config: GlobalConfig): GlobalConfig {
+  if (config.projects) {
+    for (const [path, project] of Object.entries(config.projects)) {
+      if (typeof project?.allowedTools === 'string') {
+        config.projects[path] = {
+          ...project,
+          allowedTools: (safeParseJSON(project.allowedTools) as string[]) ?? [],
+        }
+      }
+    }
+  }
+  return config
 }
 
 /**
@@ -425,10 +445,10 @@ function startGlobalConfigFreshnessWatcher(): void {
           const parsed = safeParseJSON(stripBOM(content))
           if (parsed === null || typeof parsed !== 'object') return
           globalConfigCache = {
-            config: {
+            config: normalizeLegacyProjectConfigs({
               ...createDefaultGlobalConfig(),
               ...(parsed as Partial<GlobalConfig>),
-            },
+            }),
             mtime: curr.mtimeMs,
           }
           lastReadFileStats = { mtime: curr.mtimeMs, size: curr.size }
@@ -823,15 +843,9 @@ export function getCurrentProjectConfig(): ProjectConfig {
     return DEFAULT_PROJECT_CONFIG
   }
 
-  const projectConfig = config.projects[absolutePath] ?? DEFAULT_PROJECT_CONFIG
-  // Not sure how this became a string
-  // TODO: Fix upstream
-  if (typeof projectConfig.allowedTools === 'string') {
-    projectConfig.allowedTools =
-      (safeParseJSON(projectConfig.allowedTools) as string[]) ?? []
-  }
-
-  return projectConfig
+  // Legacy string-valued allowedTools is already normalized to an array at
+  // load (normalizeLegacyProjectConfigs).
+  return config.projects[absolutePath] ?? DEFAULT_PROJECT_CONFIG
 }
 
 export function saveCurrentProjectConfig(

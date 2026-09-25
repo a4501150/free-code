@@ -19,6 +19,7 @@ import { logError } from '../log.js'
 import { getSecureStorage } from '../secureStorage/index.js'
 import {
   getSettings_DEPRECATED,
+  getSettingsForSource,
   updateSettingsForSource,
 } from '../settings/settings.js'
 import {
@@ -151,16 +152,15 @@ export function savePluginOptions(
   }
 
   // freecode.json AFTER secureStorage — scrub sensitive keys via explicit
-  // undefined (mergeWith deletion pattern).
-  //
-  // TODO: getSettings_DEPRECATED returns MERGED settings across all scopes.
-  // Mutating that and writing to userSettings can leak project-scope
-  // pluginConfigs into ~/.freecode/freecode.json. Same pattern exists in
-  // saveMcpServerUserConfig. Safe today since pluginConfigs is only ever
-  // written here (user-scope), but will bite if we add project-scoped
-  // plugin options.
-  const settings = getSettings_DEPRECATED()
-  const existingInSettings = settings.pluginConfigs?.[pluginId]?.options ?? {}
+  // undefined (mergeWith deletion pattern). Read and write ONLY the
+  // user-scope file and only the pluginConfigs[pluginId] subtree: the merged
+  // all-scope settings (what getSettings_DEPRECATED returns) would leak other
+  // scopes' keys into ~/.freecode/freecode.json once plugin options exist in
+  // more than one scope. updateSettingsForSource merges onto the file's
+  // current contents, so a minimal subtree loses nothing else on disk.
+  const userSettings = getSettingsForSource('userSettings')
+  const existingInSettings =
+    userSettings?.pluginConfigs?.[pluginId]?.options ?? {}
   const keysToScrubFromSettings = Object.keys(existingInSettings).filter(k =>
     sensitiveKeysInThisSave.has(k),
   )
@@ -168,24 +168,23 @@ export function savePluginOptions(
     Object.keys(nonSensitive).length > 0 ||
     keysToScrubFromSettings.length > 0
   ) {
-    if (!settings.pluginConfigs) {
-      settings.pluginConfigs = {}
-    }
-    if (!settings.pluginConfigs[pluginId]) {
-      settings.pluginConfigs[pluginId] = {}
-    }
     const scrubbed = Object.fromEntries(
       keysToScrubFromSettings.map(k => [k, undefined]),
     ) as Record<string, undefined>
-    settings.pluginConfigs[pluginId].options = {
-      ...nonSensitive,
-      ...scrubbed,
-    } as PluginOptionValues
-    const result = updateSettingsForSource('userSettings', settings)
-    if (result.error) {
-      logError(result.error)
+    const { error } = updateSettingsForSource('userSettings', {
+      pluginConfigs: {
+        [pluginId]: {
+          options: {
+            ...nonSensitive,
+            ...scrubbed,
+          } as PluginOptionValues,
+        },
+      },
+    })
+    if (error) {
+      logError(error)
       throw new Error(
-        `Failed to save plugin options for ${pluginId}: ${result.error.message}`,
+        `Failed to save plugin options for ${pluginId}: ${error.message}`,
       )
     }
   }

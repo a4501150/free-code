@@ -59,10 +59,9 @@ export async function* all<A>(
 
     if (!done) {
       promises.add(next(generator))
-      // TODO: Clean this up
-      if (value !== undefined) {
-        yield value
-      }
+      // `done` is the completion signal; a generator that yields undefined
+      // (A includes undefined) must still forward it.
+      yield value as A
     } else if (waiting.length > 0) {
       // Start a new generator when one finishes
       const nextGen = waiting.shift()!
