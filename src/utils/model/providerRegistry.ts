@@ -260,8 +260,6 @@ export class ProviderRegistry {
   private readonly _defaultSubagentModel: string | undefined
   /** Provider-qualified utility model for background calls from modelSettings.json */
   private readonly _utilityModel: string | undefined
-  /** Provider-qualified available subagent models from freecode.json (max 3) */
-  private readonly _availableSubagentModels: string[]
 
   constructor(
     providers: Record<string, ProviderConfig>,
@@ -269,7 +267,6 @@ export class ProviderRegistry {
       defaultModel?: string
       defaultSubagentModel?: string
       utilityModel?: string
-      availableSubagentModels?: string[]
     },
   ) {
     this.providers = new Map(Object.entries(providers))
@@ -282,7 +279,6 @@ export class ProviderRegistry {
     this._defaultModel = opts?.defaultModel
     this._defaultSubagentModel = opts?.defaultSubagentModel
     this._utilityModel = opts?.utilityModel
-    this._availableSubagentModels = opts?.availableSubagentModels ?? []
     this.buildIndex()
   }
 
@@ -566,14 +562,6 @@ export class ProviderRegistry {
   }
 
   /**
-   * Get the configured available subagent models from freecode.json.
-   * Returns an array of provider-qualified model IDs (max 3), or empty if not configured.
-   */
-  getAvailableSubagentModels(): string[] {
-    return this._availableSubagentModels
-  }
-
-  /**
    * Propagate a parent model's region prefix to a child model.
    * For Bedrock cross-region inference, the parent's region prefix
    * (e.g. "eu.", "us.") is applied to child models that lack one.
@@ -611,19 +599,12 @@ export function getProviderRegistry(): ProviderRegistry {
         ? stripContextSuffix(settingsObj[key] as string)
         : undefined
 
-    const availableSubagentModels = Array.isArray(
-      settingsObj.availableSubagentModels,
-    )
-      ? (settingsObj.availableSubagentModels as string[])
-      : undefined
-
     _instance = new ProviderRegistry(
       (settings.providers ?? {}) as Record<string, ProviderConfig>,
       {
         defaultModel: readStr('defaultModel'),
         defaultSubagentModel: readStr('defaultSubagentModel'),
         utilityModel: readStr('utilityModel'),
-        availableSubagentModels,
       },
     )
   }
@@ -636,7 +617,6 @@ export function initProviderRegistry(
     defaultModel?: string
     defaultSubagentModel?: string
     utilityModel?: string
-    availableSubagentModels?: string[]
   },
 ): ProviderRegistry {
   _instance = new ProviderRegistry(providers, opts)

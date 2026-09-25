@@ -1252,15 +1252,6 @@ const _settingsSchemaValue = z
         'Provider-qualified default subagent model (e.g. "anthropic:claude-sonnet-4-6"). ' +
           'Canonical location is modelSettings.json.',
       ),
-    availableSubagentModels: z
-      .array(z.string())
-      .max(3)
-      .optional()
-      .describe(
-        'Up to 3 provider-qualified model IDs available for subagent model override. ' +
-          'These are exposed as enum values in the Agent tool schema so the LLM can choose between them. ' +
-          'E.g. ["anthropic:claude-sonnet-4-6", "anthropic:claude-haiku-4-5-20251001"]',
-      ),
     utilityModel: z
       .string()
       .optional()
