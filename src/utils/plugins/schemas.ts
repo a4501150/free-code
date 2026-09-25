@@ -448,7 +448,10 @@ export const CommandMetadataSchema = z
  */
 const PluginManifestCommandsSchema = z.object({
   commands: z.union([
-    // TODO (future work): allow globs?
+    // Entries containing glob syntax (*, ?, [], {}) are expanded against the
+    // plugin root at load time (see expandManifestGlobs in pluginLoader.ts).
+    // Globs apply to the path and array forms only — the record form maps one
+    // command name to one source file, so a multi-match glob has no meaning.
     RelativeCommandPath.describe(
       'Path to additional command file or skill directory (in addition to those in the commands/ directory, if it exists), relative to the plugin root',
     ),
@@ -477,7 +480,8 @@ const PluginManifestCommandsSchema = z.object({
  */
 const PluginManifestAgentsSchema = z.object({
   agents: z.union([
-    // TODO (future work): allow globs?
+    // Entries containing glob syntax (*, ?, [], {}) are expanded against the
+    // plugin root at load time (see expandManifestGlobs in pluginLoader.ts).
     RelativeMarkdownPath.describe(
       'Path to additional agent file (in addition to those in the agents/ directory, if it exists), relative to the plugin root',
     ),
@@ -846,8 +850,27 @@ export const PluginSourceSchema = z.union([
       'Plugin located in a subdirectory of a larger repository (monorepo). ' +
         'Only the specified subdirectory is materialized; the rest of the repo is not downloaded.',
     ),
-  // TODO (future work) gist
-  // TODO (future work) single file?
+  z
+    .object({
+      source: z.literal('gist'),
+      gist: z
+        .string()
+        .describe(
+          'GitHub gist ID (e.g., "abc123"), owner/id, or full https gist URL. ' +
+            'A gist is a git repository, so it is cloned like any other git source.',
+        ),
+      ref: z
+        .string()
+        .optional()
+        .describe(
+          'Git branch or tag to use. Defaults to the default revision.',
+        ),
+      sha: gitSha.optional().describe('Specific commit SHA to use'),
+    })
+    .describe('Plugin distributed as a GitHub gist'),
+  // No 'single file' source on purpose: a bare Markdown file carries no
+  // manifest or component layout, and the local string source already
+  // covers directories. Revisit if a real use case shows up.
 ])
 
 /**

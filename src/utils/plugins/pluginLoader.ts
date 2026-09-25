@@ -45,6 +45,7 @@ import {
   symlink,
 } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
+import picomatch from 'picomatch'
 import { basename, dirname, join, relative, resolve, sep } from 'path'
 import { getInlinePlugins } from '../../bootstrap/state.js'
 import {
@@ -482,6 +483,18 @@ function validateGitUrl(url: string): string {
 }
 
 /**
+ * Normalize a gist reference to a cloneable git URL (exported for testing).
+ * Accepts a bare gist ID, "owner/id", or a full https gist URL.
+ */
+export function gistToGitUrl(gist: string): string {
+  if (/^https?:\/\//.test(gist)) {
+    const url = gist.replace(/\/+$/, '')
+    return url.endsWith('.git') ? url : `${url}.git`
+  }
+  return `https://gist.github.com/${gist}.git`
+}
+
+/**
  * Install a plugin from npm using a global cache (exported for testing)
  */
 export async function installFromNpm(
@@ -886,6 +899,9 @@ export function generateTemporaryCacheNameForPlugin(
       case 'git-subdir':
         prefix = 'subdir'
         break
+      case 'gist':
+        prefix = 'gist'
+        break
       default:
         prefix = 'unknown'
     }
@@ -941,6 +957,14 @@ export async function cachePlugin(
             source.url,
             tempPath,
             source.path,
+            source.ref,
+            source.sha,
+          )
+          break
+        case 'gist':
+          await installFromGit(
+            gistToGitUrl(source.gist),
+            tempPath,
             source.ref,
             source.sha,
           )
@@ -1295,6 +1319,114 @@ async function validatePluginPaths(
   return validPaths
 }
 
+const HAS_GLOB_CHARS = /[*?[{]/
+
+const MANIFEST_GLOB_OPTIONS = {
+  dot: true,
+  nonegate: true,
+  nocomment: true,
+  windowsPathsNoEscape: true,
+} as const
+
+/** All files and directories under root, as POSIX-style relative paths. */
+async function listTreeUnderDir(root: string): Promise<string[]> {
+  const out: string[] = []
+  async function walk(dir: string): Promise<void> {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (entry.name !== '.git') {
+          await walk(join(dir, entry.name))
+        }
+      }
+      if (entry.isDirectory() || entry.isFile()) {
+        out.push(relative(root, join(dir, entry.name)).split(sep).join('/'))
+      }
+    }
+  }
+  await walk(root)
+  return out
+}
+
+/**
+ * Expand manifest component entries. Plain relative paths pass through
+ * unchanged; entries containing glob syntax (*, ?, [], {}) are matched
+ * against a single recursive scan of the plugin directory and replaced by
+ * the matching relative paths (sorted, deduped, original order otherwise
+ * preserved). A glob matching nothing is recorded as path-not-found, just
+ * like a missing plain path.
+ */
+async function expandManifestGlobs(
+  relPaths: string[],
+  pluginPath: string,
+  pluginName: string,
+  source: string,
+  component: PluginComponent,
+  errors: PluginError[],
+): Promise<string[]> {
+  const globPatterns = relPaths.filter(
+    p => typeof p === 'string' && HAS_GLOB_CHARS.test(p),
+  )
+  if (globPatterns.length === 0) {
+    return relPaths
+  }
+
+  const scanned = await listTreeUnderDir(pluginPath)
+  const matchesByPattern = new Map<string, string[]>()
+  for (const pattern of globPatterns) {
+    const isMatch = picomatch(
+      pattern.replace(/^\.\//, ''),
+      MANIFEST_GLOB_OPTIONS,
+    )
+    matchesByPattern.set(pattern, scanned.filter(rel => isMatch(rel)).sort())
+  }
+
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const relPath of relPaths) {
+    if (!HAS_GLOB_CHARS.test(relPath)) {
+      if (!seen.has(relPath)) {
+        seen.add(relPath)
+        out.push(relPath)
+      }
+      continue
+    }
+    const matches = matchesByPattern.get(relPath) ?? []
+    if (matches.length === 0) {
+      const fullPath = join(pluginPath, relPath)
+      logForDebugging(
+        `Glob ${relPath} specified in manifest matched no files in ${pluginPath} for ${pluginName}`,
+        { level: 'warn' },
+      )
+      logError(
+        new Error(
+          `Plugin component glob matched no files: ${fullPath} for ${pluginName}`,
+        ),
+      )
+      errors.push({
+        type: 'path-not-found',
+        source,
+        plugin: pluginName,
+        path: fullPath,
+        component,
+      })
+      continue
+    }
+    for (const match of matches) {
+      if (!seen.has(match)) {
+        seen.add(match)
+        out.push(match)
+      }
+    }
+  }
+  return out
+}
+
 /**
  * Creates a LoadedPlugin object from a plugin directory path.
  *
@@ -1452,13 +1584,28 @@ export async function createPluginFromPath(
       }
     } else {
       // Path or array of paths format
-      const commandPaths = Array.isArray(manifest.commands)
+      const commandPaths: unknown[] = Array.isArray(manifest.commands)
         ? manifest.commands
         : [manifest.commands]
 
+      // Globs (*, ?, [], {}) expand against the plugin directory before the
+      // existence checks below. Non-string entries skip expansion and are
+      // reported as invalid by the loop underneath.
+      const expandedCommandPaths: unknown[] = [
+        ...(await expandManifestGlobs(
+          commandPaths.filter((p): p is string => typeof p === 'string'),
+          pluginPath,
+          manifest.name,
+          source,
+          'commands',
+          errors,
+        )),
+        ...commandPaths.filter(p => typeof p !== 'string'),
+      ]
+
       // Parallelize pathExists checks; process results in order.
       const checks = await Promise.all(
-        commandPaths.map(async cmdPath => {
+        expandedCommandPaths.map(async cmdPath => {
           if (typeof cmdPath !== 'string') {
             return { cmdPath, kind: 'invalid' as const }
           }
@@ -1520,8 +1667,17 @@ export async function createPluginFromPath(
       ? manifest.agents
       : [manifest.agents]
 
-    const validPaths = await validatePluginPaths(
+    const expandedAgentPaths = await expandManifestGlobs(
       agentPaths,
+      pluginPath,
+      manifest.name,
+      source,
+      'agents',
+      errors,
+    )
+
+    const validPaths = await validatePluginPaths(
+      expandedAgentPaths,
       pluginPath,
       manifest.name,
       source,
@@ -1548,8 +1704,17 @@ export async function createPluginFromPath(
       ? manifest.skills
       : [manifest.skills]
 
-    const validPaths = await validatePluginPaths(
+    const expandedSkillPaths = await expandManifestGlobs(
       skillPaths,
+      pluginPath,
+      manifest.name,
+      source,
+      'skills',
+      errors,
+    )
+
+    const validPaths = await validatePluginPaths(
+      expandedSkillPaths,
       pluginPath,
       manifest.name,
       source,
