@@ -53,7 +53,6 @@ const VISIBLE_FIXTURES: Array<[Attachment, string]> = [
       addedLines: ['- worker: does work'],
       removedTypes: [],
       isInitial: true,
-      showConcurrencyNote: false,
     },
     'Available agent types',
   ],

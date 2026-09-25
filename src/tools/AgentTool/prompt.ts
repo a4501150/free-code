@@ -2,7 +2,10 @@ import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { getAgentModelDisplay as getAgentModelDisplayName } from '../../utils/model/agent.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { AGENT_TOOL_NAME } from './constants.js'
-import { isForkAgentEnabled } from './built-in/forkAgent.js'
+import {
+  FORK_USAGE_GUIDANCE,
+  isForkAgentEnabled,
+} from './built-in/forkAgent.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 
 function getToolsDescription(agent: AgentDefinition): string {
@@ -97,7 +100,9 @@ ${effectiveAgents.map(agent => formatAgentLine(agent)).join('\n')}`
 
 ${agentListSection}
 
-Set the ${AGENT_TOOL_NAME} tool's subagent_type parameter to pick a type; when omitted, the general-purpose agent is used.`
+Set the ${AGENT_TOOL_NAME} tool's subagent_type parameter to pick a type; when omitted, the general-purpose agent is used.
+
+To run agents in parallel whose results you need together, send multiple ${AGENT_TOOL_NAME} tool uses in a single message.`
 
   // Coordinator mode gets the slim prompt -- the coordinator system prompt
   // already covers usage notes, examples, and when-not-to-use guidance.
@@ -118,14 +123,14 @@ You don't have to do anything waiting for a backgrounded agent, once it complete
 
 Until the system task notification arrives you know nothing about what the backgrounded subagent found or performed. The system task notification will contain the actual response from the subagent, so report "subagent is still running" when you have not received it, never a guess. Do not Read or tail the agent's output file while it runs — it is the agent's full transcript, and reading it brings the subagent's tool output back into your context.
 
-Backgrounding is not a parallelism mechanism — to run agents in parallel whose results you need together, send multiple ${AGENT_TOOL_NAME} tool uses in a single message.`
+Backgrounding is not a parallelism mechanism — it only avoids blocking; parallelism is the single-message multi-use pattern above.`
     : ''
 
-  // The fork facts (inherits your transcript, shares your prompt cache) are
-  // also on the fork's agent-listing line; the bullet carries the gotchas.
+  // The when-to-use clause is imported so this bullet and the fork's
+  // agent-listing line share one source; only the gotcha lives here.
   const forkBullet = forkAvailable
     ? `
- - Fork Agent (pass \`subagent_type: "fork"\`) is a specialized subagent that forks yourself, so use it when the intermediate tool output is not worth keeping in your context and/or the task benefits from inheriting your full transcript and sharing your prompt cache. Write its prompt as a directive (what to do), not a briefing, since it inherits your full context.`
+ - Fork Agent (pass \`subagent_type: "fork"\`) is a specialized subagent that forks yourself. ${FORK_USAGE_GUIDANCE} Write its prompt as a directive (what to do), not a briefing, since it inherits your full context.`
     : ''
 
   // Non-coordinator gets the lean worker contract: handoff facts, no examples.

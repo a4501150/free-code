@@ -663,8 +663,6 @@ export type Attachment =
       removedTypes: string[]
       /** True when this is the first announcement in the conversation */
       isInitial: boolean
-      /** Whether to include the "launch multiple agents concurrently" note (non-pro subscriptions) */
-      showConcurrencyNote: boolean
     }
   | {
       type: 'mcp_instructions_delta'
@@ -1651,7 +1649,6 @@ export function getAgentListingDeltaAttachment(
       addedLines: added.map(formatAgentLine),
       removedTypes: removed,
       isInitial: announced.size === 0,
-      showConcurrencyNote: true,
     },
   ]
 }

@@ -23,7 +23,7 @@ export function buildForkDirective(
 You are a worker fork. The transcript above is the parent's history — inherited reference, not your situation. You are NOT a continuation of that agent. Execute ONE directive, then stop.
 
 Hard rules:
-- Do NOT spawn subagents with the ${AGENT_TOOL_NAME} tool. The "default to forking" guidance is for the parent. You ARE the fork. Execute directly.
+- Do NOT spawn subagents with the ${AGENT_TOOL_NAME} tool. The delegation guidance is for the parent. You ARE the fork. Execute directly.
 - One shot: report once and stop. No follow-up questions, no proposed next steps, no waiting for the user.
 
 Guidelines (your directive can override any of these):
@@ -36,10 +36,17 @@ Guidelines (your directive can override any of these):
 ${worktreeNotice ? `${worktreeNotice}\n\n` : ''}${prompt}`
 }
 
+// The fork when-to-use clause. Single source of truth for both the
+// agent-listing line and the Agent tool description bullet — separate copies
+// drifted to different conditions once before.
+export const FORK_USAGE_GUIDANCE =
+  'Use when the intermediate tool output is not worth keeping in your context and/or the task benefits from inheriting your full transcript and prompt cache.'
+
 export const FORK_AGENT: BuiltInAgentDefinition = {
   agentType: 'fork',
   whenToUse:
-    'Fork — inherits the parent\'s full conversation context and shares its prompt cache. Selected explicitly via subagent_type: "fork" when the fork gate is on; never the default. Use for work whose intermediate tool output is not worth keeping in the parent\'s context.',
+    'Fork — a specialized subagent that forks the parent, inheriting its full conversation context and sharing its prompt cache. ' +
+    FORK_USAGE_GUIDANCE,
   tools: ['*'],
   source: 'built-in',
   baseDir: 'built-in',
