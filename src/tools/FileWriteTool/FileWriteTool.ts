@@ -1,4 +1,5 @@
 import { dirname, sep } from 'path'
+import { FileWritePermissionRequest } from '../../components/permissions/FileWritePermissionRequest/FileWritePermissionRequest.js'
 
 import { z } from 'zod/v4'
 import { diagnosticTracker } from '../../services/diagnosticTracking.js'
@@ -81,6 +82,8 @@ export type Output = z.infer<OutputSchema>
 export type FileWriteToolInput = InputSchema
 
 export const FileWriteTool = buildTool({
+  renderPermissionRequest: () => FileWritePermissionRequest,
+
   name: FILE_WRITE_TOOL_NAME,
   maxResultSizeChars: 100_000,
   async description() {

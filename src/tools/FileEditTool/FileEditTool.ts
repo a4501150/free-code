@@ -1,4 +1,5 @@
 import { dirname, isAbsolute, sep } from 'path'
+import { FileEditPermissionRequest } from '../../components/permissions/FileEditPermissionRequest/FileEditPermissionRequest.js'
 
 import { diagnosticTracker } from '../../services/diagnosticTracking.js'
 import { notifyVscodeFileUpdated } from '../../services/mcp/vscodeSdkMcp.js'
@@ -116,6 +117,8 @@ function suggestPathUnderCwdSync(fullFilePath: string): string | null {
 }
 
 export const FileEditTool = buildTool({
+  renderPermissionRequest: () => FileEditPermissionRequest,
+
   name: FILE_EDIT_TOOL_NAME,
   maxResultSizeChars: 100_000,
   async description() {

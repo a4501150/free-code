@@ -694,6 +694,17 @@ export type Tool<
   ): React.ReactNode
 
   /**
+   * The component that renders this tool's permission prompt. When omitted,
+   * falls back to FallbackPermissionRequest. Declared as a function returning
+   * the component (not a direct component reference) so that tool modules
+   * can point at permission components that import the tool back — the
+   * cycle stays deferred until render time.
+   */
+  renderPermissionRequest?(): React.ComponentType<
+    import('./components/permissions/PermissionRequest.js').PermissionRequestProps
+  >
+
+  /**
    * Renders multiple parallel instances of this tool as a group.
    * @returns React node to render, or null to fall back to individual rendering
    */

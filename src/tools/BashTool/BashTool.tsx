@@ -1,4 +1,5 @@
 import type { DomainToolResultBlockParam } from '../../types/domain.js'
+import { BashPermissionRequest } from '../../components/permissions/BashPermissionRequest/BashPermissionRequest.js'
 import {
   copyFile,
   stat as fsStat,
@@ -515,6 +516,8 @@ async function applySedEdit(
 }
 
 export const BashTool = buildTool({
+  renderPermissionRequest: () => BashPermissionRequest,
+
   name: BASH_TOOL_NAME,
   // 30K chars - tool result persistence threshold
   maxResultSizeChars: 30_000,

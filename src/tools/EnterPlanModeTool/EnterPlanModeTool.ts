@@ -1,4 +1,5 @@
 import { z } from 'zod/v4'
+import { EnterPlanModePermissionRequest } from '../../components/permissions/EnterPlanModePermissionRequest/EnterPlanModePermissionRequest.js'
 import {
   getAllowedChannels,
   handlePlanModeTransition,
@@ -28,6 +29,8 @@ type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 
 export const EnterPlanModeTool: Tool<InputSchema, Output> = buildTool({
+  renderPermissionRequest: () => EnterPlanModePermissionRequest,
+
   name: ENTER_PLAN_MODE_TOOL_NAME,
   maxResultSizeChars: 100_000,
   async description() {

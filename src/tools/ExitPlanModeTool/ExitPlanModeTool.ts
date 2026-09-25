@@ -1,4 +1,5 @@
 import { writeFile } from 'fs/promises'
+import { ExitPlanModePermissionRequest } from '../../components/permissions/ExitPlanModePermissionRequest/ExitPlanModePermissionRequest.js'
 import { z } from 'zod/v4'
 import * as autoModeStateNs from '../../utils/permissions/autoModeState.js'
 import * as permissionSetupNs from '../../utils/permissions/permissionSetup.js'
@@ -67,6 +68,8 @@ type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 
 export const ExitPlanModeTool: Tool<InputSchema, Output> = buildTool({
+  renderPermissionRequest: () => ExitPlanModePermissionRequest,
+
   name: EXIT_PLAN_MODE_TOOL_NAME,
   maxResultSizeChars: 100_000,
   async description() {

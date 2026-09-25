@@ -4,56 +4,13 @@ import { ExitPlanModeTool } from 'src/tools/ExitPlanModeTool/ExitPlanModeTool.js
 import { useNotifyAfterTimeout } from '../../hooks/useNotifyAfterTimeout.js'
 import { useKeybinding } from '../../keybindings/useKeybinding.js'
 import type { AnyObject, Tool, ToolUseContext } from '../../Tool.js'
-import { AskUserQuestionTool } from '../../tools/AskUserQuestionTool/AskUserQuestionTool.js'
-import { BashTool } from '../../tools/BashTool/BashTool.js'
-import { FileEditTool } from '../../tools/FileEditTool/FileEditTool.js'
-import { FileReadTool } from '../../tools/FileReadTool/FileReadTool.js'
-import { FileWriteTool } from '../../tools/FileWriteTool/FileWriteTool.js'
-import { PowerShellTool } from '../../tools/PowerShellTool/PowerShellTool.js'
-import { SkillTool } from '../../tools/SkillTool/SkillTool.js'
 import type { AssistantMessage } from '../../types/message.js'
 import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
-import { AskUserQuestionPermissionRequest } from './AskUserQuestionPermissionRequest/AskUserQuestionPermissionRequest.js'
-import { BashPermissionRequest } from './BashPermissionRequest/BashPermissionRequest.js'
-import { EnterPlanModePermissionRequest } from './EnterPlanModePermissionRequest/EnterPlanModePermissionRequest.js'
-import { ExitPlanModePermissionRequest } from './ExitPlanModePermissionRequest/ExitPlanModePermissionRequest.js'
 import { FallbackPermissionRequest } from './FallbackPermissionRequest.js'
-import { FileEditPermissionRequest } from './FileEditPermissionRequest/FileEditPermissionRequest.js'
-import { FilesystemPermissionRequest } from './FilesystemPermissionRequest/FilesystemPermissionRequest.js'
-import { FileWritePermissionRequest } from './FileWritePermissionRequest/FileWritePermissionRequest.js'
-import { PowerShellPermissionRequest } from './PowerShellPermissionRequest/PowerShellPermissionRequest.js'
-import { SkillPermissionRequest } from './SkillPermissionRequest/SkillPermissionRequest.js'
 
 import type { DomainUserContentBlock } from '../../types/domain.js'
 import type { z } from 'zod/v4'
 import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
-
-function permissionComponentForTool(
-  tool: Tool,
-): React.ComponentType<PermissionRequestProps> {
-  switch (tool) {
-    case FileEditTool:
-      return FileEditPermissionRequest
-    case FileWriteTool:
-      return FileWritePermissionRequest
-    case BashTool:
-      return BashPermissionRequest
-    case PowerShellTool:
-      return PowerShellPermissionRequest
-    case ExitPlanModeTool:
-      return ExitPlanModePermissionRequest
-    case EnterPlanModeTool:
-      return EnterPlanModePermissionRequest
-    case SkillTool:
-      return SkillPermissionRequest
-    case AskUserQuestionTool:
-      return AskUserQuestionPermissionRequest
-    case FileReadTool:
-      return FilesystemPermissionRequest
-    default:
-      return FallbackPermissionRequest
-  }
-}
 
 export type PermissionRequestProps<Input extends AnyObject = AnyObject> = {
   toolUseConfirm: ToolUseConfirm<Input>
@@ -117,7 +74,6 @@ function getNotificationMessage(toolUseConfirm: ToolUseConfirm): string {
   return `Claude needs your permission to use ${toolName}`
 }
 
-// TODO: Move this to Tool.renderPermissionRequest
 export function PermissionRequest({
   toolUseConfirm,
   toolUseContext,
@@ -140,7 +96,8 @@ export function PermissionRequest({
   const notificationMessage = getNotificationMessage(toolUseConfirm)
   useNotifyAfterTimeout(notificationMessage, 'permission_prompt')
 
-  const PermissionComponent = permissionComponentForTool(toolUseConfirm.tool)
+  const PermissionComponent =
+    toolUseConfirm.tool.renderPermissionRequest?.() ?? FallbackPermissionRequest
 
   return (
     <PermissionComponent

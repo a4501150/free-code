@@ -1,4 +1,5 @@
 import type { DomainBase64Source } from '../../types/domain.js'
+import { FilesystemPermissionRequest } from '../../components/permissions/FilesystemPermissionRequest/FilesystemPermissionRequest.js'
 import { readdir, readFile as readFileAsync } from 'fs/promises'
 import * as path from 'path'
 import { posix, win32 } from 'path'
@@ -332,6 +333,8 @@ type OutputSchema = typeof outputSchema
 export type Output = z.infer<OutputSchema>
 
 export const FileReadTool = buildTool({
+  renderPermissionRequest: () => FilesystemPermissionRequest,
+
   name: FILE_READ_TOOL_NAME,
   // Output is bounded by maxTokens (validateContentTokens). Persisting to a
   // file the model reads back with Read is circular — never persist.

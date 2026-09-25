@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { AskUserQuestionPermissionRequest } from '../../components/permissions/AskUserQuestionPermissionRequest/AskUserQuestionPermissionRequest.js'
 import {
   getAllowedChannels,
   getQuestionPreviewFormat,
@@ -184,6 +185,8 @@ function AskUserQuestionResultMessage({
 }
 
 export const AskUserQuestionTool: Tool<InputSchema, Output> = buildTool({
+  renderPermissionRequest: () => AskUserQuestionPermissionRequest,
+
   name: ASK_USER_QUESTION_TOOL_NAME,
   maxResultSizeChars: 100_000,
   async description() {

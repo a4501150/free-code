@@ -1,4 +1,5 @@
 import type { DomainToolResultBlockParam } from '../../types/domain.js'
+import { PowerShellPermissionRequest } from '../../components/permissions/PowerShellPermissionRequest/PowerShellPermissionRequest.js'
 import {
   copyFile,
   stat as fsStat,
@@ -353,6 +354,8 @@ function getCommandTypeForLogging(
 }
 
 export const PowerShellTool = buildTool({
+  renderPermissionRequest: () => PowerShellPermissionRequest,
+
   name: POWERSHELL_TOOL_NAME,
   maxResultSizeChars: 30_000,
 

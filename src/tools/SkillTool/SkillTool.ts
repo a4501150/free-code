@@ -1,4 +1,5 @@
 import type { DomainToolResultBlockParam } from '../../types/domain.js'
+import { SkillPermissionRequest } from '../../components/permissions/SkillPermissionRequest/SkillPermissionRequest.js'
 import { getProjectRoot } from 'src/bootstrap/state.js'
 import {
   builtInCommandNames,
@@ -215,6 +216,8 @@ type OutputSchema = typeof outputSchema
 export type Output = z.input<OutputSchema>
 
 export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
+  renderPermissionRequest: () => SkillPermissionRequest,
+
   name: SKILL_TOOL_NAME,
   maxResultSizeChars: 100_000,
   get inputSchema(): InputSchema {
