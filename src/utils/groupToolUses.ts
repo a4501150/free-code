@@ -30,6 +30,26 @@ function getToolsWithGrouping(tools: Tools): Set<string> {
   return cached
 }
 
+/**
+ * Stable identity for a wrapper row (grouped or collapsed), taken from its
+ * first member. Wrapper uuids must survive the synthetic→committed swap: a
+ * streaming tool_use renders as a synthetic message whose uuid is derived
+ * from the block id, but the message committed at content_block_stop gets a
+ * fresh random uuid — firstMsg.uuid changes at that instant, which remounts
+ * the React row (flicker, lost expand state). The tool_use block id is
+ * byte-identical in the synthetic and committed message, so wrappers key off
+ * it. Falls back to the message uuid for members without a tool_use block.
+ */
+export function firstToolUseId(msg: RenderableMessage): string {
+  const first =
+    msg.type === 'grouped_tool_use'
+      ? msg.messages[0]?.message.content[0]
+      : msg.type === 'assistant'
+        ? msg.message.content[0]
+        : undefined
+  return first?.type === 'tool_use' ? first.id : msg.uuid
+}
+
 function getToolUseInfo(
   msg: MessageWithoutProgress,
 ): { messageId: string; toolUseId: string; toolName: string } | null {
@@ -143,7 +163,7 @@ export function applyGrouping(
             messages: group,
             results,
             displayMessage: firstMsg,
-            uuid: `grouped-${firstMsg.uuid}`,
+            uuid: `grouped-${firstToolUseId(firstMsg)}`,
             timestamp: firstMsg.timestamp,
             messageId: info.messageId,
           }

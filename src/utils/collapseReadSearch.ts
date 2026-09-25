@@ -22,6 +22,7 @@ import type {
   SystemStopHookSummaryMessage,
 } from '../types/message.js'
 import { getDisplayPath } from './file.js'
+import { firstToolUseId } from './groupToolUses.js'
 import {
   isAutoManagedMemoryFile,
   isAutoManagedMemoryPattern,
@@ -793,7 +794,7 @@ function createCollapsedGroup(
     messages:
       group.messages as unknown as import('../types/message.js').NormalizedMessage[],
     displayMessage: firstMsg as import('../types/message.js').NormalizedMessage,
-    uuid: `collapsed-${firstMsg.uuid}` as UUID,
+    uuid: `collapsed-${firstToolUseId(firstMsg)}` as UUID,
     timestamp: firstMsg.timestamp,
   }
   result.teamMemorySearchCount = teamMemSearchCount
@@ -970,10 +971,8 @@ export function collapseReadSearchGroups(
         //   its file_path hasn't reached the partially parsed input yet. Do
         //   NOT count these — two calls on one file would show "Reading 2
         //   files…" and then tick DOWN to "Read 1 file" once the committed
-        //   messages dedupe by path (the group remounts when its first
-        //   message goes synthetic → real, so maxReadCountRef cannot pin the
-        //   count). The call lands in readFilePaths as soon as its input
-        //   completes; the count only ever grows.
+        //   messages dedupe by path. The call lands in readFilePaths as soon
+        //   as its input completes; the count only ever grows.
         if (filePaths.length === 0 && toolInfo.name === BASH_TOOL_NAME) {
           currentGroup.readOperationCount += countToolUses(msg)
           // Use the Bash command as the display hint (truncated for readability)
