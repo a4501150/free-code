@@ -84,7 +84,7 @@ const externalTips: Tip[] = [
   {
     id: 'plan-mode-for-complex-tasks',
     content: async () =>
-      `Use Plan Mode to prepare for a complex request before making changes. Press ${getShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab')} twice to enable.`,
+      `Use Plan Mode to prepare for a complex request before making changes. Press ${getShortcutDisplay('chat:cycleMode', 'Chat')} twice to enable.`,
     isRelevant: async () => true,
   },
   {
@@ -267,13 +267,13 @@ const externalTips: Tip[] = [
   {
     id: 'shift-tab',
     content: async () =>
-      `Hit ${getShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab')} to cycle between default mode, auto-accept edit mode, and plan mode`,
+      `Hit ${getShortcutDisplay('chat:cycleMode', 'Chat')} to cycle between default mode, auto-accept edit mode, and plan mode`,
     isRelevant: async () => true,
   },
   {
     id: 'image-paste',
     content: async () =>
-      `Use ${getShortcutDisplay('chat:imagePaste', 'Chat', 'ctrl+v')} to paste images from your clipboard`,
+      `Use ${getShortcutDisplay('chat:imagePaste', 'Chat')} to paste images from your clipboard`,
     isRelevant: async () => true,
   },
   {

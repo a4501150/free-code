@@ -34,7 +34,6 @@ export function LocationStep(): ReactNode {
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Confirmation"
-            fallback="Esc"
             description="cancel"
           />
         </Byline>

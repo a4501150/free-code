@@ -113,11 +113,7 @@ function buildDisplayText(
   context: ToolUseContext,
   userDisplayMessage?: string,
 ): string {
-  const expandShortcut = getShortcutDisplay(
-    'app:toggleTranscript',
-    'Global',
-    'ctrl+o',
-  )
+  const expandShortcut = getShortcutDisplay('app:toggleTranscript', 'Global')
   const dimmed = [
     ...(context.options.verbose
       ? []

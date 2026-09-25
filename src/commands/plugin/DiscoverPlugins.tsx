@@ -662,13 +662,11 @@ export function DiscoverPlugins({
               <ConfigurableShortcutHint
                 action="select:accept"
                 context="Select"
-                fallback="Enter"
                 description="select"
               />
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="back"
               />
             </Byline>
@@ -841,7 +839,6 @@ function DiscoverPluginsKeyHint({
             <ConfigurableShortcutHint
               action="plugin:install"
               context="Plugin"
-              fallback="i"
               description="install"
               bold
             />
@@ -851,20 +848,17 @@ function DiscoverPluginsKeyHint({
             <ConfigurableShortcutHint
               action="plugin:toggle"
               context="Plugin"
-              fallback="Space"
               description="toggle"
             />
           )}
           <ConfigurableShortcutHint
             action="select:accept"
             context="Select"
-            fallback="Enter"
             description="details"
           />
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Confirmation"
-            fallback="Esc"
             description="back"
           />
         </Byline>

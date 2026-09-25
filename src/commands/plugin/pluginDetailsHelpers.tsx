@@ -93,7 +93,6 @@ export function PluginSelectionKeyHint({
             <ConfigurableShortcutHint
               action="plugin:install"
               context="Plugin"
-              fallback="i"
               description="install"
               bold
             />
@@ -101,19 +100,16 @@ export function PluginSelectionKeyHint({
           <ConfigurableShortcutHint
             action="plugin:toggle"
             context="Plugin"
-            fallback="Space"
             description="toggle"
           />
           <ConfigurableShortcutHint
             action="select:accept"
             context="Select"
-            fallback="Enter"
             description="details"
           />
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Confirmation"
-            fallback="Esc"
             description="back"
           />
         </Byline>

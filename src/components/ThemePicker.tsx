@@ -62,7 +62,6 @@ export function ThemePicker({
   const syntaxToggleShortcut = useShortcutDisplay(
     'theme:toggleSyntaxHighlighting',
     'ThemePicker',
-    'ctrl+t',
   )
 
   useKeybinding(

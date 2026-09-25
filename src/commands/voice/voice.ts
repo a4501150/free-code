@@ -116,7 +116,7 @@ export const call: LocalCommandCall = async () => {
     }
   }
   settingsChangeDetector.notifyChange('userSettings')
-  const key = getShortcutDisplay('voice:pushToTalk', 'Chat', 'Space')
+  const key = getShortcutDisplay('voice:pushToTalk', 'Chat')
   const stt = normalizeLanguageForSTT(currentSettings.language)
   let langNote = ''
   if (stt.fellBackFrom) {

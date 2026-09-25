@@ -10,7 +10,7 @@ type Props = {
 }
 
 export function ResumeTask({ onCancel }: Props): React.ReactNode {
-  const escKey = useShortcutDisplay('confirm:no', 'Confirmation', 'Esc')
+  const escKey = useShortcutDisplay('confirm:no', 'Confirmation')
 
   useKeybinding('confirm:no', onCancel, { context: 'Confirmation' })
 

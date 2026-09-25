@@ -1093,7 +1093,6 @@ export function LogSelector({
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="cancel"
               />
             </Byline>
@@ -1105,7 +1104,6 @@ export function LogSelector({
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="cancel"
               />
             </Byline>
@@ -1118,7 +1116,6 @@ export function LogSelector({
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="cancel"
               />
             </Byline>
@@ -1131,7 +1128,6 @@ export function LogSelector({
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="clear"
               />
             </Byline>
@@ -1167,7 +1163,6 @@ export function LogSelector({
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="cancel"
               />
               {/* Ternary, not &&: an empty string survives Children.toArray, so

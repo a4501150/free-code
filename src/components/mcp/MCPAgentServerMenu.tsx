@@ -127,7 +127,6 @@ export function MCPAgentServerMenu({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="go back"
             />
           </Text>
@@ -166,7 +165,6 @@ export function MCPAgentServerMenu({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="go back"
             />
           </Byline>

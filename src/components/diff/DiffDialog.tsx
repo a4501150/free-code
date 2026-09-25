@@ -198,11 +198,7 @@ export function DiffDialog({ messages, onDone }: Props): React.ReactNode {
       </Box>
     ) : null
 
-  const dismissShortcut = useShortcutDisplay(
-    'diff:dismiss',
-    'DiffDialog',
-    'esc',
-  )
+  const dismissShortcut = useShortcutDisplay('diff:dismiss', 'DiffDialog')
   // Determine the appropriate message when no files are shown
   const emptyMessage = (() => {
     if (diffData.loading) {

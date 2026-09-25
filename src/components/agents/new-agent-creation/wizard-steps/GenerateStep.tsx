@@ -139,7 +139,6 @@ export function GenerateStep(): ReactNode {
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Settings"
-            fallback="Esc"
             description="cancel"
           />
         }
@@ -160,19 +159,16 @@ export function GenerateStep(): ReactNode {
           <ConfigurableShortcutHint
             action="confirm:yes"
             context="Confirmation"
-            fallback="Enter"
             description="submit"
           />
           <ConfigurableShortcutHint
             action="chat:externalEditor"
             context="Chat"
-            fallback="ctrl+g"
             description="open in editor"
           />
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Settings"
-            fallback="Esc"
             description="go back"
           />
         </Byline>

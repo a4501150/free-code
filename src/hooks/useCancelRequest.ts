@@ -243,11 +243,7 @@ export function CancelRequestHandler(props: CancelRequestHandlerProps): null {
     }
     // First press -- show confirmation hint in status bar
     lastKillAgentsPressRef.current = now
-    const shortcut = getShortcutDisplay(
-      'chat:killAgents',
-      'Chat',
-      'ctrl+x ctrl+k',
-    )
+    const shortcut = getShortcutDisplay('chat:killAgents', 'Chat')
     addNotification({
       key: 'kill-agents-confirm',
       text: `Press ${shortcut} again to stop background agents`,

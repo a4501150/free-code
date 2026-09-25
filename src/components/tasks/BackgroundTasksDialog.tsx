@@ -103,11 +103,7 @@ export function BackgroundTasksDialog({
   const tasks = useAppState(s => s.tasks)
   const foregroundedTaskId = useAppState(s => s.foregroundedTaskId)
   const setAppState = useSetAppState()
-  const killAgentsShortcut = useShortcutDisplay(
-    'chat:killAgents',
-    'Chat',
-    'ctrl+x ctrl+k',
-  )
+  const killAgentsShortcut = useShortcutDisplay('chat:killAgents', 'Chat')
   const typedTasks = tasks as Record<string, TaskState> | undefined
 
   // Track if we skipped list view on mount (for back button behavior)

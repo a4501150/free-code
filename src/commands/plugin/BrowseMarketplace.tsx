@@ -692,7 +692,6 @@ export function BrowseMarketplace({
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="go back"
               />
             </Text>
@@ -745,13 +744,11 @@ export function BrowseMarketplace({
               <ConfigurableShortcutHint
                 action="select:accept"
                 context="Select"
-                fallback="Enter"
                 description="select"
               />
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="go back"
               />
             </Byline>
@@ -890,13 +887,11 @@ export function BrowseMarketplace({
               <ConfigurableShortcutHint
                 action="select:accept"
                 context="Select"
-                fallback="Enter"
                 description="select"
               />
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="back"
               />
             </Byline>
@@ -922,7 +917,6 @@ export function BrowseMarketplace({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="go back"
             />
           </Text>

@@ -255,7 +255,6 @@ function StatsContent({ allTimePromise }: StatsContentProps): React.ReactNode {
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Settings"
-              fallback="Esc"
               description="close"
             />
             {copyStatus ? <Text>{copyStatus}</Text> : null}

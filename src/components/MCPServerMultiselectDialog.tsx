@@ -101,7 +101,6 @@ export function MCPServerMultiselectDialog({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="reject all"
             />
           </Byline>

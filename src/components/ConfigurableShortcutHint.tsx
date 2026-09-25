@@ -11,8 +11,6 @@ type Props = {
   action: KeybindingAction
   /** The keybinding context (e.g., 'Global') */
   context: KeybindingContextName
-  /** Default shortcut if keybinding not configured */
-  fallback: string
   /** The action description text (e.g., 'expand') */
   description: string
   /** Whether to wrap in parentheses */
@@ -22,26 +20,24 @@ type Props = {
 }
 
 /**
- * KeyboardShortcutHint that displays the user-configured shortcut.
- * Falls back to default if keybinding context is not available.
+ * KeyboardShortcutHint that displays the user-configured shortcut,
+ * falling back to the action's shipped default binding.
  *
  * @example
  * <ConfigurableShortcutHint
  *   action="app:toggleTranscript"
  *   context="Global"
- *   fallback="ctrl+o"
  *   description="expand"
  * />
  */
 export function ConfigurableShortcutHint({
   action,
   context,
-  fallback,
   description,
   parens,
   bold,
 }: Props): React.ReactNode {
-  const shortcut = useShortcutDisplay(action, context, fallback)
+  const shortcut = useShortcutDisplay(action, context)
   return (
     <KeyboardShortcutHint
       shortcut={shortcut}

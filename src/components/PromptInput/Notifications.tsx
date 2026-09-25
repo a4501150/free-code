@@ -121,7 +121,6 @@ export function Notifications({
             <ConfigurableShortcutHint
               action="chat:externalEditor"
               context="Chat"
-              fallback="ctrl+g"
               description={`edit in ${toIDEDisplayName(editor)}`}
             />
           </Text>

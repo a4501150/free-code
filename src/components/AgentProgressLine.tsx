@@ -151,7 +151,6 @@ export function AgentProgressLine({
                 <ConfigurableShortcutHint
                   action="app:toggleTranscript"
                   context="Global"
-                  fallback="ctrl+o"
                   description="expand"
                 />
               </Byline>

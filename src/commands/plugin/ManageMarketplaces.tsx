@@ -625,13 +625,11 @@ export function ManageMarketplaces({
                 <ConfigurableShortcutHint
                   action="select:accept"
                   context="Select"
-                  fallback="Enter"
                   description="select"
                 />
                 <ConfigurableShortcutHint
                   action="confirm:no"
                   context="Confirmation"
-                  fallback="Esc"
                   description="go back"
                 />
               </Byline>
@@ -784,13 +782,11 @@ export function ManageMarketplaces({
                 <ConfigurableShortcutHint
                   action="select:accept"
                   context="Select"
-                  fallback="Enter"
                   description="select"
                 />
                 <ConfigurableShortcutHint
                   action="confirm:no"
                   context="Confirmation"
-                  fallback="Esc"
                   description="go back"
                 />
               </Byline>
@@ -947,7 +943,6 @@ function ManageMarketplacesKeyHints({
             <ConfigurableShortcutHint
               action="select:accept"
               context="Select"
-              fallback="Enter"
               description="apply changes"
             />
           )}
@@ -955,7 +950,6 @@ function ManageMarketplacesKeyHints({
             <ConfigurableShortcutHint
               action="select:accept"
               context="Select"
-              fallback="Enter"
               description="select"
             />
           )}
@@ -968,7 +962,6 @@ function ManageMarketplacesKeyHints({
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Confirmation"
-            fallback="Esc"
             description={hasPendingActions ? 'cancel' : 'go back'}
           />
         </Byline>

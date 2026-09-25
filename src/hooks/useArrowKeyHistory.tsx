@@ -153,7 +153,6 @@ export function useArrowKeyHistory(
           <ConfigurableShortcutHint
             action="history:search"
             context="Global"
-            fallback="ctrl+r"
             description="search history"
           />
         </Text>

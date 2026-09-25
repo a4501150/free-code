@@ -44,7 +44,7 @@ export function InjectedContextMessage({
   const expandHint = verbose
     ? ''
     : lineCount > 1
-      ? ` (${getShortcutDisplay('app:toggleTranscript', 'Global', 'ctrl+o')} to expand)`
+      ? ` (${getShortcutDisplay('app:toggleTranscript', 'Global')} to expand)`
       : ''
 
   return (

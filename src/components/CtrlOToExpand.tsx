@@ -24,11 +24,7 @@ export function SubAgentProvider({
 export function CtrlOToExpand(): React.ReactNode {
   const isInSubAgent = useContext(SubAgentContext)
   const inVirtualList = useContext(InVirtualListContext)
-  const expandShortcut = useShortcutDisplay(
-    'app:toggleTranscript',
-    'Global',
-    'ctrl+o',
-  )
+  const expandShortcut = useShortcutDisplay('app:toggleTranscript', 'Global')
   if (isInSubAgent || inVirtualList) {
     return null
   }
@@ -40,10 +36,6 @@ export function CtrlOToExpand(): React.ReactNode {
 }
 
 export function ctrlOToExpand(): string {
-  const shortcut = getShortcutDisplay(
-    'app:toggleTranscript',
-    'Global',
-    'ctrl+o',
-  )
+  const shortcut = getShortcutDisplay('app:toggleTranscript', 'Global')
   return chalk.dim(`(${shortcut} to expand)`)
 }

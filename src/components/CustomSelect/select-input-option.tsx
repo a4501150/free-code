@@ -418,13 +418,11 @@ export function SelectInputOption<T>({
                       <ConfigurableShortcutHint
                         action="attachments:next"
                         context="Attachments"
-                        fallback="→"
                         description="next"
                       />
                       <ConfigurableShortcutHint
                         action="attachments:previous"
                         context="Attachments"
-                        fallback="←"
                         description="prev"
                       />
                     </>
@@ -432,13 +430,11 @@ export function SelectInputOption<T>({
                   <ConfigurableShortcutHint
                     action="attachments:remove"
                     context="Attachments"
-                    fallback="backspace"
                     description="remove"
                   />
                   <ConfigurableShortcutHint
                     action="attachments:exit"
                     context="Attachments"
-                    fallback="esc"
                     description="cancel"
                   />
                 </Byline>

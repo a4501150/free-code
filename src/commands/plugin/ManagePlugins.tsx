@@ -2108,13 +2108,11 @@ export function ManagePlugins({
           <ConfigurableShortcutHint
             action="select:accept"
             context="Select"
-            fallback="Enter"
             description="dismiss"
           />
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Confirmation"
-            fallback="Esc"
             description="back"
           />
         </Byline>
@@ -2151,13 +2149,11 @@ export function ManagePlugins({
               <ConfigurableShortcutHint
                 action="confirm:yes"
                 context="Confirmation"
-                fallback="y"
                 description="disable"
               />
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="cancel"
               />
             </Byline>
@@ -2343,19 +2339,16 @@ export function ManagePlugins({
               <ConfigurableShortcutHint
                 action="select:previous"
                 context="Select"
-                fallback="↑"
                 description="navigate"
               />
               <ConfigurableShortcutHint
                 action="select:accept"
                 context="Select"
-                fallback="Enter"
                 description="select"
               />
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="back"
               />
             </Byline>
@@ -2400,13 +2393,11 @@ export function ManagePlugins({
               <ConfigurableShortcutHint
                 action="select:accept"
                 context="Select"
-                fallback="Enter"
                 description="remove"
               />
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="back"
               />
             </Byline>
@@ -2744,19 +2735,16 @@ export function ManagePlugins({
             <ConfigurableShortcutHint
               action="plugin:toggle"
               context="Plugin"
-              fallback="Space"
               description="toggle"
             />
             <ConfigurableShortcutHint
               action="select:accept"
               context="Select"
-              fallback="Enter"
               description="details"
             />
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="back"
             />
           </Byline>

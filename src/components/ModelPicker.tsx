@@ -305,7 +305,6 @@ export function ModelPicker({
           <ConfigurableShortcutHint
             action="select:cancel"
             context="Select"
-            fallback="Esc"
             description="exit"
           />
         </Byline>

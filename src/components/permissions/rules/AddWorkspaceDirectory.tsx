@@ -257,7 +257,6 @@ export function AddWorkspaceDirectory({
                     <ConfigurableShortcutHint
                       action="confirm:no"
                       context="Settings"
-                      fallback="Esc"
                       description="cancel"
                     />
                   </Byline>

@@ -469,7 +469,6 @@ export function useTypeahead({
   const thinkingToggleShortcut = useShortcutDisplay(
     'chat:thinkingToggle',
     'Chat',
-    'alt+t',
   )
   const [suggestionType, setSuggestionType] = useState<SuggestionType>('none')
 

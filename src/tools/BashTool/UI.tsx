@@ -52,7 +52,7 @@ export function BackgroundHint({
   })
 
   // Get the configured shortcut for task:background
-  const baseShortcut = useShortcutDisplay('task:background', 'Task', 'ctrl+b')
+  const baseShortcut = useShortcutDisplay('task:background', 'Task')
   // In tmux, ctrl+b is the prefix key, so users need to press it twice to send ctrl+b
   const shortcut =
     env.terminal === 'tmux' && baseShortcut === 'ctrl+b'

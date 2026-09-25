@@ -133,11 +133,7 @@ function ModeIndicator({
   onOpenTasksDialog,
 }: ModeIndicatorProps): React.ReactNode {
   const { columns } = useTerminalSize()
-  const modeCycleShortcut = useShortcutDisplay(
-    'chat:cycleMode',
-    'Chat',
-    'shift+tab',
-  )
+  const modeCycleShortcut = useShortcutDisplay('chat:cycleMode', 'Chat')
   const tasks = useAppState(s => s.tasks)
   const expandedView = useAppState(s => s.expandedView)
   const prStatus = usePrStatus(isLoading, isPrStatusEnabled())
@@ -159,26 +155,10 @@ function ModeIndicator({
   )
   const tasksV2 = useTasksV2()
   const hasTaskItems = tasksV2 !== undefined && tasksV2.length > 0
-  const escShortcut = useShortcutDisplay(
-    'chat:cancel',
-    'Chat',
-    'esc',
-  ).toLowerCase()
-  const todosShortcut = useShortcutDisplay(
-    'app:toggleTodos',
-    'Global',
-    'ctrl+t',
-  )
-  const killAgentsShortcut = useShortcutDisplay(
-    'chat:killAgents',
-    'Chat',
-    'ctrl+x ctrl+k',
-  )
-  const voiceKeyShortcut = useShortcutDisplay(
-    'voice:pushToTalk',
-    'Chat',
-    'Space',
-  )
+  const escShortcut = useShortcutDisplay('chat:cancel', 'Chat').toLowerCase()
+  const todosShortcut = useShortcutDisplay('app:toggleTodos', 'Global')
+  const killAgentsShortcut = useShortcutDisplay('chat:killAgents', 'Chat')
+  const voiceKeyShortcut = useShortcutDisplay('voice:pushToTalk', 'Chat')
   const isKillAgentsConfirmShowing = useAppState(
     s => s.notifications.current?.key === 'kill-agents-confirm',
   )

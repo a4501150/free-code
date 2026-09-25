@@ -21,7 +21,6 @@ export function FallbackToolUseErrorMessage({
   const transcriptShortcut = useShortcutDisplay(
     'app:toggleTranscript',
     'Global',
-    'ctrl+o',
   )
   let error: string
 

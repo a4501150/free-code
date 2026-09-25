@@ -79,7 +79,6 @@ export function ConfirmStep({
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Confirmation"
-            fallback="Esc"
             description="cancel"
           />
         </Byline>

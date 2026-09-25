@@ -415,7 +415,6 @@ const MessagesImpl = ({
   const toggleShowAllShortcut = useShortcutDisplay(
     'transcript:toggleShowAll',
     'Transcript',
-    'Ctrl+E',
   )
 
   const normalizedMessages = useMemo(

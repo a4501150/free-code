@@ -50,7 +50,6 @@ export function TypeStep(_props: Props): ReactNode {
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Settings"
-            fallback="Esc"
             description="go back"
           />
         </Byline>

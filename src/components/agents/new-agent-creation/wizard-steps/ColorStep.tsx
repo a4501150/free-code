@@ -46,7 +46,6 @@ export function ColorStep(): ReactNode {
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Confirmation"
-            fallback="Esc"
             description="go back"
           />
         </Byline>

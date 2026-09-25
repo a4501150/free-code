@@ -1,6 +1,7 @@
 import type { Key } from '../ink.js'
+import { DEFAULT_BINDINGS } from './defaultBindings.js'
 import { getKeyName, matchesBinding } from './match.js'
-import { chordToString } from './parser.js'
+import { chordToString, parseBindings } from './parser.js'
 import type {
   KeybindingContextName,
   ParsedBinding,
@@ -62,7 +63,10 @@ export function resolveKey(
 
 /**
  * Get display text for an action from bindings (e.g., "ctrl+t" for "app:toggleTodos").
- * Searches in reverse order so user overrides take precedence.
+ * Searches in reverse order so user overrides take precedence. Falls back to
+ * the built-in default binding for the action, so callers that display hints
+ * for built-in actions always get a value (undefined only for actions with no
+ * default binding at all, e.g. custom or not-yet-shipped actions).
  */
 export function getBindingDisplayText(
   action: string,
@@ -73,7 +77,30 @@ export function getBindingDisplayText(
   const binding = bindings.findLast(
     b => b.action === action && b.context === context,
   )
-  return binding ? chordToString(binding.chord) : undefined
+  if (binding) {
+    return chordToString(binding.chord)
+  }
+  return getDefaultBindingDisplay(action, context)
+}
+
+// action:context -> display text, built from the shipped defaults (later
+// default blocks override earlier ones, matching findLast search order).
+let defaultDisplayCache: Map<string, string> | undefined
+
+function getDefaultBindingDisplay(
+  action: string,
+  context: KeybindingContextName,
+): string | undefined {
+  if (!defaultDisplayCache) {
+    defaultDisplayCache = new Map()
+    for (const binding of parseBindings(DEFAULT_BINDINGS)) {
+      defaultDisplayCache.set(
+        `${binding.action}:${binding.context}`,
+        chordToString(binding.chord),
+      )
+    }
+  }
+  return defaultDisplayCache.get(`${action}:${context}`)
 }
 
 /**

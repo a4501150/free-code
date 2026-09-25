@@ -1233,7 +1233,6 @@ function ElicitationFormDialog({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="cancel"
             />
             <KeyboardShortcutHint shortcut="↑↓" action="navigate" />
@@ -1424,7 +1423,6 @@ function ElicitationURLDialog({
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="cancel"
               />
               <KeyboardShortcutHint shortcut="\u2190\u2192" action="switch" />
@@ -1502,7 +1500,6 @@ function ElicitationURLDialog({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="cancel"
             />
             <KeyboardShortcutHint shortcut="\u2190\u2192" action="switch" />

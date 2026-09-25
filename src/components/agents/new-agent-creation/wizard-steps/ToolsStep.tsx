@@ -35,7 +35,6 @@ export function ToolsStep({ tools }: Props): ReactNode {
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Confirmation"
-            fallback="Esc"
             description="go back"
           />
         </Byline>

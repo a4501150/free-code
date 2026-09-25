@@ -108,7 +108,6 @@ export function ExportDialog({
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Confirmation"
-            fallback="Esc"
             description="go back"
           />
         </Byline>
@@ -123,7 +122,6 @@ export function ExportDialog({
       <ConfigurableShortcutHint
         action="confirm:no"
         context="Confirmation"
-        fallback="Esc"
         description="cancel"
       />
     )

@@ -34,7 +34,7 @@ export function HelpV2({ onClose, commands }: Props): React.ReactNode {
   const close = () => onClose('Help dialog dismissed', { display: 'system' })
   useKeybinding('help:dismiss', close, { context: 'Help' })
   const exitState = useExitOnCtrlCDWithKeybindings(close)
-  const dismissShortcut = useShortcutDisplay('help:dismiss', 'Help', 'esc')
+  const dismissShortcut = useShortcutDisplay('help:dismiss', 'Help')
 
   const builtinNames = builtInCommandNames()
   const builtinCommands = commands.filter(

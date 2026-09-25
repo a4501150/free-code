@@ -509,7 +509,6 @@ function ErrorsTabContent({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="back"
             />
           </Text>
@@ -557,21 +556,18 @@ function ErrorsTabContent({
             <ConfigurableShortcutHint
               action="select:previous"
               context="Select"
-              fallback="↑"
               description="navigate"
             />
             {hasAction && (
               <ConfigurableShortcutHint
                 action="select:accept"
                 context="Select"
-                fallback="Enter"
                 description="resolve"
               />
             )}
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="back"
             />
           </Byline>

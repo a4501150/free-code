@@ -67,7 +67,6 @@ export function Dialog({
       <ConfigurableShortcutHint
         action="confirm:no"
         context="Confirmation"
-        fallback="Esc"
         description="cancel"
       />
     </Byline>

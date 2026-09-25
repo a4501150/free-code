@@ -123,7 +123,6 @@ export function MCPServerDesktopImportDialog({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="cancel"
             />
           </Byline>

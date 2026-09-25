@@ -1791,7 +1791,6 @@ export function Config({
                 <ConfigurableShortcutHint
                   action="confirm:no"
                   context="Confirmation"
-                  fallback="Esc"
                   description="cancel"
                 />
               </Byline>
@@ -1826,7 +1825,6 @@ export function Config({
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="cancel"
               />
             </Byline>
@@ -1847,7 +1845,6 @@ export function Config({
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="disable external includes"
               />
             </Byline>
@@ -1879,7 +1876,6 @@ export function Config({
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Settings"
-                fallback="Esc"
                 description="cancel"
               />
             </Byline>
@@ -1935,7 +1931,6 @@ export function Config({
                 <ConfigurableShortcutHint
                   action="confirm:no"
                   context="Settings"
-                  fallback="Esc"
                   description="cancel"
                 />
               </Byline>
@@ -2159,7 +2154,6 @@ export function Config({
                 <ConfigurableShortcutHint
                   action="confirm:no"
                   context="Settings"
-                  fallback="Esc"
                   description="close"
                 />
               </Byline>
@@ -2173,7 +2167,6 @@ export function Config({
                 <ConfigurableShortcutHint
                   action="confirm:no"
                   context="Settings"
-                  fallback="Esc"
                   description="clear"
                 />
               </Byline>
@@ -2184,25 +2177,21 @@ export function Config({
                 <ConfigurableShortcutHint
                   action="select:accept"
                   context="Settings"
-                  fallback="Space"
                   description="change"
                 />
                 <ConfigurableShortcutHint
                   action="settings:close"
                   context="Settings"
-                  fallback="Enter"
                   description="save"
                 />
                 <ConfigurableShortcutHint
                   action="settings:search"
                   context="Settings"
-                  fallback="/"
                   description="search"
                 />
                 <ConfigurableShortcutHint
                   action="confirm:no"
                   context="Settings"
-                  fallback="Esc"
                   description="cancel"
                 />
               </Byline>

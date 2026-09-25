@@ -227,13 +227,11 @@ export function Usage(): React.ReactNode {
             <ConfigurableShortcutHint
               action="settings:retry"
               context="Settings"
-              fallback="r"
               description="retry"
             />
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Settings"
-              fallback="Esc"
               description="cancel"
             />
           </Byline>
@@ -308,7 +306,6 @@ export function Usage(): React.ReactNode {
         <ConfigurableShortcutHint
           action="confirm:no"
           context="Settings"
-          fallback="Esc"
           description="cancel"
         />
       </Text>

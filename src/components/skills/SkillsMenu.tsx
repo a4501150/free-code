@@ -131,7 +131,6 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
           <ConfigurableShortcutHint
             action="confirm:no"
             context="Confirmation"
-            fallback="Esc"
             description="close"
           />
         </Text>
@@ -195,7 +194,6 @@ export function SkillsMenu({ onExit, commands }: Props): React.ReactNode {
         <ConfigurableShortcutHint
           action="confirm:no"
           context="Confirmation"
-          fallback="Esc"
           description="close"
         />
       </Text>

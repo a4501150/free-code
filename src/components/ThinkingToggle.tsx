@@ -114,7 +114,6 @@ export function ThinkingToggle({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="cancel"
             />
           </Byline>
@@ -124,7 +123,6 @@ export function ThinkingToggle({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="exit"
             />
           </Byline>

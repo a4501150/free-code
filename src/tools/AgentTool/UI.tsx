@@ -299,7 +299,6 @@ export function renderToolResultMessage(
                     <ConfigurableShortcutHint
                       action="app:toggleTranscript"
                       context="Global"
-                      fallback="ctrl+o"
                       description="expand"
                     />
                   )}
@@ -668,7 +667,6 @@ function CondensedAgentProgressLine({
         <ConfigurableShortcutHint
           action="app:toggleTranscript"
           context="Global"
-          fallback="ctrl+o"
           description="expand"
           parens
         />

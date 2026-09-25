@@ -151,7 +151,6 @@ export function Status({
         <ConfigurableShortcutHint
           action="confirm:no"
           context="Settings"
-          fallback="Esc"
           description="cancel"
         />
       </Text>

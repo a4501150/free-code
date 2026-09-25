@@ -41,7 +41,6 @@ function renderInputGuide(exitState: ExitState): React.ReactNode {
       <ConfigurableShortcutHint
         action="confirm:no"
         context="Confirmation"
-        fallback="Esc"
         description="cancel"
       />
     </Byline>

@@ -2301,7 +2301,6 @@ export function REPL({
                       const historyShortcut = getShortcutDisplay(
                         'app:toggleTranscript',
                         'Global',
-                        'ctrl+o',
                       )
                       addNotification({
                         key: 'summarize-ctrl-o-hint',

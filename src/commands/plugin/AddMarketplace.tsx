@@ -179,7 +179,6 @@ export function AddMarketplace({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Settings"
-              fallback="Esc"
               description="cancel"
             />
           </Byline>

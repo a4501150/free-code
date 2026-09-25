@@ -22,31 +22,27 @@ export function PromptInputHelpMenu(props: Props): React.ReactNode {
 
   // Get configured shortcuts from keybinding system
   const transcriptShortcut = formatShortcut(
-    useShortcutDisplay('app:toggleTranscript', 'Global', 'ctrl+o'),
+    useShortcutDisplay('app:toggleTranscript', 'Global'),
   )
   const todosShortcut = formatShortcut(
-    useShortcutDisplay('app:toggleTodos', 'Global', 'ctrl+t'),
+    useShortcutDisplay('app:toggleTodos', 'Global'),
   )
-  const undoShortcut = formatShortcut(
-    useShortcutDisplay('chat:undo', 'Chat', 'ctrl+_'),
-  )
-  const stashShortcut = formatShortcut(
-    useShortcutDisplay('chat:stash', 'Chat', 'ctrl+s'),
-  )
+  const undoShortcut = formatShortcut(useShortcutDisplay('chat:undo', 'Chat'))
+  const stashShortcut = formatShortcut(useShortcutDisplay('chat:stash', 'Chat'))
   const cycleModeShortcut = formatShortcut(
-    useShortcutDisplay('chat:cycleMode', 'Chat', 'shift+tab'),
+    useShortcutDisplay('chat:cycleMode', 'Chat'),
   )
   const modelPickerShortcut = formatShortcut(
-    useShortcutDisplay('chat:modelPicker', 'Chat', 'alt+p'),
+    useShortcutDisplay('chat:modelPicker', 'Chat'),
   )
   const fastModeShortcut = formatShortcut(
-    useShortcutDisplay('chat:fastMode', 'Chat', 'alt+o'),
+    useShortcutDisplay('chat:fastMode', 'Chat'),
   )
   const externalEditorShortcut = formatShortcut(
-    useShortcutDisplay('chat:externalEditor', 'Chat', 'ctrl+g'),
+    useShortcutDisplay('chat:externalEditor', 'Chat'),
   )
   const imagePasteShortcut = formatShortcut(
-    useShortcutDisplay('chat:imagePaste', 'Chat', 'ctrl+v'),
+    useShortcutDisplay('chat:imagePaste', 'Chat'),
   )
 
   return (

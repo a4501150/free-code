@@ -17,7 +17,6 @@ export function WizardNavigationFooter({
       <ConfigurableShortcutHint
         action="confirm:no"
         context="Confirmation"
-        fallback="Esc"
         description="go back"
       />
     </Byline>

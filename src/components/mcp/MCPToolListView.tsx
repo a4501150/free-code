@@ -77,7 +77,6 @@ export function MCPToolListView({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="back"
             />
           </Byline>

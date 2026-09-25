@@ -548,7 +548,6 @@ export function MCPRemoteServerMenu({
             <ConfigurableShortcutHint
               action="confirm:no"
               context="Confirmation"
-              fallback="Esc"
               description="back"
             />
           </Text>
@@ -593,7 +592,6 @@ export function MCPRemoteServerMenu({
                 <ConfigurableShortcutHint
                   action="confirm:no"
                   context="Confirmation"
-                  fallback="Esc"
                   description="back"
                 />
               </Text>
@@ -613,7 +611,6 @@ export function MCPRemoteServerMenu({
                 <ConfigurableShortcutHint
                   action="confirm:no"
                   context="Confirmation"
-                  fallback="Esc"
                   description="back"
                 />
               </Text>
@@ -851,7 +848,6 @@ export function MCPRemoteServerMenu({
               <ConfigurableShortcutHint
                 action="confirm:no"
                 context="Confirmation"
-                fallback="Esc"
                 description="back"
               />
             </Byline>

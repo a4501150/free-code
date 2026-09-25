@@ -27,11 +27,7 @@ export function TranscriptModeFooter({
    *  invisibly. */
   permissionNotice?: string
 }): React.ReactNode {
-  const toggleShortcut = useShortcutDisplay(
-    'app:toggleTranscript',
-    'Global',
-    'ctrl+o',
-  )
+  const toggleShortcut = useShortcutDisplay('app:toggleTranscript', 'Global')
   return (
     <Box
       noSelect
