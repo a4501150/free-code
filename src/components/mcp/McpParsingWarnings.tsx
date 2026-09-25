@@ -1,8 +1,12 @@
 import React, { useMemo } from 'react'
-import { getMcpConfigsByScope } from 'src/services/mcp/config.js'
+import {
+  getMcpConfigsByScope,
+  isMcpServerDisabled,
+} from 'src/services/mcp/config.js'
 import type { ConfigScope } from 'src/services/mcp/types.js'
 import {
   describeMcpConfigFilePath,
+  getProjectMcpServerStatus,
   getScopeLabel,
 } from 'src/services/mcp/utils.js'
 import type { ValidationError } from 'src/utils/settings/validation.js'
@@ -81,6 +85,67 @@ function McpConfigErrorSection({
   )
 }
 
+/**
+ * Servers defined in more than one scope are shadowed by the higher-priority
+ * definition — surface the name, every defining file, and the approval /
+ * disabled state that applies to it, so "why is my server not the one I
+ * edited" is answerable from this screen alone.
+ */
+function DuplicateServerNamesSection({
+  scopes,
+}: {
+  scopes: Array<{ scope: ConfigScope; serverNames: string[] }>
+}): React.ReactNode {
+  const duplicates = useMemo(() => {
+    const scopesByName = new Map<string, ConfigScope[]>()
+    for (const { scope, serverNames } of scopes) {
+      for (const name of serverNames) {
+        scopesByName.set(name, [...(scopesByName.get(name) ?? []), scope])
+      }
+    }
+    return [...scopesByName].filter(([, definers]) => definers.length > 1)
+  }, [scopes])
+
+  if (duplicates.length === 0) {
+    return null
+  }
+
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Box>
+        <Text color="warning">[Duplicate server names] </Text>
+        <Text>
+          Servers defined in multiple scopes are shadowed by the higher-priority
+          definition
+        </Text>
+      </Box>
+      {duplicates.map(([name, definers]) => (
+        <Box key={name} flexDirection="column" marginLeft={1}>
+          <Box flexDirection="column">
+            <Text>
+              <Text dimColor>└ </Text>
+              <Text>{name}</Text>
+              {isMcpServerDisabled(name) ? (
+                <Text color="warning"> [disabled]</Text>
+              ) : null}
+            </Text>
+            {definers.map(scope => (
+              <Box key={scope} marginLeft={2}>
+                <Text dimColor>
+                  {getScopeLabel(scope)}: {describeMcpConfigFilePath(scope)}
+                  {scope !== 'user'
+                    ? ` · approval: ${getProjectMcpServerStatus(name)}`
+                    : ''}
+                </Text>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
 export function McpParsingWarnings(): React.ReactNode {
   // Config files don't change during dialog lifetime; read once on mount
   // to avoid blocking file IO on every re-render.
@@ -103,8 +168,14 @@ export function McpParsingWarnings(): React.ReactNode {
   const hasWarnings = scopes.some(
     ({ config }) => filterErrors(config.errors, 'warning').length > 0,
   )
+  const hasDuplicates =
+    new Set(scopes.flatMap(({ config }) => Object.keys(config.servers))).size <
+    scopes.reduce(
+      (total, { config }) => total + Object.keys(config.servers).length,
+      0,
+    )
 
-  if (!hasParsingErrors && !hasWarnings) {
+  if (!hasParsingErrors && !hasWarnings && !hasDuplicates) {
     return null
   }
 
@@ -127,13 +198,12 @@ export function McpParsingWarnings(): React.ReactNode {
           warnings={filterErrors(config.errors, 'warning')}
         />
       ))}
-      {/* TODO: Add additional diagnostic sections:
-       * - Duplicate Server Names (check for servers with same name across scopes)
-       * This section should include:
-       * - File paths where each server is defined
-       * - More detailed location info for user/local scopes
-       * - Approved / disabled status of servers
-       */}
+      <DuplicateServerNamesSection
+        scopes={scopes.map(({ scope, config }) => ({
+          scope,
+          serverNames: Object.keys(config.servers),
+        }))}
+      />
     </Box>
   )
 }

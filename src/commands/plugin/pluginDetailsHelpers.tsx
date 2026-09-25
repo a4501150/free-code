@@ -5,9 +5,13 @@
  */
 
 import * as React from 'react'
+import { readdir } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { ConfigurableShortcutHint } from '../../components/ConfigurableShortcutHint.js'
 import { Byline } from '../../components/design-system/Byline.js'
 import { Box, Text } from '../../ink.js'
+import { pathExists } from '../../utils/file.js'
+import { loadKnownMarketplacesConfigSafe } from '../../utils/plugins/marketplaceManager.js'
 import type { PluginMarketplaceEntry } from '../../utils/plugins/schemas.js'
 
 /**
@@ -115,5 +119,84 @@ export function PluginSelectionKeyHint({
         </Byline>
       </Text>
     </Box>
+  )
+}
+
+/**
+ * Component summary for plugins with a local ('./') marketplace source:
+ * scans the plugin directory on disk (commands/, agents/, skills/, hooks/,
+ * .mcp.json) instead of showing the "discovered at installation" placeholder.
+ * Remote sources can't be summarized without downloading them.
+ */
+export function LocalPluginComponents({
+  plugin,
+}: {
+  plugin: InstallablePlugin
+}): React.ReactNode {
+  const source = plugin.entry.source
+  const isLocalPath = typeof source === 'string' && source.startsWith('./')
+  const [summary, setSummary] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!isLocalPath || typeof source !== 'string') {
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const config = await loadKnownMarketplacesConfigSafe()
+        const installLocation = config[plugin.marketplaceName]?.installLocation
+        if (!installLocation) {
+          return
+        }
+        const dir = resolve(installLocation, source)
+        const countIn = async (sub: string, ext: string) => {
+          try {
+            const entries = await readdir(dir + '/' + sub, {
+              recursive: true,
+            })
+            return entries.filter(e => e.endsWith(ext)).length
+          } catch {
+            return 0
+          }
+        }
+        const [commands, agents, skills] = await Promise.all([
+          countIn('commands', '.md'),
+          countIn('agents', '.md'),
+          countIn('skills', '.md'),
+        ])
+        const [hasHooks, hasMcpConfig] = await Promise.all([
+          pathExists(join(dir, 'hooks', 'hooks.json')),
+          pathExists(join(dir, '.mcp.json')),
+        ])
+        const parts: string[] = []
+        if (commands > 0) parts.push(`${commands} command(s)`)
+        if (agents > 0) parts.push(`${agents} agent(s)`)
+        if (skills > 0) parts.push(`${skills} skill(s)`)
+        if (hasHooks) parts.push('hooks')
+        if (hasMcpConfig) parts.push('MCP config')
+        if (!cancelled) {
+          setSummary(
+            parts.length > 0
+              ? `Components: ${parts.join(', ')} (from local directory)`
+              : 'No components found in local directory',
+          )
+        }
+      } catch {
+        // Scan failure keeps the installation-time placeholder.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [plugin.marketplaceName, source, isLocalPath])
+
+  if (!isLocalPath) {
+    return null
+  }
+  return (
+    <Text dimColor>
+      · {summary ?? 'Components will be discovered at installation'}
+    </Text>
   )
 }

@@ -86,7 +86,10 @@ import { getAddDirEnabledPlugins } from './addDirPluginSettings.js'
 import { verifyAndDemote } from './dependencyResolver.js'
 import { classifyFetchError, logPluginFetch } from './fetchTelemetry.js'
 import { checkGitAvailable } from './gitAvailability.js'
-import { getInMemoryInstalledPlugins } from './installedPluginsManager.js'
+import {
+  clearInstalledPluginsCache,
+  getInMemoryInstalledPlugins,
+} from './installedPluginsManager.js'
 import { formatSourceForDisplay } from './marketplaceHelpers.js'
 import {
   getMarketplaceCacheOnly,
@@ -3026,7 +3029,9 @@ export function clearPluginCache(reason?: string): void {
     resetSettingsCache()
   }
   clearPluginSettingsBase()
-  // TODO: Clear installed plugins cache when installedPluginsManager is implemented
+  // The installed-plugins file cache can go stale the same way the load
+  // result cache does (install/uninstall from this or another instance).
+  clearInstalledPluginsCache()
 }
 
 /**

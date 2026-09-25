@@ -119,9 +119,16 @@ export function useDiffInIDE({
   useEffect(() => {
     void showDiff()
 
-    // Set flag on unmount
+    // Set flag on unmount, and make sure the IDE tab does not outlive the
+    // approval prompt (e.g. the user answered in the terminal and the
+    // dialog unmounted before the diff resolved). Best-effort: closing an
+    // already-closed tab is a swallowed no-op on the IDE side.
     return () => {
       isUnmounted.current = true
+      const ideClient = getConnectedIdeClient(toolUseContext.options.mcpClients)
+      if (ideClient) {
+        void closeTabInIDE(tabName, ideClient)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -149,13 +156,14 @@ export function useDiffInIDE({
  * 2. Tab is saved in IDE (we then close the tab)
  * 3. User selected an option in IDE
  * 4. User selected an option in terminal (or hit esc)
+ * 5. The IDE went away (or never answered): the wait times out after
+ *    IDLE_TIMEOUT_MS, rejects like a closed tab, and the caller falls back
+ *    to the terminal permission UI (hasError flips showingDiffInIDE off)
  *
- * Resolves with the new file content.
- *
- * TODO: Time out after 5 mins of inactivity?
- * TODO: Update auto-approval UI when IDE exits
- * TODO: Close the IDE tab when the approval prompt is unmounted
+ * Resolves with the new file content. The tab is also closed when the
+ * approval prompt unmounts (see the hook's unmount cleanup).
  */
+const IDE_DIFF_IDLE_TIMEOUT_MS = 5 * 60 * 1000
 async function showDiffInIDE(
   file_path: string,
   proposedContent: string,
@@ -174,6 +182,8 @@ async function showDiffInIDE(
     }
   }
 
+  let idleTimeout: ReturnType<typeof setTimeout> | undefined
+
   async function cleanup() {
     // Careful to avoid race conditions, since this
     // function can be called from multiple places.
@@ -181,6 +191,10 @@ async function showDiffInIDE(
       return
     }
     isCleanedUp = true
+
+    if (idleTimeout !== undefined) {
+      clearTimeout(idleTimeout)
+    }
 
     // Don't fail if this fails
     try {
@@ -220,16 +234,33 @@ async function showDiffInIDE(
       ideOldPath = converter.toIDEPath(oldFilePath)
     }
 
-    const rpcResult = await callIdeRpc(
-      'openDiff',
-      {
-        old_file_path: ideOldPath,
-        new_file_path: ideOldPath,
-        new_file_contents: updatedFile,
-        tab_name: tabName,
-      },
-      ideClient,
-    )
+    // Cap the wait: if the IDE exits (or the extension stops answering),
+    // the openDiff call may never resolve. Timing out rejects like a closed
+    // tab, so the caller falls back to the terminal permission UI.
+    const rpcResult = await Promise.race([
+      callIdeRpc(
+        'openDiff',
+        {
+          old_file_path: ideOldPath,
+          new_file_path: ideOldPath,
+          new_file_contents: updatedFile,
+          tab_name: tabName,
+        },
+        ideClient,
+      ),
+      new Promise<never>((_, reject) => {
+        idleTimeout = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `IDE diff timed out after ${IDE_DIFF_IDLE_TIMEOUT_MS / 60000} minutes of inactivity`,
+              ),
+            ),
+          IDE_DIFF_IDLE_TIMEOUT_MS,
+        )
+        idleTimeout.unref?.()
+      }),
+    ])
 
     // Convert the raw RPC result to a ToolCallResponse format
     const data = Array.isArray(rpcResult) ? rpcResult : [rpcResult]

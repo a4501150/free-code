@@ -46,6 +46,7 @@ import {
   buildPluginDetailsMenuOptions,
   extractGitHubRepo,
   type InstallablePlugin,
+  LocalPluginComponents,
   PluginSelectionKeyHint,
 } from './pluginDetailsHelpers.js'
 import type { ViewState as ParentViewState } from './types.js'
@@ -843,15 +844,7 @@ export function BrowseMarketplace({
                     · Component summary not available for remote plugin
                   </Text>
                 ) : (
-                  // TODO: Actually scan local plugin directories to show real components
-                  // This would require accessing the filesystem to check for:
-                  // - commands/ directory and list files
-                  // - agents/ directory and list files
-                  // - hooks/ directory and list files
-                  // - .mcp.json or mcp-servers.json files
-                  <Text dimColor>
-                    · Components will be discovered at installation
-                  </Text>
+                  <LocalPluginComponents plugin={selectedPlugin} />
                 )}
               </>
             )}

@@ -17,6 +17,8 @@ import {
   type ToolUseContext,
 } from '../Tool.js'
 import { getTools } from '../tools.js'
+import { getMcpToolsCommandsAndResources } from '../services/mcp/client.js'
+import type { MCPServerConnection } from '../services/mcp/types.js'
 import { createAbortController } from '../utils/abortController.js'
 import { createFileStateCacheWithSizeLimit } from '../utils/fileStateCache.js'
 import { logError } from '../utils/log.js'
@@ -55,6 +57,33 @@ export function parseMCPToolInput(
 
 const MCP_COMMANDS: Command[] = [review]
 
+// Connected MCP servers (from the user's config) are re-exposed through this
+// server too, so `claude mcp serve` composes: an outer agent sees both the
+// core tools and everything the user has configured. Connections happen
+// lazily on the first tools/list or tool call and are memoized; a server
+// that fails to connect degrades to its connected subset (via
+// getMcpToolsCommandsAndResources reporting per-server results), never to a
+// broken serve process.
+type McpBridge = {
+  clients: MCPServerConnection[]
+  tools: Tool[]
+}
+let mcpBridgePromise: Promise<McpBridge> | undefined
+
+function ensureMcpBridge(): Promise<McpBridge> {
+  if (!mcpBridgePromise) {
+    mcpBridgePromise = (async (): Promise<McpBridge> => {
+      const bridge: McpBridge = { clients: [], tools: [] }
+      await getMcpToolsCommandsAndResources(({ client, tools }) => {
+        bridge.clients.push(client)
+        bridge.tools.push(...tools)
+      })
+      return bridge
+    })()
+  }
+  return mcpBridgePromise
+}
+
 export async function startMCPServer(
   cwd: string,
   debug: boolean,
@@ -82,9 +111,9 @@ export async function startMCPServer(
   server.setRequestHandler(
     ListToolsRequestSchema,
     async (): Promise<ListToolsResult> => {
-      // TODO: Also re-expose any MCP tools
       const toolPermissionContext = getEmptyToolPermissionContext()
-      const tools = getTools(toolPermissionContext)
+      const { tools: mcpTools } = await ensureMcpBridge()
+      const tools = [...getTools(toolPermissionContext), ...mcpTools]
       return {
         tools: await Promise.all(
           tools.map(async tool => {
@@ -123,8 +152,8 @@ export async function startMCPServer(
     CallToolRequestSchema,
     async ({ params: { name, arguments: args } }): Promise<CallToolResult> => {
       const toolPermissionContext = getEmptyToolPermissionContext()
-      // TODO: Also re-expose any MCP tools
-      const tools = getTools(toolPermissionContext)
+      const { clients: mcpClients, tools: mcpTools } = await ensureMcpBridge()
+      const tools = [...getTools(toolPermissionContext), ...mcpTools]
       const tool = findToolByName(tools, name)
       if (!tool) {
         throw new Error(`Tool ${name} not found`)
@@ -139,7 +168,7 @@ export async function startMCPServer(
           tools,
           mainLoopModel: getMainLoopModel(),
           thinkingConfig: { type: 'disabled' },
-          mcpClients: [],
+          mcpClients,
           mcpResources: {},
           isNonInteractiveSession: true,
           debug,
