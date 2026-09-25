@@ -123,6 +123,11 @@ import {
 } from './permissions/permissionRuleParser.js'
 import { logError } from './log.js'
 import { createCombinedAbortSignal } from './combinedAbortSignal.js'
+import { createAbortController } from './abortController.js'
+import { createFileStateCacheWithSizeLimit } from './fileStateCache.js'
+import { getTools } from '../tools.js'
+import { getMainLoopModel } from './model/model.js'
+import { getDefaultAppState } from '../state/AppStateStore.js'
 import type { PermissionResult } from './permissions/PermissionResult.js'
 import { registerPendingAsyncHook } from './hooks/AsyncHookRegistry.js'
 import { enqueuePendingNotification } from './messageQueueManager.js'
@@ -2981,6 +2986,11 @@ async function executeHooksOutsideREPL({
     return []
   }
 
+  // ToolUseContext for prompt/agent hooks, which need model access.
+  const hookToolUseContext = buildOutsideReplHookContext(
+    appState ?? getDefaultAppState(),
+  )
+
   // Run all hooks in parallel with individual timeouts
   const hookPromises = matchingHooks.map(
     async ({ hook, pluginRoot, pluginId }, hookIndex) => {
@@ -3050,23 +3060,67 @@ async function executeHooksOutsideREPL({
         }
       }
 
-      // TODO: Implement prompt stop hooks outside REPL
-      if (hook.type === 'prompt') {
-        return {
-          command: hook.prompt,
-          succeeded: false,
-          output: 'Prompt stop hooks are not yet supported outside REPL',
-          blocked: false,
+      // Prompt and agent hooks run against a minimal ToolUseContext built
+      // from the caller's app state (see buildOutsideReplHookContext).
+      if (hook.type === 'prompt' || hook.type === 'agent') {
+        if (!hookToolUseContext) {
+          return {
+            command: hook.prompt,
+            succeeded: false,
+            output: 'Prompt/agent hooks require app state outside the REPL',
+            blocked: false,
+          }
         }
-      }
 
-      // TODO: Implement agent stop hooks outside REPL
-      if (hook.type === 'agent') {
-        return {
-          command: hook.prompt,
-          succeeded: false,
-          output: 'Agent stop hooks are not yet supported outside REPL',
-          blocked: false,
+        const promptTimeoutMs = hook.timeout ? hook.timeout * 1000 : timeoutMs
+        const { signal: abortSignal, cleanup } = createCombinedAbortSignal(
+          signal,
+          { timeoutMs: promptTimeoutMs },
+        )
+        try {
+          const result =
+            hook.type === 'prompt'
+              ? await execPromptHook(
+                  hook,
+                  hookName,
+                  hookEvent,
+                  jsonInput,
+                  abortSignal,
+                  hookToolUseContext,
+                  undefined,
+                  randomUUID(),
+                )
+              : await execAgentHook(
+                  hook,
+                  hookName,
+                  hookEvent,
+                  jsonInput,
+                  abortSignal,
+                  hookToolUseContext,
+                  randomUUID(),
+                  [],
+                  'agent_type' in hookInput
+                    ? (hookInput.agent_type as string)
+                    : undefined,
+                )
+
+          cleanup?.()
+          return outsideReplResultFromHookResult(result, hook.prompt)
+        } catch (error) {
+          cleanup?.()
+
+          const errorMessage =
+            error instanceof Error ? error.message : String(error)
+          logForDebugging(
+            `${hookName} [${hook.prompt}] failed to run: ${errorMessage}`,
+            { level: 'error' },
+          )
+          return {
+            command: hook.prompt,
+            succeeded: false,
+            output: errorMessage,
+            blocked: false,
+          }
         }
       }
 
@@ -3279,6 +3333,85 @@ async function executeHooksOutsideREPL({
 
   // Wait for all hooks to complete and collect results
   return await Promise.all(hookPromises)
+}
+
+/**
+ * Minimal ToolUseContext for prompt/agent hooks run outside the REPL
+ * (session end, notifications, etc.). Built from an app state snapshot:
+ * there is no live UI, so all setters are no-ops and getAppState returns
+ * the snapshot unchanged. Tool/permission/MCP data comes from the snapshot,
+ * so hooks see the same world the session last rendered.
+ */
+function buildOutsideReplHookContext(appState: AppState): ToolUseContext {
+  const toolPermissionContext = appState.toolPermissionContext
+  return {
+    abortController: createAbortController(),
+    options: {
+      commands: appState.mcp.commands,
+      tools: [...getTools(toolPermissionContext), ...appState.mcp.tools],
+      mainLoopModel: getMainLoopModel(),
+      thinkingConfig: { type: 'disabled' },
+      mcpClients: appState.mcp.clients,
+      mcpResources: appState.mcp.resources,
+      isNonInteractiveSession: getIsNonInteractiveSession(),
+      debug: false,
+      verbose: appState.verbose,
+      agentDefinitions: { activeAgents: [], allAgents: [] },
+    },
+    getAppState: () => appState,
+    setAppState: () => {},
+    messages: [],
+    readFileState: createFileStateCacheWithSizeLimit(100),
+    setInProgressToolUseIDs: () => {},
+    setResponseLength: () => {},
+    updateFileHistoryState: () => {},
+  }
+}
+
+/** Collapse a REPL HookResult into the flat shape outside-REPL callers get. */
+function outsideReplResultFromHookResult(
+  result: HookResult,
+  command: string,
+): HookOutsideReplResult {
+  switch (result.outcome) {
+    case 'success':
+      return { command, succeeded: true, output: '', blocked: false }
+    case 'blocking':
+      return {
+        command,
+        succeeded: false,
+        output:
+          result.stopReason ??
+          result.blockingError?.blockingError ??
+          'Hook condition was not met',
+        blocked: true,
+      }
+    case 'cancelled':
+      return {
+        command,
+        succeeded: false,
+        output: 'Hook cancelled',
+        blocked: false,
+      }
+    case 'non_blocking_error': {
+      const attachment =
+        result.message?.type === 'attachment'
+          ? result.message.attachment
+          : undefined
+      const stderr =
+        attachment &&
+        'stderr' in attachment &&
+        typeof attachment.stderr === 'string'
+          ? attachment.stderr
+          : undefined
+      return {
+        command,
+        succeeded: false,
+        output: stderr || 'Hook failed',
+        blocked: false,
+      }
+    }
+  }
 }
 
 /**
