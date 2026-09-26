@@ -11,7 +11,10 @@ export function getSecureStorage(): SecureStorage {
     return createFallbackStorage(macOsKeychainStorage, plainTextStorage)
   }
 
-  // TODO: add libsecret support for Linux
-
+  // Plaintext is the deliberate cross-platform store, not a missing
+  // libsecret integration: credentials live in <config home>/.credentials.json
+  // mode 0600, and plaintext storage is an explicit product decision here
+  // (no keyring dependency across Linux distros/containers/headless CI).
+  // macOS additionally gets the Keychain below, with plaintext as fallback.
   return plainTextStorage
 }

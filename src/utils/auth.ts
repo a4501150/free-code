@@ -1031,7 +1031,12 @@ export function prefetchAwsCredentialsAndBedRockInfoIfSafe(): void {
 export const getApiKeyFromConfigOrMacOSKeychain = memoize(
   (): { key: string; source: ApiKeySource } | null => {
     if (isBareMode()) return null
-    // TODO: migrate to SecureStorage
+    // Deliberate SecureStorage exception, not a missed migration: this reads
+    // the legacy no-suffix `Claude Code` keychain entry written by old
+    // /login flows (saveApiKey is a no-op today, so nothing here writes).
+    // Everything live — OAuth tokens, MCP/XAA tokens, plugin secrets — goes
+    // through getSecureStorage(), which is plaintext .credentials.json
+    // (0600) on every platform except macOS, where it prefers the Keychain.
     if (process.platform === 'darwin') {
       // keychainPrefetch.ts fires this read at main.tsx top-level in parallel
       // with module imports. If it completed, use that instead of spawning a
