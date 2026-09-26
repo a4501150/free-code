@@ -742,7 +742,8 @@ function processHookJSONOutput({
  * (POSIX path conversion, .sh auto-prepend, shellPrefix setting).
  * See docs/design/ps-shell-selection.md §5.1.
  */
-async function execCommandHook(
+// Exported for testing (tests/unit/hooksStdinEpipe.test.ts).
+export async function execCommandHook(
   hook: HookCommand & { type: 'command' },
   hookEvent: HookEvent | 'StatusLine' | 'FileSuggestion',
   hookName: string,
@@ -1187,9 +1188,11 @@ async function execCommandHook(
 
   // Write to stdin, making sure to handle EPIPE errors that can happen when
   // the hook command exits before reading all input.
-  // Note: EPIPE handling is difficult to set up in testing since Bun and Node
-  // have different behaviors.
-  // TODO: Add tests for EPIPE handling.
+  // Note: the promise below resolves synchronously, so an EPIPE that surfaces
+  // on the stream later rejects an already-settled promise and is swallowed —
+  // the hook result comes from the child's own exit, not the failed write.
+  // The EPIPE catch below still fires for write errors reported via the
+  // child 'error' event. Behavior pinned in tests/unit/hooksStdinEpipe.test.ts.
   // Skip if stdin was already written (e.g., by config-based async hook path)
   const stdinWritePromise = stdinWritten
     ? Promise.resolve()
@@ -2090,6 +2093,8 @@ async function* executeHooks({
         signal: abortSignal,
         hookIndex,
         toolUseContext,
+        pluginRoot,
+        pluginId,
       }).finally(cleanup)
       return
     }
@@ -3018,7 +3023,7 @@ async function executeHooksOutsideREPL({
               `${hookName} [callback] returned async response, returning empty output`,
             )
             return {
-              command: 'callback',
+              command: pluginRoot ?? 'callback',
               succeeded: true,
               output: '',
               blocked: false,
@@ -3037,7 +3042,7 @@ async function executeHooksOutsideREPL({
           logForDebugging(`${hookName} [callback] completed successfully`)
 
           return {
-            command: 'callback',
+            command: pluginRoot ?? 'callback',
             succeeded: true,
             output,
             blocked,
@@ -3052,7 +3057,7 @@ async function executeHooksOutsideREPL({
             { level: 'error' },
           )
           return {
-            command: 'callback',
+            command: pluginRoot ?? 'callback',
             succeeded: false,
             output: errorMessage,
             blocked: false,
@@ -4742,6 +4747,8 @@ async function executeHookCallback({
   signal,
   hookIndex,
   toolUseContext,
+  pluginRoot,
+  pluginId,
 }: {
   toolUseID: string
   hook: HookCallback
@@ -4750,6 +4757,8 @@ async function executeHookCallback({
   signal: AbortSignal
   hookIndex?: number
   toolUseContext?: ToolUseContext
+  pluginRoot?: string
+  pluginId?: string
 }): Promise<HookResult> {
   // Create context for callbacks that need state access
   const context = toolUseContext
@@ -4773,9 +4782,13 @@ async function executeHookCallback({
 
   const processed = processHookJSONOutput({
     json,
-    command: 'callback',
-    // TODO: If the hook came from a plugin, use the full path to the plugin for easier debugging
-    hookName: `${hookEvent}:Callback`,
+    // Plugin-registered callbacks report the plugin directory as their
+    // "command" and carry the plugin id in the hook name, so a failure
+    // message says which plugin failed.
+    command: pluginRoot ?? 'callback',
+    hookName: pluginId
+      ? `${hookEvent}:Callback[${pluginId}]`
+      : `${hookEvent}:Callback`,
     toolUseID,
     hookEvent,
     expectedHookEvent: hookEvent,
