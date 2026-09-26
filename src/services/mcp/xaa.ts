@@ -125,8 +125,10 @@ export type ProtectedResourceMetadata = {
 
 /**
  * RFC 9728 PRM discovery via SDK, plus RFC 9728 §3.3 resource-mismatch
- * validation (mix-up protection). The v1 SDK does not validate this; SDK v2
- * (@modelcontextprotocol/client) does — drop the local check on that migration.
+ * validation (mix-up protection). SDK v2 validates the resource binding only
+ * inside its own auth() flow (selectResourceURL → checkResourceAllowed);
+ * discoverOAuthProtectedResourceMetadata itself just parses, so the local
+ * check stays for this direct-discovery path.
  */
 export async function discoverProtectedResource(
   serverUrl: string,
@@ -168,10 +170,11 @@ export type AuthorizationServerMetadata = {
 }
 
 /**
- * AS metadata discovery via SDK (RFC 8414 + OIDC fallback), plus RFC 8414
- * §3.3 issuer-mismatch validation (mix-up protection). The v1 SDK does not
- * validate the issuer; SDK v2 does (validateAuthorizationResponseIssuer) —
- * drop the local check on that migration.
+ * AS metadata discovery via SDK (RFC 8414 + OIDC fallback). SDK v2's
+ * discoverAuthorizationServerMetadata natively enforces RFC 8414 §3.3 issuer
+ * matching (throws IssuerMismatchError when the metadata's issuer differs
+ * from the fetched URL, trailing slashes excepted), so no local
+ * issuer-mismatch check is needed here.
  */
 export async function discoverAuthorizationServer(
   asUrl: string,
@@ -185,14 +188,9 @@ export async function discoverAuthorizationServer(
       `XAA: AS metadata discovery failed: no valid metadata at ${asUrl}`,
     )
   }
-  if (normalizeUrl(meta.issuer) !== normalizeUrl(asUrl)) {
-    throw new Error(
-      `XAA: AS metadata discovery failed: issuer mismatch: expected ${asUrl}, got ${meta.issuer}`,
-    )
-  }
   // RFC 8414 §3.3 / RFC 9728 §3 require HTTPS. A PRM-advertised http:// AS
-  // that self-consistently reports an http:// issuer would pass the mismatch
-  // check above, then we'd POST id_token + client_secret over plaintext.
+  // that self-consistently reports an http:// issuer would pass the SDK's
+  // issuer check, then we'd POST id_token + client_secret over plaintext.
   if (new URL(meta.token_endpoint).protocol !== 'https:') {
     throw new Error(
       `XAA: refusing non-HTTPS token endpoint: ${meta.token_endpoint}`,
