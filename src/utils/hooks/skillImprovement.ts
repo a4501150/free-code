@@ -1,28 +1,10 @@
-import { feature } from 'bun:bundle'
-import * as fs from 'fs/promises'
-import { dirname } from 'path'
 import { getInvokedSkillsForAgent } from '../../bootstrap/state.js'
 import { getInitialSettings } from '../settings/settings.js'
-import { queryModelWithoutStreaming } from '../../services/api/claude.js'
-import { getEmptyToolPermissionContext } from '../../Tool.js'
 import type { Message } from '../../types/message.js'
-import { createAbortController } from '../abortController.js'
 import { count } from '../array.js'
-import { getCwd } from '../cwd.js'
-import { toError } from '../errors.js'
-import { logError } from '../log.js'
-import {
-  createUserMessage,
-  extractTag,
-  extractTextContent,
-} from '../messages.js'
-import {
-  getPreferredProjectConfigPath,
-  getProjectConfigPaths,
-} from '../projectConfigPaths.js'
+import { createUserMessage, extractTag } from '../messages.js'
 import { getUtilityModel } from '../model/model.js'
 import { jsonParse } from '../slowOperations.js'
-import { asSystemPrompt } from '../systemPromptType.js'
 import {
   type ApiQueryHookConfig,
   createApiQueryHook,
@@ -167,107 +149,5 @@ Output <updates>[]</updates> if no updates are needed.`,
 export function initSkillImprovement(): void {
   if (getInitialSettings()?.skillImprovement ?? false) {
     registerPostSamplingHook(createSkillImprovementHook())
-  }
-}
-
-/**
- * Apply skill improvements by calling a side-channel LLM to rewrite the skill file.
- * Fire-and-forget — does not block the main conversation.
- */
-export async function applySkillImprovement(
-  skillName: string,
-  updates: SkillUpdate[],
-): Promise<void> {
-  if (!skillName) return
-
-  const cwd = getCwd()
-  const readPaths = getProjectConfigPaths(
-    cwd,
-    'skills',
-    skillName,
-    'SKILL.md',
-  ).reverse()
-  const filePath = getPreferredProjectConfigPath(
-    cwd,
-    'skills',
-    skillName,
-    'SKILL.md',
-  )
-
-  let currentContent: string | undefined
-  for (const readPath of readPaths) {
-    try {
-      currentContent = await fs.readFile(readPath, 'utf-8')
-      break
-    } catch {
-      // Path doesn't exist or can't be read; try the next project config dir.
-    }
-  }
-
-  if (currentContent === undefined) {
-    logError(
-      new Error(
-        `Failed to read skill file for improvement: ${readPaths.join(', ')}`,
-      ),
-    )
-    return
-  }
-
-  const updateList = updates.map(u => `- ${u.section}: ${u.change}`).join('\n')
-
-  const response = await queryModelWithoutStreaming({
-    messages: [
-      createUserMessage({
-        content: `You are editing a skill definition file. Apply the following improvements to the skill.
-
-<current_skill_file>
-${currentContent}
-</current_skill_file>
-
-<improvements>
-${updateList}
-</improvements>
-
-Rules:
-- Integrate the improvements naturally into the existing structure
-- Preserve frontmatter (--- block) exactly as-is
-- Preserve the overall format and style
-- Do not remove existing content unless an improvement explicitly replaces it
-- Output the complete updated file inside <updated_file> tags`,
-      }),
-    ],
-    systemPrompt: asSystemPrompt([
-      'You edit skill definition files to incorporate user preferences. Output only the updated file content.',
-    ]),
-    thinkingConfig: { type: 'disabled' as const },
-    tools: [],
-    signal: createAbortController().signal,
-    options: {
-      getToolPermissionContext: async () => getEmptyToolPermissionContext(),
-      model: getUtilityModel(),
-      toolChoice: undefined,
-      isNonInteractiveSession: false,
-      hasAppendSystemPrompt: false,
-      temperatureOverride: 0,
-      agents: [],
-      querySource: 'skill_improvement_apply',
-    },
-  })
-
-  const responseText = extractTextContent(response.message.content).trim()
-
-  const updatedContent = extractTag(responseText, 'updated_file')
-  if (!updatedContent) {
-    logError(
-      new Error('Skill improvement apply: no updated_file tag in response'),
-    )
-    return
-  }
-
-  try {
-    await fs.mkdir(dirname(filePath), { recursive: true })
-    await fs.writeFile(filePath, updatedContent, 'utf-8')
-  } catch (e) {
-    logError(toError(e))
   }
 }

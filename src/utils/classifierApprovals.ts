@@ -39,12 +39,6 @@ export function clearClassifierChecking(toolUseID: string): void {
   classifierChecking.emit()
 }
 
-export const subscribeClassifierChecking = classifierChecking.subscribe
-
-export function isClassifierChecking(toolUseID: string): boolean {
-  return CLASSIFIER_CHECKING.has(toolUseID)
-}
-
 export function deleteClassifierApproval(toolUseID: string): void {
   CLASSIFIER_APPROVALS.delete(toolUseID)
 }

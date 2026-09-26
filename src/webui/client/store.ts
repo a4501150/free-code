@@ -4,7 +4,7 @@
  * clearing React state, or reconnect strands the view on an empty dead
  * process.
  */
-import { useCallback, useRef, useSyncExternalStore } from 'react'
+import { useSyncExternalStore } from 'react'
 import type {
   AttachEventBody,
   WebPendingCommand,
@@ -163,11 +163,4 @@ export type ViewStore = ReturnType<typeof createViewStore>
 
 export function useViewStore(store: ViewStore): SessionView {
   return useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot)
-}
-
-/** Stable identity for callbacks that close over changing values. */
-export function useEvent<T extends (...args: never[]) => unknown>(fn: T): T {
-  const ref = useRef(fn)
-  ref.current = fn
-  return useCallback(((...args: never[]) => ref.current(...args)) as T, [])
 }

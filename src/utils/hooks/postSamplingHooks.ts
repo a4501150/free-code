@@ -33,13 +33,6 @@ export function registerPostSamplingHook(hook: PostSamplingHook): void {
 }
 
 /**
- * Clear all registered post-sampling hooks (for testing)
- */
-export function clearPostSamplingHooks(): void {
-  postSamplingHooks.length = 0
-}
-
-/**
  * Execute all registered post-sampling hooks
  */
 export async function executePostSamplingHooks(

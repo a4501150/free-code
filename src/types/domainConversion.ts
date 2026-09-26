@@ -37,7 +37,6 @@ import type {
   DomainRedactedReasoningBlock,
   DomainStopReason,
   DomainStreamEvent,
-  DomainToolResultBlockParam,
   DomainUsage,
   DomainUserContentBlock,
   ProviderState,
@@ -175,39 +174,6 @@ export function domainBlockToAnthropic(
   }
 }
 
-export function domainUsageToAnthropic(
-  usage: DomainUsage,
-): WireMessage['usage'] {
-  return {
-    input_tokens: usage.input_tokens,
-    output_tokens: usage.output_tokens,
-    cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
-    cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
-    ...(usage.server_tool_use != null && {
-      server_tool_use: usage.server_tool_use,
-    }),
-  }
-}
-
-export function domainMessageToAnthropic(
-  msg: DomainAssistantContent,
-): WireMessage {
-  const content = msg.content
-    .map(domainBlockToAnthropic)
-    .filter((b): b is WireContentBlock => b !== null)
-
-  return {
-    id: msg.id,
-    type: 'message',
-    role: 'assistant',
-    content,
-    model: msg.model,
-    stop_reason: msg.stop_reason,
-    stop_sequence: msg.stop_sequence,
-    usage: domainUsageToAnthropic(msg.usage),
-  }
-}
-
 // ── Persistence: Legacy Transcript → Domain ────────────────────────
 
 /**
@@ -320,30 +286,10 @@ export function normalizeReasoningContent(
   return changed ? result : content
 }
 
-// ── User Content: Anthropic SDK → Domain ──────────────────────────
-
-export function anthropicUserBlockToDomain(
-  block: WireContentBlock,
-): DomainUserContentBlock {
-  return block as unknown as DomainUserContentBlock
-}
-
-export function anthropicToolResultToDomain(
-  block: WireContentBlock,
-): DomainToolResultBlockParam {
-  return block as unknown as DomainToolResultBlockParam
-}
-
 // ── User Content: Domain → Anthropic SDK ──────────────────────────
 
 export function domainUserBlockToAnthropic(
   block: DomainUserContentBlock,
-): WireContentBlock {
-  return block as unknown as WireContentBlock
-}
-
-export function domainToolResultToAnthropic(
-  block: DomainToolResultBlockParam,
 ): WireContentBlock {
   return block as unknown as WireContentBlock
 }
@@ -529,12 +475,4 @@ export function anthropicStreamEventToDomain(
     default:
       return event as unknown as DomainStreamEvent
   }
-}
-
-// ── Stream Events: Domain → Anthropic SDK ─────────────────────────
-
-export function domainStreamEventToAnthropic(
-  event: DomainStreamEvent,
-): WireStreamEvent {
-  return event as unknown as WireStreamEvent
 }

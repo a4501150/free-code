@@ -96,14 +96,6 @@ export function getClaudeSocketName(): string {
 }
 
 /**
- * Gets the socket path if the socket has been initialized.
- * Returns null if not yet initialized.
- */
-export function getClaudeSocketPath(): string | null {
-  return socketPath
-}
-
-/**
  * Sets socket info after initialization.
  * Called after the tmux session is created.
  */
@@ -176,14 +168,6 @@ export async function checkTmuxAvailable(): Promise<boolean> {
  */
 export function isTmuxAvailable(): boolean {
   return tmuxAvailabilityChecked && tmuxAvailable
-}
-
-/**
- * Marks that the Tmux tool has been used at least once.
- * After this is called, Shell.ts will initialize the socket for subsequent Bash commands.
- */
-export function markTmuxToolUsed(): void {
-  tmuxToolUsed = true
 }
 
 /**
@@ -410,16 +394,4 @@ async function doInitialize(): Promise<void> {
   throw new Error(
     `Failed to get socket info for ${socket}: primary="${infoResult.stderr}", fallback="${pidResult.stderr}"`,
   )
-}
-
-// For testing purposes
-export function resetSocketState(): void {
-  socketName = null
-  socketPath = null
-  serverPid = null
-  isInitializing = false
-  initPromise = null
-  tmuxAvailabilityChecked = false
-  tmuxAvailable = false
-  tmuxToolUsed = false
 }

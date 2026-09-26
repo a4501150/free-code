@@ -1,7 +1,6 @@
 import {
   BedrockClient,
   GetInferenceProfileCommand,
-  ListInferenceProfilesCommand,
 } from '@aws-sdk/client-bedrock'
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime'
 import { NoAuthSigner } from '@smithy/core'
@@ -18,54 +17,7 @@ import { getAWSClientProxyConfig } from '../proxy.js'
 // this file) can import them without pulling in the AWS SDK. Re-export them
 // here for the handful of callers (e.g. services/api/adapters/bedrock-adapter-impl.ts) that
 // still import everything Bedrock-related from this module.
-export {
-  applyBedrockRegionPrefix,
-  BEDROCK_REGION_PREFIXES,
-  extractModelIdFromArn,
-  getBedrockRegionPrefix,
-  isFoundationModel,
-} from './bedrockInferenceProfiles.js'
-export type { BedrockRegionPrefix } from './bedrockInferenceProfiles.js'
-
-export const getBedrockInferenceProfiles = memoize(async function (): Promise<
-  string[]
-> {
-  const client = await createBedrockClient()
-  const allProfiles = []
-  let nextToken: string | undefined
-
-  try {
-    do {
-      const command = new ListInferenceProfilesCommand({
-        ...(nextToken && { nextToken }),
-        typeEquals: 'SYSTEM_DEFINED',
-      })
-      const response = await client.send(command)
-
-      if (response.inferenceProfileSummaries) {
-        allProfiles.push(...response.inferenceProfileSummaries)
-      }
-
-      nextToken = response.nextToken
-    } while (nextToken)
-
-    // Filter for Anthropic models (SYSTEM_DEFINED filtering handled in query)
-    return allProfiles
-      .filter(profile => profile.inferenceProfileId?.includes('anthropic'))
-      .map(profile => profile.inferenceProfileId)
-      .filter(Boolean) as string[]
-  } catch (error) {
-    logError(error as Error)
-    throw error
-  }
-})
-
-export function findFirstMatch(
-  profiles: string[],
-  substring: string,
-): string | null {
-  return profiles.find(p => p.includes(substring)) ?? null
-}
+export { isFoundationModel } from './bedrockInferenceProfiles.js'
 
 async function createBedrockClient() {
   // Match the Anthropic Bedrock SDK's region behavior exactly:

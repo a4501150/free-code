@@ -569,21 +569,12 @@ export function getCachedBranch(): Promise<string> {
   return gitWatcher.get('branch', computeBranch)
 }
 
-export function getCachedHead(): Promise<string> {
-  return gitWatcher.get('head', computeHead)
-}
-
 export function getCachedRemoteUrl(): Promise<string | null> {
   return gitWatcher.get('remoteUrl', computeRemoteUrl)
 }
 
 export function getCachedDefaultBranch(): Promise<string> {
   return gitWatcher.get('defaultBranch', computeDefaultBranch)
-}
-
-/** Reset the git file watcher state. For testing only. */
-export function resetGitFileWatcher(): void {
-  gitWatcher.reset()
 }
 
 /**
@@ -637,45 +628,6 @@ export async function readWorktreeHeadSha(
     return resolveRef(gitDir, `refs/heads/${head.name}`)
   }
   return head.sha
-}
-
-/**
- * Read the remote origin URL for an arbitrary directory via .git/config.
- */
-export async function getRemoteUrlForDir(cwd: string): Promise<string | null> {
-  const gitDir = await resolveGitDir(cwd)
-  if (!gitDir) {
-    return null
-  }
-  const url = await parseGitConfigValue(gitDir, 'remote', 'origin', 'url')
-  if (url) {
-    return url
-  }
-  // In worktrees, the config with remote URLs is in the common dir
-  const commonDir = await getCommonDir(gitDir)
-  if (commonDir && commonDir !== gitDir) {
-    return parseGitConfigValue(commonDir, 'remote', 'origin', 'url')
-  }
-  return null
-}
-
-/**
- * Check if we're in a shallow clone by looking for <commonDir>/shallow.
- * Per git's shallow.c, mere existence of the file means shallow.
- * The shallow file lives in commonDir, not the per-worktree gitDir.
- */
-export async function isShallowClone(): Promise<boolean> {
-  const gitDir = await resolveGitDir()
-  if (!gitDir) {
-    return false
-  }
-  const commonDir = (await getCommonDir(gitDir)) ?? gitDir
-  try {
-    await stat(join(commonDir, 'shallow'))
-    return true
-  } catch {
-    return false
-  }
 }
 
 /**

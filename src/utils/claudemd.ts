@@ -52,10 +52,8 @@ import {
 } from './config.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
-import { getClaudeConfigHomeDir } from './envUtils.js'
 import { getErrnoCode } from './errors.js'
 import { normalizePathForComparison } from './file.js'
-import { cacheKeys, type FileStateCache } from './fileStateCache.js'
 import {
   parseFrontmatter,
   splitPathInFrontmatter,
@@ -290,28 +288,6 @@ function parseFrontmatterPaths(rawContent: string): {
   }
 
   return { content, paths: patterns }
-}
-
-/**
- * Strip block-level HTML comments (<!-- ... -->) from markdown content.
- *
- * Uses the marked lexer to identify comments at the block level only, so
- * comments inside inline code spans and fenced code blocks are preserved.
- * Inline HTML comments inside a paragraph are also left intact; the intended
- * use case is authorial notes that occupy their own lines.
- *
- * Unclosed comments (`<!--` with no matching `-->`) are left in place so a
- * typo doesn't silently swallow the rest of the file.
- */
-export function stripHtmlComments(content: string): {
-  content: string
-  stripped: boolean
-} {
-  if (!content.includes('<!--')) {
-    return { content, stripped: false }
-  }
-  // gfm:false is fine here — html-block detection is a CommonMark rule.
-  return stripHtmlCommentsFromTokens(new Lexer({ gfm: false }).lex(content))
 }
 
 function stripHtmlCommentsFromTokens(tokens: ReturnType<Lexer['lex']>): {
@@ -1420,31 +1396,4 @@ export function isMemoryFilePath(filePath: string): boolean {
   }
 
   return false
-}
-
-/**
- * Get all memory file paths from both standard discovery and readFileState.
- * Combines:
- * - getMemoryFiles() paths (CWD upward to root)
- * - readFileState paths matching memory patterns (includes child directories)
- */
-export function getAllMemoryFilePaths(
-  files: MemoryFileInfo[],
-  readFileState: FileStateCache,
-): string[] {
-  const paths = new Set<string>()
-  for (const file of files) {
-    if (file.content.trim().length > 0) {
-      paths.add(file.path)
-    }
-  }
-
-  // Add memory files from readFileState (includes child directories)
-  for (const filePath of cacheKeys(readFileState)) {
-    if (isMemoryFilePath(filePath)) {
-      paths.add(filePath)
-    }
-  }
-
-  return Array.from(paths)
 }

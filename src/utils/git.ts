@@ -1,6 +1,4 @@
-import { createHash } from 'crypto'
 import { readFileSync, realpathSync, statSync } from 'fs'
-import { realpath } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { basename, dirname, join, resolve, sep } from 'path'
 import { getCwd } from './cwd.js'
@@ -12,7 +10,6 @@ import { getFsImplementation } from './fsOperations.js'
 import {
   getCachedBranch,
   getCachedDefaultBranch,
-  getCachedHead,
   getCachedRemoteUrl,
   getWorktreeCountFromFs,
   resolveGitDir,
@@ -230,30 +227,8 @@ export function getGitDir(cwd: string): Promise<string | null> {
   return resolveGitDir(cwd)
 }
 
-export async function isAtGitRoot(): Promise<boolean> {
-  const cwd = getCwd()
-  const gitRoot = findGitRoot(cwd)
-  if (!gitRoot) {
-    return false
-  }
-  // Resolve symlinks for accurate comparison
-  try {
-    const [resolvedCwd, resolvedGitRoot] = await Promise.all([
-      realpath(cwd),
-      realpath(gitRoot),
-    ])
-    return resolvedCwd === resolvedGitRoot
-  } catch {
-    return cwd === gitRoot
-  }
-}
-
 export const dirIsInGitRepo = async (cwd: string): Promise<boolean> => {
   return findGitRoot(cwd) !== null
-}
-
-export const getHead = async (): Promise<string> => {
-  return getCachedHead()
 }
 
 export const getBranch = async (): Promise<string> => {
@@ -266,102 +241,6 @@ export const getDefaultBranch = async (): Promise<string> => {
 
 export const getRemoteUrl = async (): Promise<string | null> => {
   return getCachedRemoteUrl()
-}
-
-/**
- * Normalizes a git remote URL to a canonical form for hashing.
- * Converts SSH and HTTPS URLs to the same format: host/owner/repo (lowercase, no .git)
- *
- * Examples:
- * - git@github.com:owner/repo.git -> github.com/owner/repo
- * - https://github.com/owner/repo.git -> github.com/owner/repo
- * - ssh://git@github.com/owner/repo -> github.com/owner/repo
- * - http://local_proxy@127.0.0.1:16583/git/owner/repo -> github.com/owner/repo
- */
-export function normalizeGitRemoteUrl(url: string): string | null {
-  const trimmed = url.trim()
-  if (!trimmed) return null
-
-  // Handle SSH format: git@host:owner/repo.git
-  const sshMatch = trimmed.match(/^git@([^:]+):(.+?)(?:\.git)?$/)
-  if (sshMatch && sshMatch[1] && sshMatch[2]) {
-    return `${sshMatch[1]}/${sshMatch[2]}`.toLowerCase()
-  }
-
-  // Handle HTTPS/SSH URL format: https://host/owner/repo.git or ssh://git@host/owner/repo
-  const urlMatch = trimmed.match(
-    /^(?:https?|ssh):\/\/(?:[^@]+@)?([^/]+)\/(.+?)(?:\.git)?$/,
-  )
-  if (urlMatch && urlMatch[1] && urlMatch[2]) {
-    const host = urlMatch[1]
-    const path = urlMatch[2]
-
-    // CCR git proxy URLs use format:
-    //   Legacy:  http://...@127.0.0.1:PORT/git/owner/repo       (github.com assumed)
-    //   GHE:     http://...@127.0.0.1:PORT/git/ghe.host/owner/repo (host encoded in path)
-    // Strip the /git/ prefix. If the first segment contains a dot, it's a
-    // hostname (GitHub org names cannot contain dots). Otherwise assume github.com.
-    if (isLocalHost(host) && path.startsWith('git/')) {
-      const proxyPath = path.slice(4) // Remove "git/" prefix
-      const segments = proxyPath.split('/')
-      // 3+ segments where first contains a dot → host/owner/repo (GHE format)
-      if (segments.length >= 3 && segments[0]!.includes('.')) {
-        return proxyPath.toLowerCase()
-      }
-      // 2 segments → owner/repo (legacy format, assume github.com)
-      return `github.com/${proxyPath}`.toLowerCase()
-    }
-
-    return `${host}/${path}`.toLowerCase()
-  }
-
-  return null
-}
-
-/**
- * Returns a SHA256 hash (first 16 chars) of the normalized git remote URL.
- * This provides a globally unique identifier for the repository that:
- * - Is the same regardless of SSH vs HTTPS clone
- * - Does not expose the actual repository name in logs
- */
-export async function getRepoRemoteHash(): Promise<string | null> {
-  const remoteUrl = await getRemoteUrl()
-  if (!remoteUrl) return null
-
-  const normalized = normalizeGitRemoteUrl(remoteUrl)
-  if (!normalized) return null
-
-  const hash = createHash('sha256').update(normalized).digest('hex')
-  return hash.substring(0, 16)
-}
-
-export const getIsHeadOnRemote = async (): Promise<boolean> => {
-  const { code } = await execFileNoThrow(gitExe(), ['rev-parse', '@{u}'], {
-    preserveOutputOnError: false,
-  })
-  return code === 0
-}
-
-export const hasUnpushedCommits = async (): Promise<boolean> => {
-  const { stdout, code } = await execFileNoThrow(
-    gitExe(),
-    ['rev-list', '--count', '@{u}..HEAD'],
-    { preserveOutputOnError: false },
-  )
-  return code === 0 && parseInt(stdout.trim(), 10) > 0
-}
-
-export const getIsClean = async (options?: {
-  ignoreUntracked?: boolean
-}): Promise<boolean> => {
-  const args = ['--no-optional-locks', 'status', '--porcelain']
-  if (options?.ignoreUntracked) {
-    args.push('-uno')
-  }
-  const { stdout } = await execFileNoThrow(gitExe(), args, {
-    preserveOutputOnError: false,
-  })
-  return stdout.trim().length === 0
 }
 
 export const getChangedFiles = async (): Promise<string[]> => {
@@ -379,124 +258,8 @@ export const getChangedFiles = async (): Promise<string[]> => {
     .filter(line => typeof line === 'string') // Remove empty entries
 }
 
-export type GitFileStatus = {
-  tracked: string[]
-  untracked: string[]
-}
-
-export const getFileStatus = async (): Promise<GitFileStatus> => {
-  const { stdout } = await execFileNoThrow(
-    gitExe(),
-    ['--no-optional-locks', 'status', '--porcelain'],
-    {
-      preserveOutputOnError: false,
-    },
-  )
-
-  const tracked: string[] = []
-  const untracked: string[] = []
-
-  stdout
-    .trim()
-    .split('\n')
-    .filter(line => line.length > 0)
-    .forEach(line => {
-      const status = line.substring(0, 2)
-      const filename = line.substring(2).trim()
-
-      if (status === '??') {
-        untracked.push(filename)
-      } else if (filename) {
-        tracked.push(filename)
-      }
-    })
-
-  return { tracked, untracked }
-}
-
 export const getWorktreeCount = async (): Promise<number> => {
   return getWorktreeCountFromFs()
-}
-
-/**
- * Stashes all changes (including untracked files) to return git to a clean porcelain state
- * Important: This function stages untracked files before stashing to prevent data loss
- * @param message - Optional custom message for the stash
- * @returns Promise<boolean> - true if stash was successful, false otherwise
- */
-export const stashToCleanState = async (message?: string): Promise<boolean> => {
-  try {
-    const stashMessage =
-      message || `Claude Code auto-stash - ${new Date().toISOString()}`
-
-    // First, check if we have untracked files
-    const { untracked } = await getFileStatus()
-
-    // If we have untracked files, add them to the index first
-    // This prevents them from being deleted
-    if (untracked.length > 0) {
-      const { code: addCode } = await execFileNoThrow(
-        gitExe(),
-        ['add', ...untracked],
-        { preserveOutputOnError: false },
-      )
-
-      if (addCode !== 0) {
-        return false
-      }
-    }
-
-    // Now stash everything (staged and unstaged changes)
-    const { code } = await execFileNoThrow(
-      gitExe(),
-      ['stash', 'push', '--message', stashMessage],
-      { preserveOutputOnError: false },
-    )
-    return code === 0
-  } catch (_) {
-    return false
-  }
-}
-
-export type GitRepoState = {
-  commitHash: string
-  branchName: string
-  remoteUrl: string | null
-  isHeadOnRemote: boolean
-  isClean: boolean
-  worktreeCount: number
-}
-
-export async function getGitState(): Promise<GitRepoState | null> {
-  try {
-    const [
-      commitHash,
-      branchName,
-      remoteUrl,
-      isHeadOnRemote,
-      isClean,
-      worktreeCount,
-    ] = await Promise.all([
-      getHead(),
-      getBranch(),
-      getRemoteUrl(),
-      getIsHeadOnRemote(),
-      getIsClean(),
-      getWorktreeCount(),
-    ])
-
-    return {
-      commitHash,
-      branchName,
-      remoteUrl,
-      isHeadOnRemote,
-      isClean,
-      worktreeCount,
-    }
-  } catch (_) {
-    // Fail silently - git state is best effort
-    return null
-  }
 }
 
 export async function getGithubRepo(): Promise<string | null> {

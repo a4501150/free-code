@@ -22,8 +22,6 @@ export type RequiresActionDetails = {
    * to parse question options / plan content without scanning the event stream. */
   input?: Record<string, unknown>
 }
-
-import { isEnvTruthy } from './envUtils.js'
 import { getInitialSettings } from './settings/settings.js'
 import type { PermissionMode } from './permissions/PermissionMode.js'
 import { enqueueStructuredEvent } from './structuredEventQueue.js'
@@ -56,18 +54,6 @@ type PermissionModeChangedListener = (mode: PermissionMode) => void
 let stateListener: SessionStateChangedListener | null = null
 let metadataListener: SessionMetadataChangedListener | null = null
 let permissionModeListener: PermissionModeChangedListener | null = null
-
-export function setSessionStateChangedListener(
-  cb: SessionStateChangedListener | null,
-): void {
-  stateListener = cb
-}
-
-export function setSessionMetadataChangedListener(
-  cb: SessionMetadataChangedListener | null,
-): void {
-  metadataListener = cb
-}
 
 /**
  * Register a listener for permission-mode changes from onChangeAppState.

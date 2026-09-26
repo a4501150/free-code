@@ -7,4 +7,4 @@
  * exact kind of runtime indirection this refactor is removing.
  */
 
-export { lock, lockSync, unlock, check } from 'proper-lockfile'
+export { lock, lockSync } from 'proper-lockfile'

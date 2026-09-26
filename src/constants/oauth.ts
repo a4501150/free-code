@@ -1,18 +1,7 @@
-export function fileSuffixForOauthConfig(): string {
-  if (process.env.CLAUDE_CODE_CUSTOM_OAUTH_URL) {
-    return '-custom-oauth'
-  }
-  return ''
-}
-
 export const CLAUDE_AI_INFERENCE_SCOPE = 'user:inference' as const
 export const CLAUDE_AI_PROFILE_SCOPE = 'user:profile' as const
 const CONSOLE_SCOPE = 'org:create_api_key' as const
 export const OAUTH_BETA_HEADER = 'oauth-2025-04-20' as const
-
-// OpenAI OAuth scopes
-export const OPENAI_API_SCOPE = 'api' as const
-export const OPENAI_CODEX_SCOPE = 'codex' as const
 
 // Console OAuth scopes - for API key creation via Console
 export const CONSOLE_OAUTH_SCOPES = [
@@ -27,12 +16,6 @@ export const CLAUDE_AI_OAUTH_SCOPES = [
   'user:sessions:claude_code',
   'user:mcp_servers',
   'user:file_upload',
-] as const
-
-// OpenAI OAuth scopes - for OpenAI Codex users
-export const OPENAI_OAUTH_SCOPES = [
-  OPENAI_API_SCOPE,
-  OPENAI_CODEX_SCOPE,
 ] as const
 
 // All OAuth scopes - union of all scopes used in Claude CLI

@@ -32,7 +32,6 @@ import type {
   StreamEvent,
   SystemAgentsKilledMessage,
   SystemAPIErrorMessage,
-  SystemApiMetricsMessage,
   SystemAwaySummaryMessage,
   SystemCompactBoundaryMessage,
   SystemInformationalMessage,
@@ -57,7 +56,6 @@ import {
   memoryHeader,
 } from './attachments.js'
 import { quote } from './bash/shellQuote.js'
-import { formatTokens } from './format.js'
 import { jsonStringify } from './slowOperations.js'
 
 // Hook attachments that have a hookName field (excludes HookPermissionDecisionAttachment)
@@ -68,7 +66,6 @@ type HookAttachmentWithName = Exclude<
 
 import type {
   DomainApiError,
-  DomainAssistantContent,
   DomainContentBlock,
   DomainReasoningBlock,
   DomainRedactedReasoningBlock,
@@ -1083,23 +1080,6 @@ export function hasUnresolvedHooks(
   }
 
   return false
-}
-
-export function getToolResultIDs(normalizedMessages: NormalizedMessage[]): {
-  [toolUseID: string]: boolean
-} {
-  return Object.fromEntries(
-    normalizedMessages.flatMap(_ =>
-      _.type === 'user' && _.message.content[0]?.type === 'tool_result'
-        ? [
-            [
-              _.message.content[0].tool_use_id,
-              _.message.content[0].is_error ?? false,
-            ],
-          ]
-        : ([] as [string, boolean][]),
-    ),
-  )
 }
 
 export function getSiblingToolUseIDs(
@@ -4341,39 +4321,6 @@ export function createAgentsKilledMessage(): SystemAgentsKilledMessage {
   }
 }
 
-export function createApiMetricsMessage(metrics: {
-  ttftMs: number
-  otps: number
-  isP50?: boolean
-  hookDurationMs?: number
-  turnDurationMs?: number
-  toolDurationMs?: number
-  classifierDurationMs?: number
-  toolCount?: number
-  hookCount?: number
-  classifierCount?: number
-  configWriteCount?: number
-}): SystemApiMetricsMessage {
-  return {
-    type: 'system',
-    subtype: 'api_metrics',
-    ttftMs: metrics.ttftMs,
-    otps: metrics.otps,
-    isP50: metrics.isP50,
-    hookDurationMs: metrics.hookDurationMs,
-    turnDurationMs: metrics.turnDurationMs,
-    toolDurationMs: metrics.toolDurationMs,
-    classifierDurationMs: metrics.classifierDurationMs,
-    toolCount: metrics.toolCount,
-    hookCount: metrics.hookCount,
-    classifierCount: metrics.classifierCount,
-    configWriteCount: metrics.configWriteCount,
-    timestamp: new Date().toISOString(),
-    uuid: randomUUID(),
-    isMeta: false,
-  }
-}
-
 export function createCommandInputMessage(
   content: string,
 ): SystemLocalCommandMessage {
@@ -4510,14 +4457,6 @@ export function shouldShowUserMessage(
   }
   if (message.isVisibleInTranscriptOnly && !isTranscriptMode) return false
   return true
-}
-
-export function isThinkingMessage(message: Message): boolean {
-  if (message.type !== 'assistant') return false
-  if (!Array.isArray(message.message.content)) return false
-  return message.message.content.every(
-    block => block.type === 'reasoning' || block.type === 'redacted_reasoning',
-  )
 }
 
 /**

@@ -169,13 +169,3 @@ export async function ensureCodexLoginFresh(
       }
     : block
 }
-
-/** Registry view of provider slots the codex login owns. */
-export function codexLoginProviderSlots(): string[] {
-  return [...getProviderRegistry().getAllProviders()]
-    .filter(
-      ([, config]) =>
-        isCodexProviderType(config.type) && config.auth?.active === 'oauth',
-    )
-    .map(([name]) => name)
-}

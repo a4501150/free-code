@@ -61,16 +61,6 @@ export function registerSessionActivityCallback(cb: () => void): void {
   }
 }
 
-export function unregisterSessionActivityCallback(): void {
-  activityCallback = null
-  // Stop timer if the callback is removed
-  if (heartbeatTimer !== null) {
-    clearInterval(heartbeatTimer)
-    heartbeatTimer = null
-  }
-  clearIdleTimer()
-}
-
 export function sendSessionActivitySignal(): void {
   activityCallback?.()
 }

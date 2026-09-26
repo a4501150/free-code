@@ -62,19 +62,6 @@ export function commandBelongsToServer(
 }
 
 /**
- * Filters commands by MCP server name
- * @param commands Array of commands to filter
- * @param serverName Name of the MCP server
- * @returns Commands belonging to the specified server
- */
-export function filterCommandsByServer(
-  commands: Command[],
-  serverName: string,
-): Command[] {
-  return commands.filter(c => commandBelongsToServer(c, serverName))
-}
-
-/**
  * Filters MCP **prompts** (not skills) by server. Used by the `/mcp` menu
  * capabilities display — skills are a separate feature shown in `/skills`,
  * so they mustn't inflate the "prompts" capability badge.
@@ -91,19 +78,6 @@ export function filterMcpPromptsByServer(
       commandBelongsToServer(c, serverName) &&
       !(c.type === 'prompt' && c.loadedFrom === 'mcp'),
   )
-}
-
-/**
- * Filters resources by MCP server name
- * @param resources Array of resources to filter
- * @param serverName Name of the MCP server
- * @returns Resources belonging to the specified server
- */
-export function filterResourcesByServer(
-  resources: ServerResource[],
-  serverName: string,
-): ServerResource[] {
-  return resources.filter(resource => resource.server === serverName)
 }
 
 /**
@@ -224,35 +198,12 @@ export function excludeStalePluginClients(
 }
 
 /**
- * Checks if a tool name belongs to a specific MCP server
- * @param toolName The tool name to check
- * @param serverName The server name to match against
- * @returns True if the tool belongs to the specified server
- */
-export function isToolFromMcpServer(
-  toolName: string,
-  serverName: string,
-): boolean {
-  const info = mcpInfoFromString(toolName)
-  return info?.serverName === serverName
-}
-
-/**
  * Checks if a tool belongs to any MCP server
  * @param tool The tool to check
  * @returns True if the tool is from an MCP server
  */
 export function isMcpTool(tool: Tool): boolean {
   return tool.name?.startsWith('mcp__') || tool.isMcp === true
-}
-
-/**
- * Checks if a command belongs to any MCP server
- * @param command The command to check
- * @returns True if the command is from an MCP server
- */
-export function isMcpCommand(command: Command): boolean {
-  return command.name?.startsWith('mcp__') || command.isMcp === true
 }
 
 /**

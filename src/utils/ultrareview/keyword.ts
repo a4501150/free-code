@@ -70,7 +70,3 @@ export function findUltrareviewTriggerPositions(
 ): TriggerPosition[] {
   return findKeywordTriggerPositions(text, 'ultrareview')
 }
-
-export function hasUltrareviewKeyword(text: string): boolean {
-  return findUltrareviewTriggerPositions(text).length > 0
-}

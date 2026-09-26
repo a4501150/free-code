@@ -27,18 +27,6 @@ export function isProviderManagedEnvVar(key: string): boolean {
 }
 
 /**
- * Dangerous shell settings that can execute arbitrary shell code
- */
-export const DANGEROUS_SHELL_SETTINGS = [
-  'apiKeyHelper',
-  'awsAuthRefresh',
-  'awsCredentialExport',
-  'gcpAuthRefresh',
-  'otelHeadersHelper',
-  'statusLine',
-] as const
-
-/**
  * Safe environment variables that can be applied before trust dialog:
  * names our code or an in-process SDK (OpenTelemetry, AWS) honors that
  * don't pose security risks. Behavior switches that moved to settings

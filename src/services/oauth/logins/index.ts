@@ -14,18 +14,7 @@ import { getActiveLoginState } from './active.js'
 import type { LoginKind } from './types.js'
 
 export { getActiveLoginState, refreshActiveLoginTokens } from './active.js'
-export type { ActiveLoginState, LoginKind } from './active.js'
-export {
-  CODEX_LOGIN_SLOT,
-  codexLoginProviderSlots,
-  installCodexLoginTokens,
-  startCodexLogin,
-} from './codex.js'
-export {
-  CLAUDE_AI_LOGIN_SLOT,
-  mirrorClaudeAiOAuthToModelSettings,
-} from './claudeAi.js'
-export type { ProviderOAuthBlock } from './types.js'
+export type { LoginKind } from './active.js'
 
 /** Picker metadata for the /login (and onboarding) login chooser. */
 export const LOGIN_METHODS: Array<{
@@ -70,10 +59,4 @@ export function clearLoginProviderTokens(): void {
 
   writeModelSettingsFile({ providers: cleared })
   resetProviderRegistry()
-}
-
-/** True when any supported login is currently usable for the active provider. */
-export function isActiveLoginLoggedIn(): boolean {
-  const state = getActiveLoginState()
-  return state.mode === 'login' ? state.loggedIn : false
 }

@@ -21,9 +21,6 @@ import { getTaskOutputDelta, getTaskOutputPath } from './diskOutput.js'
 // Standard polling interval for all tasks
 export const POLL_INTERVAL_MS = 1000
 
-// Duration to display killed tasks before eviction
-export const STOPPED_DISPLAY_MS = 3_000
-
 // Grace period for terminal local_agent tasks in the coordinator panel
 export const PANEL_GRACE_MS = 30_000
 
@@ -242,26 +239,6 @@ export function applyTaskOffsetsAndEvictions(
     }
     return changed ? { ...prev, tasks: newTasks } : prev
   })
-}
-
-/**
- * Poll all running tasks and check for updates.
- * This is the main polling loop called by the framework.
- */
-export async function pollTasks(
-  getAppState: () => AppState,
-  setAppState: SetAppState,
-): Promise<void> {
-  const state = getAppState()
-  const { attachments, updatedTaskOffsets, evictedTaskIds } =
-    await generateTaskAttachments(state)
-
-  applyTaskOffsetsAndEvictions(setAppState, updatedTaskOffsets, evictedTaskIds)
-
-  // Send notifications for completed tasks
-  for (const attachment of attachments) {
-    enqueueTaskNotification(attachment)
-  }
 }
 
 /**

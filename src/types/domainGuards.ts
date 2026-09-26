@@ -14,18 +14,6 @@ import type {
   DomainToolUseBlock,
 } from './domain.js'
 
-export function isReasoningBlock(
-  block: DomainContentBlock | { type: string; [key: string]: unknown },
-): block is DomainReasoningBlock {
-  return block.type === 'reasoning'
-}
-
-export function isRedactedReasoningBlock(
-  block: DomainContentBlock | { type: string; [key: string]: unknown },
-): block is DomainRedactedReasoningBlock {
-  return block.type === 'redacted_reasoning'
-}
-
 export function isAnyReasoningBlock(
   block: DomainContentBlock | { type: string; [key: string]: unknown },
 ): block is DomainReasoningBlock | DomainRedactedReasoningBlock {

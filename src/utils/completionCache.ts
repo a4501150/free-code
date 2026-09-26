@@ -5,7 +5,6 @@ import { dirname, join } from 'path'
 import { pathToFileURL } from 'url'
 import { color } from '../components/design-system/color.js'
 import { supportsHyperlinks } from '../ink/supports-hyperlinks.js'
-import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir } from './envUtils.js'
 import { isENOENT } from './errors.js'
 import { execFileNoThrow } from './execFileNoThrow.js'
@@ -132,36 +131,4 @@ export async function setupShellCompletion(theme: ThemeName): Promise<string> {
     logError(error)
     return `${EOL}${color('warning', theme)(`Could not install ${shell.name} shell completions`)}${EOL}${chalk.dim(`Add this to ${formatPathLink(shell.rcFile)}:`)}${EOL}${chalk.dim(shell.completionLine)}${EOL}`
   }
-}
-
-/**
- * Regenerate cached shell completion scripts in ~/.freecode/.
- * Called after `claude update` so completions stay in sync with the new binary.
- */
-export async function regenerateCompletionCache(): Promise<void> {
-  const shell = detectShell()
-  if (!shell) {
-    return
-  }
-
-  logForDebugging(`update: Regenerating ${shell.name} completion cache`)
-
-  const claudeBin = process.argv[1] || 'claude'
-  const result = await execFileNoThrow(claudeBin, [
-    'completion',
-    shell.shellFlag,
-    '--output',
-    shell.cacheFile,
-  ])
-
-  if (result.code !== 0) {
-    logForDebugging(
-      `update: Failed to regenerate ${shell.name} completion cache`,
-    )
-    return
-  }
-
-  logForDebugging(
-    `update: Regenerated ${shell.name} completion cache at ${shell.cacheFile}`,
-  )
 }

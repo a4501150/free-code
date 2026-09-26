@@ -151,41 +151,6 @@ export function chordToString(chord: Chord): string {
 type DisplayPlatform = 'macos' | 'windows' | 'linux' | 'wsl' | 'unknown'
 
 /**
- * Convert a ParsedKeystroke to a platform-appropriate display string.
- * Uses "opt" for alt on macOS, "alt" elsewhere.
- */
-export function keystrokeToDisplayString(
-  ks: ParsedKeystroke,
-  platform: DisplayPlatform = 'linux',
-): string {
-  const parts: string[] = []
-  if (ks.ctrl) parts.push('ctrl')
-  // Alt/meta are equivalent in terminals, show platform-appropriate name
-  if (ks.alt || ks.meta) {
-    // Only macOS uses "opt", all other platforms use "alt"
-    parts.push(platform === 'macos' ? 'opt' : 'alt')
-  }
-  if (ks.shift) parts.push('shift')
-  if (ks.super) {
-    parts.push(platform === 'macos' ? 'cmd' : 'super')
-  }
-  // Use readable names for display
-  const displayKey = keyToDisplayName(ks.key)
-  parts.push(displayKey)
-  return parts.join('+')
-}
-
-/**
- * Convert a Chord to a platform-appropriate display string.
- */
-export function chordToDisplayString(
-  chord: Chord,
-  platform: DisplayPlatform = 'linux',
-): string {
-  return chord.map(ks => keystrokeToDisplayString(ks, platform)).join(' ')
-}
-
-/**
  * Parse keybinding blocks (from JSON config) into a flat list of ParsedBindings.
  */
 export function parseBindings(blocks: KeybindingBlock[]): ParsedBinding[] {

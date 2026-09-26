@@ -151,11 +151,6 @@ const outputSchema = z.object({
 })
 type OutputSchema = typeof outputSchema
 
-// SDK schemas are identical to internal schemas now that `preview` and
-// `annotations` are public (configurable via `toolConfig.askUserQuestion`).
-export const _sdkInputSchema = inputSchema
-export const _sdkOutputSchema = outputSchema
-
 export type Question = z.infer<typeof questionSchema>
 export type QuestionOption = z.infer<typeof questionOptionSchema>
 export type Output = z.infer<OutputSchema>

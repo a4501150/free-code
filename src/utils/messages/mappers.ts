@@ -1,10 +1,5 @@
-import type { DomainContentBlock } from '../../types/domain.js'
 import { randomUUID, type UUID } from 'crypto'
 import { getSessionId } from 'src/bootstrap/state.js'
-import {
-  LOCAL_COMMAND_STDERR_TAG,
-  LOCAL_COMMAND_STDOUT_TAG,
-} from 'src/constants/xml.js'
 import type {
   SDKAssistantMessage,
   SDKCompactBoundaryMessage,
@@ -111,74 +106,6 @@ export function fromSDKCompactMetadata(
       },
     }),
   }
-}
-
-export function toSDKMessages(messages: Message[]): SDKMessage[] {
-  return messages.flatMap((message): SDKMessage[] => {
-    switch (message.type) {
-      case 'assistant':
-        return [
-          {
-            type: 'assistant',
-            message: normalizeAssistantMessageForSDK(message),
-            session_id: getSessionId(),
-            parent_tool_use_id: null,
-            uuid: message.uuid,
-            error: message.error,
-          },
-        ]
-      case 'user':
-        return [
-          {
-            type: 'user',
-            message: message.message,
-            session_id: getSessionId(),
-            parent_tool_use_id: null,
-            uuid: message.uuid,
-            timestamp: message.timestamp,
-            isSynthetic: message.isMeta || message.isVisibleInTranscriptOnly,
-            // Structured tool output (not the string content sent to the
-            // model — the full Output object). Rides the protobuf catchall
-            // so web viewers can read things like BriefTool's file_uuid
-            // without it polluting model context.
-            ...(message.toolUseResult !== undefined
-              ? { tool_use_result: message.toolUseResult }
-              : {}),
-          },
-        ]
-      case 'system':
-        if (message.subtype === 'compact_boundary' && message.compactMetadata) {
-          return [
-            {
-              type: 'system',
-              subtype: 'compact_boundary' as const,
-              session_id: getSessionId(),
-              uuid: message.uuid,
-              compact_metadata: toSDKCompactMetadata(message.compactMetadata),
-            },
-          ]
-        }
-        // Only convert local_command messages that contain actual command
-        // output (stdout/stderr). The same subtype is also used for command
-        // input metadata (e.g. <command-name>...</command-name>) which must
-        // not leak to the RC web UI.
-        if (
-          message.subtype === 'local_command' &&
-          (message.content.includes(`<${LOCAL_COMMAND_STDOUT_TAG}>`) ||
-            message.content.includes(`<${LOCAL_COMMAND_STDERR_TAG}>`))
-        ) {
-          return [
-            localCommandOutputToSDKAssistantMessage(
-              message.content,
-              message.uuid,
-            ),
-          ]
-        }
-        return []
-      default:
-        return []
-    }
-  })
 }
 
 /**

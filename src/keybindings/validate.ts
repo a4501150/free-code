@@ -1,4 +1,3 @@
-import { plural } from '../utils/stringUtils.js'
 import { chordToString, parseChord, parseKeystroke } from './parser.js'
 import {
   getReservedShortcuts,
@@ -449,51 +448,4 @@ export function validateBindings(
     seen.add(key)
     return true
   })
-}
-
-/**
- * Format a warning for display to the user.
- */
-export function formatWarning(warning: KeybindingWarning): string {
-  const icon = warning.severity === 'error' ? '✗' : '⚠'
-  let msg = `${icon} Keybinding ${warning.severity}: ${warning.message}`
-
-  if (warning.suggestion) {
-    msg += `\n  ${warning.suggestion}`
-  }
-
-  return msg
-}
-
-/**
- * Format multiple warnings for display.
- */
-export function formatWarnings(warnings: KeybindingWarning[]): string {
-  if (warnings.length === 0) return ''
-
-  const errors = warnings.filter(w => w.severity === 'error')
-  const warns = warnings.filter(w => w.severity === 'warning')
-
-  const lines: string[] = []
-
-  if (errors.length > 0) {
-    lines.push(
-      `Found ${errors.length} keybinding ${plural(errors.length, 'error')}:`,
-    )
-    for (const e of errors) {
-      lines.push(formatWarning(e))
-    }
-  }
-
-  if (warns.length > 0) {
-    if (lines.length > 0) lines.push('')
-    lines.push(
-      `Found ${warns.length} keybinding ${plural(warns.length, 'warning')}:`,
-    )
-    for (const w of warns) {
-      lines.push(formatWarning(w))
-    }
-  }
-
-  return lines.join('\n')
 }

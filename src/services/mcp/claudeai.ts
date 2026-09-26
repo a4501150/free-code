@@ -130,7 +130,3 @@ export function clearClaudeAIMcpConfigsCache(): void {
 export function markClaudeAiMcpConnected(_name: string): void {
   return
 }
-
-export function hasClaudeAiMcpEverConnected(_name: string): boolean {
-  return false
-}

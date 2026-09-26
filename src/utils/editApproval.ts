@@ -198,16 +198,6 @@ export function approveWrite(args: {
   return { ok: false, message: FILE_NOT_READ_YET_MESSAGE, errorCode: 2 }
 }
 
-/** Helper for sighting writers: clamp a range to the file and normalize. */
-export function clampSeenRange(
-  range: SeenRange,
-  totalLines: number,
-): SeenRange | null {
-  const start = Math.max(1, Math.floor(range.start))
-  const end = Math.min(totalLines, Math.floor(range.end))
-  return end >= start ? { start, end } : null
-}
-
 /** Merge overlapping/adjacent ranges and sort by start. */
 export function normalizeSeenRanges(ranges: SeenRange[]): SeenRange[] {
   const sorted = [...ranges].sort((a, b) => a.start - b.start)

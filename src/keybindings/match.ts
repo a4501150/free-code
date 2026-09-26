@@ -1,5 +1,5 @@
 import type { Key } from '../ink.js'
-import type { ParsedBinding, ParsedKeystroke } from './types.js'
+import type { ParsedKeystroke } from './types.js'
 
 /**
  * Modifier keys from Ink's Key type that we care about for matching.
@@ -98,19 +98,4 @@ export function matchesKeystroke(
   // matches naturally and "meta+escape" matches Alt+Escape.
 
   return modifiersMatch(inkMods, target)
-}
-
-/**
- * Check if Ink's Key + input matches a parsed binding's first keystroke.
- * For single-keystroke bindings only (Phase 1).
- */
-export function matchesBinding(
-  input: string,
-  key: Key,
-  binding: ParsedBinding,
-): boolean {
-  if (binding.chord.length !== 1) return false
-  const keystroke = binding.chord[0]
-  if (!keystroke) return false
-  return matchesKeystroke(input, key, keystroke)
 }

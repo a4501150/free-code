@@ -334,13 +334,3 @@ export function captureAPIRequest(
   const { messages, ...paramsWithoutMessages } = params
   setLastAPIRequest(paramsWithoutMessages)
 }
-
-/**
- * Reset error log state for testing purposes only.
- * @internal
- */
-export function _resetErrorLogForTesting(): void {
-  errorLogSink = null
-  errorQueue.length = 0
-  inMemoryErrorLog = []
-}

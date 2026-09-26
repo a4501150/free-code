@@ -210,7 +210,6 @@ export const HooksSchema = z.partialRecord(
 
 // Inferred types from schemas
 export type HookCommand = z.infer<typeof HookCommandSchema>
-export type BashCommandHook = Extract<HookCommand, { type: 'command' }>
 export type PromptHook = Extract<HookCommand, { type: 'prompt' }>
 export type AgentHook = Extract<HookCommand, { type: 'agent' }>
 export type HttpHook = Extract<HookCommand, { type: 'http' }>

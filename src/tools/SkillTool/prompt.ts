@@ -1,17 +1,11 @@
 import { memoize } from 'lodash-es'
 import type { Command } from 'src/commands.js'
-import {
-  getCommandName,
-  getSkillToolCommands,
-  getSlashCommandToolSkills,
-} from 'src/commands.js'
+import { getCommandName, getSkillToolCommands } from 'src/commands.js'
 import { COMMAND_NAME_TAG } from '../../constants/xml.js'
 import { stringWidth } from '../../ink/stringWidth.js'
 import { count } from '../../utils/array.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { toError } from '../../utils/errors.js'
 import { truncate } from '../../utils/format.js'
-import { logError } from '../../utils/log.js'
 
 // Skill listing gets 1% of the context window (in characters)
 export const SKILL_BUDGET_CONTEXT_PERCENT = 0.01
@@ -189,26 +183,4 @@ export function getLimitedSkillToolCommands(cwd: string): Promise<Command[]> {
 
 export function clearPromptCache(): void {
   getPrompt.cache?.clear?.()
-}
-
-export async function getSkillInfo(cwd: string): Promise<{
-  totalSkills: number
-  includedSkills: number
-}> {
-  try {
-    const skills = await getSlashCommandToolSkills(cwd)
-
-    return {
-      totalSkills: skills.length,
-      includedSkills: skills.length,
-    }
-  } catch (error) {
-    logError(toError(error))
-
-    // Return zeros rather than throwing - let caller decide how to handle
-    return {
-      totalSkills: 0,
-      includedSkills: 0,
-    }
-  }
 }

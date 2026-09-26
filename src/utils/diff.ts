@@ -7,23 +7,6 @@ import { count } from './array.js'
 export const CONTEXT_LINES = 3
 export const DIFF_TIMEOUT_MS = 5_000
 
-/**
- * Shifts hunk line numbers by offset. Use when a patch was computed from a
- * slice of the file (e.g. readEditContext) rather than the whole file —
- * callers pass `ctx.lineOffset - 1` to convert slice-relative to file-relative.
- */
-export function adjustHunkLineNumbers(
-  hunks: StructuredPatchHunk[],
-  offset: number,
-): StructuredPatchHunk[] {
-  if (offset === 0) return hunks
-  return hunks.map(h => ({
-    ...h,
-    oldStart: h.oldStart + offset,
-    newStart: h.newStart + offset,
-  }))
-}
-
 // For some reason, & confuses the diff library, so we replace it with a token,
 // then substitute it back in after the diff is computed.
 const AMPERSAND_TOKEN = '<<:AMPERSAND_TOKEN:>>'

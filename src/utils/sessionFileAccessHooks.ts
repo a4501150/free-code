@@ -12,12 +12,7 @@ import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { FileWriteTool } from '../tools/FileWriteTool/FileWriteTool.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
 import type { HookCallback } from '../types/hooks.js'
-import {
-  detectSessionFileType,
-  detectSessionPatternType,
-  isAutoMemFile,
-  memoryScopeForPath,
-} from './memoryFileDetection.js'
+import { detectSessionFileType, isAutoMemFile } from './memoryFileDetection.js'
 
 import * as teamMemPaths from '../memdir/teamMemPaths.js'
 import * as teamMemWatcher from '../services/teamMemorySync/watcher.js'
@@ -67,30 +62,6 @@ function getSessionFileTypeFromInput(
     default:
       return null
   }
-}
-
-/**
- * Check if a tool use constitutes a memory file access.
- * Detects session memory (via Read/Grep/Glob) and memdir access (via Read/Edit/Write).
- * Uses the same conditions as the PostToolUse session file access hooks.
- */
-export function isMemoryFileAccess(
-  toolName: string,
-  toolInput: unknown,
-): boolean {
-  if (getSessionFileTypeFromInput(toolName, toolInput) === 'session_memory') {
-    return true
-  }
-
-  const filePath = getFilePathFromInput(toolName, toolInput)
-  if (
-    filePath &&
-    (isAutoMemFile(filePath) || teamMemPaths.isTeamMemFile(filePath))
-  ) {
-    return true
-  }
-
-  return false
 }
 
 /**

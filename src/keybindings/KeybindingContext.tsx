@@ -175,16 +175,6 @@ export function KeybindingProvider({
   )
 }
 
-export function useKeybindingContext(): KeybindingContextValue {
-  const ctx = useContext(KeybindingContext)
-  if (!ctx) {
-    throw new Error(
-      'useKeybindingContext must be used within KeybindingProvider',
-    )
-  }
-  return ctx
-}
-
 /**
  * Optional hook that returns undefined outside of KeybindingProvider.
  * Useful for components that may render before provider is available.

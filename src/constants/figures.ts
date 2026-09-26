@@ -19,21 +19,15 @@ export const PAUSE_ICON = '\u23f8' // ⏸
 
 // MCP subscription indicators
 export const REFRESH_ARROW = '\u21bb' // ↻ - used for resource update indicator
-export const CHANNEL_ARROW = '\u2190' // ← - inbound channel message indicator
-export const INJECTED_ARROW = '\u2192' // → - cross-session injected message indicator
-export const FORK_GLYPH = '\u2442' // ⑂ - fork directive indicator
+export const CHANNEL_ARROW = '\u2190' // ⑂ - fork directive indicator
 
 // Review status indicators (ultrareview diamond states)
 export const DIAMOND_OPEN = '\u25c7' // ◇ - running
 export const DIAMOND_FILLED = '\u25c6' // ◆ - completed/failed
-export const REFERENCE_MARK = '\u203b' // ※ - komejirushi, away-summary recap marker
-
-// Issue flag indicator
-export const FLAG_ICON = '\u2691' // ⚑ - used for issue flag banner
+export const REFERENCE_MARK = '\u203b' // ⚑ - used for issue flag banner
 
 // Blockquote indicator
-export const BLOCKQUOTE_BAR = '\u258e' // ▎ - left one-quarter block, used as blockquote line prefix
-export const HEAVY_HORIZONTAL = '\u2501' // ━ - heavy box-drawing horizontal
+export const BLOCKQUOTE_BAR = '\u258e' // ━ - heavy box-drawing horizontal
 
 // Disclosure triangles for a row whose body expands in place
 export const DISCLOSURE_COLLAPSED = '\u25b8' // ▸

@@ -7,11 +7,6 @@ export interface IDEDiffConfig {
   editMode?: 'single' | 'multiple'
 }
 
-export interface IDEDiffChangeInput {
-  file_path: string
-  newContent: string
-}
-
 export interface IDEDiffSupport<TInput extends ToolInput> {
   getConfig(input: TInput): IDEDiffConfig
   applyChanges(input: TInput, newContent: string): TInput

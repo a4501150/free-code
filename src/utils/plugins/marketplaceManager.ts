@@ -53,7 +53,6 @@ import {
 import { markPluginVersionOrphaned } from './cacheUtils.js'
 import { classifyFetchError, logPluginFetch } from './fetchTelemetry.js'
 import { removeAllPluginsForMarketplace } from './installedPluginsManager.js'
-import { formatSourceForDisplay } from './marketplaceHelpers.js'
 import {
   OFFICIAL_MARKETPLACE_NAME,
   OFFICIAL_MARKETPLACE_SOURCE,
@@ -2572,8 +2571,4 @@ export async function setMarketplaceAutoUpdate(
   }
 
   logForDebugging(`Set autoUpdate=${autoUpdate} for marketplace: ${name}`)
-}
-
-export const _test = {
-  redactUrlCredentials,
 }

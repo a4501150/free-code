@@ -367,4 +367,3 @@ function computeTopLevelEntries(
 }
 
 export default FileIndex
-export type { FileIndex as FileIndexType }

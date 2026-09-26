@@ -12,7 +12,7 @@
  * scripts/excluded-strings.txt to avoid leaking them.
  */
 
-export type { ModelShortName, ModelName, ModelSetting } from './modelTypes.js'
+export type { ModelName, ModelSetting } from './modelTypes.js'
 export {
   getUtilityModel,
   getUserSpecifiedModelSetting,

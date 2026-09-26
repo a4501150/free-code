@@ -1,10 +1,8 @@
 import type { Client } from '@modelcontextprotocol/client'
-import axios from 'axios'
 import { execa } from 'execa'
 import capitalize from 'lodash-es/capitalize.js'
 import memoize from 'lodash-es/memoize.js'
 import { createConnection } from 'net'
-import * as os from 'os'
 import { basename, join, sep as pathSeparator, resolve } from 'path'
 
 import { getIsScrollDraining, getOriginalCwd } from '../bootstrap/state.js'
@@ -18,7 +16,7 @@ import {
   getInitialSettings,
   updateSettingsForSource,
 } from './settings/settings.js'
-import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
+import { getClaudeConfigHomeDir } from './envUtils.js'
 import {
   execFileNoThrow,
   execFileNoThrowWithCwd,
@@ -1157,14 +1155,6 @@ export async function detectRunningIDEsCached(): Promise<IdeType[]> {
     return detectRunningIDEs()
   }
   return cachedRunningIDEs
-}
-
-/**
- * Resets the cache for detectRunningIDEsCached.
- * Exported for testing - allows resetting state between tests.
- */
-export function resetDetectRunningIDEs(): void {
-  cachedRunningIDEs = null
 }
 
 export function getConnectedIdeName(

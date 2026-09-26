@@ -12,16 +12,6 @@ export const LOCAL_COMMAND_STDOUT_TAG = 'local-command-stdout'
 export const LOCAL_COMMAND_STDERR_TAG = 'local-command-stderr'
 export const LOCAL_COMMAND_CAVEAT_TAG = 'local-command-caveat'
 
-// All terminal-related tags that indicate a message is terminal output, not a user prompt
-export const TERMINAL_OUTPUT_TAGS = [
-  BASH_INPUT_TAG,
-  BASH_STDOUT_TAG,
-  BASH_STDERR_TAG,
-  LOCAL_COMMAND_STDOUT_TAG,
-  LOCAL_COMMAND_STDERR_TAG,
-  LOCAL_COMMAND_CAVEAT_TAG,
-] as const
-
 export const TICK_TAG = 'tick'
 
 export const SYSTEM_REMINDER_TAG = 'system-reminder'
@@ -34,19 +24,9 @@ export const TASK_TYPE_TAG = 'task-type'
 export const OUTPUT_FILE_TAG = 'output-file'
 export const STATUS_TAG = 'status'
 export const SUMMARY_TAG = 'summary'
-export const REASON_TAG = 'reason'
 export const WORKTREE_TAG = 'worktree'
 export const WORKTREE_PATH_TAG = 'worktreePath'
 export const WORKTREE_BRANCH_TAG = 'worktreeBranch'
-
-// XML tag name for remote review results.
-export const REMOTE_REVIEW_TAG = 'remote-review'
-
-// Heartbeat progress tag for remote review orchestration.
-export const REMOTE_REVIEW_PROGRESS_TAG = 'remote-review-progress'
-
-// XML tag name for external channel messages
-export const CHANNEL_MESSAGE_TAG = 'channel-message'
 export const CHANNEL_TAG = 'channel'
 
 // Common argument patterns for slash commands that request help

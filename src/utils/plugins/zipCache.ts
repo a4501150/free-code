@@ -46,7 +46,6 @@ import { basename, dirname, join } from 'path'
 import { logForDebugging } from '../debug.js'
 import { getInitialSettings } from '../settings/settings.js'
 import { parseZipModes, unzipFile } from '../dxt/zip.js'
-import { isEnvTruthy } from '../envUtils.js'
 import { getFsImplementation } from '../fsOperations.js'
 import { expandTilde } from '../permissions/pathValidation.js'
 import type { MarketplaceSource } from './schemas.js'
@@ -80,17 +79,6 @@ export function getZipCacheKnownMarketplacesPath(): string {
     throw new Error('Plugin zip cache is not enabled')
   }
   return join(cachePath, 'known_marketplaces.json')
-}
-
-/**
- * Get the path to installed_plugins.json in the zip cache.
- */
-export function getZipCacheInstalledPluginsPath(): string {
-  const cachePath = getPluginZipCachePath()
-  if (!cachePath) {
-    throw new Error('Plugin zip cache is not enabled')
-  }
-  return join(cachePath, 'installed_plugins.json')
 }
 
 /**
@@ -160,14 +148,6 @@ export async function cleanupSessionPluginCache(): Promise<void> {
     sessionPluginCachePath = null
     sessionPluginCachePromise = null
   }
-}
-
-/**
- * Reset the session plugin cache path (for testing).
- */
-export function resetSessionPluginCache(): void {
-  sessionPluginCachePath = null
-  sessionPluginCachePromise = null
 }
 
 /**

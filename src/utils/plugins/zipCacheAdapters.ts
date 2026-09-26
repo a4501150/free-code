@@ -18,8 +18,6 @@ import { loadKnownMarketplacesConfigSafe } from './marketplaceManager.js'
 import {
   type KnownMarketplacesFile,
   KnownMarketplacesFileSchema,
-  type PluginMarketplace,
-  PluginMarketplaceSchema,
 } from './schemas.js'
 import {
   atomicWriteToZipCache,
@@ -62,36 +60,6 @@ export async function writeZipCacheKnownMarketplaces(
     getZipCacheKnownMarketplacesPath(),
     jsonStringify(data, null, 2),
   )
-}
-
-// ── Marketplace JSON ──
-
-/**
- * Read a marketplace JSON file from the zip cache.
- */
-export async function readMarketplaceJson(
-  marketplaceName: string,
-): Promise<PluginMarketplace | null> {
-  const zipCachePath = getPluginZipCachePath()
-  if (!zipCachePath) {
-    return null
-  }
-  const relPath = getMarketplaceJsonRelativePath(marketplaceName)
-  const fullPath = join(zipCachePath, relPath)
-  try {
-    const content = await readFile(fullPath, 'utf-8')
-    const parsed = jsonParse(content)
-    const result = PluginMarketplaceSchema.safeParse(parsed)
-    if (result.success) {
-      return result.data
-    }
-    logForDebugging(
-      `Invalid marketplace JSON for ${marketplaceName}: ${result.error}`,
-    )
-    return null
-  } catch {
-    return null
-  }
 }
 
 /**

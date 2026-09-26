@@ -22,10 +22,6 @@ export function getStreamActivity(): StreamActivity | undefined {
   return current
 }
 
-export function clearStreamActivity(): void {
-  current = undefined
-}
-
 let compacting = false
 let onActivityChanged: (() => void) | undefined
 
@@ -47,12 +43,6 @@ let inProgressToolUseIds: Set<string> = new Set()
 
 export function getInProgressToolUseIds(): ReadonlySet<string> {
   return inProgressToolUseIds
-}
-
-export function setInProgressToolUseIds(
-  updater: (prev: Set<string>) => Set<string>,
-): void {
-  inProgressToolUseIds = updater(inProgressToolUseIds)
 }
 
 /** Mirrors the phase transitions in `handleMessageFromStream`. */

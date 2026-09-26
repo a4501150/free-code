@@ -130,9 +130,6 @@ let hasFormattedOutput = false
 export function setHasFormattedOutput(value: boolean): void {
   hasFormattedOutput = value
 }
-export function getHasFormattedOutput(): boolean {
-  return hasFormattedOutput
-}
 
 let debugWriter: BufferedWriter | null = null
 let pendingWrite: Promise<void> = Promise.resolve()
@@ -195,11 +192,6 @@ function getDebugWriter(): BufferedWriter {
     })
   }
   return debugWriter
-}
-
-export async function flushDebugLogs(): Promise<void> {
-  debugWriter?.flush()
-  await pendingWrite
 }
 
 export function logForDebugging(

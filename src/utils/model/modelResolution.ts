@@ -11,11 +11,11 @@ import { getMainLoopModelOverride } from '../../bootstrap/state.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { getProviderRegistry } from './providerRegistry.js'
 import type { ModelName, ModelSetting } from './modelTypes.js'
-import { qualifyModel, stripContextSuffix } from './parseModelString.js'
+import { qualifyModel } from './parseModelString.js'
 import { parseModelStringFromRegistry } from './parseModelStringWithRegistry.js'
 
 // Re-export types from modelTypes for backward compat
-export type { ModelShortName, ModelName, ModelSetting } from './modelTypes.js'
+export type { ModelName, ModelSetting } from './modelTypes.js'
 
 export function getUtilityModel(): ModelName {
   // Priority: modelSettings.json utilityModel > defaultModel

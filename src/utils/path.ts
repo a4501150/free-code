@@ -85,20 +85,6 @@ export function expandPath(path: string, baseDir?: string): string {
 }
 
 /**
- * Converts an absolute path to a relative path from cwd, to save tokens in
- * tool output. If the path is outside cwd (relative path would start with ..),
- * returns the absolute path unchanged so it stays unambiguous.
- *
- * @param absolutePath - The absolute path to relativize
- * @returns Relative path if under cwd, otherwise the original absolute path
- */
-export function toRelativePath(absolutePath: string): string {
-  const relativePath = relative(getCwd(), absolutePath)
-  // If the relative path would go outside cwd (starts with ..), keep absolute
-  return relativePath.startsWith('..') ? absolutePath : relativePath
-}
-
-/**
  * Gets the directory path for a given file or directory path.
  * If the path is a directory, returns the path itself.
  * If the path is a file or doesn't exist, returns the parent directory.

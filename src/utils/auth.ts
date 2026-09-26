@@ -22,7 +22,6 @@ import {
 } from '../services/oauth/client.js'
 import { getActiveLoginState } from '../services/oauth/logins/active.js'
 import { mirrorClaudeAiOAuthToModelSettings } from '../services/oauth/logins/claudeAi.js'
-import { getOauthProfileFromOauthToken } from '../services/oauth/getOauthProfile.js'
 import type {
   BillingType,
   OAuthTokens,
@@ -43,7 +42,6 @@ import { clearBetasCaches } from './betas.js'
 import { checkHasTrustDialogAccepted } from './config.js'
 import { logAntError, logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, isBareMode, isEnvTruthy } from './envUtils.js'
-import { errorMessage } from './errors.js'
 import { execSyncWithDefaults_DEPRECATED } from './execFileNoThrow.js'
 import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
@@ -59,7 +57,6 @@ import {
 import {
   clearKeychainCache,
   getMacOsKeychainStorageServiceName,
-  getUsername,
 } from './secureStorage/macOsKeychainHelpers.js'
 import {
   getSettings_DEPRECATED,
@@ -1070,10 +1067,6 @@ export async function saveApiKey(_apiKey: string): Promise<void> {
   // No-op: auth is provider-managed via freecode.json
 }
 
-export function isCustomApiKeyApproved(_apiKey: string): boolean {
-  return true
-}
-
 export async function removeApiKey(): Promise<void> {
   await maybeRemoveApiKeyFromMacOSKeychain()
   getApiKeyFromConfigOrMacOSKeychain.cache.clear?.()
@@ -1464,23 +1457,6 @@ export function isOverageProvisioningAllowed(): boolean {
   return true
 }
 
-// Returns whether the user has Opus access at all, regardless of whether they
-// are a subscriber or PayG.
-export function hasOpusAccess(): boolean {
-  const subscriptionType = getSubscriptionType()
-
-  return (
-    subscriptionType === 'max' ||
-    subscriptionType === 'enterprise' ||
-    subscriptionType === 'team' ||
-    subscriptionType === 'pro' ||
-    // subscriptionType === null covers both API users and the case where
-    // subscribers do not have subscription type populated. For those
-    // subscribers, when in doubt, we should not limit their access to Opus.
-    subscriptionType === null
-  )
-}
-
 export function getSubscriptionType(): SubscriptionType | null {
   // Check for mock subscription type first (ANT-only testing)
   if (shouldUseMockSubscription()) {
@@ -1498,27 +1474,8 @@ export function getSubscriptionType(): SubscriptionType | null {
   return oauthTokens.subscriptionType ?? null
 }
 
-export function isMaxSubscriber(): boolean {
-  return getSubscriptionType() === 'max'
-}
-
-export function isTeamSubscriber(): boolean {
-  return getSubscriptionType() === 'team'
-}
-
-export function isTeamPremiumSubscriber(): boolean {
-  return (
-    getSubscriptionType() === 'team' &&
-    getRateLimitTier() === 'default_claude_max_5x'
-  )
-}
-
 export function isEnterpriseSubscriber(): boolean {
   return getSubscriptionType() === 'enterprise'
-}
-
-export function isProSubscriber(): boolean {
-  return getSubscriptionType() === 'pro'
 }
 
 export function getRateLimitTier(): string | null {
@@ -1563,111 +1520,13 @@ function getConfiguredOtelHeadersHelper(): string | undefined {
   return mergedSettings.otelHeadersHelper
 }
 
-/**
- * Check if the configured otelHeadersHelper comes from project settings (projectSettings or localSettings)
- */
-export function isOtelHeadersHelperFromProjectOrLocalSettings(): boolean {
-  const otelHeadersHelper = getConfiguredOtelHeadersHelper()
-  if (!otelHeadersHelper) {
-    return false
-  }
-
-  const projectSettings = getSettingsForSource('projectSettings')
-  const localSettings = getSettingsForSource('localSettings')
-  return (
-    projectSettings?.otelHeadersHelper === otelHeadersHelper ||
-    localSettings?.otelHeadersHelper === otelHeadersHelper
-  )
-}
-
 // Cache for debouncing otelHeadersHelper calls
 let cachedOtelHeaders: Record<string, string> | null = null
 let cachedOtelHeadersTimestamp = 0
-const DEFAULT_OTEL_HEADERS_DEBOUNCE_MS = 29 * 60 * 1000 // 29 minutes
-
-export function getOtelHeadersFromHelper(): Record<string, string> {
-  const otelHeadersHelper = getConfiguredOtelHeadersHelper()
-
-  if (!otelHeadersHelper) {
-    return {}
-  }
-
-  // Return cached headers if still valid (debounce)
-  const debounceMs = parseInt(
-    process.env.CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS ||
-      DEFAULT_OTEL_HEADERS_DEBOUNCE_MS.toString(),
-  )
-  if (
-    cachedOtelHeaders &&
-    Date.now() - cachedOtelHeadersTimestamp < debounceMs
-  ) {
-    return cachedOtelHeaders
-  }
-
-  if (isOtelHeadersHelperFromProjectOrLocalSettings()) {
-    // Check if trust has been established for this project
-    const hasTrust = checkHasTrustDialogAccepted()
-    if (!hasTrust) {
-      return {}
-    }
-  }
-
-  try {
-    const result = execSyncWithDefaults_DEPRECATED(otelHeadersHelper, {
-      timeout: 30000, // 30 seconds - allows for auth service latency
-    })
-      ?.toString()
-      .trim()
-    if (!result) {
-      throw new Error('otelHeadersHelper did not return a valid value')
-    }
-
-    const headers = jsonParse(result)
-    if (
-      typeof headers !== 'object' ||
-      headers === null ||
-      Array.isArray(headers)
-    ) {
-      throw new Error(
-        'otelHeadersHelper must return a JSON object with string key-value pairs',
-      )
-    }
-
-    // Validate all values are strings
-    for (const [key, value] of Object.entries(headers)) {
-      if (typeof value !== 'string') {
-        throw new Error(
-          `otelHeadersHelper returned non-string value for key "${key}": ${typeof value}`,
-        )
-      }
-    }
-
-    // Cache the result
-    cachedOtelHeaders = headers as Record<string, string>
-    cachedOtelHeadersTimestamp = Date.now()
-
-    return cachedOtelHeaders
-  } catch (error) {
-    logError(
-      new Error(
-        `Error getting OpenTelemetry headers from otelHeadersHelper (in settings): ${errorMessage(error)}`,
-      ),
-    )
-    throw error
-  }
-}
+const DEFAULT_OTEL_HEADERS_DEBOUNCE_MS = 29 * 60 * 1000
 
 function isConsumerPlan(plan: SubscriptionType): plan is 'max' | 'pro' {
   return plan === 'max' || plan === 'pro'
-}
-
-export function isConsumerSubscriber(): boolean {
-  const subscriptionType = getSubscriptionType()
-  return (
-    isClaudeAISubscriber() &&
-    subscriptionType !== null &&
-    isConsumerPlan(subscriptionType)
-  )
 }
 
 export type UserAccountInfo = {

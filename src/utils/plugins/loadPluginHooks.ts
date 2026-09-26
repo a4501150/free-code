@@ -198,14 +198,6 @@ export async function pruneRemovedPluginHooks(): Promise<void> {
 }
 
 /**
- * Reset hot reload subscription state. Only for testing.
- */
-export function resetHotReloadState(): void {
-  hotReloadSubscribed = false
-  lastPluginSettingsSnapshot = undefined
-}
-
-/**
  * Build a stable string snapshot of the settings that feed into
  * `loadAllPluginsCacheOnly()` for change detection. Sorts keys so comparison is
  * deterministic regardless of insertion order.

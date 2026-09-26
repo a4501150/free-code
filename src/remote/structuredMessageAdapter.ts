@@ -20,9 +20,7 @@ import type {
   StreamEvent,
   SystemMessage,
 } from '../types/message.js'
-import { logForDebugging } from '../utils/debug.js'
 import { fromSDKCompactMetadata } from '../utils/messages/mappers.js'
-import { createUserMessage } from '../utils/messages.js'
 
 /**
  * Converts SDKMessage from CCR to REPL Message types.
@@ -153,14 +151,6 @@ function convertCompactBoundaryMessage(
   }
 }
 
-/**
- * Result of converting an SDKMessage
- */
-export type ConvertedMessage =
-  | { type: 'message'; message: Message }
-  | { type: 'stream_event'; event: StreamEvent }
-  | { type: 'ignored' }
-
 type ConvertOptions = {
   /** Convert user messages containing tool_result content blocks into UserMessages.
    * Used by direct connect mode where tool results come from the remote server
@@ -174,150 +164,4 @@ type ConvertOptions = {
    * ignored by default.
    */
   convertUserTextMessages?: boolean
-}
-
-/**
- * Convert an SDKMessage to REPL message format
- */
-export function convertSDKMessage(
-  msg: SDKMessage,
-  opts?: ConvertOptions,
-): ConvertedMessage {
-  switch (msg.type) {
-    case 'assistant':
-      return { type: 'message', message: convertAssistantMessage(msg) }
-
-    case 'user': {
-      const content = (msg.message as { content?: unknown } | undefined)
-        ?.content
-      // Tool result messages from the remote server need to be converted so
-      // they render and collapse like local tool results. Detect via content
-      // shape (tool_result blocks) — parent_tool_use_id is NOT reliable: the
-      // agent-side normalizeMessage() hardcodes it to null for top-level
-      // tool results, so it can't distinguish tool results from prompt echoes.
-      const isToolResult =
-        Array.isArray(content) && content.some(b => b.type === 'tool_result')
-      if (opts?.convertToolResults && isToolResult) {
-        return {
-          type: 'message',
-          message: createUserMessage({
-            content,
-            toolUseResult: msg.tool_use_result,
-            uuid: msg.uuid as UUID,
-            timestamp: msg.timestamp,
-          }),
-        }
-      }
-      // When converting historical events, user-typed messages need to be
-      // rendered (they weren't added locally by the REPL). Skip tool_results
-      // here — already handled above.
-      if (opts?.convertUserTextMessages && !isToolResult) {
-        if (typeof content === 'string' || Array.isArray(content)) {
-          return {
-            type: 'message',
-            message: createUserMessage({
-              content,
-              toolUseResult: msg.tool_use_result,
-              uuid: msg.uuid as UUID,
-              timestamp: msg.timestamp,
-            }),
-          }
-        }
-      }
-      // User-typed messages (string content) are already added locally by REPL.
-      // In CCR mode, all user messages are ignored (tool results handled differently).
-      return { type: 'ignored' }
-    }
-
-    case 'stream_event': {
-      const event = convertStreamEvent(msg)
-      return event ? { type: 'stream_event', event } : { type: 'ignored' }
-    }
-
-    case 'result':
-      // Only show result messages for errors. Success results are noise
-      // in multi-turn sessions (isLoading=false is sufficient signal).
-      if (msg.subtype !== 'success') {
-        return { type: 'message', message: convertResultMessage(msg) }
-      }
-      return { type: 'ignored' }
-
-    case 'system':
-      if (msg.subtype === 'init') {
-        return { type: 'message', message: convertInitMessage(msg) }
-      }
-      if (msg.subtype === 'status') {
-        const statusMsg = convertStatusMessage(msg)
-        return statusMsg
-          ? { type: 'message', message: statusMsg }
-          : { type: 'ignored' }
-      }
-      if (msg.subtype === 'compact_boundary') {
-        return {
-          type: 'message',
-          message: convertCompactBoundaryMessage(msg),
-        }
-      }
-      // hook_response and other subtypes
-      logForDebugging(
-        `[structuredMessageAdapter] Ignoring system message subtype: ${msg.subtype}`,
-      )
-      return { type: 'ignored' }
-
-    case 'tool_progress':
-      return { type: 'message', message: convertToolProgressMessage(msg) }
-
-    case 'auth_status':
-      // Auth status is handled separately, not converted to a display message
-      logForDebugging('[structuredMessageAdapter] Ignoring auth_status message')
-      return { type: 'ignored' }
-
-    case 'tool_use_summary':
-      // Tool use summaries are SDK-only events, not displayed in REPL
-      logForDebugging(
-        '[structuredMessageAdapter] Ignoring tool_use_summary message',
-      )
-      return { type: 'ignored' }
-
-    case 'rate_limit_event':
-      // Rate limit events are SDK-only events, not displayed in REPL
-      logForDebugging(
-        '[structuredMessageAdapter] Ignoring rate_limit_event message',
-      )
-      return { type: 'ignored' }
-
-    default: {
-      // Gracefully ignore unknown message types. The backend may send new
-      // types before the client is updated; logging helps with debugging
-      // without crashing or losing the session.
-      logForDebugging(
-        `[structuredMessageAdapter] Unknown message type: ${(msg as { type: string }).type}`,
-      )
-      return { type: 'ignored' }
-    }
-  }
-}
-
-/**
- * Check if an SDKMessage indicates the session has ended
- */
-export function isSessionEndMessage(msg: SDKMessage): boolean {
-  return msg.type === 'result'
-}
-
-/**
- * Check if an SDKResultMessage indicates success
- */
-export function isSuccessResult(msg: SDKResultMessage): boolean {
-  return msg.subtype === 'success'
-}
-
-/**
- * Extract the result text from a successful SDKResultMessage
- */
-export function getResultText(msg: SDKResultMessage): string | null {
-  if (msg.subtype === 'success') {
-    return msg.result
-  }
-  return null
 }

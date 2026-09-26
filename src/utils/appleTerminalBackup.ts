@@ -45,7 +45,3 @@ export async function backupTerminalPreferences(): Promise<string | null> {
 type RestoreResult = {
   status: 'no_backup'
 }
-
-export async function checkAndRestoreTerminalBackup(): Promise<RestoreResult> {
-  return { status: 'no_backup' }
-}

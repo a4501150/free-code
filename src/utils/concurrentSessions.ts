@@ -25,7 +25,6 @@ export const SESSION_KINDS = [
   'daemon-worker',
 ] as const
 export type SessionKind = (typeof SESSION_KINDS)[number]
-export type SessionStatus = 'busy' | 'idle' | 'waiting'
 
 function getSessionsDir(): string {
   return join(getClaudeConfigHomeDir(), 'sessions')
@@ -36,10 +35,6 @@ function envSessionKind(): SessionKind | undefined {
   // person sits at. Callers that weigh holders against each other need to tell
   // the two apart.
   return isWebuiManagedProcess() ? 'daemon-worker' : undefined
-}
-
-export function isBgSession(): boolean {
-  return false
 }
 
 /**
@@ -123,11 +118,6 @@ export async function updateSessionName(
   if (!name) return
   await updatePidFile({ name })
 }
-
-export async function updateSessionActivity(_patch: {
-  status?: SessionStatus
-  waitingFor?: string
-}): Promise<void> {}
 
 /**
  * Count live concurrent CLI sessions (including this one).

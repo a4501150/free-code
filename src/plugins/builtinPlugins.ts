@@ -120,13 +120,6 @@ export function getBuiltinPluginSkillCommands(): Command[] {
   return commands
 }
 
-/**
- * Clear built-in plugins registry (for testing).
- */
-export function clearBuiltinPlugins(): void {
-  BUILTIN_PLUGINS.clear()
-}
-
 // --
 
 function skillDefinitionToCommand(definition: BundledSkillDefinition): Command {

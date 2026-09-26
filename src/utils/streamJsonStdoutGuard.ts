@@ -108,16 +108,3 @@ export function installStreamJsonStdoutGuard(): void {
     installed = false
   })
 }
-
-/**
- * Testing-only reset. Restores the real stdout.write and clears the line
- * buffer so subsequent tests start from a clean slate.
- */
-export function _resetStreamJsonStdoutGuardForTesting(): void {
-  if (originalWrite) {
-    process.stdout.write = originalWrite
-    originalWrite = null
-  }
-  buffer = ''
-  installed = false
-}

@@ -38,10 +38,3 @@ export function subscribeTerminalFocus(cb: () => void): () => void {
     subscribers.delete(cb)
   }
 }
-
-export function resetTerminalFocusState(): void {
-  focusState = 'unknown'
-  for (const cb of subscribers) {
-    cb()
-  }
-}

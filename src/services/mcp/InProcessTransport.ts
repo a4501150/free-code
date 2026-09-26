@@ -47,17 +47,3 @@ class InProcessTransport implements Transport {
     }
   }
 }
-
-/**
- * Creates a pair of linked transports for in-process MCP communication.
- * Messages sent on one transport are delivered to the other's `onmessage`.
- *
- * @returns [clientTransport, serverTransport]
- */
-export function createLinkedTransportPair(): [Transport, Transport] {
-  const a = new InProcessTransport()
-  const b = new InProcessTransport()
-  a._setPeer(b)
-  b._setPeer(a)
-  return [a, b]
-}

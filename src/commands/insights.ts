@@ -634,34 +634,6 @@ function logToSessionMeta(log: LogOption): SessionMeta {
   }
 }
 
-/**
- * Deduplicate conversation branches within the same session.
- *
- * When a session file has multiple leaf messages (from retries or branching),
- * loadAllLogsFromSessionFile produces one LogOption per leaf. Each branch
- * shares the same root message, so its duration overlaps with sibling
- * branches. This keeps only the branch with the most user messages
- * (tie-break by longest duration) per session_id.
- */
-export function deduplicateSessionBranches(
-  entries: Array<{ log: LogOption; meta: SessionMeta }>,
-): Array<{ log: LogOption; meta: SessionMeta }> {
-  const bestBySession = new Map<string, { log: LogOption; meta: SessionMeta }>()
-  for (const entry of entries) {
-    const id = entry.meta.session_id
-    const existing = bestBySession.get(id)
-    if (
-      !existing ||
-      entry.meta.user_message_count > existing.meta.user_message_count ||
-      (entry.meta.user_message_count === existing.meta.user_message_count &&
-        entry.meta.duration_minutes > existing.meta.duration_minutes)
-    ) {
-      bestBySession.set(id, entry)
-    }
-  }
-  return [...bestBySession.values()]
-}
-
 function formatTranscriptForFacets(log: LogOption): string {
   const lines: string[] = []
   const meta = logToSessionMeta(log)
@@ -2373,87 +2345,6 @@ function generateHtmlReport(
   <script>${js}</script>
 </body>
 </html>`
-}
-
-// ============================================================================
-// Export Types & Functions
-// ============================================================================
-
-/**
- * Structured export format for claudescope consumption
- */
-export type InsightsExport = {
-  metadata: {
-    username: string
-    generated_at: string
-    claude_code_version: string
-    date_range: { start: string; end: string }
-    session_count: number
-  }
-  aggregated_data: AggregatedData
-  insights: InsightResults
-  facets_summary?: {
-    total: number
-    goal_categories: Record<string, number>
-    outcomes: Record<string, number>
-    satisfaction: Record<string, number>
-    friction: Record<string, number>
-  }
-}
-
-/**
- * Build export data from already-computed values.
- * Used by background upload to S3.
- */
-export function buildExportData(
-  data: AggregatedData,
-  insights: InsightResults,
-  facets: Map<string, SessionFacets>,
-): InsightsExport {
-  const version = typeof MACRO !== 'undefined' ? MACRO.VERSION : 'unknown'
-
-  const facets_summary = {
-    total: facets.size,
-    goal_categories: {} as Record<string, number>,
-    outcomes: {} as Record<string, number>,
-    satisfaction: {} as Record<string, number>,
-    friction: {} as Record<string, number>,
-  }
-  for (const f of facets.values()) {
-    for (const [cat, count] of safeEntries(f.goal_categories)) {
-      if (count > 0) {
-        facets_summary.goal_categories[cat] =
-          (facets_summary.goal_categories[cat] || 0) + count
-      }
-    }
-    facets_summary.outcomes[f.outcome] =
-      (facets_summary.outcomes[f.outcome] || 0) + 1
-    for (const [level, count] of safeEntries(f.user_satisfaction_counts)) {
-      if (count > 0) {
-        facets_summary.satisfaction[level] =
-          (facets_summary.satisfaction[level] || 0) + count
-      }
-    }
-    for (const [type, count] of safeEntries(f.friction_counts)) {
-      if (count > 0) {
-        facets_summary.friction[type] =
-          (facets_summary.friction[type] || 0) + count
-      }
-    }
-  }
-
-  return {
-    metadata: {
-      username: process.env.SAFEUSER || process.env.USER || 'unknown',
-      generated_at: new Date().toISOString(),
-      claude_code_version: version,
-      date_range: data.date_range,
-      session_count: data.total_sessions,
-    },
-    aggregated_data: data,
-    insights,
-    facets_summary,
-  }
 }
 
 // ============================================================================

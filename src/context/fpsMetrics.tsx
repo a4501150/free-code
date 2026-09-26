@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react'
+import React, { createContext } from 'react'
 import type { FpsMetrics } from '../utils/fpsTracker.js'
 
 type FpsMetricsGetter = () => FpsMetrics | undefined
@@ -19,8 +19,4 @@ export function FpsMetricsProvider({
       {children}
     </FpsMetricsContext.Provider>
   )
-}
-
-export function useFpsMetrics(): FpsMetricsGetter | undefined {
-  return useContext(FpsMetricsContext)
 }

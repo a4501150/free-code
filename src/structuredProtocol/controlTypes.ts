@@ -8,33 +8,18 @@
 
 import type { z } from 'zod/v4'
 import type {
-  ControlErrorResponseSchema,
-  ControlResponseSchema,
-  SDKControlCancelRequestSchema,
   SDKControlInitializeRequestSchema,
   SDKControlInitializeResponseSchema,
   SDKControlMcpSetServersResponseSchema,
-  SDKControlPermissionRequestSchema,
   SDKControlReloadPluginsResponseSchema,
   SDKControlRequestSchema,
   SDKControlResponseSchema,
-  SDKKeepAliveMessageSchema,
-  SDKUpdateEnvironmentVariablesMessageSchema,
   StdinMessageSchema,
   StdoutMessageSchema,
 } from './controlSchemas.js'
 
 export type SDKControlRequest = z.infer<typeof SDKControlRequestSchema>
 export type SDKControlResponse = z.infer<typeof SDKControlResponseSchema>
-export type SDKControlCancelRequest = z.infer<
-  typeof SDKControlCancelRequestSchema
->
-export type ControlSuccessResponse = z.infer<typeof ControlResponseSchema>
-export type ControlErrorResponse = z.infer<typeof ControlErrorResponseSchema>
-
-export type SDKControlPermissionRequest = z.infer<
-  typeof SDKControlPermissionRequestSchema
->
 
 export type SDKControlInitializeRequest = z.infer<
   typeof SDKControlInitializeRequestSchema
@@ -49,12 +34,6 @@ export type SDKControlMcpSetServersResponse = z.infer<
 
 export type SDKControlReloadPluginsResponse = z.infer<
   typeof SDKControlReloadPluginsResponseSchema
->
-
-export type SDKKeepAliveMessage = z.infer<typeof SDKKeepAliveMessageSchema>
-
-export type SDKUpdateEnvironmentVariablesMessage = z.infer<
-  typeof SDKUpdateEnvironmentVariablesMessageSchema
 >
 
 /**

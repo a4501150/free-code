@@ -16,7 +16,6 @@ import {
   getSettingsForSource,
   updateSettingsForSource,
 } from '../settings/settings.js'
-import { buildPluginTelemetryFields } from '../telemetry/pluginTelemetry.js'
 import { clearAllCaches } from './cacheUtils.js'
 import {
   formatDependencyCountSuffix,
@@ -30,7 +29,6 @@ import {
 } from './installedPluginsManager.js'
 import { getMarketplaceCacheOnly, getPluginById } from './marketplaceManager.js'
 import {
-  isOfficialMarketplaceName,
   parsePluginIdentifier,
   scopeToSettingSource,
 } from './pluginIdentifier.js'
@@ -244,26 +242,6 @@ export function registerPluginInstallation(
     scope,
     projectPath,
   )
-}
-
-/**
- * Parse plugin ID into components
- *
- * @param pluginId - Plugin ID in "plugin@marketplace" format
- * @returns Parsed components or null if invalid
- */
-export function parsePluginId(
-  pluginId: string,
-): { name: string; marketplace: string } | null {
-  const parts = pluginId.split('@')
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    return null
-  }
-
-  return {
-    name: parts[0],
-    marketplace: parts[1],
-  }
 }
 
 /**

@@ -139,10 +139,6 @@ export function profileReport(): void {
   }
 }
 
-export function isDetailedProfilingEnabled(): boolean {
-  return DETAILED_PROFILING
-}
-
 export function getStartupPerfLogPath(): string {
   return join(getClaudeConfigHomeDir(), 'startup-perf', `${getSessionId()}.txt`)
 }

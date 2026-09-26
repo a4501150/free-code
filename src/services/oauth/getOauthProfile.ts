@@ -4,16 +4,6 @@ import type { OAuthProfileResponse } from 'src/services/oauth/types.js'
 import { logError } from 'src/utils/log.js'
 
 /**
- * Gets OAuth profile information using an API key for authentication.
- * @returns OAuth profile response or undefined if not available
- */
-export async function getOauthProfileFromApiKey(): Promise<
-  OAuthProfileResponse | undefined
-> {
-  return undefined
-}
-
-/**
  * Gets OAuth profile information using an OAuth access token.
  * @param accessToken - The OAuth access token for authentication
  * @returns OAuth profile response or undefined if request fails

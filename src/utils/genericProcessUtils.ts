@@ -1,7 +1,4 @@
-import {
-  execFileNoThrowWithCwd,
-  execSyncWithDefaults_DEPRECATED,
-} from './execFileNoThrow.js'
+import { execFileNoThrowWithCwd } from './execFileNoThrow.js'
 
 // This file contains platform-agnostic implementations of common `ps` type commands.
 // When adding new code to this file, make sure to handle:
@@ -86,27 +83,6 @@ export async function getAncestorPidsAsync(
 }
 
 /**
- * Gets the command line for a given process
- * @param pid - The process ID to get the command for
- * @returns The command line string, or null if not found
- * @deprecated Use getAncestorCommandsAsync instead
- */
-export function getProcessCommand(pid: string | number): string | null {
-  try {
-    const pidStr = String(pid)
-    const command =
-      process.platform === 'win32'
-        ? `powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \\"ProcessId=${pidStr}\\").CommandLine"`
-        : `ps -o command= -p ${pidStr}`
-
-    const result = execSyncWithDefaults_DEPRECATED(command, { timeout: 1000 })
-    return result ? result.trim() : null
-  } catch {
-    return null
-  }
-}
-
-/**
  * Gets the command lines for a process and its ancestors in a single call
  * @param pid - The starting process ID
  * @param maxDepth - Maximum depth to traverse (default: 10)
@@ -153,32 +129,4 @@ export async function getAncestorCommandsAsync(
     return []
   }
   return result.stdout.split('\0').filter(Boolean)
-}
-
-/**
- * Gets the child process IDs for a given process
- * @param pid - The parent process ID
- * @returns Array of child process IDs as numbers
- */
-export function getChildPids(pid: string | number): number[] {
-  try {
-    const pidStr = String(pid)
-    const command =
-      process.platform === 'win32'
-        ? `powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \\"ParentProcessId=${pidStr}\\").ProcessId"`
-        : `pgrep -P ${pidStr}`
-
-    const result = execSyncWithDefaults_DEPRECATED(command, { timeout: 1000 })
-    if (!result) {
-      return []
-    }
-    return result
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map(p => parseInt(p, 10))
-      .filter(p => !isNaN(p))
-  } catch {
-    return []
-  }
 }

@@ -825,59 +825,6 @@ function normalizePatternToPath({
   }
 }
 
-export function normalizePatternsToPath(
-  patternsByRoot: Map<string | null, string[]>,
-  root: string,
-): string[] {
-  // null root means the pattern can match anywhere
-  const result = new Set(patternsByRoot.get(null) ?? [])
-
-  for (const [patternRoot, patterns] of patternsByRoot.entries()) {
-    if (patternRoot === null) {
-      // already added
-      continue
-    }
-
-    // Check each pattern to see if the full path starts with our reference root
-    for (const pattern of patterns) {
-      const normalizedPattern = normalizePatternToPath({
-        patternRoot,
-        pattern,
-        rootPath: root,
-      })
-      if (normalizedPattern) {
-        result.add(normalizedPattern)
-      }
-    }
-  }
-  return Array.from(result)
-}
-
-/**
- * Collects all deny rules for file read permissions and returns their ignore patterns
- * Each pattern must be resolved relative to its root (map key)
- * Null keys are used for patterns that don't have a root
- *
- * This is used to hide files that are blocked by Read deny rules.
- *
- * @param toolPermissionContext
- */
-export function getFileReadIgnorePatterns(
-  toolPermissionContext: ToolPermissionContext,
-): Map<string | null, string[]> {
-  const patternsByRoot = getPatternsByRoot(
-    toolPermissionContext,
-    'read',
-    'deny',
-  )
-  const result = new Map<string | null, string[]>()
-  for (const [patternRoot, patternMap] of patternsByRoot.entries()) {
-    result.set(patternRoot, Array.from(patternMap.keys()))
-  }
-
-  return result
-}
-
 function patternWithRoot(
   pattern: string,
   source: PermissionRuleSource,

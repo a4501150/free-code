@@ -1,18 +1,5 @@
-/**
- * Settings Sync Service
- *
- * Syncs user settings and memory files across Claude Code environments.
- *
- * - Interactive CLI: Uploads local settings to remote (incremental, only changed entries)
- * - CCR: Downloads remote settings to local before plugin installation
- *
- * Backend API: anthropic/anthropic#218817
- */
-
-import { feature } from 'bun:bundle'
 import axios from 'axios'
 import { mkdir, readFile, stat, writeFile } from 'fs/promises'
-import pickBy from 'lodash-es/pickBy.js'
 import { dirname } from 'path'
 import { getIsInteractive } from '../../bootstrap/state.js'
 import {
@@ -28,7 +15,6 @@ import { clearMemoryFileCaches } from '../../utils/claudemd.js'
 import { getMemoryPath } from '../../utils/config.js'
 import { logForDiagnosticsNoPII } from '../../utils/diagLogs.js'
 import { classifyAxiosError } from '../../utils/errors.js'
-import { getRepoRemoteHash } from '../../utils/git.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
 import { markInternalWrite } from '../../utils/settings/internalWrites.js'
 import { getSettingsFilePathForSource } from '../../utils/settings/settings.js'
@@ -51,46 +37,6 @@ const MAX_FILE_SIZE_BYTES = 500 * 1024 // 500 KB per file (matches backend limit
 // Cached so the fire-and-forget at runHeadless entry and the await in
 // installPluginsAndApplyMcpInBackground share one fetch.
 let downloadPromise: Promise<boolean> | null = null
-
-/** Test-only: clear the cached download promise between tests. */
-export function _resetDownloadPromiseForTesting(): void {
-  downloadPromise = null
-}
-
-/**
- * Download settings from remote for CCR mode.
- * Fired fire-and-forget at the top of print.ts runHeadless(); awaited in
- * installPluginsAndApplyMcpInBackground before plugin install. First call
- * starts the fetch; subsequent calls join it.
- * Returns true if settings were applied, false otherwise.
- */
-export function downloadUserSettings(): Promise<boolean> {
-  if (downloadPromise) {
-    return downloadPromise
-  }
-  downloadPromise = doDownloadUserSettings()
-  return downloadPromise
-}
-
-/**
- * Force a fresh download, bypassing the cached startup promise.
- * Called by /reload-plugins in CCR so mid-session settings changes
- * (enabledPlugins, extraKnownMarketplaces) pushed from the user's local
- * CLI are picked up before the plugin-cache sweep.
- *
- * No retries: user-initiated command, one attempt + fail-open. The user
- * can re-run /reload-plugins to retry. Startup path keeps DEFAULT_MAX_RETRIES.
- *
- * Caller is responsible for firing settingsChangeDetector.notifyChange
- * when this returns true — applyRemoteEntriesToLocal uses markInternalWrite
- * to suppress detection (correct for startup, but mid-session needs
- * applySettingsChange to run). Kept out of this module to avoid the
- * settingsSync → changeDetector cycle edge.
- */
-export function redownloadUserSettings(): Promise<boolean> {
-  downloadPromise = doDownloadUserSettings(0)
-  return downloadPromise
-}
 
 async function doDownloadUserSettings(
   maxRetries = DEFAULT_MAX_RETRIES,

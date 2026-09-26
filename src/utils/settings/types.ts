@@ -11,11 +11,8 @@ import { PermissionRuleSchema } from './permissionValidation.js'
 // Re-export hook schemas and types from centralized location for backward compatibility
 export {
   type AgentHook,
-  type BashCommandHook,
   type HookCommand,
-  HookCommandSchema,
   type HookMatcher,
-  HookMatcherSchema,
   HooksSchema,
   type HooksSettings,
   type HttpHook,
@@ -379,9 +376,6 @@ export const PROVIDER_CREDENTIAL_REFRESH_TYPES = [
   'codex',
 ] as const
 
-export type ProviderCredentialRefreshType =
-  (typeof PROVIDER_CREDENTIAL_REFRESH_TYPES)[number]
-
 /**
  * @deprecated Token-counting dispatch now goes through the provider adapter
  * registry (`src/services/api/adapters/`) — each adapter implements
@@ -394,10 +388,6 @@ export const PROVIDER_TOKEN_COUNTING_METHODS = [
   'bedrock-custom',
   'vertex-filtered',
 ] as const
-
-/** @deprecated See {@link PROVIDER_TOKEN_COUNTING_METHODS}. */
-export type ProviderTokenCountingMethod =
-  (typeof PROVIDER_TOKEN_COUNTING_METHODS)[number]
 
 export const ProviderCapabilitiesSchema = z.object({
   // Streaming & request features
@@ -2052,12 +2042,3 @@ export type UserConfigValues = Record<
   string,
   string | number | boolean | string[]
 >
-
-/**
- * Plugin configuration stored in freecode.json
- */
-export type PluginConfig = {
-  mcpServers?: {
-    [serverName: string]: UserConfigValues
-  }
-}

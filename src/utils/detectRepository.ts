@@ -59,19 +59,6 @@ export async function detectCurrentRepositoryWithHost(): Promise<ParsedRepositor
 }
 
 /**
- * Synchronously returns the cached github.com repository for the current cwd
- * as "owner/name", or null if it hasn't been resolved yet or the host is not
- * github.com. Call detectCurrentRepository() first to populate the cache.
- *
- * Callers construct github.com URLs, so GHE hosts are filtered out here.
- */
-export function getCachedRepository(): string | null {
-  const parsed = repositoryWithHostCache.get(getCwd())
-  if (!parsed || parsed.host !== 'github.com') return null
-  return `${parsed.owner}/${parsed.name}`
-}
-
-/**
  * Parses a git remote URL into host, owner, and name components.
  * Accepts any host (github.com, GHE instances, etc.).
  *
@@ -120,43 +107,6 @@ export function parseGitRemote(input: string): ParsedRepository | null {
     }
   }
 
-  return null
-}
-
-/**
- * Parses a git remote URL or "owner/repo" string and returns "owner/repo".
- * Only returns results for github.com hosts — GHE URLs return null.
- * Use parseGitRemote() for GHE support.
- * Also accepts plain "owner/repo" strings for backward compatibility.
- */
-export function parseGitHubRepository(input: string): string | null {
-  const trimmed = input.trim()
-
-  // Try parsing as a full remote URL first.
-  // Only return results for github.com hosts — existing callers (VS Code extension,
-  // bridge) assume this function is GitHub.com-specific. Use parseGitRemote() directly
-  // for GHE support.
-  const parsed = parseGitRemote(trimmed)
-  if (parsed) {
-    if (parsed.host !== 'github.com') return null
-    return `${parsed.owner}/${parsed.name}`
-  }
-
-  // If no URL pattern matched, check if it's already in owner/repo format
-  if (
-    !trimmed.includes('://') &&
-    !trimmed.includes('@') &&
-    trimmed.includes('/')
-  ) {
-    const parts = trimmed.split('/')
-    if (parts.length === 2 && parts[0] && parts[1]) {
-      // Remove .git extension if present
-      const repo = parts[1].replace(/\.git$/, '')
-      return `${parts[0]}/${repo}`
-    }
-  }
-
-  logForDebugging(`Could not parse repository from: ${trimmed}`)
   return null
 }
 

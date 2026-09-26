@@ -38,13 +38,7 @@ import { count } from '../../utils/array.js'
 import { createAttachmentMessage } from '../../utils/attachments.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { stripStrictNullInputs } from '../../utils/stripStrictNullInputs.js'
-import {
-  AbortError,
-  errorMessage,
-  getErrnoCode,
-  ShellError,
-  TelemetrySafeError_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
-} from '../../utils/errors.js'
+import { AbortError, errorMessage, ShellError } from '../../utils/errors.js'
 import { executePermissionDeniedHooks } from '../../utils/hooks.js'
 import { logError } from '../../utils/log.js'
 import {
@@ -102,46 +96,9 @@ import {
   runPostToolUseHooks,
   runPreToolUseHooks,
 } from './toolHooks.js'
-
-/** Minimum total hook duration (ms) to show inline timing summary */
-export const HOOK_TIMING_DISPLAY_THRESHOLD_MS = 500
 /** Log a debug warning when hooks/permission-decision block for this long. Matches
  * BashTool's PROGRESS_THRESHOLD_MS — the collapsed view feels stuck past this. */
 const SLOW_PHASE_LOG_THRESHOLD_MS = 2000
-
-/**
- * Classify a tool execution error into a telemetry-safe string.
- *
- * In minified/external builds, `error.constructor.name` is mangled into
- * short identifiers like "nJT" or "Chq" — useless for diagnostics.
- * This function extracts structured, telemetry-safe information instead:
- * - TelemetrySafeError: use its telemetryMessage (already vetted)
- * - Node.js fs errors: log the error code (ENOENT, EACCES, etc.)
- * - Known error types: use their unminified name
- * - Fallback: "Error" (better than a mangled 3-char identifier)
- */
-export function classifyToolError(error: unknown): string {
-  if (
-    error instanceof TelemetrySafeError_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
-  ) {
-    return error.telemetryMessage.slice(0, 200)
-  }
-  if (error instanceof Error) {
-    // Node.js filesystem errors have a `code` property (ENOENT, EACCES, etc.)
-    // These are safe to log and much more useful than the constructor name.
-    const errnoCode = getErrnoCode(error)
-    if (typeof errnoCode === 'string') {
-      return `Error:${errnoCode}`
-    }
-    // ShellError, ImageSizeError, etc. have stable `.name` properties
-    // that survive minification (they're set in the constructor).
-    if (error.name && error.name !== 'Error' && error.name.length > 3) {
-      return error.name.slice(0, 60)
-    }
-    return 'Error'
-  }
-  return 'UnknownError'
-}
 
 /**
  * Map a rule's origin to the documented OTel `source` vocabulary, matching

@@ -16,8 +16,6 @@ import { logForDebugging } from '../debug.js'
 import { errorMessage } from '../errors.js'
 import { logError } from '../log.js'
 import {
-  getPendingUpdatesDetails,
-  hasPendingUpdates,
   isInstallationRelevantToCurrentProject,
   loadInstalledPluginsFromDisk,
 } from './installedPluginsManager.js'
@@ -62,19 +60,6 @@ export function onPluginsAutoUpdated(
   return () => {
     pluginUpdateCallback = null
   }
-}
-
-/**
- * Check if pending updates came from autoupdate (for notification purposes).
- * Returns the list of plugin names that have pending updates.
- */
-export function getAutoUpdatedPluginNames(): string[] {
-  if (!hasPendingUpdates()) {
-    return []
-  }
-  return getPendingUpdatesDetails().map(
-    d => parsePluginIdentifier(d.pluginId).name,
-  )
 }
 
 /**

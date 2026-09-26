@@ -63,13 +63,6 @@ export type OAuthTokenExchangeResponse = {
   }
 }
 
-/** Response from `/api/oauth/profile/roles`. */
-export type UserRolesResponse = {
-  organization_role?: string
-  workspace_role?: string
-  organization_name?: string
-}
-
 /**
  * The OAuth token blob we persist locally.
  *

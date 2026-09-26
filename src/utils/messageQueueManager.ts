@@ -104,17 +104,6 @@ export function hasCommandsInQueue(): boolean {
   return commandQueue.length > 0
 }
 
-/**
- * Trigger a re-check by notifying subscribers.
- * Use after async processing completes to ensure remaining commands
- * are picked up by useSyncExternalStore consumers.
- */
-export function recheckCommandQueue(): void {
-  if (commandQueue.length > 0) {
-    notifySubscribers()
-  }
-}
-
 // ============================================================================
 // Write operations
 // ============================================================================
@@ -189,26 +178,6 @@ export function dequeue(
   notifySubscribers()
   logOperation('dequeue')
   return dequeued
-}
-
-/**
- * Remove and return all commands from the queue.
- * Logs a dequeue operation for each command.
- */
-export function dequeueAll(): QueuedCommand[] {
-  if (commandQueue.length === 0) {
-    return []
-  }
-
-  const commands = [...commandQueue]
-  commandQueue.length = 0
-  notifySubscribers()
-
-  for (const _cmd of commands) {
-    logOperation('dequeue')
-  }
-
-  return commands
 }
 
 /**
@@ -324,15 +293,6 @@ export function clearCommandQueue(): void {
   }
   commandQueue.length = 0
   notifySubscribers()
-}
-
-/**
- * Clear all commands and reset snapshot.
- * Used for test cleanup.
- */
-export function resetCommandQueue(): void {
-  commandQueue.length = 0
-  snapshot = Object.freeze([])
 }
 
 // ============================================================================

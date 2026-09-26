@@ -60,59 +60,6 @@ export async function getImageProcessor(): Promise<SharpFunction> {
 }
 
 /**
- * Get image creator for generating new images from scratch.
- * Uses jimp to create blank images with a solid background.
- */
-export async function getImageCreator(): Promise<SharpCreator> {
-  if (imageCreatorModule) {
-    return imageCreatorModule.default
-  }
-
-  const Jimp = createJimp({ formats: [png] })
-
-  const creator: SharpCreator = (options: SharpCreatorOptions) => {
-    const { width, height, background } = options.create
-    const image = new Jimp({
-      width,
-      height,
-      color:
-        ((background.r << 24) |
-          (background.g << 16) |
-          (background.b << 8) |
-          0xff) >>>
-        0,
-    })
-
-    const instance: SharpInstance = {
-      async metadata() {
-        return { width, height, format: 'png' }
-      },
-      resize() {
-        return instance
-      },
-      jpeg() {
-        return instance
-      },
-      png() {
-        return instance
-      },
-      webp() {
-        throw new Error(
-          'WebP output is not supported by the pure-JS image processor',
-        )
-      },
-      async toBuffer() {
-        return Buffer.from(await image.getBuffer('image/png'))
-      },
-    }
-    return instance
-  }
-
-  imageCreatorModule = { default: creator }
-  return creator
-}
-
-/**
  * Create a sharp-compatible adapter backed by jimp (pure JS, no native deps).
  * Uses @jimp/core with only the plugins we need, avoiding @jimp/plugin-print
  * which has a broken dependency (simple-xml-to-json).

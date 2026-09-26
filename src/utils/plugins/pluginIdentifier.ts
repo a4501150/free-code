@@ -56,16 +56,6 @@ export function parsePluginIdentifier(plugin: string): ParsedPluginIdentifier {
 }
 
 /**
- * Build a plugin ID from name and marketplace
- * @param name The plugin name
- * @param marketplace Optional marketplace name
- * @returns Plugin ID in format "name" or "name@marketplace"
- */
-export function buildPluginId(name: string, marketplace?: string): string {
-  return marketplace ? `${name}@${marketplace}` : name
-}
-
-/**
  * Check if a marketplace name is an official (Anthropic-controlled) marketplace.
  * Used for telemetry redaction — official plugin identifiers are safe to log to
  * general-access additional_metadata; third-party identifiers go only to the

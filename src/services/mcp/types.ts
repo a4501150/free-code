@@ -219,32 +219,3 @@ export type MCPServerConnection =
 
 // Resource types
 export type ServerResource = Resource & { server: string }
-
-// MCP CLI State types
-export interface SerializedTool {
-  name: string
-  description: string
-  inputJSONSchema?: {
-    [x: string]: unknown
-    type: 'object'
-    properties?: {
-      [x: string]: unknown
-    }
-  }
-  isMcp?: boolean
-  originalToolName?: string // Original unnormalized tool name from MCP server
-}
-
-export interface SerializedClient {
-  name: string
-  type: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'
-  capabilities?: ServerCapabilities
-}
-
-export interface MCPCliState {
-  clients: SerializedClient[]
-  configs: Record<string, ScopedMcpServerConfig>
-  tools: SerializedTool[]
-  resources: Record<string, ServerResource[]>
-  normalizedNames?: Record<string, string> // Maps normalized names to original names
-}

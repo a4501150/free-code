@@ -37,12 +37,7 @@ const VerifyPlanExecutionTool =
     ? verifyPlanMod.VerifyPlanExecutionTool
     : null
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from './tools/SyntheticOutputTool/SyntheticOutputTool.js'
-export {
-  ALL_AGENT_DISALLOWED_TOOLS,
-  CUSTOM_AGENT_DISALLOWED_TOOLS,
-  ASYNC_AGENT_ALLOWED_TOOLS,
-  COORDINATOR_MODE_ALLOWED_TOOLS,
-} from './constants/tools.js'
+export { ALL_AGENT_DISALLOWED_TOOLS } from './constants/tools.js'
 import * as coordinatorModeMod from './coordinator/coordinatorMode.js'
 import * as powerShellMod from './tools/PowerShellTool/PowerShellTool.js'
 import type { ToolPermissionContext } from './Tool.js'
@@ -153,25 +148,4 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
 
   const isEnabled = allowedTools.map(_ => _.isEnabled())
   return allowedTools.filter((_, i) => isEnabled[i])
-}
-
-/**
- * Get all tools including both built-in tools and MCP tools.
- *
- * This is the preferred function when you need the complete tools list for:
- * - Token counting that includes MCP tools
- * - Any context where MCP tools should be considered
- *
- * Use getTools() only when you specifically need just built-in tools.
- *
- * @param permissionContext - Permission context for filtering built-in tools
- * @param mcpTools - MCP tools from appState.mcp.tools
- * @returns Combined array of built-in and MCP tools
- */
-export function getMergedTools(
-  permissionContext: ToolPermissionContext,
-  mcpTools: Tools,
-): Tools {
-  const builtInTools = getTools(permissionContext)
-  return [...builtInTools, ...mcpTools]
 }

@@ -25,15 +25,7 @@ import { getConfiguredContextWindowSize } from './contextWindowSize.js'
 import { runPostCompactCleanup } from './postCompactCleanup.js'
 import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
 
-export {
-  DEFAULT_AUTO_COMPACT_BUFFER,
-  DEFAULT_AUTO_COMPACT_PERCENTAGE,
-  getAutoCompactConfig,
-  isAutoCompactEnabled,
-  MAX_AUTO_COMPACT_PERCENTAGE,
-  MIN_AUTO_COMPACT_PERCENTAGE,
-  type AutoCompactConfig,
-} from './autoCompactConfig.js'
+export { isAutoCompactEnabled } from './autoCompactConfig.js'
 export { getConfiguredContextWindowSize }
 
 export type AutoCompactTrackingState = {

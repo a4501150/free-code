@@ -134,14 +134,6 @@ export const SDKControlMcpStatusRequestSchema = z
   })
   .describe('Requests the current status of all MCP server connections.')
 
-export const SDKControlMcpStatusResponseSchema = z
-  .object({
-    mcpServers: z.array(McpServerStatusSchema),
-  })
-  .describe(
-    'Response containing the current status of all MCP server connections.',
-  )
-
 export const SDKControlGetContextUsageRequestSchema = z
   .object({
     subtype: z.literal('get_context_usage'),
@@ -164,107 +156,6 @@ const ContextGridSquareSchema = z.object({
   squareFullness: z.number(),
 })
 
-export const SDKControlGetContextUsageResponseSchema = z
-  .object({
-    categories: z.array(ContextCategorySchema),
-    totalTokens: z.number(),
-    maxTokens: z.number(),
-    rawMaxTokens: z.number(),
-    percentage: z.number(),
-    gridRows: z.array(z.array(ContextGridSquareSchema)),
-    model: z.string(),
-    memoryFiles: z.array(
-      z.object({
-        path: z.string(),
-        type: z.string(),
-        tokens: z.number(),
-      }),
-    ),
-    mcpTools: z.array(
-      z.object({
-        name: z.string(),
-        serverName: z.string(),
-        tokens: z.number(),
-        isLoaded: z.boolean().optional(),
-      }),
-    ),
-    deferredBuiltinTools: z
-      .array(
-        z.object({
-          name: z.string(),
-          tokens: z.number(),
-          isLoaded: z.boolean(),
-        }),
-      )
-      .optional(),
-    systemTools: z
-      .array(z.object({ name: z.string(), tokens: z.number() }))
-      .optional(),
-    systemPromptSections: z
-      .array(z.object({ name: z.string(), tokens: z.number() }))
-      .optional(),
-    agents: z.array(
-      z.object({
-        agentType: z.string(),
-        source: z.string(),
-        tokens: z.number(),
-      }),
-    ),
-    slashCommands: z
-      .object({
-        totalCommands: z.number(),
-        includedCommands: z.number(),
-        tokens: z.number(),
-      })
-      .optional(),
-    skills: z
-      .object({
-        totalSkills: z.number(),
-        includedSkills: z.number(),
-        tokens: z.number(),
-        skillFrontmatter: z.array(
-          z.object({
-            name: z.string(),
-            source: z.string(),
-            tokens: z.number(),
-          }),
-        ),
-      })
-      .optional(),
-    autoCompactThreshold: z.number().optional(),
-    isAutoCompactEnabled: z.boolean(),
-    messageBreakdown: z
-      .object({
-        toolCallTokens: z.number(),
-        toolResultTokens: z.number(),
-        attachmentTokens: z.number(),
-        assistantMessageTokens: z.number(),
-        userMessageTokens: z.number(),
-        toolCallsByType: z.array(
-          z.object({
-            name: z.string(),
-            callTokens: z.number(),
-            resultTokens: z.number(),
-          }),
-        ),
-        attachmentsByType: z.array(
-          z.object({ name: z.string(), tokens: z.number() }),
-        ),
-      })
-      .optional(),
-    apiUsage: z
-      .object({
-        input_tokens: z.number(),
-        output_tokens: z.number(),
-        cache_creation_input_tokens: z.number(),
-        cache_read_input_tokens: z.number(),
-      })
-      .nullable(),
-  })
-  .describe(
-    'Breakdown of current context window usage by category (system prompt, tools, messages, etc.).',
-  )
-
 export const SDKControlRewindFilesRequestSchema = z
   .object({
     subtype: z.literal('rewind_files'),
@@ -273,16 +164,6 @@ export const SDKControlRewindFilesRequestSchema = z
   })
   .describe('Rewinds file changes made since a specific user message.')
 
-export const SDKControlRewindFilesResponseSchema = z
-  .object({
-    canRewind: z.boolean(),
-    error: z.string().optional(),
-    filesChanged: z.array(z.string()).optional(),
-    insertions: z.number().optional(),
-    deletions: z.number().optional(),
-  })
-  .describe('Result of a rewindFiles operation.')
-
 export const SDKControlCancelAsyncMessageRequestSchema = z
   .object({
     subtype: z.literal('cancel_async_message'),
@@ -290,14 +171,6 @@ export const SDKControlCancelAsyncMessageRequestSchema = z
   })
   .describe(
     'Drops a pending async user message from the command queue by uuid. No-op if already dequeued for execution.',
-  )
-
-export const SDKControlCancelAsyncMessageResponseSchema = z
-  .object({
-    cancelled: z.boolean(),
-  })
-  .describe(
-    'Result of a cancel_async_message operation. cancelled=false means the message was not in the queue (already dequeued or never enqueued).',
   )
 
 export const SDKControlSeedReadStateRequestSchema = z
@@ -405,40 +278,6 @@ export const SDKControlGetSettingsRequestSchema = z
   })
   .describe(
     'Returns the effective merged settings and the raw per-source settings.',
-  )
-
-export const SDKControlGetSettingsResponseSchema = z
-  .object({
-    effective: z.record(z.string(), z.unknown()),
-    sources: z
-      .array(
-        z.object({
-          source: z.enum([
-            'userSettings',
-            'projectSettings',
-            'localSettings',
-            'flagSettings',
-          ]),
-          settings: z.record(z.string(), z.unknown()),
-        }),
-      )
-      .describe(
-        'Ordered low-to-high priority — later entries override earlier ones.',
-      ),
-    applied: z
-      .object({
-        model: z.string(),
-        // String levels only — numeric effort is ant-only and the
-        // Zod→proto generator can't emit enum∪number unions.
-        effort: z.enum(['low', 'medium', 'high', 'max']).nullable(),
-      })
-      .optional()
-      .describe(
-        'Runtime-resolved values after env overrides, session state, and model-specific defaults are applied. Unlike `effective` (disk merge), these reflect what will actually be sent to the API.',
-      ),
-  })
-  .describe(
-    'Effective merged settings plus raw per-source settings in merge order.',
   )
 
 export const SDKControlElicitationRequestSchema = z

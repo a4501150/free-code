@@ -3,11 +3,10 @@
  * Used for managing claude aliases and PATH entries
  */
 
-import { open, readFile, stat } from 'fs/promises'
+import { readFile, stat } from 'fs/promises'
 import { homedir as osHomedir } from 'os'
 import { join } from 'path'
 import { isFsInaccessible } from './errors.js'
-import { getLocalClaudePath } from './localInstaller.js'
 
 export const CLAUDE_ALIAS_REGEX = /^\s*alias\s+claude\s*=/
 
@@ -37,44 +36,6 @@ export function getShellConfigPaths(
 }
 
 /**
- * Filter out installer-created claude aliases from an array of lines
- * Only removes aliases pointing to $HOME/.claude/local/claude
- * Preserves custom user aliases that point to other locations
- * Returns the filtered lines and whether our default installer alias was found
- */
-export function filterClaudeAliases(lines: string[]): {
-  filtered: string[]
-  hadAlias: boolean
-} {
-  let hadAlias = false
-  const filtered = lines.filter(line => {
-    // Check if this is a claude alias
-    if (CLAUDE_ALIAS_REGEX.test(line)) {
-      // Extract the alias target - handle spaces, quotes, and various formats
-      // First try with quotes
-      let match = line.match(/alias\s+claude\s*=\s*["']([^"']+)["']/)
-      if (!match) {
-        // Try without quotes (capturing until end of line or comment)
-        match = line.match(/alias\s+claude\s*=\s*([^#\n]+)/)
-      }
-
-      if (match && match[1]) {
-        const target = match[1].trim()
-        // Only remove if it points to the installer location
-        // The installer always creates aliases with the full expanded path
-        if (target === getLocalClaudePath()) {
-          hadAlias = true
-          return false // Remove this line
-        }
-      }
-      // Keep custom aliases that don't point to the installer location
-    }
-    return true
-  })
-  return { filtered, hadAlias }
-}
-
-/**
  * Read a file and split it into lines
  * Returns null if file doesn't exist or can't be read
  */
@@ -87,22 +48,6 @@ export async function readFileLines(
   } catch (e: unknown) {
     if (isFsInaccessible(e)) return null
     throw e
-  }
-}
-
-/**
- * Write lines back to a file
- */
-export async function writeFileLines(
-  filePath: string,
-  lines: string[],
-): Promise<void> {
-  const fh = await open(filePath, 'w')
-  try {
-    await fh.writeFile(lines.join('\n'), { encoding: 'utf8' })
-    await fh.datasync()
-  } finally {
-    await fh.close()
   }
 }
 

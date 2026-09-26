@@ -31,10 +31,6 @@ function createNoopSpan(): Span {
 let currentInteractionSpan: Span | null = null
 let currentToolSpan: Span | null = null
 
-export function isEnhancedTelemetryEnabled(): boolean {
-  return false
-}
-
 export function startInteractionSpan(_userPrompt: string): Span {
   const span = createNoopSpan()
   currentInteractionSpan = span
@@ -114,18 +110,6 @@ export function addToolContentEvent(
   _eventName: string,
   _attributes: SpanMetadata,
 ): void {}
-
-export function getCurrentSpan(): Span | null {
-  return currentToolSpan ?? currentInteractionSpan
-}
-
-export async function executeInSpan<T>(
-  _spanName: string,
-  fn: (span: Span) => Promise<T>,
-  _attributes?: SpanMetadata,
-): Promise<T> {
-  return fn(createNoopSpan())
-}
 
 export function startHookSpan(
   _hookEvent: string,

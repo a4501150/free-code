@@ -27,9 +27,6 @@ import {
 } from './systemPromptSections.js'
 import { getMemoryEnvItems, loadMemoryPrompt } from '../memdir/memdir.js'
 
-export const CLAUDE_CODE_DOCS_MAP_URL =
-  'https://code.claude.com/docs/en/claude_code_docs_map.md'
-
 function getLanguageSection(
   languagePreference: string | undefined,
 ): string | null {

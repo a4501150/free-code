@@ -963,22 +963,3 @@ export function getSyntaxTheme(themeName: string): SyntaxTheme {
 
 // Lazy loader to match vendor/color-diff-src/index.ts API
 let cachedModule: NativeModule | null = null
-
-export function getNativeModule(): NativeModule | null {
-  if (cachedModule) return cachedModule
-  cachedModule = { ColorDiff, ColorFile, getSyntaxTheme }
-  return cachedModule
-}
-
-export type { ColorDiff as ColorDiffClass, ColorFile as ColorFileClass }
-
-// Exported for testing
-export const __test = {
-  tokenize,
-  findAdjacentPairs,
-  wordDiffStrings,
-  ansi256FromRgb,
-  colorToEscape,
-  detectColorMode,
-  detectLanguage,
-}

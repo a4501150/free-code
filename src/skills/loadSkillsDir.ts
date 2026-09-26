@@ -25,11 +25,7 @@ import {
   type EffortValue,
   parseEffortValue,
 } from '../utils/effort.js'
-import {
-  getClaudeConfigHomeDir,
-  isBareMode,
-  isEnvTruthy,
-} from '../utils/envUtils.js'
+import { getClaudeConfigHomeDir, isBareMode } from '../utils/envUtils.js'
 import { isENOENT, isFsInaccessible } from '../utils/errors.js'
 import {
   coerceDescriptionToString,
@@ -788,10 +784,6 @@ export function clearSkillCaches() {
   conditionalSkills.clear()
   activatedConditionalSkillNames.clear()
 }
-
-// Backwards-compatible aliases for tests
-export { getSkillDirCommands as getCommandDirCommands }
-export { clearSkillCaches as clearCommandCaches }
 export { transformSkillFiles }
 
 // --- Dynamic skill discovery ---
@@ -1020,13 +1012,6 @@ export function activateConditionalSkillsForPaths(
   }
 
   return activated
-}
-
-/**
- * Gets the number of pending conditional skills (for testing/debugging).
- */
-export function getConditionalSkillCount(): number {
-  return conditionalSkills.size
 }
 
 /**

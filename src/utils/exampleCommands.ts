@@ -33,22 +33,6 @@ function isCoreFile(path: string): boolean {
 }
 
 /**
- * Counts occurrences of items in an array and returns the top N items
- * sorted by count in descending order, formatted as a string.
- */
-export function countAndSortItems(items: string[], topN: number = 20): string {
-  const counts = new Map<string, number>()
-  for (const item of items) {
-    counts.set(item, (counts.get(item) || 0) + 1)
-  }
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, topN)
-    .map(([item, count]) => `${count.toString().padStart(6)} ${item}`)
-    .join('\n')
-}
-
-/**
  * Picks up to `want` basenames from a frequency-sorted list of paths,
  * skipping non-core files and spreading across different directories.
  * Returns empty array if fewer than `want` core files are available.

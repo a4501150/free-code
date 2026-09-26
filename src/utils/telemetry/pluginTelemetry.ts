@@ -67,22 +67,6 @@ export function getTelemetryPluginScope(
   return 'user-local'
 }
 
-/** How a skill/command invocation was triggered. */
-export type InvocationTrigger =
-  | 'user-slash'
-  | 'claude-proactive'
-  | 'nested-skill'
-
-/** Where a skill invocation executes. */
-export type SkillExecutionContext = 'fork' | 'inline' | 'remote'
-
-/** How a plugin install was initiated. */
-export type InstallSource =
-  | 'cli-explicit'
-  | 'ui-discover'
-  | 'ui-suggestion'
-  | 'deep-link'
-
 /**
  * Common plugin telemetry fields keyed off name@marketplace. Returns the
  * hash, scope enum, and the redacted-twin columns. Callers add the raw

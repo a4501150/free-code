@@ -117,8 +117,6 @@ export const AttachRequestSchema = z.object({
   request: AttachRequestBodySchema,
 })
 
-export type AttachRequest = z.infer<typeof AttachRequestSchema>
-
 export type AttachResponse = {
   type: 'response'
   requestId: string

@@ -28,11 +28,6 @@ function getCachePath(): string {
 
 let memoryCache: WhatsNewCache | null = null
 
-/** @internal exported for tests */
-export function _resetWhatsNewCacheForTesting(): void {
-  memoryCache = null
-}
-
 async function fetchGitHubReleases(
   repo: string,
 ): Promise<WhatsNewCache | null> {

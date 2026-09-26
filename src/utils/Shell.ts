@@ -25,8 +25,6 @@ import { getTaskOutputDir } from './task/diskOutput.js'
 import { TaskOutput } from './task/TaskOutput.js'
 import { which } from './which.js'
 
-export type { ExecResult } from './ShellCommand.js'
-
 import { accessSync } from 'fs'
 import { onCwdChangedForHooks } from './hooks/fileChangedWatcher.js'
 import { getPlatform } from './platform.js'

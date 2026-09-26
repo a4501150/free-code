@@ -14,8 +14,6 @@ export {
   type ExternalPermissionMode,
   type PermissionMode,
 }
-
-export const permissionModeSchema = z.enum(PERMISSION_MODES)
 export const externalPermissionModeSchema = z.enum(EXTERNAL_PERMISSION_MODES)
 
 type ModeColorKey =

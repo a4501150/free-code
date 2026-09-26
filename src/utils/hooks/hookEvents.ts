@@ -183,9 +183,3 @@ export function emitHookResponse(data: {
 export function setAllHookEventsEnabled(enabled: boolean): void {
   allHookEventsEnabled = enabled
 }
-
-export function clearHookEventState(): void {
-  eventHandler = null
-  pendingEvents.length = 0
-  allHookEventsEnabled = false
-}

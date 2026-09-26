@@ -11,7 +11,6 @@ import { getClaudeConfigHomeDir } from '../envUtils.js'
 import { writeFileSyncAndFlush_DEPRECATED } from '../file.js'
 import { patchJsoncFile, safeParseJSONC } from '../json.js'
 import { logError } from '../log.js'
-import { jsonStringify } from '../slowOperations.js'
 import { markInternalWrite } from './internalWrites.js'
 import { resetSettingsCache } from './settingsCache.js'
 
@@ -122,28 +121,6 @@ export function writeFreecodeSettingsFile(
       patchJsoncFile(rawContent, partial),
     )
     resetSettingsCache()
-  } catch (e) {
-    logError(e)
-  }
-}
-
-/**
- * Reorder freecode.json keys in place for readability.
- *
- * Destroys comments by design — jsonc-parser cannot move comment tokens
- * across key boundaries, so achieving canonical key order requires a full
- * plain-JSON re-emit. Call only from one-shot migration paths (where the
- * file has no user-authored comments yet), never from user-facing writes.
- */
-export function reorderFreecodeSettingsFile(): void {
-  try {
-    const filePath = getFreecodeSettingsFilePath()
-    const settings = readFreecodeSettingsFile()
-    if (!settings) return
-    writeFileSyncAndFlush_DEPRECATED(
-      filePath,
-      jsonStringify(orderFreecodeKeys(settings), null, 2) + '\n',
-    )
   } catch (e) {
     logError(e)
   }

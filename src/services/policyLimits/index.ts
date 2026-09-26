@@ -68,18 +68,6 @@ const LOADING_PROMISE_TIMEOUT_MS = 30000 // 30 seconds
 let sessionCache: PolicyLimitsResponse['restrictions'] | null = null
 
 /**
- * Test-only sync reset. clearPolicyLimitsCache() does file I/O and is too
- * expensive for preload beforeEach; this only clears the module-level
- * singleton so downstream tests in the same shard see a clean slate.
- */
-export function _resetPolicyLimitsForTesting(): void {
-  stopBackgroundPolling()
-  sessionCache = null
-  loadingCompletePromise = null
-  loadingCompleteResolve = null
-}
-
-/**
  * Initialize the loading promise for policy limits
  * This should be called early (e.g., in init.ts) to allow other systems
  * to await policy limits loading even if loadPolicyLimits() hasn't been called yet.
@@ -204,16 +192,6 @@ export function isPolicyLimitsEligible(): boolean {
   }
 
   return true
-}
-
-/**
- * Wait for the initial policy limits loading to complete
- * Returns immediately if user is not eligible or loading has already completed
- */
-export async function waitForPolicyLimitsToLoad(): Promise<void> {
-  if (loadingCompletePromise) {
-    await loadingCompletePromise
-  }
 }
 
 /**

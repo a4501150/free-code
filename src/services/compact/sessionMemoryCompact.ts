@@ -4,7 +4,6 @@
 
 import type { AgentId } from '../../types/ids.js'
 import type { HookResultMessage, Message } from '../../types/message.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import {
   createCompactBoundaryMessage,
@@ -86,14 +85,6 @@ export function setSessionMemoryCompactConfig(
  */
 export function getSessionMemoryCompactConfig(): SessionMemoryCompactConfig {
   return { ...smCompactConfig }
-}
-
-/**
- * Reset config state (useful for testing)
- */
-export function resetSessionMemoryCompactConfig(): void {
-  smCompactConfig = { ...DEFAULT_SM_COMPACT_CONFIG }
-  configInitialized = false
 }
 
 /**

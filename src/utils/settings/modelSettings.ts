@@ -9,7 +9,7 @@
  * here, but .passthrough() allows any key to survive a read/write round-trip.
  */
 
-import { existsSync, readFileSync } from 'fs'
+import { readFileSync } from 'fs'
 import { join } from 'path'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
 import { writeFileSyncAndFlush_DEPRECATED } from '../file.js'
@@ -20,10 +20,6 @@ import { resetSettingsCache } from './settingsCache.js'
 
 export function getModelSettingsFilePath(): string {
   return join(getClaudeConfigHomeDir(), 'modelSettings.json')
-}
-
-export function modelSettingsFileExists(): boolean {
-  return existsSync(getModelSettingsFilePath())
 }
 
 export function readModelSettingsFile(): Record<string, unknown> | null {

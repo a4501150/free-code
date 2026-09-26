@@ -2,8 +2,6 @@ import React, { type ReactNode, useEffect } from 'react'
 import type { ScopedMcpServerConfig } from './types.js'
 import { registerMcpActions } from './mcpActions.js'
 import { useManageMCPConnections } from './useManageMCPConnections.js'
-
-export { getMcpActions } from './mcpActions.js'
 export { useMcpReconnect, useMcpToggleEnabled } from './MCPConnectionHooks.js'
 
 interface MCPConnectionManagerProps {

@@ -29,17 +29,6 @@ type DumpState = {
 // Track state per session to avoid duplicating data
 const dumpState = new Map<string, DumpState>()
 
-export function getLastApiRequests(): Array<{
-  timestamp: string
-  request: unknown
-}> {
-  return [...cachedApiRequests]
-}
-
-export function clearApiRequestCache(): void {
-  cachedApiRequests.length = 0
-}
-
 export function clearDumpState(agentIdOrSessionId: string): void {
   dumpState.delete(agentIdOrSessionId)
 }

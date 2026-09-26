@@ -469,16 +469,6 @@ function AssistantMessageBlock({
   }
 }
 
-export function hasThinkingContent(m: {
-  type: string
-  message?: { content: Array<{ type: string }> }
-}): boolean {
-  if (m.type !== 'assistant' || !m.message) return false
-  return m.message.content.some(
-    b => b.type === 'reasoning' || b.type === 'redacted_reasoning',
-  )
-}
-
 /** Exported for testing */
 export function areMessagePropsEqual(prev: Props, next: Props): boolean {
   if (prev.message.uuid !== next.message.uuid) return false

@@ -11,7 +11,6 @@ import {
   readdir,
   readFile,
   stat,
-  unlink,
   writeFile,
 } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
@@ -28,12 +27,7 @@ import {
 } from '../bootstrap/state.js'
 import { getBuiltInCommandNames as builtInCommandNames } from './commandRegistry.js'
 import { COMMAND_NAME_TAG, TICK_TAG } from '../constants/xml.js'
-import {
-  type AgentId,
-  asAgentId,
-  asSessionId,
-  type SessionId,
-} from '../types/ids.js'
+import { type AgentId, asAgentId, type SessionId } from '../types/ids.js'
 import {
   type ContentReplacementEntry,
   type Entry,
@@ -53,12 +47,10 @@ import type {
   UserMessage,
 } from '../types/message.js'
 import type { QueueOperationMessage } from '../types/messageQueueTypes.js'
-import { uniq } from './array.js'
 import { registerCleanup } from './cleanupRegistry.js'
 import { updateSessionName } from './concurrentSessions.js'
 import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
-import { logForDiagnosticsNoPII } from './diagLogs.js'
 import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { isFsInaccessible } from './errors.js'
 import type { FileHistorySnapshot } from './fileHistory.js'
@@ -222,10 +214,6 @@ export function getTranscriptPathForSession(sessionId: string): string {
   return join(projectDir, `${sessionId}.jsonl`)
 }
 
-// 50 MB — session JSONL can grow to multiple GB (inc-3930). Callers that
-// read the raw transcript must bail out above this threshold to avoid OOM.
-export const MAX_TRANSCRIPT_READ_BYTES = 50 * 1024 * 1024
-
 // In-memory map of agentId → subdirectory for grouping related subagent
 // transcripts (e.g. workflow runs write to subagents/workflows/<runId>/).
 // Populated before the agent runs; consulted by getAgentTranscriptPath.
@@ -300,20 +288,6 @@ export async function readAgentMetadata(
   }
 }
 
-export type RemoteAgentMetadata = {
-  taskId: string
-  remoteTaskType: string
-  /** CCR session ID — used to fetch live status from the Sessions API on resume. */
-  sessionId: string
-  title: string
-  command: string
-  spawnedAt: number
-  toolUseId?: string
-  isLongRunning?: boolean
-  isRemoteReview?: boolean
-  remoteTaskMetadata?: Record<string, unknown>
-}
-
 function getRemoteAgentsDir(): string {
   // Same sessionProjectDir fallback as getAgentTranscriptPath — the project
   // dir (containing the .jsonl), not the session dir, so sessionId is joined.
@@ -323,76 +297,6 @@ function getRemoteAgentsDir(): string {
 
 function getRemoteAgentMetadataPath(taskId: string): string {
   return join(getRemoteAgentsDir(), `remote-agent-${taskId}.meta.json`)
-}
-
-/**
- * Persist metadata for a remote-agent task so it can be restored on session
- * resume. Per-task sidecar file (sibling dir to subagents/) survives
- * hydrateSessionFromRemote's .jsonl wipe; status is always fetched fresh
- * from CCR on restore — only identity is persisted locally.
- */
-export async function writeRemoteAgentMetadata(
-  taskId: string,
-  metadata: RemoteAgentMetadata,
-): Promise<void> {
-  const path = getRemoteAgentMetadataPath(taskId)
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, JSON.stringify(metadata))
-}
-
-export async function readRemoteAgentMetadata(
-  taskId: string,
-): Promise<RemoteAgentMetadata | null> {
-  const path = getRemoteAgentMetadataPath(taskId)
-  try {
-    const raw = await readFile(path, 'utf-8')
-    return JSON.parse(raw) as RemoteAgentMetadata
-  } catch (e) {
-    if (isFsInaccessible(e)) return null
-    throw e
-  }
-}
-
-export async function deleteRemoteAgentMetadata(taskId: string): Promise<void> {
-  const path = getRemoteAgentMetadataPath(taskId)
-  try {
-    await unlink(path)
-  } catch (e) {
-    if (isFsInaccessible(e)) return
-    throw e
-  }
-}
-
-/**
- * Scan the remote-agents/ directory for all persisted metadata files.
- * Used to reconnect to still-running sessions.
- */
-export async function listRemoteAgentMetadata(): Promise<
-  RemoteAgentMetadata[]
-> {
-  const dir = getRemoteAgentsDir()
-  let entries: Dirent[]
-  try {
-    entries = await readdir(dir, { withFileTypes: true })
-  } catch (e) {
-    if (isFsInaccessible(e)) return []
-    throw e
-  }
-  const results: RemoteAgentMetadata[] = []
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.meta.json')) continue
-    try {
-      const raw = await readFile(join(dir, entry.name), 'utf-8')
-      results.push(JSON.parse(raw) as RemoteAgentMetadata)
-    } catch (e) {
-      // Skip unreadable or corrupt files — a partial write from a crashed
-      // fire-and-forget persist shouldn't take down the whole restore.
-      logForDebugging(
-        `listRemoteAgentMetadata: skipping ${entry.name}: ${String(e)}`,
-      )
-    }
-  }
-  return results
 }
 
 export function sessionIdExists(sessionId: string): boolean {
@@ -461,27 +365,6 @@ function getProject(): Project {
     }
   }
   return project
-}
-
-/**
- * Reset the Project singleton's flush state for testing.
- * This ensures tests don't interfere with each other via shared counter state.
- */
-export function resetProjectFlushStateForTesting(): void {
-  project?._resetFlushState()
-}
-
-/**
- * Reset the entire Project singleton for testing.
- * This ensures tests with different CLAUDE_CONFIG_DIR values
- * don't share stale sessionFile paths.
- */
-export function resetProjectForTesting(): void {
-  project = null
-}
-
-export function setSessionFileForTesting(path: string): void {
-  getProject().sessionFile = path
 }
 
 class Project {
@@ -1858,101 +1741,6 @@ function buildFileHistorySnapshotChain(
 }
 
 /**
- * Loads a transcript from a JSON or JSONL file and converts it to LogOption format
- * @param filePath Path to the transcript file (.json or .jsonl)
- * @returns LogOption containing the transcript messages
- * @throws Error if file doesn't exist or contains invalid data
- */
-export async function loadTranscriptFromFile(
-  filePath: string,
-): Promise<LogOption> {
-  if (filePath.endsWith('.jsonl')) {
-    const {
-      messages,
-      summaries,
-      customTitles,
-      tags,
-      fileHistorySnapshots,
-      leafUuids,
-      contentReplacements,
-      worktreeStates,
-    } = await loadTranscriptFile(filePath)
-
-    if (messages.size === 0) {
-      throw new Error('No messages found in JSONL file')
-    }
-
-    // Find the most recent leaf message using pre-computed leaf UUIDs
-    const leafMessage = findLatestMessage(messages.values(), msg =>
-      leafUuids.has(msg.uuid),
-    )
-
-    if (!leafMessage) {
-      throw new Error('No valid conversation chain found in JSONL file')
-    }
-
-    // Build the conversation chain backwards from leaf to root
-    const transcript = buildConversationChain(messages, leafMessage)
-
-    const summary = summaries.get(leafMessage.uuid)
-    const customTitle = customTitles.get(leafMessage.sessionId as UUID)
-    const tag = tags.get(leafMessage.sessionId as UUID)
-    const sessionId = leafMessage.sessionId as UUID
-    return {
-      ...convertToLogOption(
-        transcript,
-        0,
-        summary,
-        customTitle,
-        buildFileHistorySnapshotChain(fileHistorySnapshots, transcript),
-        tag,
-        filePath,
-        undefined,
-        contentReplacements.get(sessionId) ?? [],
-      ),
-      worktreeSession: worktreeStates.has(sessionId)
-        ? worktreeStates.get(sessionId)
-        : undefined,
-    }
-  }
-
-  // json log files
-  const content = await readFile(filePath, { encoding: 'utf-8' })
-  let parsed: unknown
-
-  try {
-    parsed = jsonParse(content)
-  } catch (error) {
-    throw new Error(`Invalid JSON in transcript file: ${error}`)
-  }
-
-  let messages: TranscriptMessage[]
-
-  if (Array.isArray(parsed)) {
-    messages = parsed
-  } else if (parsed && typeof parsed === 'object' && 'messages' in parsed) {
-    if (!Array.isArray(parsed.messages)) {
-      throw new Error('Transcript messages must be an array')
-    }
-    messages = parsed.messages
-  } else {
-    throw new Error(
-      'Transcript must be an array of messages or an object with a messages array',
-    )
-  }
-
-  return convertToLogOption(
-    messages,
-    0,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    filePath,
-  )
-}
-
-/**
  * Checks if a user message has visible content (text or image, not just tool_result).
  * Tool results are displayed as part of collapsed groups, not as standalone messages.
  * Also excludes meta messages which are not shown to the user.
@@ -2215,21 +2003,6 @@ export function saveAiGeneratedTitle(sessionId: UUID, aiTitle: string): void {
     type: 'ai-title',
     aiTitle,
     sessionId,
-  })
-}
-
-/**
- * Append a periodic task summary for `claude ps`. Unlike ai-title this is
- * not re-appended by reAppendSessionMetadata — it's a rolling snapshot of
- * what the agent is doing *now*, so staleness is fine; ps reads the most
- * recent one from the tail.
- */
-export function saveTaskSummary(sessionId: UUID, summary: string): void {
-  appendEntryToFile(getTranscriptPathForSession(sessionId), {
-    type: 'task-summary',
-    summary,
-    sessionId,
-    timestamp: new Date().toISOString(),
   })
 }
 
@@ -3740,88 +3513,6 @@ export async function getAgentTranscript(
   } catch {
     return null
   }
-}
-
-/**
- * Extract agent IDs from progress messages in the conversation.
- * Agent/skill progress messages have type 'progress' with data.type
- * 'agent_progress' or 'skill_progress' and data.agentId.
- * This captures sync agents that emit progress messages during execution.
- */
-export function extractAgentIdsFromMessages(messages: Message[]): string[] {
-  const agentIds: string[] = []
-
-  for (const message of messages) {
-    if (
-      message.type === 'progress' &&
-      message.data &&
-      typeof message.data === 'object' &&
-      'type' in message.data &&
-      (message.data.type === 'agent_progress' ||
-        message.data.type === 'skill_progress') &&
-      'agentId' in message.data &&
-      typeof message.data.agentId === 'string'
-    ) {
-      agentIds.push(message.data.agentId)
-    }
-  }
-
-  return uniq(agentIds)
-}
-
-/**
- * Load subagent transcripts for the given agent IDs
- */
-export async function loadSubagentTranscripts(
-  agentIds: string[],
-): Promise<{ [agentId: string]: Message[] }> {
-  const results = await Promise.all(
-    agentIds.map(async agentId => {
-      try {
-        const result = await getAgentTranscript(asAgentId(agentId))
-        if (result && result.messages.length > 0) {
-          return { agentId, transcript: result.messages }
-        }
-        return null
-      } catch {
-        // Skip if transcript can't be loaded
-        return null
-      }
-    }),
-  )
-
-  const transcripts: { [agentId: string]: Message[] } = {}
-  for (const result of results) {
-    if (result) {
-      transcripts[result.agentId] = result.transcript
-    }
-  }
-  return transcripts
-}
-
-// Globs the session's subagents dir directly — unlike AppState.tasks, this survives task eviction.
-export async function loadAllSubagentTranscriptsFromDisk(): Promise<{
-  [agentId: string]: Message[]
-}> {
-  const subagentsDir = join(
-    getSessionProjectDir() ?? getProjectDir(getOriginalCwd()),
-    getSessionId(),
-    'subagents',
-  )
-  let entries: Dirent[]
-  try {
-    entries = await readdir(subagentsDir, { withFileTypes: true })
-  } catch {
-    return {}
-  }
-  // Filename format is the inverse of getAgentTranscriptPath() — keep in sync.
-  const agentIds = entries
-    .filter(
-      d =>
-        d.isFile() && d.name.startsWith('agent-') && d.name.endsWith('.jsonl'),
-    )
-    .map(d => d.name.slice('agent-'.length, -'.jsonl'.length))
-  return loadSubagentTranscripts(agentIds)
 }
 
 // Exported so useLogMessages can sync-compute the last loggable uuid

@@ -1,10 +1,4 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-} from 'react'
+import React, { createContext, useEffect, useMemo } from 'react'
 
 export type StatsStore = {
   increment(name: string, value?: number): void
@@ -123,38 +117,4 @@ export function StatsProvider({
   }, [store])
 
   return <StatsContext.Provider value={store}>{children}</StatsContext.Provider>
-}
-
-export function useStats(): StatsStore {
-  const store = useContext(StatsContext)
-  if (!store) {
-    throw new Error('useStats must be used within a StatsProvider')
-  }
-  return store
-}
-
-export function useCounter(name: string): (value?: number) => void {
-  const store = useStats()
-  return useCallback(
-    (value?: number) => store.increment(name, value),
-    [store, name],
-  )
-}
-
-export function useGauge(name: string): (value: number) => void {
-  const store = useStats()
-  return useCallback((value: number) => store.set(name, value), [store, name])
-}
-
-export function useTimer(name: string): (value: number) => void {
-  const store = useStats()
-  return useCallback(
-    (value: number) => store.observe(name, value),
-    [store, name],
-  )
-}
-
-export function useSet(name: string): (value: string) => void {
-  const store = useStats()
-  return useCallback((value: string) => store.add(name, value), [store, name])
 }

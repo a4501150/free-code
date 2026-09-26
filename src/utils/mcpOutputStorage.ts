@@ -113,24 +113,6 @@ export function extensionForMimeType(mimeType: string | undefined): string {
   }
 }
 
-/**
- * Heuristic for whether a content-type header indicates binary content that
- * should be saved to disk rather than put into the model context.
- * Text-ish types (text/*, json, xml, form data) are treated as non-binary.
- */
-export function isBinaryContentType(contentType: string): boolean {
-  if (!contentType) return false
-  const mt = (contentType.split(';')[0] ?? '').trim().toLowerCase()
-  if (mt.startsWith('text/')) return false
-  // Structured text formats delivered with an application/ type. Use suffix
-  // or exact match rather than substring so 'openxmlformats' (docx/xlsx) stays binary.
-  if (mt.endsWith('+json') || mt === 'application/json') return false
-  if (mt.endsWith('+xml') || mt === 'application/xml') return false
-  if (mt.startsWith('application/javascript')) return false
-  if (mt === 'application/x-www-form-urlencoded') return false
-  return true
-}
-
 export type PersistBinaryResult =
   | { filepath: string; size: number; ext: string }
   | { error: string }

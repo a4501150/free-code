@@ -53,7 +53,6 @@ export const approvalNoteSchema = z.enum([
   'blind-placement',
   'blind',
 ])
-export type ApprovalNoteValue = z.infer<typeof approvalNoteSchema>
 
 // Output schema for FileEditTool
 const outputSchema = z.object({

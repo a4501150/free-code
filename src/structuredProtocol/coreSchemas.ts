@@ -8,7 +8,7 @@
  */
 
 import { z } from 'zod/v4'
-import { globalConfigDir, globalConfigFile } from '../utils/envUtils.js'
+import { globalConfigDir } from '../utils/envUtils.js'
 // ============================================================================
 // Usage & Model Types
 // ============================================================================
@@ -25,23 +25,6 @@ export const ModelUsageSchema = z.object({
 })
 
 // ============================================================================
-// Output Format Types
-// ============================================================================
-
-export const OutputFormatTypeSchema = z.literal('json_schema')
-
-export const BaseOutputFormatSchema = z.object({
-  type: OutputFormatTypeSchema,
-})
-
-export const JsonSchemaOutputFormatSchema = z.object({
-  type: z.literal('json_schema'),
-  schema: z.record(z.string(), z.unknown()),
-})
-
-export const OutputFormatSchema = JsonSchemaOutputFormatSchema
-
-// ============================================================================
 // Config Types
 // ============================================================================
 
@@ -56,37 +39,6 @@ export const ApiKeySourceSchema = z.enum([
 export const ConfigScopeSchema = z
   .enum(['local', 'user', 'project'])
   .describe('Config scope for settings.')
-
-export const SdkBetaSchema = z.literal('context-1m-2025-08-07')
-
-export const ThinkingAdaptiveSchema = z
-  .object({
-    type: z.literal('adaptive'),
-  })
-  .describe('Claude decides when and how much to think.')
-
-export const ThinkingEnabledSchema = z
-  .object({
-    type: z.literal('enabled'),
-    budgetTokens: z.number().optional(),
-  })
-  .describe('Fixed thinking token budget (older models)')
-
-export const ThinkingDisabledSchema = z
-  .object({
-    type: z.literal('disabled'),
-  })
-  .describe('No extended thinking')
-
-export const ThinkingConfigSchema = z
-  .union([
-    ThinkingAdaptiveSchema,
-    ThinkingEnabledSchema,
-    ThinkingDisabledSchema,
-  ])
-  .describe(
-    "Controls Claude's thinking/reasoning behavior. When set, takes precedence over the deprecated maxThinkingTokens.",
-  )
 
 // ============================================================================
 // MCP Server Config Types (serializable only)
@@ -186,18 +138,6 @@ export const McpServerStatusSchema = z
   })
   .describe('Status information for an MCP server connection.')
 
-export const McpSetServersResultSchema = z
-  .object({
-    added: z.array(z.string()).describe('Names of servers that were added'),
-    removed: z.array(z.string()).describe('Names of servers that were removed'),
-    errors: z
-      .record(z.string(), z.string())
-      .describe(
-        'Map of server names to error messages for servers that failed to connect',
-      ),
-  })
-  .describe('Result of a setMcpServers operation.')
-
 // ============================================================================
 // Permission Types
 // ============================================================================
@@ -264,24 +204,6 @@ export const PermissionDecisionClassificationSchema = z
       'allow, reject for deny). The vocabulary matches tool_decision OTel ' +
       'events (monitoring-usage docs).',
   )
-
-export const PermissionResultSchema = z.union([
-  z.object({
-    behavior: z.literal('allow'),
-    // Optional - may not be provided if hook sets permission without input modification
-    updatedInput: z.record(z.string(), z.unknown()).optional(),
-    updatedPermissions: z.array(PermissionUpdateSchema).optional(),
-    toolUseID: z.string().optional(),
-    decisionClassification: PermissionDecisionClassificationSchema.optional(),
-  }),
-  z.object({
-    behavior: z.literal('deny'),
-    message: z.string(),
-    interrupt: z.boolean().optional(),
-    toolUseID: z.string().optional(),
-    decisionClassification: PermissionDecisionClassificationSchema.optional(),
-  }),
-])
 
 export const PermissionModeSchema = z
   .enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk'])
@@ -793,36 +715,6 @@ export const HookJSONOutputSchema = z.union([
   SyncHookJSONOutputSchema,
 ])
 
-export const PromptRequestOptionSchema = z.object({
-  key: z
-    .string()
-    .describe('Unique key for this option, returned in the response'),
-  label: z.string().describe('Display text for this option'),
-  description: z
-    .string()
-    .optional()
-    .describe('Optional description shown below the label'),
-})
-
-export const PromptRequestSchema = z.object({
-  prompt: z
-    .string()
-    .describe(
-      'Request ID. Presence of this key marks the line as a prompt request.',
-    ),
-  message: z.string().describe('The prompt message to display to the user'),
-  options: z
-    .array(PromptRequestOptionSchema)
-    .describe('Available options for the user to choose from'),
-})
-
-export const PromptResponseSchema = z.object({
-  prompt_response: z
-    .string()
-    .describe('The request ID from the corresponding prompt request'),
-  selected: z.string().describe('The key of the selected option'),
-})
-
 // ============================================================================
 // Skill/Command Types
 // ============================================================================
@@ -981,30 +873,6 @@ export const AgentDefinitionSchema = z
   .describe(
     'Definition for a custom subagent that can be invoked via the Agent tool.',
   )
-
-// ============================================================================
-// Settings Types
-// ============================================================================
-
-export const SettingSourceSchema = z
-  .enum(['user', 'project', 'local'])
-  .describe(
-    'Source for loading filesystem-based settings. ' +
-      `'user' - Global user settings (${globalConfigFile()}). ` +
-      "'project' - Project settings (.freecode/freecode.json). " +
-      "'local' - Local settings (.freecode/freecode.local.json).",
-  )
-
-export const SdkPluginConfigSchema = z
-  .object({
-    type: z
-      .literal('local')
-      .describe("Plugin type. Currently only 'local' is supported"),
-    path: z
-      .string()
-      .describe('Absolute or relative path to the plugin directory'),
-  })
-  .describe('Configuration for loading a plugin.')
 
 // ============================================================================
 // Rewind Types

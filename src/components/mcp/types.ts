@@ -40,26 +40,8 @@ export type {
   ConfigScope,
   McpClaudeAIProxyServerConfig,
   McpHTTPServerConfig,
-  McpJsonConfig,
-  McpSdkServerConfig,
-  McpServerConfig,
-  McpSSEIDEServerConfig,
   McpSSEServerConfig,
   McpStdioServerConfig,
-  McpWebSocketIDEServerConfig,
-  McpWebSocketServerConfig,
-  ScopedMcpServerConfig,
-  SerializedClient,
-  SerializedTool,
-  ServerResource,
-  Transport,
-} from '../../services/mcp/types.js'
-export {
-  ConfigScopeSchema,
-  McpJsonConfigSchema,
-  McpServerConfigSchema,
-  McpStdioServerConfigSchema,
-  TransportSchema,
 } from '../../services/mcp/types.js'
 
 import type { ConfigScope } from '../../services/mcp/types.js'
