@@ -218,13 +218,15 @@ export type JwtAuthGrantResult = {
  * RFC 8693 Token Exchange at the IdP: id_token → ID-JAG.
  * Validates `issued_token_type` is `urn:ietf:params:oauth:token-type:id-jag`.
  *
- * `clientSecret` is optional — sent via `client_secret_post` if present.
+ * `clientSecret` is optional — sent per `tokenEndpointAuthMethods` if present.
  * Some IdPs register the client as confidential even when they advertise
  * `token_endpoint_auth_method: "none"`.
  *
- * TODO(xaa-ga): consult `token_endpoint_auth_methods_supported` from IdP
- * OIDC metadata and support `client_secret_basic`, mirroring the AS-side
- * selection in `performCrossAppAccess`. All major IdPs accept POST today.
+ * Auth method selection mirrors the AS side in `performCrossAppAccess` with
+ * one difference: the IdP leg defaults to `client_secret_post` when the IdP
+ * advertises nothing, because that is what every major IdP accepts and what
+ * this call has always sent — switching the default on silence would break
+ * un-advertised IdPs for no gain.
  */
 export async function requestJwtAuthorizationGrant(opts: {
   tokenEndpoint: string
@@ -233,10 +235,20 @@ export async function requestJwtAuthorizationGrant(opts: {
   idToken: string
   clientId: string
   clientSecret?: string
+  /**
+   * `token_endpoint_auth_methods_supported` from the IdP's OIDC discovery
+   * document, when known. Absent → treated as [client_secret_post].
+   */
+  tokenEndpointAuthMethods?: string[]
   scope?: string
   fetchFn?: FetchLike
 }): Promise<JwtAuthGrantResult> {
   const fetchFn = opts.fetchFn ?? defaultFetch
+  const authMethods = opts.tokenEndpointAuthMethods
+  const authMethod: 'client_secret_basic' | 'client_secret_post' =
+    authMethods && authMethods.includes('client_secret_basic')
+      ? 'client_secret_basic'
+      : 'client_secret_post'
   const params = new URLSearchParams({
     grant_type: TOKEN_EXCHANGE_GRANT,
     requested_token_type: ID_JAG_TOKEN_TYPE,
@@ -246,8 +258,19 @@ export async function requestJwtAuthorizationGrant(opts: {
     subject_token_type: ID_TOKEN_TYPE,
     client_id: opts.clientId,
   })
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  }
   if (opts.clientSecret) {
-    params.set('client_secret', opts.clientSecret)
+    if (authMethod === 'client_secret_basic') {
+      headers.Authorization =
+        'Basic ' +
+        Buffer.from(
+          `${encodeURIComponent(opts.clientId)}:${encodeURIComponent(opts.clientSecret)}`,
+        ).toString('base64')
+    } else {
+      params.set('client_secret', opts.clientSecret)
+    }
   }
   if (opts.scope) {
     params.set('scope', opts.scope)
@@ -255,7 +278,7 @@ export async function requestJwtAuthorizationGrant(opts: {
 
   const res = await fetchFn(opts.tokenEndpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers,
     body: params,
   })
   if (!res.ok) {
@@ -408,6 +431,11 @@ export type XaaConfig = {
   idpIdToken: string
   /** IdP token endpoint (where to send the RFC 8693 token-exchange) */
   idpTokenEndpoint: string
+  /**
+   * `token_endpoint_auth_methods_supported` from the IdP's OIDC discovery
+   * document (optional metadata) — drives basic vs post for the IdP leg.
+   */
+  idpTokenEndpointAuthMethods?: string[]
 }
 
 /**
@@ -488,6 +516,7 @@ export async function performCrossAppAccess(
     idToken: config.idpIdToken,
     clientId: config.idpClientId,
     clientSecret: config.idpClientSecret,
+    tokenEndpointAuthMethods: config.idpTokenEndpointAuthMethods,
     fetchFn,
   })
   logMCPDebug(serverName, `XAA: ID-JAG obtained`)

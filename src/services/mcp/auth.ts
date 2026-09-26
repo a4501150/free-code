@@ -41,6 +41,8 @@ import type { SecureStorageData } from '../../utils/secureStorage/types.js'
 import { sleep } from '../../utils/sleep.js'
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
 
+type McpOAuthEntry = NonNullable<SecureStorageData['mcpOAuth']>[string]
+
 import { buildRedirectUri, findAvailablePort } from './oauthPort.js'
 import type { McpHTTPServerConfig, McpSSEServerConfig } from './types.js'
 import { getLoggingSafeMcpBaseUrl } from './utils.js'
@@ -753,6 +755,8 @@ async function performMCPXaaAuth(
           idpClientSecret,
           idpIdToken: idToken,
           idpTokenEndpoint: oidc.token_endpoint,
+          idpTokenEndpointAuthMethods:
+            oidc.token_endpoint_auth_methods_supported,
         },
         serverName,
         abortSignal,
@@ -1669,13 +1673,11 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
    * On exchange failure, clears the id_token cache so the next interactive
    * auth does a fresh IdP login (the cached id_token is likely stale/revoked).
    *
-   * TODO(xaa-ga): add cross-process lockfile before GA. `_refreshInProgress`
-   * only dedupes within one process — two CC instances with expiring tokens
-   * both fire the full 4-request XAA chain and race on storage.update().
-   * Unlike inc-4829 the id_token is not single-use so both access_tokens
-   * stay valid (wasted round-trips + keychain write race, not brickage),
-   * but this is the shape CLAUDE.md flags under "Token/auth caching across
-   * process boundaries". Mirror refreshAuthorization()'s lockfile pattern.
+   * Runs under withRefreshLock(): `_refreshInProgress` only dedupes within
+   * one process; the lock stops concurrent CC instances from both firing the
+   * 4-request XAA chain and racing the storage.update() read-modify-write.
+   * If a peer process already left a fresh token, its stored tokens are
+   * returned and the chain is skipped entirely.
    */
   private async xaaRefresh(): Promise<OAuthTokens | undefined> {
     const idp = getXaaIdpSettings()
@@ -1701,81 +1703,88 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
     }
 
     const idpClientSecret = getIdpClientSecret(idp.issuer)
+    const serverKey = getServerKey(this.serverName, this.serverConfig)
+    // Copy narrowed values into locals so the lock callback keeps the types
+    // (property narrowing does not survive into nested function scopes).
+    const clientSecret = clientConfig.clientSecret
 
-    // Discover IdP token endpoint. Could cache (fetchCache.ts already
-    // caches /.well-known/ requests), but OIDC metadata is cheap + idempotent.
-    // xaaRefresh is the silent tokens() path — soft-fail to undefined so the
-    // caller falls through to needs-authentication instead of throwing mid-connect.
-    let oidc
-    try {
-      oidc = await discoverOidc(idp.issuer)
-    } catch (e) {
-      logMCPDebug(
-        this.serverName,
-        `XAA: OIDC discovery failed in silent refresh: ${errorMessage(e)}`,
-      )
-      return undefined
-    }
-
-    try {
-      const tokens = await performCrossAppAccess(
-        this.serverConfig.url,
-        {
-          clientId,
-          clientSecret: clientConfig.clientSecret,
-          idpClientId: idp.clientId,
-          idpClientSecret,
-          idpIdToken: idToken,
-          idpTokenEndpoint: oidc.token_endpoint,
-        },
-        this.serverName,
-      )
-      // Write directly (not via saveTokens) so clientId + clientSecret land in
-      // storage even when this is the first write for serverKey. saveTokens
-      // only spreads existing data; if no prior performMCPXaaAuth ran,
-      // revokeServerTokens would later read tokenData.clientId as undefined
-      // and send a client_id-less RFC 7009 request that strict ASes reject.
-      const storage = getSecureStorage()
-      const existingData = storage.read() || {}
-      const serverKey = getServerKey(this.serverName, this.serverConfig)
-      const prev = existingData.mcpOAuth?.[serverKey]
-      storage.update({
-        ...existingData,
-        mcpOAuth: {
-          ...existingData.mcpOAuth,
-          [serverKey]: {
-            ...prev,
-            serverName: this.serverName,
-            serverUrl: this.serverConfig.url,
-            accessToken: tokens.access_token,
-            refreshToken: tokens.refresh_token ?? prev?.refreshToken,
-            expiresAt: Date.now() + (tokens.expires_in || 3600) * 1000,
-            scope: tokens.scope,
-            clientId,
-            clientSecret: clientConfig.clientSecret,
-            discoveryState: {
-              authorizationServerUrl: tokens.authorizationServerUrl,
-            },
-          },
-        },
-      })
-      return {
-        access_token: tokens.access_token,
-        token_type: 'Bearer',
-        expires_in: tokens.expires_in,
-        scope: tokens.scope,
-        refresh_token: tokens.refresh_token,
-      }
-    } catch (e) {
-      if (e instanceof XaaTokenExchangeError && e.shouldClearIdToken) {
-        clearIdpIdToken(idp.issuer)
+    return this.withRefreshLock(serverKey, async () => {
+      // Discover IdP token endpoint. Could cache (fetchCache.ts already
+      // caches /.well-known/ requests), but OIDC metadata is cheap + idempotent.
+      // xaaRefresh is the silent tokens() path — soft-fail to undefined so the
+      // caller falls through to needs-authentication instead of throwing mid-connect.
+      let oidc
+      try {
+        oidc = await discoverOidc(idp.issuer)
+      } catch (e) {
         logMCPDebug(
           this.serverName,
-          'XAA: cleared id_token after exchange failure',
+          `XAA: OIDC discovery failed in silent refresh: ${errorMessage(e)}`,
         )
+        return undefined
       }
-      throw e
-    }
+
+      try {
+        const tokens = await performCrossAppAccess(
+          this.serverConfig.url,
+          {
+            clientId,
+            clientSecret,
+            idpClientId: idp.clientId,
+            idpClientSecret,
+            idpIdToken: idToken,
+            idpTokenEndpoint: oidc.token_endpoint,
+            idpTokenEndpointAuthMethods:
+              oidc.token_endpoint_auth_methods_supported,
+          },
+          this.serverName,
+        )
+        // Write directly (not via saveTokens) so clientId + clientSecret land in
+        // storage even when this is the first write for serverKey. saveTokens
+        // only spreads existing data; if no prior performMCPXaaAuth ran,
+        // revokeServerTokens would later read tokenData.clientId as undefined
+        // and send a client_id-less RFC 7009 request that strict ASes reject.
+        const storage = getSecureStorage()
+        const existingData = storage.read() || {}
+        const prev = existingData.mcpOAuth?.[serverKey]
+        storage.update({
+          ...existingData,
+          mcpOAuth: {
+            ...existingData.mcpOAuth,
+            [serverKey]: {
+              ...prev,
+              serverName: this.serverName,
+              serverUrl: this.serverConfig.url,
+              accessToken: tokens.access_token,
+              refreshToken: tokens.refresh_token ?? prev?.refreshToken,
+              expiresAt: Date.now() + (tokens.expires_in || 3600) * 1000,
+              scope: tokens.scope,
+              clientId,
+              clientSecret: clientConfig.clientSecret,
+              discoveryState: {
+                authorizationServerUrl: tokens.authorizationServerUrl,
+              },
+            },
+          },
+        })
+        return {
+          access_token: tokens.access_token,
+          token_type: 'Bearer',
+          expires_in: tokens.expires_in,
+          scope: tokens.scope,
+          refresh_token: tokens.refresh_token,
+        }
+      } catch (e) {
+        if (e instanceof XaaTokenExchangeError && e.shouldClearIdToken) {
+          clearIdpIdToken(idp.issuer)
+          logMCPDebug(
+            this.serverName,
+            'XAA: cleared id_token after exchange failure',
+          )
+        }
+        throw e
+      }
+    })
   }
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
@@ -2020,6 +2029,31 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
     refreshToken: string,
   ): Promise<OAuthTokens | undefined> {
     const serverKey = getServerKey(this.serverName, this.serverConfig)
+    return this.withRefreshLock(serverKey, async tokenData => {
+      // Use the freshest refresh token from storage
+      if (tokenData?.refreshToken) {
+        refreshToken = tokenData.refreshToken
+      }
+      return await this._doRefresh(refreshToken)
+    })
+  }
+
+  /**
+   * Cross-process lock around any token-refresh leg (refresh_token or XAA).
+   * Concurrent CC instances sharing the credential store must not both run
+   * the refresh chain — the storage update is a read-modify-write of the
+   * whole blob. Acquisition failure is soft (proceed without the lock):
+   * the worst case is a duplicated refresh, never a stuck session.
+   *
+   * Inside the lock the store is re-read; if another process already left a
+   * token with >5min life, its tokens are returned and `run` never executes.
+   */
+  private async withRefreshLock(
+    serverKey: string,
+    run: (
+      tokenData: McpOAuthEntry | undefined,
+    ) => Promise<OAuthTokens | undefined>,
+  ): Promise<OAuthTokens | undefined> {
     const claudeDir = getClaudeConfigHomeDir()
     await mkdir(claudeDir, { recursive: true })
     const sanitizedKey = serverKey.replace(/[^a-zA-Z0-9]/g, '_')
@@ -2085,12 +2119,8 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
             token_type: 'Bearer',
           }
         }
-        // Use the freshest refresh token from storage
-        if (tokenData.refreshToken) {
-          refreshToken = tokenData.refreshToken
-        }
       }
-      return await this._doRefresh(refreshToken)
+      return await run(tokenData)
     } finally {
       if (release) {
         try {
