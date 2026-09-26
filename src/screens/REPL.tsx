@@ -177,7 +177,6 @@ import { useMergedCommands } from '../hooks/useMergedCommands.js'
 import { useSkillsChange } from '../hooks/useSkillsChange.js'
 import { useManagePlugins } from '../hooks/useManagePlugins.js'
 import { Messages } from '../components/Messages.js'
-import { TaskListV2 } from '../components/TaskListV2.js'
 import { useTasksV2WithCollapseEffect } from '../hooks/useTasksV2.js'
 import { maybeMarkProjectOnboardingComplete } from '../projectOnboardingState.js'
 import type { MCPServerConnection } from '../services/mcp/types.js'
@@ -344,7 +343,10 @@ import {
   TranscriptSearchBar,
 } from '../components/repl/TranscriptChrome.js'
 import { ReplDialogLayer } from '../components/repl/ReplDialogLayer.js'
-import { useTaskPanelCompletedHold } from '../components/TaskLivePanel.js'
+import {
+  TaskIdlePanel,
+  useTaskPanelCompletedHold,
+} from '../components/TaskLivePanel.js'
 import { ReplKeybindingShell } from '../components/repl/ReplKeybindingShell.js'
 import { useReplToolJSX } from '../hooks/repl/useReplToolJSX.js'
 import { useReplMessages } from '../hooks/repl/useReplMessages.js'
@@ -2105,6 +2107,7 @@ export function REPL({
                   streamingThinking={streamingThinking}
                 />
               )}
+              {!spinnerVisible && <TaskIdlePanel />}
               {!spinnerVisible &&
                 !isLoading &&
                 !userInputOnProcessing &&

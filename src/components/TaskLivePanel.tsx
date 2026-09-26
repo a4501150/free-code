@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Box } from '../ink.js'
-import { useTasksV2 } from '../hooks/useTasksV2.js'
+import { useSubagentTasksV2, useTasksV2 } from '../hooks/useTasksV2.js'
+import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
 import { useAppState } from '../state/AppState.js'
 import type { Task } from '../utils/tasks.js'
 import { MessageResponse } from './MessageResponse.js'
@@ -28,12 +29,14 @@ export function useTaskPanelCompletedHold(): boolean {
 }
 
 /**
- * The live task-list rows, hosted by every SpinnerWithVerb variant (never
- * mounted standalone): the panel is visible only while the spinner block is
- * up, so its lifetime needs no coordination of its own — the spinner decides
- * visibility and the panel only applies its extra stand-downs (a compacting
- * agent on screen, and the store's all-completed window ending in the list
- * reset+collapse, which also collapses expandedView).
+ * The live task-list rows, hosted by every SpinnerWithVerb variant: the panel
+ * is visible only while the spinner block is up, so its busy-time lifetime
+ * needs no coordination of its own — the spinner decides visibility and the
+ * panel only applies its extra stand-downs (a compacting agent on screen, and
+ * the store's all-completed window ending in the list reset+collapse, which
+ * also collapses expandedView). When the spinner unmounts at idle, the REPL
+ * mounts TaskIdlePanel below instead, so the headered panel replaces the
+ * spinner rather than vanishing with it.
  *
  * Renders FLUSH under the spinner row — no margin of its own. The spinner
  * owns the one blank separator row against the messages (constant, not
@@ -56,4 +59,39 @@ export function TaskPanelRows({ tasks }: { tasks: Task[] }): React.ReactNode {
       </MessageResponse>
     </Box>
   )
+}
+
+/**
+ * The task panel mounted when the spinner is NOT visible: the standalone
+ * list with its "N tasks (M done, K in progress, P open)" header takes the
+ * spinner's bottom-anchored slot, so the panel visibly replaces the spinner
+ * when network activity stops (the official layout). The REPL gates this on
+ * !spinnerVisible, so the swap happens the frame the spinner unmounts (the
+ * unmount grace and the completed-panel hold keep the two mounts disjoint);
+ * when the store's all-completed reset collapses expandedView, both render
+ * nothing in the same update.
+ *
+ * Uses the same viewed-list selection as SpinnerWithVerbInner: viewing a
+ * local agent shows that agent's own list, never the main session's.
+ */
+export function TaskIdlePanel(): React.ReactNode {
+  const tasks = useAppState(s => s.tasks)
+  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
+  const expandedView = useAppState(s => s.expandedView)
+  const viewedLocalAgent = viewingAgentTaskId
+    ? (() => {
+        const t = tasks[viewingAgentTaskId]
+        return isLocalAgentTask(t) ? t : undefined
+      })()
+    : undefined
+  const mainTasksV2 = useTasksV2()
+  const subagentTasksV2 = useSubagentTasksV2(viewingAgentTaskId)
+  const tasksV2 = viewedLocalAgent
+    ? subagentTasksV2
+    : (subagentTasksV2 ?? mainTasksV2)
+
+  if (expandedView !== 'tasks' || !tasksV2 || tasksV2.length === 0) {
+    return null
+  }
+  return <TaskListV2 tasks={tasksV2} isStandalone />
 }
