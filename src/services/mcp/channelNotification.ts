@@ -13,7 +13,7 @@
  * Runtime gate tengu_harbor.
  */
 
-import type { ServerCapabilities } from '@modelcontextprotocol/sdk/types.js'
+import { type ServerCapabilities } from '@modelcontextprotocol/client'
 import { z } from 'zod/v4'
 import { type ChannelEntry, getAllowedChannels } from '../../bootstrap/state.js'
 import { CHANNEL_TAG } from '../../constants/xml.js'
@@ -25,14 +25,12 @@ import {
   getChannelAllowlist,
 } from './channelAllowlist.js'
 
-export const ChannelMessageNotificationSchema = z.object({
-  method: z.literal('notifications/claude/channel'),
-  params: z.object({
-    content: z.string(),
-    // Opaque passthrough — thread_id, user, whatever the channel wants the
-    // model to see. Rendered as attributes on the <channel> tag.
-    meta: z.record(z.string(), z.string()).optional(),
-  }),
+export const CHANNEL_MESSAGE_METHOD = 'notifications/claude/channel'
+export const ChannelMessageParamsSchema = z.object({
+  content: z.string(),
+  // Opaque passthrough — thread_id, user, whatever the channel wants the
+  // model to see. Rendered as attributes on the <channel> tag.
+  meta: z.record(z.string(), z.string()).optional(),
 })
 
 /**
@@ -50,12 +48,9 @@ export const ChannelMessageNotificationSchema = z.object({
  */
 export const CHANNEL_PERMISSION_METHOD =
   'notifications/claude/channel/permission'
-export const ChannelPermissionNotificationSchema = z.object({
-  method: z.literal(CHANNEL_PERMISSION_METHOD),
-  params: z.object({
-    request_id: z.string(),
-    behavior: z.enum(['allow', 'deny']),
-  }),
+export const ChannelPermissionParamsSchema = z.object({
+  request_id: z.string(),
+  behavior: z.enum(['allow', 'deny']),
 })
 
 /**

@@ -19,8 +19,8 @@
 import {
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
-} from '@modelcontextprotocol/sdk/client/auth.js'
-import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
+} from '@modelcontextprotocol/client'
+import type { FetchLike } from '@modelcontextprotocol/client'
 import { z } from 'zod/v4'
 import { logMCPDebug } from '../../utils/log.js'
 import { jsonStringify } from '../../utils/slowOperations.js'

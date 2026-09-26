@@ -1,8 +1,8 @@
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import type {
-  Resource,
-  ServerCapabilities,
-} from '@modelcontextprotocol/sdk/types.js'
+import type { Client } from '@modelcontextprotocol/client'
+import {
+  type Resource,
+  type ServerCapabilities,
+} from '@modelcontextprotocol/client'
 import { z } from 'zod/v4'
 // Configuration schemas and types
 export const ConfigScopeSchema = z.enum([

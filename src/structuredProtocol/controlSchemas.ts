@@ -32,7 +32,7 @@ import {
 // External Type Placeholders
 // ============================================================================
 
-// JSONRPCMessage from @modelcontextprotocol/sdk - treat as unknown
+// JSONRPCMessage from @modelcontextprotocol/core - treat as unknown
 export const JSONRPCMessagePlaceholder = z.unknown()
 
 // ============================================================================

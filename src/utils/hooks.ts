@@ -102,7 +102,7 @@ import type {
 } from 'src/structuredProtocol/index.js'
 import type { StatusLineCommandInput } from '../types/statusLine.js'
 import { getDefaultStatusLineCommand } from '../statusline/defaultScript.js'
-import type { ElicitResult } from '@modelcontextprotocol/sdk/types.js'
+import { type ElicitResult } from '@modelcontextprotocol/client'
 import type { FileSuggestionCommandInput } from '../types/fileSuggestion.js'
 import type { HookResultMessage } from 'src/types/message.js'
 import chalk from 'chalk'

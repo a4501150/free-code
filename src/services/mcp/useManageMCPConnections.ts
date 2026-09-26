@@ -16,11 +16,6 @@ import type {
   ServerResource,
 } from './types.js'
 
-import {
-  PromptListChangedNotificationSchema,
-  ResourceListChangedNotificationSchema,
-  ToolListChangedNotificationSchema,
-} from '@modelcontextprotocol/sdk/types.js'
 import omit from 'lodash-es/omit.js'
 import reject from 'lodash-es/reject.js'
 import {
@@ -45,9 +40,10 @@ import { errorMessage } from '../../utils/errors.js'
 import { logMCPDebug, logMCPError } from '../../utils/log.js'
 import { enqueue } from '../../utils/messageQueueManager.js'
 import {
+  CHANNEL_MESSAGE_METHOD,
   CHANNEL_PERMISSION_METHOD,
-  ChannelMessageNotificationSchema,
-  ChannelPermissionNotificationSchema,
+  ChannelMessageParamsSchema,
+  ChannelPermissionParamsSchema,
   findChannelEntry,
   gateChannelServer,
   wrapChannelMessage,
@@ -467,9 +463,9 @@ export function useManageMCPConnections(
             case 'register':
               logMCPDebug(client.name, 'Channel notifications registered')
               client.client.setNotificationHandler(
-                ChannelMessageNotificationSchema,
-                async notification => {
-                  const { content, meta } = notification.params
+                CHANNEL_MESSAGE_METHOD,
+                { params: ChannelMessageParamsSchema },
+                async ({ content, meta }) => {
                   logMCPDebug(
                     client.name,
                     `notifications/claude/channel: ${content.slice(0, 80)}`,
@@ -496,9 +492,9 @@ export function useManageMCPConnections(
                 ] !== undefined
               ) {
                 client.client.setNotificationHandler(
-                  ChannelPermissionNotificationSchema,
-                  async notification => {
-                    const { request_id, behavior } = notification.params
+                  CHANNEL_PERMISSION_METHOD,
+                  { params: ChannelPermissionParamsSchema },
+                  async ({ request_id, behavior }) => {
                     const resolved =
                       channelPermCallbacksRef.current?.resolve(
                         request_id,
@@ -560,7 +556,7 @@ export function useManageMCPConnections(
           // These allow the server to notify us when tools, prompts, or resources change
           if (client.capabilities?.tools?.listChanged) {
             client.client.setNotificationHandler(
-              ToolListChangedNotificationSchema,
+              'notifications/tools/list_changed',
               async () => {
                 logMCPDebug(
                   client.name,
@@ -594,7 +590,7 @@ export function useManageMCPConnections(
 
           if (client.capabilities?.prompts?.listChanged) {
             client.client.setNotificationHandler(
-              PromptListChangedNotificationSchema,
+              'notifications/prompts/list_changed',
               async () => {
                 logMCPDebug(
                   client.name,
@@ -619,7 +615,7 @@ export function useManageMCPConnections(
 
           if (client.capabilities?.resources?.listChanged) {
             client.client.setNotificationHandler(
-              ResourceListChangedNotificationSchema,
+              'notifications/resources/list_changed',
               async () => {
                 logMCPDebug(
                   client.name,

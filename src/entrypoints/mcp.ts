@@ -1,12 +1,10 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { Server } from '@modelcontextprotocol/server'
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
 import {
-  CallToolRequestSchema,
   type CallToolResult,
-  ListToolsRequestSchema,
   type ListToolsResult,
   type Tool as MCPTool,
-} from '@modelcontextprotocol/sdk/types.js'
+} from '@modelcontextprotocol/server'
 import { getDefaultAppState } from 'src/state/AppStateStore.js'
 import review from '../commands/review.js'
 import type { Command } from '../commands.js'
@@ -108,48 +106,45 @@ export async function startMCPServer(
     },
   )
 
-  server.setRequestHandler(
-    ListToolsRequestSchema,
-    async (): Promise<ListToolsResult> => {
-      const toolPermissionContext = getEmptyToolPermissionContext()
-      const { tools: mcpTools } = await ensureMcpBridge()
-      const tools = [...getTools(toolPermissionContext), ...mcpTools]
-      return {
-        tools: await Promise.all(
-          tools.map(async tool => {
-            let outputSchema: ToolOutput | undefined
-            if (tool.outputSchema) {
-              const convertedSchema = zodToJsonSchema(tool.outputSchema)
-              // MCP SDK requires outputSchema to have type: "object" at root level
-              // Skip schemas with anyOf/oneOf at root (from z.union, z.discriminatedUnion, etc.)
-              // See: https://github.com/anthropics/claude-code/issues/8014
-              if (
-                typeof convertedSchema === 'object' &&
-                convertedSchema !== null &&
-                'type' in convertedSchema &&
-                convertedSchema.type === 'object'
-              ) {
-                outputSchema = convertedSchema as ToolOutput
-              }
+  server.setRequestHandler('tools/list', async (): Promise<ListToolsResult> => {
+    const toolPermissionContext = getEmptyToolPermissionContext()
+    const { tools: mcpTools } = await ensureMcpBridge()
+    const tools = [...getTools(toolPermissionContext), ...mcpTools]
+    return {
+      tools: await Promise.all(
+        tools.map(async tool => {
+          let outputSchema: ToolOutput | undefined
+          if (tool.outputSchema) {
+            const convertedSchema = zodToJsonSchema(tool.outputSchema)
+            // MCP SDK requires outputSchema to have type: "object" at root level
+            // Skip schemas with anyOf/oneOf at root (from z.union, z.discriminatedUnion, etc.)
+            // See: https://github.com/anthropics/claude-code/issues/8014
+            if (
+              typeof convertedSchema === 'object' &&
+              convertedSchema !== null &&
+              'type' in convertedSchema &&
+              convertedSchema.type === 'object'
+            ) {
+              outputSchema = convertedSchema as ToolOutput
             }
-            return {
-              ...tool,
-              description: await tool.prompt({
-                getToolPermissionContext: async () => toolPermissionContext,
-                tools,
-                agents: [],
-              }),
-              inputSchema: getMCPToolInputSchema(tool),
-              outputSchema,
-            }
-          }),
-        ),
-      }
-    },
-  )
+          }
+          return {
+            ...tool,
+            description: await tool.prompt({
+              getToolPermissionContext: async () => toolPermissionContext,
+              tools,
+              agents: [],
+            }),
+            inputSchema: getMCPToolInputSchema(tool),
+            outputSchema,
+          }
+        }),
+      ),
+    }
+  })
 
   server.setRequestHandler(
-    CallToolRequestSchema,
+    'tools/call',
     async ({ params: { name, arguments: args } }): Promise<CallToolResult> => {
       const toolPermissionContext = getEmptyToolPermissionContext()
       const { clients: mcpClients, tools: mcpTools } = await ensureMcpBridge()

@@ -2,12 +2,9 @@ import { logForDebugging } from 'src/utils/debug.js'
 import { z } from 'zod/v4'
 import type { ConnectedMCPServer, MCPServerConnection } from './types.js'
 
-export const LogEventNotificationSchema = z.object({
-  method: z.literal('log_event'),
-  params: z.object({
-    eventName: z.string(),
-    eventData: z.object({}).passthrough(),
-  }),
+export const LogEventParamsSchema = z.object({
+  eventName: z.string(),
+  eventData: z.object({}).passthrough(),
 })
 
 // Store the VSCode MCP client reference for sending notifications
@@ -50,9 +47,10 @@ export function setupVscodeSdkMcp(sdkClients: MCPServerConnection[]): void {
     vscodeMcpClient = client
 
     client.client.setNotificationHandler(
-      LogEventNotificationSchema,
-      async notification => {
-        const { eventName, eventData } = notification.params
+      'log_event',
+      { params: LogEventParamsSchema },
+      async params => {
+        const { eventName, eventData } = params
       },
     )
 

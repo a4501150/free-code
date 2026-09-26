@@ -1,10 +1,8 @@
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import {
-  ElicitationCompleteNotificationSchema,
-  type ElicitRequestParams,
-  ElicitRequestSchema,
-  type ElicitResult,
-} from '@modelcontextprotocol/sdk/types.js'
+import type { Client } from '@modelcontextprotocol/client'
+import type {
+  ElicitRequestParams,
+  ElicitResult,
+} from '@modelcontextprotocol/client'
 import type { AppState } from '../../state/AppState.js'
 import {
   executeElicitationHooks,
@@ -70,7 +68,7 @@ export function registerElicitationHandler(
   // Wrapped in try/catch because setRequestHandler throws if the client wasn't
   // created with elicitation capability declared.
   try {
-    client.setRequestHandler(ElicitRequestSchema, async (request, extra) => {
+    client.setRequestHandler('elicitation/create', async (request, ctx) => {
       logMCPDebug(
         serverName,
         `Received elicitation request: ${jsonStringify(request)}`,
@@ -83,7 +81,7 @@ export function registerElicitationHandler(
         const hookResponse = await runElicitationHooks(
           serverName,
           request.params,
-          extra.signal,
+          ctx.mcpReq.signal,
         )
         if (hookResponse) {
           logMCPDebug(
@@ -103,7 +101,7 @@ export function registerElicitationHandler(
             resolve({ action: 'cancel' })
           }
 
-          if (extra.signal.aborted) {
+          if (ctx.mcpReq.signal.aborted) {
             onAbort()
             return
           }
@@ -118,12 +116,12 @@ export function registerElicitationHandler(
                 ...prev.elicitation.queue,
                 {
                   serverName,
-                  requestId: extra.requestId,
+                  requestId: ctx.mcpReq.id,
                   params: request.params,
-                  signal: extra.signal,
+                  signal: ctx.mcpReq.signal,
                   waitingState,
                   respond: (result: ElicitResult) => {
-                    extra.signal.removeEventListener('abort', onAbort)
+                    ctx.mcpReq.signal.removeEventListener('abort', onAbort)
                     resolve(result)
                   },
                 },
@@ -131,7 +129,7 @@ export function registerElicitationHandler(
             },
           }))
 
-          extra.signal.addEventListener('abort', onAbort, { once: true })
+          ctx.mcpReq.signal.addEventListener('abort', onAbort, { once: true })
         })
         const rawResult = await response
         logMCPDebug(
@@ -141,7 +139,7 @@ export function registerElicitationHandler(
         const result = await runElicitationResultHooks(
           serverName,
           rawResult,
-          extra.signal,
+          ctx.mcpReq.signal,
           mode,
           elicitationId,
         )
@@ -155,7 +153,7 @@ export function registerElicitationHandler(
     // Register handler for elicitation completion notifications (URL mode).
     // Sets `completed: true` on the matching queue event; the dialog reacts to this flag.
     client.setNotificationHandler(
-      ElicitationCompleteNotificationSchema,
+      'notifications/elicitation/complete',
       notification => {
         const { elicitationId } = notification.params
         logMCPDebug(

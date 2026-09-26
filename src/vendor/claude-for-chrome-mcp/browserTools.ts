@@ -1,4 +1,6 @@
-export const BROWSER_TOOLS = [
+import type { Tool } from '@modelcontextprotocol/server'
+
+export const BROWSER_TOOLS: Tool[] = [
   {
     name: 'javascript_tool',
     description:

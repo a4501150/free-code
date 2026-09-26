@@ -84,7 +84,7 @@ import { getSnippetForTwoFileDiff } from 'src/tools/FileEditTool/utils.js'
 import { maybeResizeAndDownsampleImageBlock } from './imageResizer.js'
 import type { PastedContent } from './config.js'
 import { getGlobalConfig } from './config.js'
-import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js'
+import { type ReadResourceResult } from '@modelcontextprotocol/client'
 import { getSkillToolCommands } from '../commands.js'
 import type { Command } from '../types/command.js'
 import {
