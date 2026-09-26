@@ -28,7 +28,7 @@ import {
   supportsTabStatus,
   wrapForMultiplexer,
 } from '../ink/termio/osc.js'
-import type { AppState } from '../state/AppState.js'
+import type { AppState } from '../state/AppStateStore.js'
 import { runCleanupFunctions } from './cleanupRegistry.js'
 import { getInitialSettings } from './settings/settings.js'
 import { logForDebugging } from './debug.js'

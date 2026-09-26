@@ -11,7 +11,7 @@ import {
   WORKTREE_TAG,
 } from '../../constants/xml.js'
 import { abortSpeculation } from '../../services/PromptSuggestion/speculation.js'
-import type { AppState } from '../../state/AppState.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import type { SetAppState, Task, TaskStateBase } from '../../Task.js'
 import { createTaskStateBase } from '../../Task.js'
 import type { CompactProgressEvent, Tools } from '../../Tool.js'

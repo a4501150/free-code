@@ -1,7 +1,7 @@
 import memoize from 'lodash-es/memoize.js'
 import type { HookEvent } from 'src/structuredProtocol/index.js'
 import { getRegisteredHooks } from '../../bootstrap/state.js'
-import type { AppState } from '../../state/AppState.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import {
   getAllHooks,
   type IndividualHookConfig,

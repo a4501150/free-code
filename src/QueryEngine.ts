@@ -33,7 +33,7 @@ import { hasAutoMemPathOverride } from './memdir/paths.js'
 import { query } from './query.js'
 import { categorizeRetryableAPIError } from './services/api/errors.js'
 import type { MCPServerConnection } from './services/mcp/types.js'
-import type { AppState } from './state/AppState.js'
+import type { AppState } from './state/AppStateStore.js'
 import {
   type CanUseToolFn,
   type Tools,
@@ -518,8 +518,11 @@ export class QueryEngine {
       tools,
       mcpClients,
       model: mainLoopModel,
+      // The app-state mode is the internal superset ('auto'/'bubble' are
+      // UI-only and not part of the wire PermissionMode union), so this
+      // narrowing is a real downcast, not a forgotten import.
       permissionMode: initialAppState.toolPermissionContext
-        .mode as PermissionMode, // TODO: avoid the cast
+        .mode as PermissionMode,
       commands,
       agents,
       skills,

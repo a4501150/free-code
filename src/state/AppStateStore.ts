@@ -114,7 +114,10 @@ export type AppState = DeepImmutable<{
   foregroundedTaskId?: string
   // Task ID of the background agent whose transcript is being viewed (undefined = main view)
   viewingAgentTaskId?: string
-  // TODO (ashwin): see if we can use utility-types DeepReadonly for this
+  // The store's deep read-only view uses the local DeepImmutable
+  // (types/utils.ts): utility-types' DeepReadonly was considered and dropped
+  // because it does not recurse through Map/Set parameters, and this store
+  // holds both (agentNameRegistry, expandedAgentToolUseIds, seenRanges...).
   mcp: {
     clients: MCPServerConnection[]
     tools: Tool[]

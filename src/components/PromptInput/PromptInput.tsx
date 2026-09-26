@@ -18,11 +18,11 @@ import {
   useIdeAtMentioned,
 } from 'src/hooks/useIdeAtMentioned.js'
 import {
-  type AppState,
   useAppState,
   useAppStateStore,
   useSetAppState,
 } from 'src/state/AppState.js'
+import type { AppState } from 'src/state/AppStateStore.js'
 import type { FooterItem } from 'src/state/AppStateStore.js'
 import { isCompanionVisible } from '../../buddy/companion.js'
 import { BuddyMenu } from '../../buddy/BuddyMenu.js'

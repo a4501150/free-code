@@ -68,6 +68,11 @@ export function createMcpAuthTool(
     toAutoClassifierInput: () => serverName,
     userFacingName: () => `${serverName} - authenticate (MCP)`,
     maxResultSizeChars: 10_000,
+    outputSchema: z.object({
+      status: z.enum(['auth_url', 'unsupported', 'error']),
+      message: z.string(),
+      authUrl: z.string().optional(),
+    }),
     renderToolUseMessage: () => `Authenticate ${serverName} MCP server`,
     async description() {
       return description

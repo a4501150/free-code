@@ -2419,7 +2419,9 @@ export function normalizeContentFromAPI(
         // The API has strange behaviour, where it returns nested stringified JSONs, and so
         // we need to recursively parse these. If the top-level value returned from the API is
         // an empty string, this should become an empty object (nested values should be empty string).
-        // TODO: This needs patching as recursive fields can still be stringified
+        // Known limitation: only the top level is un-stringified here; nested
+        // fields can still arrive double-stringified, which tool schema
+        // validation then rejects downstream rather than guessing per-field.
         let normalizedInput: unknown
         if (typeof contentBlock.input === 'string') {
           const parsed = safeParseJSON(contentBlock.input)

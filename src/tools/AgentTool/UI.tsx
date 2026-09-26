@@ -23,10 +23,8 @@ import {
   useIsAgentToolUseExpanded,
   useToggleAgentToolUseExpansion,
 } from '../../state/agentExpansion.js'
-import {
-  type AppState,
-  useAppStateMaybeOutsideOfProvider,
-} from '../../state/AppState.js'
+import { useAppStateMaybeOutsideOfProvider } from '../../state/AppState.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import { getDumpPromptsPath } from '../../services/api/dumpPrompts.js'
 import { findToolByName, type Tools } from '../../Tool.js'
 import { isLocalAgentTask } from '../../tasks/LocalAgentTask/LocalAgentTask.js'

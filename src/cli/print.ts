@@ -986,7 +986,10 @@ function runHeadlessStreaming(
 
   // Messages for internal tracking, directly mutated by ask(). These messages
   // include Assistant, User, Attachment, and Progress messages.
-  // TODO: Clean up this code to avoid passing around a mutable array.
+  // The headless transcript is deliberately a mutable array (same design as
+  // QueryEngine.mutableMessages): ask() appends in place so every closure
+  // holding this reference — SDK stream emitters, result builders, resume
+  // snapshots — observes new messages without re-threading a snapshot.
   const mutableMessages: Message[] = initialMessages
 
   // Seed the readFileState cache from the transcript (content the model saw,
@@ -2471,7 +2474,9 @@ function runHeadlessStreaming(
             void run()
           }
         } else if (message.request.subtype === 'set_permission_mode') {
-          const m = message.request // for typescript (TODO: use readonly types to avoid this)
+          // Local alias keeps the narrowed subtype across the callback
+          // boundary below (message.request re-widens inside closures).
+          const m = message.request
           setAppState(prev => ({
             ...prev,
             toolPermissionContext: handleSetPermissionMode(

@@ -95,6 +95,24 @@ export const BackgroundTaskListTool = buildTool({
   get inputSchema(): InputSchema {
     return inputSchema
   },
+  outputSchema: z.object({
+    count: z.number(),
+    tasks: z.array(
+      z.object({
+        task_id: z.string(),
+        task_type: z.string(),
+        status: z.string(),
+        description: z.string(),
+        start_time: z.number(),
+        end_time: z.number().optional(),
+        output_file: z.string(),
+        command: z.string().optional(),
+        exit_code: z.number().optional(),
+        agent_type: z.string().optional(),
+        model: z.string().optional(),
+      }),
+    ),
+  }),
   isReadOnly() {
     return true
   },

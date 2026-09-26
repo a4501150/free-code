@@ -70,6 +70,25 @@ export function renderToolResultMessage(content: unknown): React.ReactNode {
 export const ListAgentsTool = buildTool({
   name: LIST_AGENTS_TOOL_NAME,
   userFacingName: () => 'List Agents',
+  outputSchema: z.object({
+    agents: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string().optional(),
+        description: z.string(),
+        status: z.string(),
+      }),
+    ),
+    sessions: z.array(
+      z.object({
+        session_id: z.string(),
+        session_kind: z.string(),
+        pid: z.number(),
+        cwd: z.string(),
+        name: z.string().optional(),
+      }),
+    ),
+  }),
   async description() {
     return 'List agents and sessions you can message'
   },

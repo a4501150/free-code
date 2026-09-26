@@ -3,7 +3,7 @@
  * (set via /rename and /color).
  */
 
-import type { AppState } from '../state/AppState.js'
+import type { AppState } from '../state/AppStateStore.js'
 
 /**
  * Returns the standalone agent name, if one was set.

@@ -38,7 +38,7 @@ import { clearToolSchemaCache } from '../../utils/toolSchemaCache.js'
 import type { Command } from '../../commands.js'
 import { getOauthConfig } from '../../constants/oauth.js'
 import { PRODUCT_URL } from '../../constants/product.js'
-import type { AppState } from '../../state/AppState.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import {
   type Tool,
   type ToolCallProgress,

@@ -7,7 +7,7 @@ import {
   link,
 } from 'fs/promises'
 import * as React from 'react'
-import type { AppState } from 'src/state/AppState.js'
+import type { AppState } from 'src/state/AppStateStore.js'
 import { z } from 'zod/v4'
 import { getAssistantActive } from '../../bootstrap/state.js'
 import { TOOL_SUMMARY_MAX_LENGTH } from '../../constants/toolLimits.js'

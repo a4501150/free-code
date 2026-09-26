@@ -12,11 +12,8 @@ import { BLACK_CIRCLE, PAUSE_ICON, PLAY_ICON } from '../constants/figures.js'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
 import { stringWidth } from '../ink/stringWidth.js'
 import { Box, Text, wrapText } from '../ink.js'
-import {
-  type AppState,
-  useAppState,
-  useSetAppState,
-} from '../state/AppState.js'
+import { useAppState, useSetAppState } from '../state/AppState.js'
+import type { AppState } from '../state/AppStateStore.js'
 import { enterAgentView, exitAgentView } from '../state/agentViewHelpers.js'
 import {
   isPanelAgentTask,

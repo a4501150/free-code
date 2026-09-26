@@ -72,7 +72,7 @@ export type {
 import type { SpinnerMode } from './components/Spinner.js'
 import type { QuerySource } from './constants/querySource.js'
 import type { SDKStatus } from 'src/structuredProtocol/index.js'
-import type { AppState } from './state/AppState.js'
+import type { AppState } from './state/AppStateStore.js'
 import type {
   HookProgress,
   PromptRequest,
@@ -408,8 +408,13 @@ export type Tool<
    * ToolInputCoercionError to reject the input with a targeted message.
    */
   coerceInput?(raw: unknown): unknown
-  // TODO: Make this required and make it a bit more type-safe.
-  outputSchema?: z.ZodType<unknown>
+  /**
+   * Schema for the tool's structured output. Required: validateToolOutput
+   * renders and validates against it, and a schema narrower than what
+   * call() returns silently drops the row (see AGENTS.md silent-failure
+   * notes) — tools with content-array outputs must admit them explicitly.
+   */
+  outputSchema: z.ZodType<unknown>
   inputsEquivalent?(a: z.infer<Input>, b: z.infer<Input>): boolean
   isConcurrencySafe(input: z.infer<Input>): boolean
   isEnabled(): boolean

@@ -8,11 +8,8 @@ import { Dialog } from '../../components/design-system/Dialog.js'
 import { FastIcon, getFastIconString } from '../../components/FastIcon.js'
 import { Box, Link, Text } from '../../ink.js'
 import { useKeybindings } from '../../keybindings/useKeybinding.js'
-import {
-  type AppState,
-  useAppState,
-  useSetAppState,
-} from '../../state/AppState.js'
+import { useAppState, useSetAppState } from '../../state/AppState.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
 import {
   clearFastModeCooldown,

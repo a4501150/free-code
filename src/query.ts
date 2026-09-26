@@ -377,7 +377,11 @@ async function* queryLoop(
       }
     }
 
-    //TODO: no need to set toolUseContext.messages during set-up since it is updated here
+    // Authoritative sync point: messagesForQuery may have been re-sliced at
+    // the compact boundary, budget-trimmed, or replaced by post-compact
+    // messages above. Consumers (toolExecution, permission dialogs) read
+    // context.messages, so the creator-seeded array is only ever a
+    // placeholder until this line runs each loop iteration.
     toolUseContext = {
       ...toolUseContext,
       messages: messagesForQuery,

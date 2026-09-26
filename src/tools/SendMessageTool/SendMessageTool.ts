@@ -39,6 +39,10 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
   buildTool({
     name: SEND_MESSAGE_TOOL_NAME,
     maxResultSizeChars: 100_000,
+    outputSchema: z.object({
+      success: z.boolean(),
+      message: z.string(),
+    }),
 
     userFacingName() {
       return 'SendMessage'

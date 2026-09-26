@@ -10,7 +10,7 @@ import {
   regenerateSessionId,
 } from '../../bootstrap/state.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
-import type { AppState } from '../../state/AppState.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import {
   isLocalAgentTask,
   type LocalAgentTaskState,

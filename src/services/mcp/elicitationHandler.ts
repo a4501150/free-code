@@ -3,7 +3,7 @@ import type {
   ElicitRequestParams,
   ElicitResult,
 } from '@modelcontextprotocol/client'
-import type { AppState } from '../../state/AppState.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import {
   executeElicitationHooks,
   executeElicitationResultHooks,

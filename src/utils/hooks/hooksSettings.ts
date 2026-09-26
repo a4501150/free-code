@@ -2,7 +2,7 @@ import { resolve } from 'path'
 import type { HookEvent } from 'src/structuredProtocol/index.js'
 import { getSessionId } from '../../bootstrap/state.js'
 import { globalConfigDir, globalConfigFile } from '../envUtils.js'
-import type { AppState } from '../../state/AppState.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import type { EditableSettingSource } from '../settings/constants.js'
 import { SOURCES } from '../settings/constants.js'
 import {

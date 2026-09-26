@@ -1,7 +1,7 @@
 import type { DomainUserContentBlock } from '../types/domain.js'
 import type { Permutations } from 'src/types/utils.js'
 import { getSessionId } from '../bootstrap/state.js'
-import type { AppState } from '../state/AppState.js'
+import type { AppState } from '../state/AppStateStore.js'
 import type {
   QueueOperation,
   QueueOperationMessage,

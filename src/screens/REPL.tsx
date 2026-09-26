@@ -1707,15 +1707,22 @@ export function REPL({
     }
   }, [queuedCommands])
 
-  // Initial load
+  // Initial load — mount-once by design: onInit bootstraps the session
+  // exactly once per component instance and the tracker shutdown pairs with
+  // it. The ref guard makes that explicit even if React double-invokes the
+  // effect (StrictMode); the captured values are stable per-instance
+  // collaborators, so the empty dep list is intentional.
+  const didInitRef = useRef(false)
   useEffect(() => {
-    void onInit()
+    if (!didInitRef.current) {
+      didInitRef.current = true
+      void onInit()
+    }
 
     // Cleanup on unmount
     return () => {
       void diagnosticTracker.shutdown()
     }
-    // TODO: fix this
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
