@@ -31,6 +31,7 @@ export function getSimplePrompt(): string {
           'When running a command in the background, the bash tool returns immediately with a task ID and an output file path. The command keeps running until it exits or a terminating code or signal is caught, and you will receive a system task notification reporting its status and its output file path.',
           '',
           "You don't have to do anything while waiting for a backgrounded command: once it completes, a system task notification is delivered automatically by the harness.",
+          'A background command that monitors something (waiting on a job, poll, or deploy) must fail fast — validate its target and expected value at t=0 — and end by a hard deadline with an explicit verdict on every exit path, since a monitor that cannot fail or cannot end delivers no notification. Poll authoritative world state for an exact match instead of watching one object\'s lifetime or grepping a loose prefix, and capture `rc=$?` before any pipe, because `cmd | tail; echo $?` reports tail\'s status, not the command\'s.',
         ].join('\n')
       : 'The bash tool blocks and returns once the command finishes, with its output.',
     'Do not append `| tail`, `| head`, or `| grep` to a command to cap the output. The user watches bash tool results in the UI, and a pipe truncates what the user can see. Large output needs no cap from you: the output is saved to a file automatically and the path will be returned to you.',
