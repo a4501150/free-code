@@ -5,7 +5,7 @@
 import axios from 'axios'
 import { OAUTH_BETA_HEADER } from '../constants/oauth.js'
 import {
-  getAnthropicApiKey,
+  getAnthropicApiKeyWithSource,
   getClaudeAIOAuthTokens,
   handleOAuth401Error,
   isClaudeAISubscriber,
@@ -74,13 +74,32 @@ export function getAuthHeaders(): AuthHeaders {
       },
     }
   }
-  // TODO: this will fail if the API key is being set to an LLM Gateway key
-  // should we try to query keychain / credentials for a valid Anthropic key?
-  const apiKey = getAnthropicApiKey()
+  // Anthropic-hosted endpoints (usage, policy limits, team memory) below the
+  // subscriber branch. A key from ANTHROPIC_API_KEY / apiKeyHelper may be an
+  // LLM-gateway credential rather than an Anthropic one — indistinguishable
+  // by shape — so prefer any available OAuth token first, and only send
+  // x-api-key when the key is the /login-managed (always-Anthropic) one.
+  const oauthTokens = getClaudeAIOAuthTokens()
+  if (oauthTokens?.accessToken) {
+    return {
+      headers: {
+        Authorization: `Bearer ${oauthTokens.accessToken}`,
+        'anthropic-beta': OAUTH_BETA_HEADER,
+      },
+    }
+  }
+  const { key: apiKey, source } = getAnthropicApiKeyWithSource()
   if (!apiKey) {
     return {
       headers: {},
       error: 'No API key available',
+    }
+  }
+  if (source !== '/login managed key') {
+    return {
+      headers: {},
+      error:
+        'API key is not Anthropic-verified (env/apiKeyHelper keys may be gateway credentials); no OAuth token to fall back on',
     }
   }
   return {

@@ -102,18 +102,18 @@ export class AuthCodeListener {
   }
 
   /**
-   * Handles error case by sending a redirect to the appropriate success page with an error indicator,
-   * ensuring the browser flow is completed properly.
+   * Handles the error case by serving a small inline error page — the same
+   * approach the MCP OAuth callback server takes (mcp/auth.ts) instead of
+   * requiring a hosted error page. Redirecting to the SUCCESS page made a
+   * failed login look successful in the browser.
    */
   handleErrorRedirect(): void {
     if (!this.pendingResponse) return
 
-    // TODO: swap to a different url once we have an error page
-    const errorUrl = getOauthConfig().CLAUDEAI_SUCCESS_URL
-
-    // Send browser to error page
-    this.pendingResponse.writeHead(302, { Location: errorUrl })
-    this.pendingResponse.end()
+    this.pendingResponse.writeHead(400, { 'Content-Type': 'text/html' })
+    this.pendingResponse.end(
+      `<h1>Authentication Error</h1><p>Authorization failed. Please close this window and try again.</p>`,
+    )
     this.pendingResponse = null
   }
 
