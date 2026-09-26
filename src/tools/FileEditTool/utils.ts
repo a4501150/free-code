@@ -1,7 +1,10 @@
-import { structuredPatch } from 'diff'
 import { countCharInString } from 'src/utils/stringUtils.js'
-import { DIFF_TIMEOUT_MS } from '../../utils/diff.js'
+import { getPatchFromContents } from '../../utils/diff.js'
 import { addLineNumbers } from '../../utils/file.js'
+
+// Wider than the permission-UI default (3): attachment snippets carry more
+// surrounding context so the model can re-orient in the edited file.
+const SNIPPET_CONTEXT_LINES = 8
 
 /**
  * Strips trailing whitespace from each line in a string while preserving line endings
@@ -37,31 +40,21 @@ const DIFF_SNIPPET_MAX_BYTES = 8192
 
 /**
  * Used for attachments, to show snippets when files change.
- *
- * TODO: Unify this with the other snippet logic.
+ * Builds on getPatchFromContents — the single content-based patch engine
+ * (with its &/$ escaping workaround) — styled as numbered context blocks.
  */
 export function getSnippetForTwoFileDiff(
   fileAContents: string,
   fileBContents: string,
 ): string {
-  const patch = structuredPatch(
-    'file.txt',
-    'file.txt',
-    fileAContents,
-    fileBContents,
-    undefined,
-    undefined,
-    {
-      context: 8,
-      timeout: DIFF_TIMEOUT_MS,
-    },
-  )
+  const hunks = getPatchFromContents({
+    filePath: 'file.txt',
+    oldContent: fileAContents,
+    newContent: fileBContents,
+    contextLines: SNIPPET_CONTEXT_LINES,
+  })
 
-  if (!patch) {
-    return ''
-  }
-
-  const full = patch.hunks
+  const full = hunks
     .map(_ => ({
       startLine: _.oldStart,
       content: _.lines

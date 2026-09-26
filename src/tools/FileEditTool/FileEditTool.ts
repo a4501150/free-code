@@ -128,6 +128,19 @@ export const FileEditTool = buildTool({
     return getEditToolDescription()
   },
   coerceInput: coerceEditInput,
+  normalizeInput(input) {
+    // Validated upstream, won't throw. Whitelist down to schema fields so
+    // the persisted block input matches what the model was shown.
+    const parsedInput = inputSchema.parse(input)
+    return {
+      file_path: parsedInput.file_path,
+      old_string: parsedInput.old_string,
+      new_string: parsedInput.new_string,
+      ...(parsedInput.replace_all !== undefined && {
+        replace_all: parsedInput.replace_all,
+      }),
+    }
+  },
   userFacingName,
   compactParamKeys: ['file_path'],
   getToolUseSummary,

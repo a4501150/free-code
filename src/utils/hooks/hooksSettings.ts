@@ -25,6 +25,9 @@ export interface IndividualHookConfig {
   matcher?: string
   source: HookSource
   pluginName?: string
+  /** Captured at registration from PluginHookMatcher — lets the UI show
+   *  the real hooks.json path instead of a glob. */
+  pluginRoot?: string
 }
 
 /**
@@ -159,7 +162,10 @@ export function getHooksForEvent(
   return getAllHooks(appState).filter(hook => hook.event === event)
 }
 
-export function hookSourceDescriptionDisplayString(source: HookSource): string {
+export function hookSourceDescriptionDisplayString(
+  source: HookSource,
+  hook?: Pick<IndividualHookConfig, 'pluginRoot'>,
+): string {
   switch (source) {
     case 'userSettings':
       return `User settings (${globalConfigFile()})`
@@ -168,9 +174,12 @@ export function hookSourceDescriptionDisplayString(source: HookSource): string {
     case 'localSettings':
       return 'Local settings (.freecode/freecode.local.json)'
     case 'pluginHook':
-      // TODO: Get the actual plugin hook file paths instead of using glob pattern
-      // We should capture the specific plugin paths during hook registration and display them here
-      // e.g., "Plugin hooks (~/.freecode/plugins/repos/source/example-plugin/example-plugin/hooks/hooks.json)"
+      // Real per-plugin path captured at registration (PluginHookMatcher.
+      // pluginRoot); the glob is only a last resort for entries built
+      // without it.
+      if (hook?.pluginRoot) {
+        return `Plugin hooks (${resolve(hook.pluginRoot, 'hooks/hooks.json')})`
+      }
       return `Plugin hooks (${globalConfigDir()}/plugins/*/hooks/hooks.json)`
     case 'sessionHook':
       return 'Session hooks (in-memory, temporary)'

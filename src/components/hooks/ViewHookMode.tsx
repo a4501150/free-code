@@ -45,7 +45,10 @@ export function ViewHookMode({
           <Text>
             Source:{' '}
             <Text dimColor>
-              {hookSourceDescriptionDisplayString(selectedHook.source)}
+              {hookSourceDescriptionDisplayString(
+                selectedHook.source,
+                selectedHook,
+              )}
             </Text>
           </Text>
           {selectedHook.pluginName && (

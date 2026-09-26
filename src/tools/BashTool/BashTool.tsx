@@ -52,6 +52,8 @@ import { expandPath } from '../../utils/path.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import { exec } from '../../utils/Shell.js'
 import type { ExecResult } from '../../utils/ShellCommand.js'
+import { getPlatform } from '../../utils/platform.js'
+import { windowsPathToPosixPath } from '../../utils/windowsPaths.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
 import { semanticNumber } from '../../utils/semanticNumber.js'
 import { EndTruncatingAccumulator } from '../../utils/stringUtils.js'
@@ -571,6 +573,35 @@ export const BashTool = buildTool({
   },
   get outputSchema(): OutputSchema {
     return outputSchema
+  },
+  normalizeInput(input) {
+    // Validated upstream, won't throw. Rebuild the schema's field subset so
+    // anything outside the schema is dropped from the persisted block input.
+    const parsed = inputSchema.parse(input)
+    const { command, timeout, description } = parsed
+    const cwd = getCwd()
+    let normalizedCommand = command.replace(`cd ${cwd} && `, '')
+    if (getPlatform() === 'windows') {
+      normalizedCommand = normalizedCommand.replace(
+        `cd ${windowsPathToPosixPath(cwd)} && `,
+        '',
+      )
+    }
+
+    // Replace \\; with \; (commonly needed for find -exec commands)
+    normalizedCommand = normalizedCommand.replace(/\\\\;/g, '\\;')
+
+    // Check for run_in_background (may not exist in schema if the
+    // backgroundTasksEnabled setting is off)
+    const run_in_background =
+      'run_in_background' in parsed ? parsed.run_in_background : undefined
+
+    return {
+      command: normalizedCommand,
+      ...(timeout !== undefined && { timeout }),
+      ...(description !== undefined && { description }),
+      ...(run_in_background !== undefined && { run_in_background }),
+    } as z.infer<InputSchema>
   },
   compactParamKeys: ['description', 'command'],
   userFacingName(input) {

@@ -1277,8 +1277,9 @@ function walkHerestringRedirect(
     const content = walkArgument(child, innerCommands, varScope)
     if (typeof content !== 'string') return content
     // Herestring content is discarded (not in argv/envVars/redirects) but
-    // remains in .text via raw node.text. Scan it here so checkSemantics's
-    // NEWLINE_HASH invariant (bashPermissions.ts relies on it) still holds.
+    // remains in the source span. A newline-hash in it would let the
+    // quote-blind comment strip in rule matching truncate the candidate
+    // string; reject at parse time so that can't happen.
     if (NEWLINE_HASH_RE.test(content)) return tooComplex(child)
   }
   return null
@@ -2248,9 +2249,10 @@ const READ_DATA_FLAGS = new Set(['-p', '-d', '-n', '-N', '-t', '-u', '-i'])
 const PROC_ENVIRON_RE = /\/proc\/.*\/environ/
 
 /**
- * Newline followed by `#` in an argv element, env var value, or redirect target.
- * Downstream stripSafeWrappers re-tokenizes .text line-by-line and treats `#`
- * after a newline as a comment, hiding arguments that follow.
+ * Newline followed by `#` in discarded herestring content. The content is not
+ * in argv, so it cannot be re-derived from it; a downstream quote-blind
+ * comment strip (stripCommentLines) would treat the `#` line as a comment and
+ * silently truncate the candidate string. Reject at parse time instead.
  */
 const NEWLINE_HASH_RE = /\n[ \t]*#/
 
@@ -2440,39 +2442,12 @@ export function checkSemantics(commands: SimpleCommand[]): SemanticCheckResult {
       }
     }
 
-    // Check argv (not .text) to catch both single-quote (`'\n#'`) and
-    // double-quote (`"\n#"`) variants. Env vars and redirects are also
-    // part of the .text span so the same downstream bug applies.
-    // Heredoc bodies are excluded from argv so markdown `##` headers
-    // don't trigger this.
-    // TODO: remove once downstream path validation operates on argv.
-    for (const arg of cmd.argv) {
-      if (arg.includes('\n') && NEWLINE_HASH_RE.test(arg)) {
-        return {
-          ok: false,
-          reason:
-            'Newline followed by # inside a quoted argument can hide arguments from path validation',
-        }
-      }
-    }
-    for (const ev of cmd.envVars) {
-      if (ev.value.includes('\n') && NEWLINE_HASH_RE.test(ev.value)) {
-        return {
-          ok: false,
-          reason:
-            'Newline followed by # inside an env var value can hide arguments from path validation',
-        }
-      }
-    }
-    for (const r of cmd.redirects) {
-      if (r.target.includes('\n') && NEWLINE_HASH_RE.test(r.target)) {
-        return {
-          ok: false,
-          reason:
-            'Newline followed by # inside a redirect target can hide arguments from path validation',
-        }
-      }
-    }
+    // No \n# guard here anymore: it existed because path validation once
+    // re-tokenized the .text span line-by-line, where a quote-blind comment
+    // strip made trailing arguments vanish. Path and sed validation now read
+    // argv/envVars/redirects directly, so a newline-hash inside an argument
+    // can only corrupt string-shaped rule-match candidates — which fails
+    // closed to a prompt, never to a silent allow.
 
     // jq's system() built-in executes arbitrary shell commands, and flags
     // like --from-file can read arbitrary files into jq variables.

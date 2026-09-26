@@ -12,6 +12,7 @@ import {
 } from '../../skills/loadSkillsDir.js'
 import type { ToolUseContext } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
+import { stripTrailingWhitespace } from '../FileEditTool/utils.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { countLinesChanged, getPatchFromContents } from '../../utils/diff.js'
@@ -101,6 +102,18 @@ export const FileWriteTool = buildTool({
   },
   renderToolUseMessage,
   isResultTruncated,
+  normalizeInput(input) {
+    // Validated upstream, won't throw
+    const parsedInput = inputSchema.parse(input)
+    // Markdown uses two trailing spaces as a hard line break — don't strip.
+    const isMarkdown = /\.(md|mdx)$/i.test(parsedInput.file_path)
+    return {
+      file_path: parsedInput.file_path,
+      content: isMarkdown
+        ? parsedInput.content
+        : stripTrailingWhitespace(parsedInput.content),
+    } as z.infer<InputSchema>
+  },
   get inputSchema(): InputSchema {
     return inputSchema
   },

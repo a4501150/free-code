@@ -1352,8 +1352,13 @@ export const AgentTool = buildTool({
             }
           }
 
-          // Re-throw abort errors
-          // TODO: Find a cleaner way to express this
+          // Re-throw abort errors. The signal (or a caught AbortError) is
+          // authoritative; the synthetic-last-message check stays only as
+          // the fallback for an interrupt that injected the synthetic
+          // message without our signal firing.
+          if (wasAborted || toolUseContext.abortController.signal.aborted) {
+            throw new AbortError()
+          }
           const lastMessage = agentMessages.findLast(
             _ => _.type !== 'system' && _.type !== 'progress',
           )

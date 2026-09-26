@@ -409,6 +409,18 @@ export type Tool<
    */
   coerceInput?(raw: unknown): unknown
   /**
+   * Tool-owned normalization of input parsed from the API stream, run at
+   * message-ingest time (before permission UI, hooks and call) where the
+   * result becomes the persisted tool_use block input — inject runtime
+   * facts (plan content), rewrite the command (cd-prefix strip), or
+   * whitelist down to schema fields. Dispatched generically by
+   * normalizeToolInput; prefer this over adding cases to its switch.
+   */
+  normalizeInput?(
+    input: z.infer<Input>,
+    ctx?: { agentId?: AgentId },
+  ): z.infer<Input>
+  /**
    * Schema for the tool's structured output. Required: validateToolOutput
    * renders and validates against it, and a schema narrower than what
    * call() returns silently drops the row (see AGENTS.md silent-failure

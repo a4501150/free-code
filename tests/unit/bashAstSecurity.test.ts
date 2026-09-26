@@ -173,10 +173,16 @@ describe('legacy shell-quote differentials', () => {
     ])
   })
 
-  test('newline-hash inside a quoted argument is refused', () => {
-    // stripCommentLines is quote-blind: it deleted the line starting with #,
-    // making /tmp/target vanish before path validation.
-    expect(verdict('echo "a\n#b" /tmp/target')).toBe('semantic-reject')
+  test('newline-hash inside a quoted argument keeps argv intact', () => {
+    // The quote-blind stripCommentLines no longer gates security decisions:
+    // path and sed validation read argv directly, so a newline-hash inside a
+    // quoted value can only corrupt string-shaped rule-match candidates (a
+    // prompt, never a silent allow). The security-relevant property is that
+    // argv carries every argument — including the redirect/path target.
+    expect(verdict('echo "a\n#b" /tmp/target')).toBe('simple')
+    expect(argvs('echo "a\n#b" /tmp/target')).toEqual([
+      ['echo', 'a\n#b', '/tmp/target'],
+    ])
   })
 })
 

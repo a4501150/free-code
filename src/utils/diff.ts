@@ -77,12 +77,16 @@ export function getPatchFromContents({
   newContent,
   ignoreWhitespace = false,
   singleHunk = false,
+  contextLines = CONTEXT_LINES,
 }: {
   filePath: string
   oldContent: string
   newContent: string
   ignoreWhitespace?: boolean
   singleHunk?: boolean
+  /** Context rows around each hunk. Callers with a wider snippet budget
+   *  (attachment snippets) pass their own; singleHunk overrides this. */
+  contextLines?: number
 }): StructuredPatchHunk[] {
   const result = structuredPatch(
     filePath,
@@ -93,7 +97,7 @@ export function getPatchFromContents({
     undefined,
     {
       ignoreWhitespace,
-      context: singleHunk ? 100_000 : CONTEXT_LINES,
+      context: singleHunk ? 100_000 : contextLines,
       timeout: DIFF_TIMEOUT_MS,
     },
   )

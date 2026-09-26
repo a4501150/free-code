@@ -156,10 +156,15 @@ export class BridgeClient implements SocketClient {
       await this.discoveryPromise
     }
 
-    // TODO: Once all extensions support pairing, throw here for multi-extension
-    // cases where pairingInProgress is true. For now, let the bridge handle
-    // routing — it auto-routes to a single extension or returns an error for
-    // multiple extensions without a target_device_id.
+    // Multi-extension with no selection: discovery broadcast a pairing_request
+    // and we're still waiting for a response. Extensions predating pairing
+    // never answer, so route-and-time-out would be a silent bridge failure —
+    // fail fast with an actionable message instead.
+    if (this.pairingInProgress && !this.selectedDeviceId) {
+      throw new SocketConnectionError(
+        `[${serverName}] Multiple Chrome extensions are connected and none has paired with this session. Complete pairing (or select a browser) and retry.`,
+      )
+    }
 
     const toolUseId = crypto.randomUUID()
     const isTabsContext = name === 'tabs_context_mcp'

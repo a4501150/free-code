@@ -322,6 +322,7 @@ export function groupHooksByEventAndMatcher(
               matcher: matcher.matcher,
               source: 'pluginHook',
               pluginName: matcher.pluginId,
+              pluginRoot: matcher.pluginRoot,
             })
           }
         }
