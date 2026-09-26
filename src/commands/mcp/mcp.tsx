@@ -1,64 +1,14 @@
-import React, { useEffect, useRef } from 'react'
+import React from 'react'
 import { MCPSettings } from '../../components/mcp/index.js'
 import { MCPReconnect } from '../../components/mcp/MCPReconnect.js'
-import { useMcpToggleEnabled } from '../../services/mcp/MCPConnectionManager.js'
-import { useAppState } from '../../state/AppState.js'
+import { getMcpActions } from '../../services/mcp/mcpActions.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
-
-// TODO: This is a hack to get the context value from toggleMcpServer (useContext only works in a component)
-// Ideally, all MCP state and functions would be in global state.
-function MCPToggle({
-  action,
-  target,
-  onComplete,
-}: {
-  action: 'enable' | 'disable'
-  target: string
-  onComplete: (result: string) => void
-}): null {
-  const mcpClients = useAppState(s => s.mcp.clients)
-  const toggleMcpServer = useMcpToggleEnabled()
-  const didRun = useRef(false)
-
-  useEffect(() => {
-    if (didRun.current) return
-    didRun.current = true
-
-    const isEnabling = action === 'enable'
-    const clients = mcpClients.filter(c => c.name !== 'ide')
-    const toToggle =
-      target === 'all'
-        ? clients.filter(c =>
-            isEnabling ? c.type === 'disabled' : c.type !== 'disabled',
-          )
-        : clients.filter(c => c.name === target)
-
-    if (toToggle.length === 0) {
-      onComplete(
-        target === 'all'
-          ? `All MCP servers are already ${isEnabling ? 'enabled' : 'disabled'}`
-          : `MCP server "${target}" not found`,
-      )
-      return
-    }
-
-    for (const s of toToggle) {
-      void toggleMcpServer(s.name)
-    }
-
-    onComplete(
-      target === 'all'
-        ? `${isEnabling ? 'Enabled' : 'Disabled'} ${toToggle.length} MCP server(s)`
-        : `MCP server "${target}" ${isEnabling ? 'enabled' : 'disabled'}`,
-    )
-  }, [action, target, mcpClients, toggleMcpServer, onComplete])
-
-  return null
-}
+import type { ToolUseContext } from '../../Tool.js'
+import type { LocalJSXCommandContext } from '../../types/command.js'
 
 export async function call(
   onDone: LocalJSXCommandOnDone,
-  _context: unknown,
+  context: ToolUseContext & LocalJSXCommandContext,
   args?: string,
 ): Promise<React.ReactNode> {
   if (args) {
@@ -79,13 +29,41 @@ export async function call(
     }
 
     if (parts[0] === 'enable' || parts[0] === 'disable') {
-      return (
-        <MCPToggle
-          action={parts[0]}
-          target={parts.length > 1 ? parts.slice(1).join(' ') : 'all'}
-          onComplete={onDone}
-        />
+      const isEnabling = parts[0] === 'enable'
+      const target = parts.length > 1 ? parts.slice(1).join(' ') : 'all'
+      const actions = getMcpActions()
+      if (!actions) {
+        onDone('MCP connection manager is not active')
+        return null
+      }
+      const clients = context
+        .getAppState()
+        .mcp.clients.filter(c => c.name !== 'ide')
+      const toToggle =
+        target === 'all'
+          ? clients.filter(c =>
+              isEnabling ? c.type === 'disabled' : c.type !== 'disabled',
+            )
+          : clients.filter(c => c.name === target)
+
+      if (toToggle.length === 0) {
+        onDone(
+          target === 'all'
+            ? `All MCP servers are already ${isEnabling ? 'enabled' : 'disabled'}`
+            : `MCP server "${target}" not found`,
+        )
+        return null
+      }
+
+      for (const s of toToggle) {
+        void actions.toggleMcpServer(s.name)
+      }
+      onDone(
+        target === 'all'
+          ? `${isEnabling ? 'Enabled' : 'Disabled'} ${toToggle.length} MCP server(s)`
+          : `MCP server "${target}" ${isEnabling ? 'enabled' : 'disabled'}`,
       )
+      return null
     }
   }
 

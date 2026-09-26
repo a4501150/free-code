@@ -2759,7 +2759,9 @@ function runHeadlessStreaming(
           if (!config) {
             sendControlResponseError(message, `Server not found: ${serverName}`)
           } else if (!enabled) {
-            // Disabling: persist + disconnect (matches TUI toggleMcpServer behavior)
+            // Disabling: persist + mark disabled + disconnect (matches TUI
+            // toggleMcpServer behavior, including the ordering: the store
+            // shows 'disabled' before the transport closes).
             setMcpServerEnabled(serverName, false)
             const client = [
               ...mcpClients,
@@ -2767,9 +2769,6 @@ function runHeadlessStreaming(
               ...dynamicMcpState.clients,
               ...currentAppState.mcp.clients,
             ].find(c => c.name === serverName)
-            if (client && client.type === 'connected') {
-              await clearServerCache(serverName, config)
-            }
             // Update appState.mcp to reflect disabled status and remove tools/commands/resources
             const prefix = getMcpPrefix(serverName)
             setAppState(prev => ({
@@ -2788,6 +2787,9 @@ function runHeadlessStreaming(
                 resources: omit(prev.mcp.resources, serverName),
               },
             }))
+            if (client && client.type === 'connected') {
+              await clearServerCache(serverName, config)
+            }
             sendControlResponseSuccess(message)
           } else {
             // Enabling: persist + reconnect

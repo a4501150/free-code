@@ -549,7 +549,12 @@ export function getServerCacheKey(
 }
 
 /**
- * TODO (ollie): The memoization here increases complexity by a lot, and im not sure it really improves performance
+ * Memoized deliberately, despite the complexity it adds: ensureConnectedClient
+ * runs on EVERY MCP tool call (fetch path below), so without the cache each
+ * tool use would re-spawn the stdio process or redo the SSE/OAuth handshake.
+ * The invalidation choreography is the cost: the onclose wrapper and
+ * clearServerCache() must delete in lockstep — connection cache keyed by
+ * (name, config), plus the three name-keyed fetch*ForClient caches.
  * Attempts to connect to a single MCP server
  * @param name Server name
  * @param serverRef Scoped server configuration

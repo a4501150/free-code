@@ -279,6 +279,18 @@ export function useManageMCPConnections(
     [flushPendingUpdates],
   )
 
+  // Live disabled check for lifecycle callbacks: the store entry wins (it is
+  // flushed synchronously by toggleMcpServer before the transport closes),
+  // with the disk config as fallback for servers the store never had.
+  const isServerDisabledNow = useCallback(
+    (name: string): boolean => {
+      const entry = store.getState().mcp.clients.find(c => c.name === name)
+      if (entry) return entry.type === 'disabled'
+      return isMcpServerDisabled(name)
+    },
+    [store],
+  )
+
   const onConnectionAttempt = useCallback(
     ({
       client,
@@ -311,11 +323,12 @@ export function useManageMCPConnections(
               )
             })
 
-            // TODO: This really isn't great: ideally we'd check appstate as the source of truth
-            // as to whether it was disconnected due to a disable, but appstate is stale at this
-            // point. Getting a live reference to appstate feels a little hacky, so we'll just
-            // check the disk state. We may want to refactor some of this.
-            if (isMcpServerDisabled(client.name)) {
+            // AppState is the source of truth for "disabled on purpose":
+            // toggleMcpServer writes the disabled entry and flushes it
+            // synchronously before closing the transport, so by the time
+            // onclose fires the store already reflects the intent. The
+            // disk check remains only for entries the store never had.
+            if (isServerDisabledNow(client.name)) {
               logMCPDebug(
                 client.name,
                 `Server is disabled, skipping automatic reconnection`,
@@ -347,7 +360,7 @@ export function useManageMCPConnections(
                   attempt++
                 ) {
                   // Check if server was disabled while we were waiting
-                  if (isMcpServerDisabled(client.name)) {
+                  if (isServerDisabledNow(client.name)) {
                     logMCPDebug(
                       client.name,
                       `Server disabled during reconnection, stopping retry`,
@@ -948,21 +961,24 @@ export function useManageMCPConnections(
           reconnectTimersRef.current.delete(serverName)
         }
 
-        // Persist disabled state to disk FIRST before clearing cache
-        // This is important because the onclose handler checks disk state
+        // Persist disabled state to disk first (startup connect reads disk).
         setMcpServerEnabled(serverName, false)
 
-        // Disabling: disconnect and clean up if currently connected
-        if (client.type === 'connected') {
-          await clearServerCache(serverName, client.config)
-        }
-
-        // Update to disabled state (tools/commands/resources auto-cleared)
+        // Record the disabled state and flush the batch BEFORE closing the
+        // transport: the onclose handler consults the store to tell an
+        // intentional disable from a dropped connection, and it must see
+        // this update already applied or it would schedule a reconnect.
         updateServer({
           name: serverName,
           type: 'disabled',
           config: client.config,
         })
+        flushPendingUpdates()
+
+        // Disabling: disconnect and clean up if currently connected
+        if (client.type === 'connected') {
+          await clearServerCache(serverName, client.config)
+        }
       } else {
         // Enabling: persist enabled state to disk first
         setMcpServerEnabled(serverName, true)
@@ -980,7 +996,7 @@ export function useManageMCPConnections(
         onConnectionAttempt(result)
       }
     },
-    [store, updateServer, onConnectionAttempt],
+    [store, updateServer, flushPendingUpdates, onConnectionAttempt],
   )
 
   return { reconnectMcpServer, toggleMcpServer }

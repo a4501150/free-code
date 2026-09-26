@@ -1,49 +1,10 @@
-import React, {
-  createContext,
-  type ReactNode,
-  useContext,
-  useMemo,
-} from 'react'
-import type { Command } from '../../commands.js'
-import type { Tool } from '../../Tool.js'
-import type {
-  MCPServerConnection,
-  ScopedMcpServerConfig,
-  ServerResource,
-} from './types.js'
+import React, { type ReactNode, useEffect } from 'react'
+import type { ScopedMcpServerConfig } from './types.js'
+import { registerMcpActions } from './mcpActions.js'
 import { useManageMCPConnections } from './useManageMCPConnections.js'
 
-interface MCPConnectionContextValue {
-  reconnectMcpServer: (serverName: string) => Promise<{
-    client: MCPServerConnection
-    tools: Tool[]
-    commands: Command[]
-    resources?: ServerResource[]
-  }>
-  toggleMcpServer: (serverName: string) => Promise<void>
-}
-
-const MCPConnectionContext = createContext<MCPConnectionContextValue | null>(
-  null,
-)
-
-export function useMcpReconnect() {
-  const context = useContext(MCPConnectionContext)
-  if (!context) {
-    throw new Error('useMcpReconnect must be used within MCPConnectionManager')
-  }
-  return context.reconnectMcpServer
-}
-
-export function useMcpToggleEnabled() {
-  const context = useContext(MCPConnectionContext)
-  if (!context) {
-    throw new Error(
-      'useMcpToggleEnabled must be used within MCPConnectionManager',
-    )
-  }
-  return context.toggleMcpServer
-}
+export { getMcpActions } from './mcpActions.js'
+export { useMcpReconnect, useMcpToggleEnabled } from './MCPConnectionHooks.js'
 
 interface MCPConnectionManagerProps {
   children: ReactNode
@@ -51,7 +12,11 @@ interface MCPConnectionManagerProps {
   isStrictMcpConfig: boolean
 }
 
-// TODO (ollie): We may be able to get rid of this context by putting these function on app state
+/**
+ * Runs useManageMCPConnections and publishes its reconnect/toggle callbacks
+ * through the mcpActions registry (see mcpActions.ts) — no context provider,
+ * so non-React callers can reach the same functions.
+ */
 export function MCPConnectionManager({
   children,
   dynamicMcpConfig,
@@ -61,14 +26,10 @@ export function MCPConnectionManager({
     dynamicMcpConfig,
     isStrictMcpConfig,
   )
-  const value = useMemo(
-    () => ({ reconnectMcpServer, toggleMcpServer }),
-    [reconnectMcpServer, toggleMcpServer],
-  )
 
-  return (
-    <MCPConnectionContext.Provider value={value}>
-      {children}
-    </MCPConnectionContext.Provider>
-  )
+  useEffect(() => {
+    return registerMcpActions({ reconnectMcpServer, toggleMcpServer })
+  }, [reconnectMcpServer, toggleMcpServer])
+
+  return <>{children}</>
 }
