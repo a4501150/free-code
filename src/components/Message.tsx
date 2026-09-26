@@ -53,9 +53,6 @@ export type Props = {
     | CollapsedReadSearchGroupType
     | ProgressMessage
   lookups: ReturnType<typeof buildMessageLookups>
-  // TODO: Find a way to remove this, and leave spacing to the consumer
-  /** Absolute width for the container Box. When provided, eliminates a wrapper Box in the caller. */
-  containerWidth?: number
   addMargin: boolean
   tools: Tools
   commands: Command[]
@@ -84,7 +81,6 @@ export type Props = {
 function MessageImpl({
   message,
   lookups,
-  containerWidth,
   addMargin,
   tools,
   commands,
@@ -127,7 +123,7 @@ function MessageImpl({
         (stopReason === 'max_tokens' ||
           stopReason === 'model_context_window_exceeded')
       return (
-        <Box flexDirection="column" width={containerWidth ?? '100%'}>
+        <Box flexDirection="column" width="100%">
           {message.message.content.map((_, index) => (
             <AssistantMessageBlock
               key={index}
@@ -188,7 +184,7 @@ function MessageImpl({
       // with provider so OutputLine can show full output via context
       const isLatestBashOutput = latestBashOutputUUID === message.uuid
       const content = (
-        <Box flexDirection="column" width={containerWidth ?? '100%'}>
+        <Box flexDirection="column" width="100%">
           {message.message.content.map((param, index) => (
             <UserMessage
               key={index}
@@ -494,9 +490,6 @@ export function areMessagePropsEqual(prev: Props, next: Props): boolean {
   const nextIsLatest = next.latestBashOutputUUID === next.message.uuid
   if (prevIsLatest !== nextIsLatest) return false
   if (prev.isTranscriptMode !== next.isTranscriptMode) return false
-  // containerWidth is an absolute number in the no-metadata path (wrapper
-  // Box is skipped). Static messages must re-render on terminal resize.
-  if (prev.containerWidth !== next.containerWidth) return false
   if (prev.isStatic && next.isStatic) return true
   return false
 }

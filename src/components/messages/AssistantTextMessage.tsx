@@ -165,7 +165,13 @@ export function AssistantTextMessage({
         </MessageResponse>
       )
 
-    // TODO: Move this to a user turn
+    // Surfaced by getAssistantMessageFromError's generic branch when the
+    // provider SDK itself aborts (its abort error message composes to this
+    // exact string); our own DomainUserAbortError never reaches here —
+    // claude.ts swallows it and query.ts yields the interruption user turn
+    // ("Interrupted by user"), which is why this row renders as that same
+    // marker rather than raw error text. Moving the producer to a user turn
+    // would require classifying SDK aborts at every yield site.
     case ERROR_MESSAGE_USER_ABORT:
       return (
         <MessageResponse height={1}>

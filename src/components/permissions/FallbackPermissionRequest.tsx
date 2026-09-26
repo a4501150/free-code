@@ -2,6 +2,7 @@ import React, { useCallback, useMemo } from 'react'
 import { getOriginalCwd } from '../../bootstrap/state.js'
 import { Box, Text, useTheme } from '../../ink.js'
 import { truncateToLines } from '../../utils/stringUtils.js'
+import { splitMcpDisplayName } from '../../services/mcp/mcpStringUtils.js'
 import {
   type PermissionRequestEvent,
   usePermissionRequestLogging,
@@ -24,13 +25,16 @@ export function FallbackPermissionRequest({
   verbose: _verbose,
 }: PermissionRequestProps): React.ReactNode {
   const [theme] = useTheme()
-  // TODO: Avoid these special cases
+  // The dialog renders MCP tools as "<base name>(<args>) (MCP)" with the
+  // suffix dimmed. The MCP marker currently lives inside the single display
+  // string userFacingName() returns, so it has to be split back out here
+  // (shared helper below keeps the two slices in sync).
   const originalUserFacingName = toolUseConfirm.tool.userFacingName(
     toolUseConfirm.input as never,
   )
-  const userFacingName = originalUserFacingName.endsWith(' (MCP)')
-    ? originalUserFacingName.slice(0, -6)
-    : originalUserFacingName
+  const { base: userFacingName, isMcp } = splitMcpDisplayName(
+    originalUserFacingName,
+  )
 
   const permissionEvent = useMemo<PermissionRequestEvent>(
     () => ({
@@ -127,12 +131,7 @@ export function FallbackPermissionRequest({
             toolUseConfirm.input as never,
             { theme, verbose: true },
           )}
-          )
-          {originalUserFacingName.endsWith(' (MCP)') ? (
-            <Text dimColor> (MCP)</Text>
-          ) : (
-            ''
-          )}
+          ){isMcp ? <Text dimColor> (MCP)</Text> : ''}
         </Text>
         <Text dimColor>{truncateToLines(toolUseConfirm.description, 3)}</Text>
       </Box>

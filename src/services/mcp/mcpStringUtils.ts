@@ -40,6 +40,27 @@ export function getMcpPrefix(serverName: string): string {
   return `mcp__${normalizeNameForMCP(serverName)}__`
 }
 
+/** The display suffix MCP tools append to userFacingName(). */
+export const MCP_DISPLAY_SUFFIX = ' (MCP)'
+
+/**
+ * Splits a tool's userFacingName() into the base name and the dimmable
+ * ' (MCP)' marker. UI that renders the marker with its own styling
+ * (e.g. the fallback permission dialog) must strip-then-reappend it rather
+ * than string-slice at each call site.
+ */
+export function splitMcpDisplayName(name: string): {
+  base: string
+  isMcp: boolean
+} {
+  return name.endsWith(MCP_DISPLAY_SUFFIX)
+    ? {
+        base: name.slice(0, -MCP_DISPLAY_SUFFIX.length),
+        isMcp: true,
+      }
+    : { base: name, isMcp: false }
+}
+
 /**
  * Builds a fully qualified MCP tool name from server and tool names.
  * Inverse of mcpInfoFromString().

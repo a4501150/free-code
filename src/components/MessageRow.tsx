@@ -141,7 +141,6 @@ function MessageRowImpl({
       message={msg}
       lookups={lookups}
       addMargin={!hasMetadata && !isInjectedContextContinuation}
-      containerWidth={hasMetadata ? undefined : columns}
       tools={tools}
       commands={commands}
       verbose={verbose}
@@ -166,7 +165,13 @@ function MessageRowImpl({
   // change forces log-update.ts into a full terminal reset per tick. Freezing
   // returns the cached element ref so React bails and produces zero diff.
   if (!hasMetadata) {
-    return <OffscreenFreeze>{messageEl}</OffscreenFreeze>
+    return (
+      <OffscreenFreeze>
+        <Box flexDirection="column" width={columns}>
+          {messageEl}
+        </Box>
+      </OffscreenFreeze>
+    )
   }
   // Margin on children, not here — else null items (hook_success etc.) get phantom 1-row spacing.
   return (
