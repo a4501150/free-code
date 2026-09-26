@@ -50,8 +50,12 @@ export async function processBashCommand(
     }),
   })
 
-  // ctrl+b to background indicator
-  let jsx: React.ReactNode
+  // The tool's own live UI payload (set via bashModeContext.setToolJSX —
+  // e.g. the background-shell hint). We capture the FULL payload, not just
+  // jsx: the merged progress row re-uses the tool's jsx and
+  // shouldHidePromptInput, and the remaining flags (shouldContinueAnimation,
+  // showSpinner) stay readable here because bash-mode owns the spinner row.
+  let toolJSX: Parameters<SetToolJSXFn>[0]
 
   // Just show initial UI
   setToolJSX({
@@ -68,9 +72,8 @@ export async function processBashCommand(
   try {
     const bashModeContext: ProcessUserInputContext = {
       ...context,
-      // TODO: Clean up this hack
-      setToolJSX: _ => {
-        jsx = _?.jsx
+      setToolJSX: args => {
+        toolJSX = args
       },
     }
 
@@ -84,10 +87,10 @@ export async function processBashCommand(
               progress={progress.data}
               verbose={context.options.verbose}
             />
-            {jsx}
+            {toolJSX?.jsx}
           </>
         ),
-        shouldHidePromptInput: false,
+        shouldHidePromptInput: toolJSX?.shouldHidePromptInput ?? false,
         showSpinner: false,
       })
     }

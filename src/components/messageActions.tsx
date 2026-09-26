@@ -70,6 +70,7 @@ export function isNavigableMessage(msg: NavigableMessage): boolean {
       switch (msg.attachment.type) {
         case 'queued_command':
         case 'diagnostics':
+        case 'hook_blocking':
         case 'hook_blocking_error':
         case 'hook_error_during_execution':
           return true

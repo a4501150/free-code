@@ -117,6 +117,7 @@ const VISIBLE_NOT_FIXTURE_TESTED = [
   'dynamic_skill',
   'file',
   'hook_additional_context',
+  'hook_blocking',
   'hook_blocking_error',
   'hook_stopped_continuation',
   'hook_success',

@@ -41,7 +41,7 @@ import {
   maybeResizeAndDownsampleImageBlock,
 } from '../imageResizer.js'
 import { storeImages } from '../imageStore.js'
-import { createSystemMessage, createUserMessage } from '../messages.js'
+import { createUserMessage } from '../messages.js'
 import { queryCheckpoint } from '../queryProfiler.js'
 import { getMaxHookOutputLength } from '../settings/hookLimits.js'
 import { processBashCommand } from './processBashCommand.js'
@@ -170,18 +170,21 @@ export async function processUserInput({
       continue
     }
 
-    // Return only a system-level error message, erasing the original user input
+    // Return only the blocking attachment message, erasing the original
+    // user input (the attachment carries the prompt text for replay).
     if (hookResult.blockingError) {
       const blockingMessage = getUserPromptSubmitHookBlockingMessage(
         hookResult.blockingError,
       )
       return {
         messages: [
-          // TODO: Make this an attachment message
-          createSystemMessage(
-            `${blockingMessage}\n\nOriginal prompt: ${input}`,
-            'warning',
-          ),
+          createAttachmentMessage({
+            type: 'hook_blocking',
+            content: `${blockingMessage}\n\nOriginal prompt: ${input}`,
+            hookName: 'UserPromptSubmit',
+            toolUseID: `hook-${randomUUID()}`,
+            hookEvent: 'UserPromptSubmit',
+          }),
         ],
         shouldQuery: false,
         allowedTools: result.allowedTools,
@@ -219,15 +222,18 @@ export async function processUserInput({
       )
     }
 
-    // TODO: Clean this up
+    // Hook results pass through with one transform: hook_success content is
+    // truncated before persisting (it's model-visible on replay — see
+    // normalizeAttachmentForAPI). Empty hook_success content is the source's
+    // "nothing to show" signal (hooks.ts suppresses the trivial success
+    // line), so the message is dropped entirely.
     if (hookResult.message) {
-      const hMsg = hookResult.message as any
-      switch (hMsg.attachment?.type) {
-        case 'hook_success':
-          if (!hMsg.attachment.content) {
-            // Skip if there is no content
-            break
-          }
+      const hMsg = hookResult.message
+      if (
+        hMsg.type === 'attachment' &&
+        hMsg.attachment.type === 'hook_success'
+      ) {
+        if (hMsg.attachment.content) {
           result.messages.push({
             ...hMsg,
             attachment: {
@@ -235,10 +241,9 @@ export async function processUserInput({
               content: applyTruncation(hMsg.attachment.content),
             },
           })
-          break
-        default:
-          result.messages.push(hMsg)
-          break
+        }
+      } else {
+        result.messages.push(hMsg)
       }
     }
   }

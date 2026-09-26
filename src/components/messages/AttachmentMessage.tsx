@@ -296,6 +296,10 @@ function AttachmentMessageContent({
         </>
       )
     }
+    case 'hook_blocking':
+      // UserPromptSubmit blocked before the prompt entered the transcript;
+      // content carries the blocking reason and the original prompt.
+      return <Line color="warning">{attachment.content}</Line>
     case 'hook_non_blocking_error': {
       // Stop hooks are rendered as a summary in SystemStopHookSummaryMessage
       if (

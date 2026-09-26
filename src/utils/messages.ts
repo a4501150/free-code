@@ -3893,6 +3893,15 @@ You have exited auto mode. The user may now want to interact more directly. You 
           isMeta: true,
         }),
       ]
+    case 'hook_blocking':
+      return [
+        createUserMessage({
+          content: wrapInSystemReminder(
+            `${attachment.hookName} hook blocking error: ${attachment.content}`,
+          ),
+          isMeta: true,
+        }),
+      ]
     case 'hook_success':
       if (
         attachment.hookEvent !== 'SessionStart' &&

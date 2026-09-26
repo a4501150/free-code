@@ -321,6 +321,19 @@ export type HookAttachment =
       toolUseID: string
       hookEvent: HookEvent
     }
+  | {
+      /**
+       * A UserPromptSubmit hook blocked the prompt before it entered the
+       * transcript. content carries the blocking reason AND the original
+       * prompt (the user message itself is erased by the block), so the
+       * renderer and API replay both show what was rejected.
+       */
+      type: 'hook_blocking'
+      content: string
+      hookName: string
+      toolUseID: string
+      hookEvent: HookEvent
+    }
   | HookNonBlockingErrorAttachment
   | HookErrorDuringExecutionAttachment
   | {
