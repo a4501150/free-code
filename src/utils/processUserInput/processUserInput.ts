@@ -27,6 +27,7 @@ import {
   type AgentMentionAttachment,
   createAttachmentMessage,
   getAttachmentMessages,
+  takeUserInputAttachmentPrefetch,
 } from '../attachments.js'
 import type { PastedContent } from '../config.js'
 import type { EffortValue } from '../effort.js'
@@ -415,6 +416,12 @@ async function processUserInputBase(
     (mode !== 'prompt' || effectiveSkipSlash || !inputString.startsWith('/'))
 
   queryCheckpoint('query_attachment_loading_start')
+  // Consume the keystroke-time prefetch when the draft matches exactly
+  // (started from PromptInput onChange); otherwise computes fresh inside.
+  const precomputedUserInput =
+    shouldExtractAttachments && inputString !== null
+      ? takeUserInputAttachmentPrefetch(inputString)
+      : undefined
   const attachmentMessages = shouldExtractAttachments
     ? await toArray(
         getAttachmentMessages(
@@ -424,6 +431,7 @@ async function processUserInputBase(
           [], // queuedCommands - handled by query.ts for mid-turn attachments
           messages,
           querySource,
+          precomputedUserInput ? { precomputedUserInput } : undefined,
         ),
       )
     : []

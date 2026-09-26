@@ -699,9 +699,143 @@ export type Attachment =
       species: string
     }
 
+/** Handle for a keystroke-time prefetch of the input-scoped attachment trio. */
+export type UserInputAttachmentPrefetch = {
+  input: string
+  promise: Promise<Attachment[]>
+  /**
+   * Files the prefetch surfaced into ITS detached context's
+   * nestedMemoryAttachmentTriggers. getAttachments merges these into the
+   * live context so nested_memory still processes @-mentioned files.
+   */
+  triggers: Set<string>
+  abortController: AbortController
+}
+
+export type GetAttachmentsOptions = {
+  skipSkillDiscovery?: boolean
+  precomputedUserInput?: UserInputAttachmentPrefetch
+}
+
+const USER_INPUT_PREFETCH_DEBOUNCE_MS = 150
+let pendingUserInputPrefetch: UserInputAttachmentPrefetch | null = null
+let userInputPrefetchTimer: ReturnType<typeof setTimeout> | undefined
+
+function clearPendingUserInputPrefetch(): void {
+  if (userInputPrefetchTimer !== undefined) {
+    clearTimeout(userInputPrefetchTimer)
+    userInputPrefetchTimer = undefined
+  }
+  if (pendingUserInputPrefetch) {
+    pendingUserInputPrefetch.abortController.abort()
+    pendingUserInputPrefetch = null
+  }
+}
+
 /**
- * This is janky
- * TODO: Generate attachments when we create messages
+ * The input-scoped attachment trio (at-mentions, MCP resources, agent
+ * mentions), factored out so the keystroke prefetch and the submit-time
+ * fallback compute exactly the same thing. maybe() never rejects, so the
+ * returned promise always resolves (possibly to []).
+ */
+function computeUserInputAttachments(
+  input: string,
+  context: ToolUseContext,
+): Promise<Attachment[]> {
+  return Promise.all([
+    maybe('at_mentioned_files', () => processAtMentionedFiles(input, context)),
+    maybe('mcp_resources', () => processMcpResourceAttachments(input, context)),
+    maybe('agent_mentions', () =>
+      Promise.resolve(
+        processAgentMentions(
+          input,
+          context.options.agentDefinitions.activeAgents,
+        ),
+      ),
+    ),
+  ]).then(results => results.flat() as Attachment[])
+}
+
+/**
+ * Starts (debounced) the keystroke-time prefetch of the input-scoped
+ * attachment trio so submit-time getAttachments() consumes settled work
+ * instead of paying first-read latency inside the turn. Called from
+ * PromptInput onChange; consumed by processUserInput via
+ * takeUserInputAttachmentPrefetch(). Settle-and-poll like
+ * startRelevantMemoryPrefetch, but a single-slot registry keyed on the
+ * draft text instead of a handle threaded through query.ts — the draft
+ * itself is the cache key, and stale drafts are aborted on the next
+ * keystroke.
+ */
+export function startUserInputAttachmentPrefetch(
+  input: string,
+  getToolUseContext: (
+    messages: Message[],
+    newMessages: Message[],
+    abortController: AbortController,
+    mainLoopModel: string,
+  ) => ToolUseContext,
+  messages: Message[],
+  mainLoopModel: string,
+): void {
+  // Slash drafts compute attachments inside getMessagesForSlashCommand, and
+  // every member of the trio fires only on '@' tokens — skip (and expire any
+  // stale prefetch) for everything else.
+  if (
+    input.startsWith('/') ||
+    !input.includes('@') ||
+    getInitialSettings().attachmentsEnabled === false ||
+    isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)
+  ) {
+    clearPendingUserInputPrefetch()
+    return
+  }
+  clearPendingUserInputPrefetch()
+  userInputPrefetchTimer = setTimeout(() => {
+    userInputPrefetchTimer = undefined
+    const abortController = createAbortController()
+    const timeoutId = setTimeout(ac => ac.abort(), 1000, abortController)
+    const triggers = new Set<string>()
+    const base = getToolUseContext(messages, [], abortController, mainLoopModel)
+    const handle: UserInputAttachmentPrefetch = {
+      input,
+      promise: computeUserInputAttachments(input, {
+        ...base,
+        abortController,
+        nestedMemoryAttachmentTriggers: triggers,
+      }).finally(() => clearTimeout(timeoutId)),
+      triggers,
+      abortController,
+    }
+    pendingUserInputPrefetch = handle
+  }, USER_INPUT_PREFETCH_DEBOUNCE_MS)
+}
+
+/**
+ * Consumes the keystroke prefetch for the exact submitted draft. Returns
+ * undefined (after expiring any stored handle) when the draft changed —
+ * the caller then computes fresh, exactly like the pre-prefetch path.
+ */
+export function takeUserInputAttachmentPrefetch(
+  input: string,
+): UserInputAttachmentPrefetch | undefined {
+  if (userInputPrefetchTimer !== undefined) {
+    clearTimeout(userInputPrefetchTimer)
+    userInputPrefetchTimer = undefined
+  }
+  const handle = pendingUserInputPrefetch
+  pendingUserInputPrefetch = null
+  if (!handle || handle.input !== input) {
+    handle?.abortController.abort()
+    return undefined
+  }
+  return handle
+}
+
+/**
+ * Generates attachments in response to the submitted user message (and for
+ * slash-command prompts). The input-scoped group is prefetched at keystroke
+ * time — see startUserInputAttachmentPrefetch.
  */
 export async function getAttachments(
   input: string | null,
@@ -710,7 +844,7 @@ export async function getAttachments(
   queuedCommands: QueuedCommand[],
   messages?: Message[],
   querySource?: QuerySource,
-  options?: { skipSkillDiscovery?: boolean },
+  options?: GetAttachmentsOptions,
 ): Promise<Attachment[]> {
   if (
     getInitialSettings().attachmentsEnabled === false ||
@@ -723,34 +857,30 @@ export async function getAttachments(
     return getQueuedCommandAttachments(queuedCommands)
   }
 
-  // This will slow down submissions
-  // TODO: Compute attachments as the user types, not here (though we use this
-  // function for slash command prompts too)
   const abortController = createAbortController()
   const timeoutId = setTimeout(ac => ac.abort(), 1000, abortController)
   const context = { ...toolUseContext, abortController }
 
   const isMainThread = !toolUseContext.agentId
 
-  // Attachments which are added in response to on user input
-  const userInputAttachments = input
-    ? [
-        maybe('at_mentioned_files', () =>
-          processAtMentionedFiles(input, context),
-        ),
-        maybe('mcp_resources', () =>
-          processMcpResourceAttachments(input, context),
-        ),
-        maybe('agent_mentions', () =>
-          Promise.resolve(
-            processAgentMentions(
-              input,
-              toolUseContext.options.agentDefinitions.activeAgents,
-            ),
-          ),
-        ),
-      ]
-    : []
+  // Attachments which are added in response to on user input. The REPL
+  // prefetched this group while the user typed; consume the settled work
+  // when the draft matches, and compute inline otherwise (slash prompts,
+  // -p mode, drafts that changed since the prefetch fired).
+  const prefetched = input ? options?.precomputedUserInput : undefined
+  if (prefetched && toolUseContext.nestedMemoryAttachmentTriggers) {
+    // The prefetch ran against its own detached context; carry the files it
+    // surfaced into the live context so nested_memory below still processes
+    // them (same ordering guarantee the inline path provides).
+    for (const trigger of prefetched.triggers) {
+      toolUseContext.nestedMemoryAttachmentTriggers.add(trigger)
+    }
+  }
+  const userInputAttachments: Promise<Attachment[]>[] = prefetched
+    ? [prefetched.promise]
+    : input
+      ? [computeUserInputAttachments(input, context)]
+      : []
 
   // Process user input attachments first (includes @mentioned files)
   // This ensures files are added to nestedMemoryAttachmentTriggers before nested_memory processes them
@@ -2235,11 +2365,6 @@ export async function getChangedFiles(
       const fileState = toolUseContext.readFileState.get(filePath)
       if (!fileState) return null
 
-      // TODO: Implement offset/limit support for changed files
-      if (fileState.offset !== undefined || fileState.limit !== undefined) {
-        return null
-      }
-
       const normalizedPath = expandPath(filePath)
 
       // Check if file has a deny rule configured
@@ -2253,7 +2378,11 @@ export async function getChangedFiles(
           return null
         }
 
-        const fileInput = { file_path: normalizedPath }
+        const fileInput = {
+          file_path: normalizedPath,
+          offset: fileState.offset,
+          limit: fileState.limit,
+        }
 
         // Validate file path is valid
         const isValid = await FileReadTool.validateInput(
@@ -2267,8 +2396,26 @@ export async function getChangedFiles(
         const result = await FileReadTool.call(fileInput, toolUseContext)
         // Extract only the changed section
         if (result.data.type === 'text') {
+          // A ranged read re-reads the SAME window it cached, so compare
+          // like-for-like: the ledger normally holds the whole current file
+          // (see FileReadTool), so slice out the cached window; huge-file
+          // ledgers already hold only the shown slice (contentFirstLine
+          // set) and compare directly. Diffing a window against the full
+          // file would report every line outside the window as deleted.
+          const priorContent =
+            fileState.contentFirstLine === undefined &&
+            fileState.offset !== undefined &&
+            fileState.limit !== undefined
+              ? fileState.content
+                  .split('\n')
+                  .slice(
+                    Math.max(fileState.offset - 1, 0),
+                    fileState.offset - 1 + fileState.limit,
+                  )
+                  .join('\n')
+              : fileState.content
           const snippet = getSnippetForTwoFileDiff(
-            fileState.content,
+            priorContent,
             result.data.file.content,
           )
 
@@ -3009,9 +3156,11 @@ export async function* getAttachmentMessages(
   queuedCommands: QueuedCommand[],
   messages?: Message[],
   querySource?: QuerySource,
-  options?: { skipSkillDiscovery?: boolean },
+  options?: GetAttachmentsOptions,
 ): AsyncGenerator<AttachmentMessage, void> {
-  // TODO: Compute this upstream
+  // Keystroke-time prefetch results arrive via options.precomputedUserInput
+  // for matching drafts; everything else (slash prompts, queued-command
+  // re-arms, stale drafts) still computes here.
   const attachments = await getAttachments(
     input,
     toolUseContext,

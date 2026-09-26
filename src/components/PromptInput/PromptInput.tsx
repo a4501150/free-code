@@ -31,6 +31,7 @@ import {
   isQueuedCommandEditable,
   popAllEditable,
 } from 'src/utils/messageQueueManager.js'
+import { startUserInputAttachmentPrefetch } from 'src/utils/attachments.js'
 import stripAnsi from 'strip-ansi'
 import { FastModePicker } from '../../commands/fast/fast.js'
 import { isUltrareviewEnabled } from '../../commands/review/ultrareviewEnabled.js'
@@ -887,6 +888,16 @@ function PromptInput({
           : { ...prev, footerSelection: null },
       )
 
+      // Debounced keystroke prefetch of the input-scoped attachment trio
+      // (@-mentions, MCP resources, agent mentions) so submit consumes
+      // settled work — see startUserInputAttachmentPrefetch.
+      startUserInputAttachmentPrefetch(
+        processedValue,
+        getToolUseContext,
+        messages,
+        mainLoopModel,
+      )
+
       trackAndSetInput(processedValue)
     },
     [
@@ -898,6 +909,9 @@ function PromptInput({
       pastedContents,
       dismissStashHint,
       setAppState,
+      getToolUseContext,
+      messages,
+      mainLoopModel,
     ],
   )
 
