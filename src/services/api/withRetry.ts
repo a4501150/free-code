@@ -67,8 +67,11 @@ function shouldRetry529(querySource: QuerySource | undefined): boolean {
 // unattendedRetry setting: for unattended sessions. Retries 429/529
 // indefinitely with higher backoff and periodic keep-alive yields so the host
 // environment does not mark the session idle mid-wait.
-// TODO(ANT-344): the keep-alive via SystemAPIErrorMessage yields is a stopgap
-// until there's a dedicated keep-alive channel.
+// Upstream parity (Anthropic Claude Code 2.1.277): the keep-alive via
+// SystemAPIErrorMessage yields is a stopgap until there's a dedicated
+// keep-alive channel — the official binary ships the same yields with the
+// same 30s heartbeat interval and identical 5-minute backoff / 6-hour reset
+// cap constants below, so this is not fork debt to resolve locally.
 const PERSISTENT_MAX_BACKOFF_MS = 5 * 60 * 1000
 const PERSISTENT_RESET_CAP_MS = 6 * 60 * 60 * 1000
 const HEARTBEAT_INTERVAL_MS = 30_000
@@ -384,9 +387,11 @@ export function getRetryDelay(
   return baseDelay + jitter
 }
 
-// TODO: Replace with a response header check once the API adds a dedicated
-// header for fast-mode rejection (e.g., x-fast-mode-rejected). String-matching
-// the error message is fragile and will break if the API wording changes.
+// Upstream parity (Anthropic Claude Code 2.1.277): the API has no dedicated
+// fast-mode-rejection header yet, so the official binary uses this identical
+// 400 + "Fast mode is not enabled" string heuristic. String-matching is
+// fragile if the API wording changes; swap both upstream and here together
+// when a header (e.g., x-fast-mode-rejected) lands.
 function isFastModeNotEnabledError(error: unknown): boolean {
   if (error instanceof DomainTransportError) {
     return (
