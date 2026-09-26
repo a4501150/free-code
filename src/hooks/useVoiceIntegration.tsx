@@ -8,8 +8,6 @@ import {
   useVoiceState,
 } from '../context/voice.js'
 import { KeyboardEvent } from '../ink/events/keyboard-event.js'
-// eslint-disable-next-line custom-rules/prefer-use-keybindings -- backward-compat bridge until REPL wires handleKeyDown to <Box onKeyDown>
-import { useInput } from '../ink.js'
 import { useOptionalKeybindingContext } from '../keybindings/KeybindingContext.js'
 import { keystrokesEqual } from '../keybindings/resolver.js'
 import type { ParsedKeystroke } from '../keybindings/types.js'
@@ -655,36 +653,12 @@ export function useVoiceKeybindingHandler({
     )
   }
 
-  // Backward-compat bridge: REPL.tsx doesn't yet wire handleKeyDown to
-  // <Box onKeyDown>. Subscribe via useInput and adapt InputEvent →
-  // KeyboardEvent until the consumer is migrated (separate PR).
-  // TODO(onKeyDown-migration): remove once REPL passes handleKeyDown.
-  useInput(
-    (_input, _key, event) => {
-      const kbEvent = new KeyboardEvent(event.keypress)
-      handleKeyDown(kbEvent)
-      // handleKeyDown stopped the adapter event, not the InputEvent the
-      // emitter actually checks — forward it so the text input's useInput
-      // listener is skipped and held spaces don't leak into the prompt.
-      if (kbEvent.didStopImmediatePropagation()) {
-        event.stopImmediatePropagation()
-      }
-    },
-    { isActive },
-  )
+  // handleKeyDown is consumed by the REPL via PromptKeyDownContext — it
+  // runs on the prompt container's onKeyDown, BEFORE the text input's
+  // useInput listener. stopImmediatePropagation() here now consumes the
+  // key outright: App suppresses the input emit, so held chars can't leak
+  // into the prompt (no stop-forwarding bridge needed anymore) and the
+  // defensive stripTrailing calls in handleKeyDown are belt-and-braces.
 
   return { handleKeyDown }
-}
-
-// TODO(onKeyDown-migration): temporary shim so existing JSX callers
-// (<VoiceKeybindingHandler .../>) keep compiling. Remove once REPL.tsx
-// wires handleKeyDown directly.
-export function VoiceKeybindingHandler(props: {
-  voiceHandleKeyEvent: (fallbackMs?: number) => void
-  stripTrailing: (maxStrip: number, opts?: StripOpts) => number
-  resetAnchor: () => void
-  isActive: boolean
-}): null {
-  useVoiceKeybindingHandler(props)
-  return null
 }

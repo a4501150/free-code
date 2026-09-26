@@ -18,8 +18,6 @@ import {
   useRegisterOverlay,
 } from '../context/overlayContext.js'
 import { KeyboardEvent } from '../ink/events/keyboard-event.js'
-// eslint-disable-next-line custom-rules/prefer-use-keybindings -- backward-compat bridge until consumers wire handleKeyDown to <Box onKeyDown>
-import { useInput } from '../ink.js'
 import {
   useOptionalKeybindingContext,
   useRegisterKeybindingContext,
@@ -1838,17 +1836,10 @@ export function useTypeahead({
     }
   }
 
-  // Backward-compat bridge: PromptInput doesn't yet wire handleKeyDown to
-  // <Box onKeyDown>. Subscribe via useInput and adapt InputEvent →
-  // KeyboardEvent until the consumer is migrated (separate PR).
-  // TODO(onKeyDown-migration): remove once PromptInput passes handleKeyDown.
-  useInput((_input, _key, event) => {
-    const kbEvent = new KeyboardEvent(event.keypress)
-    handleKeyDown(kbEvent)
-    if (kbEvent.didStopImmediatePropagation()) {
-      event.stopImmediatePropagation()
-    }
-  })
+  // handleKeyDown is consumed by PromptInput's dispatch-target container
+  // (<Box onKeyDown>) — see PromptInput's handlePromptKeyDown. Stopping
+  // propagation here consumes the key: the input emitter is suppressed, so
+  // useInput listeners (submit, BaseTextInput) never see it.
 
   return {
     suggestions,

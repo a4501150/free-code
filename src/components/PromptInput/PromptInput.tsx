@@ -5,6 +5,7 @@ import * as React from 'react'
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -56,6 +57,10 @@ import { usePromptSuggestion } from '../../hooks/usePromptSuggestion.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { useTypeahead } from '../../hooks/useTypeahead.js'
 import type { BorderTextOptions } from '../../ink/render-border.js'
+import type { DOMElement } from '../../ink/dom.js'
+import { getFocusManager, type FocusManager } from '../../ink/focus.js'
+import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
+import { usePromptForwardedKeyDown } from '../repl/PromptKeyDownContext.js'
 import { stringWidth } from '../../ink/stringWidth.js'
 import { Box, type ClickEvent, type Key, Text, useInput } from '../../ink.js'
 import { useOptionalKeybindingContext } from '../../keybindings/KeybindingContext.js'
@@ -402,23 +407,28 @@ function PromptInput({
   const viewingAgentColor = viewedLocalAgent
     ? getAgentColor(viewedLocalAgent.agentType)
     : undefined
-  const { historyQuery, setHistoryQuery, historyMatch, historyFailedMatch } =
-    useHistorySearch(
-      entry => {
-        setPastedContents(entry.pastedContents)
-        void onSubmit(entry.display)
-      },
-      input,
-      trackAndSetInput,
-      setCursorOffset,
-      cursorOffset,
-      onModeChange,
-      mode,
-      isSearchingHistory,
-      setIsSearchingHistory,
-      setPastedContents,
-      pastedContents,
-    )
+  const {
+    historyQuery,
+    setHistoryQuery,
+    historyMatch,
+    historyFailedMatch,
+    handleKeyDown: historyHandleKeyDown,
+  } = useHistorySearch(
+    entry => {
+      setPastedContents(entry.pastedContents)
+      void onSubmit(entry.display)
+    },
+    input,
+    trackAndSetInput,
+    setCursorOffset,
+    cursorOffset,
+    onModeChange,
+    mode,
+    isSearchingHistory,
+    setIsSearchingHistory,
+    setPastedContents,
+    pastedContents,
+  )
   // Counter for paste IDs (shared between images and text).
   // Compute initial value once from existing messages (for --continue/--resume).
   // useRef(fn()) evaluates fn() on every render and discards the result after
@@ -1006,9 +1016,12 @@ function PromptInput({
         return
       }
 
-      // Enter in selection modes confirms selection (useBackgroundTaskNavigation).
-      // BaseTextInput's useInput registers before that hook (child effects fire first),
-      // so without this guard Enter would double-fire and auto-submit the suggestion.
+      // Enter in selection modes confirms selection
+      // (useBackgroundTaskNavigation, wired via the prompt container's
+      // onKeyDown). That handler only preventDefault()s — consumption
+      // would also drop the Tab-default logic — so this submit still
+      // runs after it; without this guard Enter would double-fire and
+      // auto-submit the suggestion.
       if (state.viewSelectionMode === 'selecting-agent') {
         return
       }
@@ -1133,6 +1146,7 @@ function PromptInput({
     commandArgumentHint,
     inlineGhostText,
     maxColumnWidth,
+    handleKeyDown: typeaheadHandleKeyDown,
   } = useTypeahead({
     commands,
     onInputChange: trackAndSetInput,
@@ -1148,6 +1162,38 @@ function PromptInput({
     markAccepted,
     onModeChange,
   })
+
+  // Keyboard dispatch target. Tree-dispatched keydowns land on this Box
+  // when nothing else holds DOM focus (no autoFocus'd dialog): register it
+  // as the FocusManager's defaultTarget while the prompt region is live and
+  // compose the hooks' keydown handlers onto onKeyDown. This channel runs
+  // BEFORE every useInput listener (App.tsx processKeysInBatch), so a
+  // consumed key (propagation stopped) never reaches useInput.
+  const forwardedKeyDownHandlers = usePromptForwardedKeyDown()
+  const promptContainerRef = useRef<DOMElement | null>(null)
+  const isPromptDispatchTarget = !isModalOverlayActive && !footerItemSelected
+  useLayoutEffect(() => {
+    const node = promptContainerRef.current
+    if (!node || !isPromptDispatchTarget) return
+    let focusManager: FocusManager
+    try {
+      focusManager = getFocusManager(node)
+    } catch {
+      return // rendered outside an ink root (unit render harnesses)
+    }
+    focusManager.setDefaultTarget(node)
+    return () => {
+      if (focusManager.defaultTarget === node) {
+        focusManager.setDefaultTarget(null)
+      }
+    }
+  }, [isPromptDispatchTarget])
+
+  function handlePromptKeyDown(e: KeyboardEvent): void {
+    typeaheadHandleKeyDown(e)
+    historyHandleKeyDown(e)
+    for (const handler of forwardedKeyDownHandlers) handler(e)
+  }
 
   // Track if prompt suggestion should be shown (computed later with terminal width).
   // Hidden in agent view — suggestion is main-session context only.
@@ -2262,7 +2308,12 @@ function PromptInput({
   )
 
   return (
-    <Box flexDirection="column" marginTop={briefOwnsGap ? 0 : 1}>
+    <Box
+      flexDirection="column"
+      marginTop={briefOwnsGap ? 0 : 1}
+      ref={promptContainerRef}
+      onKeyDown={handlePromptKeyDown}
+    >
       {hasSuppressedDialogs && (
         <Box marginTop={1} marginLeft={2}>
           <Text dimColor>Waiting for permission…</Text>

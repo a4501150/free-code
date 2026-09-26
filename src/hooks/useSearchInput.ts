@@ -1,7 +1,5 @@
 import { useCallback, useState } from 'react'
 import { KeyboardEvent } from '../ink/events/keyboard-event.js'
-// eslint-disable-next-line custom-rules/prefer-use-keybindings -- backward-compat bridge until consumers wire handleKeyDown to <Box onKeyDown>
-import { useInput } from '../ink.js'
 import {
   Cursor,
   getLastKill,
@@ -349,16 +347,13 @@ export function useSearchInput({
     }
   }
 
-  // Backward-compat bridge: existing consumers don't yet wire handleKeyDown
-  // to <Box onKeyDown>. Subscribe via useInput and adapt InputEvent →
-  // KeyboardEvent until all 11 call sites are migrated (separate PRs).
-  // TODO(onKeyDown-migration): remove once all consumers pass handleKeyDown.
-  useInput(
-    (_input, _key, event) => {
-      handleKeyDown(new KeyboardEvent(event.keypress))
-    },
-    { isActive },
-  )
+  // Consumers wire handleKeyDown onto their dispatch-target
+  // <Box onKeyDown> (FuzzyPicker, Config, LogSelector, plugin dialogs,
+  // TranscriptSearchBar, ...). onKeyDown runs before every useInput
+  // listener; stopPropagation/stopImmediatePropagation consumes the key
+  // outright (suppresses the input emitter). This handler only
+  // preventDefault()s — exit/edit keys still fall through to the host's
+  // own onKeyDown branch and the emitter, exactly as before.
 
   return { query, setQuery, cursorOffset, handleKeyDown }
 }

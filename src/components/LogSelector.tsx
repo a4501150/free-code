@@ -224,6 +224,7 @@ export function LogSelector({
     query: searchQuery,
     setQuery: setSearchQuery,
     cursorOffset: searchCursorOffset,
+    handleKeyDown: searchInputKeyDown,
   } = useSearchInput({
     isActive:
       viewMode === 'search' && agenticSearchState.status !== 'searching',
@@ -872,7 +873,16 @@ export function LogSelector({
   }
 
   return (
-    <Box flexDirection="column" height={maxHeight - 1}>
+    <Box
+      flexDirection="column"
+      height={maxHeight - 1}
+      // Dispatch target for search editing: useSearchInput's handleKeyDown
+      // runs here (before useInput listeners) and self-gates on isActive,
+      // so list/rename/agent-focus modes fall through to the emitter.
+      tabIndex={0}
+      autoFocus
+      onKeyDown={searchInputKeyDown}
+    >
       <Box flexShrink={0}>
         <Divider color="suggestion" />
       </Box>

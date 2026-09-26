@@ -107,7 +107,6 @@ import { prependModeCharacterToInput } from '../components/PromptInput/inputMode
 import { prependToShellHistoryCache } from '../utils/suggestions/shellHistoryCompletion.js'
 import { useApiKeyVerification } from '../hooks/useApiKeyVerification.js'
 import { getShortcutDisplay } from '../keybindings/shortcutFormat.js'
-import { useBackgroundTaskNavigation } from '../hooks/useBackgroundTaskNavigation.js'
 import { errorMessage } from '../utils/errors.js'
 import { logError } from '../utils/log.js'
 import { useVoiceIntegration } from '../hooks/useVoiceIntegration.js'
@@ -1748,13 +1747,8 @@ export function REPL({
   // stopHookSpinnerSuffix → useReplStreaming
 
   // Handle shift+down for background task management.
-  // Guard onOpenBackgroundTasks when a local-jsx dialog (e.g. /mcp) is open —
-  // otherwise Shift+Down stacks BackgroundTasksDialog on top and deadlocks input.
-  useBackgroundTaskNavigation({
-    onOpenBackgroundTasks: isShowingLocalJSXCommand
-      ? undefined
-      : () => setShowBashesDialog(true),
-  })
+  // Background-task Shift+Up/Down + Escape handling moved into
+  // ReplKeybindingShell (forwarded onto the prompt container's onKeyDown).
 
   if (screen === 'transcript') {
     // Virtual scroll replaces the 30-message cap: everything is scrollable
@@ -1990,6 +1984,12 @@ export function REPL({
       messageActionHandlers={messageActionHandlers}
       disableMessageActions={disableMessageActions}
       cursor={cursor}
+      // Guard onOpenBackgroundTasks when a local-jsx dialog (e.g. /mcp) is
+      // open — otherwise Shift+Down stacks BackgroundTasksDialog on top and
+      // deadlocks input.
+      onOpenBackgroundTasks={
+        isShowingLocalJSXCommand ? undefined : () => setShowBashesDialog(true)
+      }
     >
       <MCPConnectionManager
         key={remountKey}

@@ -387,6 +387,7 @@ export function PermissionRuleList({
     query: searchQuery,
     setQuery: setSearchQuery,
     cursorOffset: searchCursorOffset,
+    handleKeyDown: searchInputKeyDown,
   } = useSearchInput({
     isActive: isSearchModeActive && isSearchMode,
     onExit: () => {
@@ -398,7 +399,12 @@ export function PermissionRuleList({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!isSearchModeActive) return
-      if (isSearchMode) return
+      if (isSearchMode) {
+        // Search editing + exit keys (was the hook's useInput shim).
+        // Receives keydowns bubbling from the focused Tabs child.
+        searchInputKeyDown(e)
+        return
+      }
       if (e.ctrl || e.meta) return
 
       // Enter search mode with '/' or any printable character.
@@ -424,7 +430,7 @@ export function PermissionRuleList({
         setSearchQuery(e.key)
       }
     },
-    [isSearchModeActive, isSearchMode, setSearchQuery],
+    [isSearchModeActive, isSearchMode, setSearchQuery, searchInputKeyDown],
   )
 
   const handleToolSelect = useCallback(

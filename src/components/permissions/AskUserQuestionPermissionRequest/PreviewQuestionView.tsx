@@ -240,10 +240,10 @@ export function PreviewQuestionView({
       // Focused preview owns the bare arrows. Everything else (enter, digits,
       // n, tab) falls through to the option list, which takes focus back — see
       // the option-navigation branch below.
-      // Escape is deliberately NOT handled here: CancelRequestHandler claims it
-      // through the keybinding emitter, which runs before any DOM handler
-      // (App.tsx emits 'input' before dispatchKeyboardEvent), so escape always
-      // cancels the request no matter what this handler does.
+      // Escape is deliberately NOT handled here: this handler never
+      // consumes it (stopPropagation would suppress the input emitter and
+      // starve CancelRequestHandler), so the keybinding emitter path
+      // always cancels the request no matter what this handler does.
       if (
         region === 'preview' &&
         !isInNotesInput &&

@@ -97,7 +97,11 @@ export function TranscriptSearchBar({
   // nearest-ptr, same highlights). User can edit or clear.
   initialQuery: string
 }): React.ReactNode {
-  const { query, cursorOffset } = useSearchInput({
+  const {
+    query,
+    cursorOffset,
+    handleKeyDown: searchInputKeyDown,
+  } = useSearchInput({
     isActive: true,
     initialQuery,
     onExit: () => onClose(query),
@@ -168,6 +172,12 @@ export function TranscriptSearchBar({
       // skip these cells (same exclusion as gutters). You can't text-
       // select the bar either; it's transient chrome, fine.
       noSelect
+      // Dispatch target for the / bar's readline editing: the hook's
+      // handleKeyDown runs on onKeyDown (before useInput listeners).
+      // Unconsumed keys still reach the emitter (scroll, n/N chrome).
+      tabIndex={0}
+      autoFocus
+      onKeyDown={searchInputKeyDown}
     >
       <Text>/</Text>
       <Text>{query.slice(0, off)}</Text>

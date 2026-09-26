@@ -535,6 +535,7 @@ export function ManagePlugins({
     query: searchQuery,
     setQuery: setSearchQuery,
     cursorOffset: searchCursorOffset,
+    handleKeyDown: searchInputKeyDown,
   } = useSearchInput({
     isActive: viewState === 'plugin-list' && isSearchMode,
     onExit: () => {
@@ -2644,7 +2645,14 @@ export function ManagePlugins({
   const visibleItems = pagination.getVisibleItems(filteredItems)
 
   return (
-    <Box flexDirection="column">
+    <Box
+      flexDirection="column"
+      // Dispatch target for search editing: useSearchInput's handleKeyDown
+      // runs here (before useInput listeners) and self-gates on isActive.
+      tabIndex={0}
+      autoFocus
+      onKeyDown={searchInputKeyDown}
+    >
       {/* Search box */}
       <Box marginBottom={1}>
         <SearchBox

@@ -103,6 +103,7 @@ export function DiscoverPlugins({
     query: searchQuery,
     setQuery: setSearchQuery,
     cursorOffset: searchCursorOffset,
+    handleKeyDown: searchInputKeyDown,
   } = useSearchInput({
     isActive: viewState === 'plugin-list' && isSearchMode && !loading,
     onExit: () => {
@@ -697,7 +698,14 @@ export function DiscoverPlugins({
   const visiblePlugins = pagination.getVisibleItems(filteredPlugins)
 
   return (
-    <Box flexDirection="column">
+    <Box
+      flexDirection="column"
+      // Dispatch target for search editing: useSearchInput's handleKeyDown
+      // runs here (before useInput listeners) and self-gates on isActive.
+      tabIndex={0}
+      autoFocus
+      onKeyDown={searchInputKeyDown}
+    >
       <Box>
         <Text bold>Discover plugins</Text>
         {pagination.needsPagination && (

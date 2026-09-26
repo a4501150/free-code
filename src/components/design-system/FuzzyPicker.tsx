@@ -110,11 +110,17 @@ export function FuzzyPicker<T>({
     setFocusedIndex(i => clamp(i + delta, 0, items.length - 1))
   }
 
-  // onKeyDown fires after useSearchInput's useInput, so onExit must be a
+  // Search editing is handled by the hook's handleKeyDown, composed into
+  // the Box onKeyDown below (this tree is the dispatch target via autoFocus,
+  // and onKeyDown runs before any useInput listener). onExit must be a
   // no-op — return/downArrow are handled by handleKeyDown below. onCancel
   // still covers escape/ctrl+c/ctrl+d. Backspace-on-empty is disabled so
   // a held backspace doesn't eject the user from the dialog.
-  const { query, cursorOffset } = useSearchInput({
+  const {
+    query,
+    cursorOffset,
+    handleKeyDown: searchInputKeyDown,
+  } = useSearchInput({
     isActive: true,
     onExit: () => {},
     onCancel,
@@ -123,6 +129,12 @@ export function FuzzyPicker<T>({
   })
 
   const handleKeyDown = (e: KeyboardEvent) => {
+    // Text-editing keys first; if a future hook version consumes a key,
+    // don't also act on it here.
+    searchInputKeyDown(e)
+    if (e.propagationStopped) {
+      return
+    }
     if (e.key === 'up' || (e.ctrl && e.key === 'p')) {
       e.preventDefault()
       e.stopImmediatePropagation()

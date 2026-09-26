@@ -1,6 +1,4 @@
 import { KeyboardEvent } from '../ink/events/keyboard-event.js'
-// eslint-disable-next-line custom-rules/prefer-use-keybindings -- backward-compat bridge until REPL wires handleKeyDown to <Box onKeyDown>
-import { useInput } from '../ink.js'
 import { useAppState, useSetAppState } from '../state/AppState.js'
 import { exitAgentView } from '../state/agentViewHelpers.js'
 import { isBackgroundTask } from '../tasks/types.js'
@@ -47,13 +45,11 @@ export function useBackgroundTaskNavigation(options?: {
     }
   }
 
-  // Backward-compat bridge: REPL.tsx doesn't yet wire handleKeyDown to
-  // <Box onKeyDown>. Subscribe via useInput and adapt InputEvent →
-  // KeyboardEvent until the consumer is migrated (separate PR).
-  // TODO(onKeyDown-migration): remove once REPL passes handleKeyDown.
-  useInput((_input, _key, event) => {
-    handleKeyDown(new KeyboardEvent(event.keypress))
-  })
+  // handleKeyDown is consumed by the REPL via PromptKeyDownContext — it
+  // runs on the prompt container's onKeyDown, before any useInput
+  // listener. Handler only preventDefault()s (never consumes), so the
+  // input emitter still fires for the same key — callers rely on that
+  // (e.g. onSubmit's selecting-agent guard skips the double submit).
 
   return { handleKeyDown }
 }

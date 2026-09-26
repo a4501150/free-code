@@ -264,6 +264,7 @@ export function Config({
     query: searchQuery,
     setQuery: setSearchQuery,
     cursorOffset: searchCursorOffset,
+    handleKeyDown: searchInputKeyDown,
   } = useSearchInput({
     isActive: isSearchMode && showSubmenu === null && !headerFocused,
     onExit: () => setIsSearchMode(false),
@@ -1748,6 +1749,11 @@ export function Config({
       if (headerFocused) return
       // Search mode: Esc clears then exits, Enter/↓ moves to the list.
       if (isSearchMode) {
+        // Hook editing (chars, kill/yank, up→header) — was the hook's
+        // useInput shim; runs first, exactly as it did on the emitter
+        // channel. The escape/return branches below mirror its exit
+        // semantics (they used to double-act on it, pre-migration too).
+        searchInputKeyDown(e)
         if (e.key === 'escape') {
           e.preventDefault()
           if (searchQuery.length > 0) {
@@ -1791,6 +1797,7 @@ export function Config({
       isSearchMode,
       searchQuery,
       setSearchQuery,
+      searchInputKeyDown,
       toggleSetting,
     ],
   )
