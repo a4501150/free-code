@@ -365,7 +365,15 @@ function SpinnerWithVerbInner({
           // IMPORTANT: we need this width="100%" to avoid a bug in our vendored
           // renderer (src/ink incremental diffing) where the tip gets duplicated
           // over and over while the spinner is running if the terminal is very
-          // small. TODO(ink-fork): fix in the incremental renderer.
+          // small. Root cause (investigated, not fixed): in log-update.ts the
+          // growth path renders rows above prev.screen.height via
+          // renderFrameSlice and lets the terminal scroll naturally, assuming
+          // new rows only appear at the tail. When a sibling above re-wraps in
+          // a narrow terminal, the tip shifts down and each growth frame paints
+          // another copy before the erase pass clears the old one; width=100%
+          // makes the tip box pin to the full row so the diff overwrites the
+          // stale copy in place. Fixing it properly needs the erased region to
+          // cover re-wrapped rows mid-frame — needs a small-terminal tmux repro.
           <Box width="100%" flexDirection="column">
             {(nextTask || effectiveTip) && (
               <MessageResponse>

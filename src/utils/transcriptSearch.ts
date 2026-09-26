@@ -54,8 +54,11 @@ function computeSearchText(msg: RenderableMessage): string {
             // Duck-type the native Out instead. Covers the common shapes:
             // Bash {stdout,stderr}, Grep {content,filenames}, Read
             // {file.content}. Unknown shapes index empty — under-count is
-            // honest, phantom is a lie. Proper fix is per-tool
-            // extractSearchText(Out) on the Tool interface (TODO).
+            // honest, phantom is a lie. When the Tool is resolvable
+            // (Messages.tsx extractSearchText wrapper), the tool's own
+            // extractSearchText(Out) overrides this heuristic — that's
+            // the precise path; this duck-type is the fallback for
+            // callers without the tool lookup.
             parts.push(toolResultSearchText(msg.toolUseResult))
           }
         }
