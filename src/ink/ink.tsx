@@ -1690,11 +1690,24 @@ export default class Ink {
     dispatchHover(this.rootNode, col, row, this.hoveredNodes)
   }
 
-  dispatchKeyboardEvent(parsedKey: ParsedKey): void {
+  /**
+   * Dispatch a parsed key through the DOM tree and report whether a
+   * handler consumed it (stopPropagation / stopImmediatePropagation).
+   * Called by App's input path BEFORE the 'input' emitter fires — a
+   * consumed keydown suppresses the emitter entirely, so onKeyDown
+   * handlers run first and `useInput` listeners only see unconsumed keys.
+   */
+  dispatchKeyboardEvent(parsedKey: ParsedKey): boolean {
     // Keystrokes open the input-priority window: the frame pacer may paint
     // the resulting echo at INPUT_PRIORITY_FRAME_MS for a few frames.
     this.inputPriorityUntil = performance.now() + INPUT_PRIORITY_WINDOW_MS
-    const target = this.focusManager.activeElement ?? this.rootNode
+    // activeElement (autoFocus / click-focus / Tab) wins; otherwise the
+    // host-registered default target (e.g. the live prompt container);
+    // otherwise the bare root, where only rootNode-level handlers fire.
+    const target =
+      this.focusManager.activeElement ??
+      this.focusManager.defaultTarget ??
+      this.rootNode
     const event = new KeyboardEvent(parsedKey)
     dispatcher.dispatchDiscrete(target, event)
 
@@ -1712,6 +1725,7 @@ export default class Ink {
         this.focusManager.focusNext(this.rootNode)
       }
     }
+    return event.propagationStopped
   }
   /**
    * Look up the URL at (col, row) in the current front frame. Checks for

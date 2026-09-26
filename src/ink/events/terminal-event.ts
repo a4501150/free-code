@@ -52,6 +52,15 @@ export class TerminalEvent extends Event {
     return this._defaultPrevented
   }
 
+  /**
+   * True once stopPropagation() or stopImmediatePropagation() was called.
+   * Handlers use this to consume a keydown; the input emitter is suppressed
+   * for consumed keydowns (see App.tsx's key handling).
+   */
+  get propagationStopped(): boolean {
+    return this._propagationStopped
+  }
+
   stopPropagation(): void {
     this._propagationStopped = true
   }

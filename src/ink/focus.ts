@@ -14,6 +14,14 @@ const MAX_FOCUS_STACK = 32
  */
 export class FocusManager {
   activeElement: DOMElement | null = null
+  /**
+   * Fallback dispatch target when nothing is focused. Hosts whose logical
+   * focus lives in app state (e.g. PromptInput's `focus` prop) register
+   * their container here so keydown events have a tree target while that
+   * region is live. activeElement (autoFocus, click-focus, Tab cycling)
+   * always wins over this.
+   */
+  defaultTarget: DOMElement | null = null
   private dispatchFocusEvent: (target: DOMElement, event: FocusEvent) => boolean
   private enabled = true
   private focusStack: DOMElement[] = []
@@ -22,6 +30,10 @@ export class FocusManager {
     dispatchFocusEvent: (target: DOMElement, event: FocusEvent) => boolean,
   ) {
     this.dispatchFocusEvent = dispatchFocusEvent
+  }
+
+  setDefaultTarget(node: DOMElement | null): void {
+    this.defaultTarget = node
   }
 
   focus(node: DOMElement): void {
@@ -59,6 +71,16 @@ export class FocusManager {
     this.focusStack = this.focusStack.filter(
       n => n !== node && isInTree(n, root),
     )
+
+    // Drop a registered default target that left the tree — the host's
+    // cleanup effect normally clears it, but never dispatch into a
+    // detached node.
+    if (
+      this.defaultTarget !== null &&
+      (this.defaultTarget === node || !isInTree(this.defaultTarget, root))
+    ) {
+      this.defaultTarget = null
+    }
 
     // Check if activeElement is the removed node OR a descendant
     if (!this.activeElement) return

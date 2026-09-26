@@ -122,9 +122,11 @@ type Props = {
   // own querier). Lets ink.tsx's private querier resolve its CPR wipe
   // probe. Optional so testing.tsx doesn't need to stub it.
   readonly onTerminalResponse?: (response: TerminalResponse) => void
-  // Dispatch a keyboard event through the DOM tree. Called for each
-  // parsed key alongside the legacy EventEmitter path.
-  readonly dispatchKeyboardEvent: (parsedKey: ParsedKey) => void
+  // Dispatch a keyboard event through the DOM tree. Called for each parsed
+  // key BEFORE the legacy EventEmitter path. Returns true when an onKeyDown
+  // handler consumed the key (propagation stopped) — the caller then skips
+  // the 'input' emit so `useInput` listeners never see a handled key.
+  readonly dispatchKeyboardEvent: (parsedKey: ParsedKey) => boolean
 }
 
 // Multi-click detection thresholds. 500ms is the macOS default; a small
@@ -563,7 +565,8 @@ export default class App extends PureComponent<Props, State> {
 
 // Helper to process all keys within a single discrete update context.
 // discreteUpdates expects (fn, a, b, c, d) -> fn(a, b, c, d)
-function processKeysInBatch(
+// Exported for testing the keydown-before-input dispatch contract.
+export function processKeysInBatch(
   app: App,
   items: ParsedInput[],
   _unused1: undefined,
@@ -643,11 +646,17 @@ function processKeysInBatch(
     }
 
     app.handleInput(sequence)
-    const event = new InputEvent(item)
-    app.internal_eventEmitter.emit('input', event)
 
-    // Also dispatch through the DOM tree so onKeyDown handlers fire.
-    app.props.dispatchKeyboardEvent(item)
+    // onKeyDown handlers run BEFORE useInput listeners: the tree gets the
+    // key first, and a handler that calls stopPropagation()/
+    // stopImmediatePropagation() consumes it — the 'input' emit below is
+    // skipped, so useInput listeners never see the handled key.
+    // preventDefault() alone does not consume (it only suppresses the
+    // default Tab focus-cycle, see dispatchKeyboardEvent).
+    const consumed = app.props.dispatchKeyboardEvent(item)
+    if (!consumed) {
+      app.internal_eventEmitter.emit('input', new InputEvent(item))
+    }
   }
 }
 
