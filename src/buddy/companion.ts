@@ -114,7 +114,12 @@ export function roll(userId: string): Roll {
 
 export function companionUserId(): string {
   const config = getGlobalConfig()
-  return config.oauthAccount?.accountUuid ?? config.userID ?? 'anon'
+  return (
+    config.companionSeed ??
+    config.oauthAccount?.accountUuid ??
+    config.userID ??
+    'anon'
+  )
 }
 
 // Regenerate bones from userId, merge with stored soul. Bones never persist

@@ -127,6 +127,9 @@ export type GlobalConfig = {
   oauthAccount?: { accountUuid?: string }
   companion?: StoredCompanion
   companionMuted?: boolean
+  // Overrides the account-derived id the bones roll is seeded from, so a
+  // proxy-provisioned userID can't stomp a hand-picked roll.
+  companionSeed?: string
   hasUserClaudeMdMigrationPromptShown?: boolean
   customApiKeyResponses?: {
     approved?: string[]
