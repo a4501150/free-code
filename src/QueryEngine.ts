@@ -91,10 +91,7 @@ import {
   localCommandOutputToSDKAssistantMessage,
   toSDKCompactMetadata,
 } from './utils/messages/mappers.js'
-import {
-  buildSystemInitMessage,
-  sdkCompatToolName,
-} from './utils/messages/systemInit.js'
+import { buildSystemInitMessage } from './utils/messages/systemInit.js'
 import {
   getScratchpadDir,
   isScratchpadEnabled,
@@ -233,7 +230,7 @@ export class QueryEngine {
       // Track denials for SDK reporting
       if (result.behavior !== 'allow') {
         this.permissionDenials.push({
-          tool_name: sdkCompatToolName(tool.name),
+          tool_name: tool.name,
           tool_use_id: toolUseID,
           tool_input: input,
         })

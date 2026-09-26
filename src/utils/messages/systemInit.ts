@@ -5,21 +5,9 @@ import type {
   SDKMessage,
 } from 'src/structuredProtocol/index.js'
 import type { ApiKeySource } from '../auth.js'
-import {
-  AGENT_TOOL_NAME,
-  LEGACY_AGENT_TOOL_NAME,
-} from 'src/tools/AgentTool/constants.js'
 import { getAnthropicApiKeyWithSource } from '../auth.js'
 import { getCwd } from '../cwd.js'
 import { getFastModeState } from '../fastMode.js'
-
-// TODO(next-minor): remove this translation once structured consumers have migrated
-// to the 'Agent' tool name. The wire name was renamed Task → Agent in #19647,
-// but emitting the new name in init/result events broke structured consumers on a
-// patch-level release. Keep emitting 'Task' until the next minor.
-export function sdkCompatToolName(name: string): string {
-  return name === AGENT_TOOL_NAME ? LEGACY_AGENT_TOOL_NAME : name
-}
 
 type CommandLike = { name: string; userInvocable?: boolean }
 
@@ -50,7 +38,7 @@ export function buildSystemInitMessage(inputs: SystemInitInputs): SDKMessage {
     subtype: 'init',
     cwd: getCwd(),
     session_id: getSessionId(),
-    tools: inputs.tools.map(tool => sdkCompatToolName(tool.name)),
+    tools: inputs.tools.map(tool => tool.name),
     mcp_servers: inputs.mcpClients.map(client => ({
       name: client.name,
       status: client.type,
