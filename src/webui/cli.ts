@@ -19,6 +19,7 @@ function usage(): void {
   print('')
   print('Commands:')
   print('  start   Start the daemon and the web server (and tunnel)')
+  print('  serve   Run sessiond in the foreground (hosts sessions in-process)')
   print('  stop    Stop the web server, the tunnel and the daemon')
   print('  restart Restart both, reusing the tunnel URL. Use after a rebuild')
   print('  status  Show whether the web server is running')
@@ -327,6 +328,32 @@ export async function webMain(args: string[]): Promise<void> {
         return
       }
       if (!(await launch(options))) process.exitCode = 1
+      return
+    }
+
+    case 'serve': {
+      // Foreground sessiond: this process hosts the sessions and serves the
+      // browser directly — no daemon, no tunnel, no child spawning. The
+      // daemon/tunnel/restart path is ported onto it in the next task.
+      if (rest.includes('--help')) {
+        print(
+          'Usage: claude web serve [--foreground] [--port <n>] [--password-stdin]',
+        )
+        return
+      }
+      if (!(await ensurePassword(rest))) {
+        process.exitCode = 1
+        return
+      }
+      const portIdx = rest.indexOf('--port')
+      const port = portIdx >= 0 ? Number(rest[portIdx + 1]) : undefined
+      const { startSessiondServe } = await import('./../sessiond/serve.js')
+      const serve = await startSessiondServe({ port })
+      print(`sessiond serving ${serve.url}`)
+      process.on('SIGINT', () => void serve.stop().then(() => process.exit(0)))
+      process.on('SIGTERM', () => void serve.stop().then(() => process.exit(0)))
+      // Stay alive: the listener owns the loop.
+      await new Promise(() => {})
       return
     }
 
