@@ -4,9 +4,9 @@
  * A phone photo is several megabytes and the uplink is usually a tunnel, so the
  * browser resizes and re-encodes before anything leaves the device.
  *
- * The budget below is stated here rather than imported from the protocol
- * module, which would pull zod into the browser bundle for one number. It must
- * stay under `MAX_SUBMIT_IMAGE_BASE64`.
+ * The budget below is stated here rather than imported from the wire module,
+ * which would pull zod into the browser bundle for one number. It must stay
+ * under `MAX_PROMPT_IMAGE_BASE64`.
  */
 
 /** Above this edge length the API gains nothing. */

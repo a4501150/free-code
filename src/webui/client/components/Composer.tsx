@@ -1,16 +1,17 @@
 import { useMemo, useRef, useState } from 'react'
+import type { WireCatalog } from '../../../session/wire.js'
 import {
   imageFilesFrom,
   prepareImage,
   type PendingImage,
 } from '../imageUpload.js'
 
-/** Mirrors `MAX_SUBMIT_IMAGES`, which the host enforces. */
+/** Mirrors `MAX_PROMPT_IMAGES`, which the host enforces. */
 const MAX_IMAGES = 4
 
 type Suggestion = { value: string; hint?: string }
 
-/** Narrower than a plain string, so it satisfies the protocol's media enum. */
+/** Narrower than a plain string, so it satisfies `WireImage`'s media enum. */
 export type SubmitImage = {
   mediaType: PendingImage['mediaType']
   data: string
@@ -33,7 +34,8 @@ export function Composer({
 }: {
   busy: boolean
   knownPaths: string[]
-  commands: string[]
+  /** `catalog.commands`, which also carry hints the picker does not yet show. */
+  commands: WireCatalog['commands']
   onSubmit(
     text: string,
     delivery: 'next' | 'interrupt',
@@ -57,7 +59,9 @@ export function Composer({
     if (token.startsWith('/')) {
       const query = token.toLowerCase()
       return commands
-        .map(name => (name.startsWith('/') ? name : `/${name}`))
+        .map(entry =>
+          entry.name.startsWith('/') ? entry.name : `/${entry.name}`,
+        )
         .filter(c => c.toLowerCase().startsWith(query))
         .map(value => ({ value }))
     }

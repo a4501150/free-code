@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { WebPermissionRequest } from '../../protocol/attachSchemas.js'
+import type { PermissionEntry } from '../store.js'
 
 /**
  * Permission is the one thing that must not be missed on a phone, so it is a
@@ -12,7 +12,7 @@ export function PermissionTray({
   onAllow,
   onDeny,
 }: {
-  request: WebPermissionRequest
+  request: PermissionEntry
   queued: number
   /** `persist` stops this tool asking again for the rest of the session. */
   onAllow(persist: boolean): void

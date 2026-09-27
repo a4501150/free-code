@@ -1,37 +1,18 @@
 import { useState } from 'react'
-import type { WebPermissionRequest } from '../../protocol/attachSchemas.js'
+import type { PermissionEntry } from '../store.js'
+import type { WireQuestion } from '../../../session/wire.js'
 
 /**
- * The browser surface for AskUserQuestion.
+ * The browser surface for a `ui.kind === 'question'` request.
  *
  * The tool always asks, and the terminal answers it by allowing with an
  * enriched input rather than by returning a boolean. This sends the same shape,
- * so `AskUserQuestionTool.call()` receives real answers instead of the empty
- * record a bare allow leaves behind.
+ * so the tool receives real answers instead of the empty record a bare allow
+ * leaves behind.
  */
-
-type Option = { label: string; description: string; preview?: string }
-type Question = {
-  question: string
-  header: string
-  options: Option[]
-  multiSelect?: boolean
-}
 
 /** The free-text row the terminal always appends. */
 const OTHER = 'Other'
-
-export function parseQuestions(input: Record<string, unknown>): Question[] {
-  const raw = input.questions
-  if (!Array.isArray(raw)) return []
-  return raw.filter(
-    (entry): entry is Question =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      typeof (entry as Question).question === 'string' &&
-      Array.isArray((entry as Question).options),
-  )
-}
 
 type Answer = { labels: string[]; other: string }
 
@@ -39,7 +20,10 @@ type Answer = { labels: string[]; other: string }
  * Serializes one answer the way the terminal does: a label, several labels
  * joined by a comma, or the typed text.
  */
-export function serializeAnswer(question: Question, answer: Answer): string {
+export function serializeAnswer(
+  question: WireQuestion,
+  answer: Answer,
+): string {
   if (answer.labels.includes(OTHER)) return answer.other.trim()
   return question.multiSelect
     ? answer.labels.join(', ')
@@ -48,23 +32,25 @@ export function serializeAnswer(question: Question, answer: Answer): string {
 
 export function QuestionTray({
   request,
+  questions,
   queued,
   onAnswer,
   onCancel,
 }: {
-  request: WebPermissionRequest
+  request: PermissionEntry
+  /** `request.ui.questions`, lifted by the caller that already narrowed `ui`. */
+  questions: WireQuestion[]
   queued: number
   onAnswer(updatedInput: Record<string, unknown>): void
   onCancel(): void
 }): React.ReactElement {
-  const questions = parseQuestions(request.input)
   const [answers, setAnswers] = useState<Record<string, Answer>>({})
 
-  function answerFor(question: Question): Answer {
+  function answerFor(question: WireQuestion): Answer {
     return answers[question.question] ?? { labels: [], other: '' }
   }
 
-  function choose(question: Question, label: string): void {
+  function choose(question: WireQuestion, label: string): void {
     setAnswers(current => {
       const existing = current[question.question] ?? { labels: [], other: '' }
       const has = existing.labels.includes(label)
@@ -79,7 +65,7 @@ export function QuestionTray({
     })
   }
 
-  function setOther(question: Question, text: string): void {
+  function setOther(question: WireQuestion, text: string): void {
     setAnswers(current => {
       const existing = current[question.question] ?? { labels: [], other: '' }
       return {
@@ -142,7 +128,7 @@ export function QuestionTray({
                     >
                       <span className="question__label">{option.label}</span>
                       <span className="question__desc">
-                        {option.description}
+                        {option.description ?? ''}
                       </span>
                     </button>
                     {picked && option.preview ? (

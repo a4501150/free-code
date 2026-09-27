@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import type { WebTranscriptItem } from '../../protocol/transcriptWire.js'
+import type { WireItem } from '../../../session/wire.js'
 import { DiffView } from './DiffView.js'
 
 /** Tools whose input is better shown as a diff or a command than as JSON. */
-function summarizeInput(item: WebTranscriptItem): string {
+function summarizeInput(item: WireItem): string {
   const input = (item.toolInput ?? {}) as Record<string, unknown>
   const first = (...keys: string[]): string | undefined => {
     for (const key of keys) {
@@ -41,8 +41,8 @@ function summarizeInput(item: WebTranscriptItem): string {
 type ToolStatus = 'running' | 'completed' | 'error' | 'pending'
 
 function getToolStatus(
-  item: WebTranscriptItem,
-  result?: WebTranscriptItem,
+  item: WireItem,
+  result?: WireItem,
   inProgressToolUseIds?: string[],
 ): ToolStatus {
   if (result?.isError) return 'error'
@@ -63,8 +63,8 @@ export function ToolCard({
   inProgressToolUseIds,
   compact,
 }: {
-  item: WebTranscriptItem
-  result?: WebTranscriptItem
+  item: WireItem
+  result?: WireItem
   inProgressToolUseIds?: string[]
   compact?: boolean
 }): React.ReactElement {

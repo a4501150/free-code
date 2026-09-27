@@ -17,7 +17,7 @@ const DEV_FULL_BINARY = join(ROOT, 'cli-dev')
  * `frame-ancestors` as a keyword, so it appears in every build.
  */
 const MARKERS = [
-  'bad attach token',
+  'x-freecode-surface',
   'claude web <command>',
   'freecode_webui',
   'Denied from the WebUI',

@@ -10,7 +10,7 @@
  */
 import { spawn, type ChildProcess } from 'child_process'
 import { validateSessionCwd } from './directories.js'
-import { readAttachDescriptor } from '../attach/attachDescriptor.js'
+import { readAttachDescriptor } from '../../server/descriptor.js'
 import { WEBUI_ATTACH_ENV } from '../../utils/webuiManagedProcess.js'
 
 export type ChildSession = {

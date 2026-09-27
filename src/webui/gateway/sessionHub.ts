@@ -1,15 +1,16 @@
-import { readAttachDescriptor } from '../attach/attachDescriptor.js'
+import { readAttachDescriptor } from '../../server/descriptor.js'
 import {
   listLiveSessions,
   type ConcurrentSessionEntry,
 } from '../../utils/concurrentSessions.js'
 import { listSessionsImpl } from '../../utils/listSessionsImpl.js'
-import type {
-  AttachEventBody,
-  AttachRequestBody,
-  AttachResponse,
-} from '../protocol/attachSchemas.js'
-import { connectAttachClient, type AttachClient } from './attachClient.js'
+import type { WireEvent } from '../../session/wire.js'
+import {
+  connectSurfaceClient,
+  type SurfaceClient,
+  type SurfaceCommandPath,
+  type SurfaceResponse,
+} from './surfaceClient.js'
 
 export type SessionListEntry = {
   /** Stable per live process. Absent for a historical session. */
@@ -40,7 +41,7 @@ export type SessionListEntry = {
 export type HubSubscriber = {
   id: number
   processKey: string
-  send(event: { seq: number; event: AttachEventBody }): void
+  send(event: { seq: number; event: WireEvent }): void
   /**
    * The process behind this subscription ended. Without this a browser keeps a
    * dead transcript and every later command answers `not_attached`.
@@ -49,7 +50,7 @@ export type HubSubscriber = {
 }
 
 type Attachment = {
-  client: AttachClient
+  client: SurfaceClient
   processKey: string
   subscribers: Set<HubSubscriber>
   /** The session the process reports now, which a switch can change. */
@@ -191,6 +192,8 @@ export function createSessionHub() {
     processKey: string,
     send: HubSubscriber['send'],
     onGone: HubSubscriber['onGone'],
+    /** Resume a browser stream at its known position instead of snapshotting. */
+    options?: { lastEventId?: number },
   ): Promise<{ subscriber: HubSubscriber; attachment: Attachment }> {
     const [pidText, nonce] = processKey.split(':')
     const pid = Number(pidText)
@@ -200,39 +203,43 @@ export function createSessionHub() {
 
     let attachment = attachments.get(processKey)
     if (!attachment) {
-      const client = await connectAttachClient(pid, {
-        onEvent(seq, event) {
-          const current = attachments.get(processKey)
-          if (!current) return
-          // `/resume` and `/clear` both change the session a process serves, so
-          // the ID from the hello handshake goes stale. Followers need the one
-          // it serves now.
-          if (event.kind === 'session_changed') {
-            current.sessionId = event.sessionId
-          } else if (event.kind === 'snapshot') {
-            current.sessionId = event.meta.sessionId
-          }
-          for (const subscriber of current.subscribers) {
-            subscriber.send({ seq, event })
-          }
+      const client = await connectSurfaceClient(
+        pid,
+        {
+          onEvent(seq, event) {
+            const current = attachments.get(processKey)
+            if (!current) return
+            // `/resume` and `/clear` both change the session a process serves, so
+            // the ID from the hello handshake goes stale. Followers need the one
+            // it serves now.
+            if (event.kind === 'session_changed') {
+              current.sessionId = event.sessionId
+            } else if (event.kind === 'snapshot') {
+              current.sessionId = event.meta.sessionId
+            }
+            for (const subscriber of current.subscribers) {
+              subscriber.send({ seq, event })
+            }
+          },
+          onClose(reason) {
+            const current = attachments.get(processKey)
+            if (!current) return
+            attachments.delete(processKey)
+            // Notify from the retained set, and empty it, so a later unsubscribe
+            // cannot deliver this twice.
+            const gone = [...current.subscribers]
+            current.subscribers.clear()
+            for (const subscriber of gone) {
+              subscriber.onGone({
+                processKey,
+                sessionId: current.sessionId,
+                reason,
+              })
+            }
+          },
         },
-        onClose(reason) {
-          const current = attachments.get(processKey)
-          if (!current) return
-          attachments.delete(processKey)
-          // Notify from the retained set, and empty it, so a later unsubscribe
-          // cannot deliver this twice.
-          const gone = [...current.subscribers]
-          current.subscribers.clear()
-          for (const subscriber of gone) {
-            subscriber.onGone({
-              processKey,
-              sessionId: current.sessionId,
-              reason,
-            })
-          }
-        },
-      })
+        options,
+      )
 
       // The nonce proves this is the same process the browser was told about,
       // not a different one that recycled the pid.
@@ -275,13 +282,12 @@ export function createSessionHub() {
 
   async function request(
     processKey: string,
-    body: AttachRequestBody,
-  ): Promise<AttachResponse> {
+    path: SurfaceCommandPath,
+    body?: unknown,
+  ): Promise<SurfaceResponse> {
     const attachment = attachments.get(processKey)
     if (!attachment) {
       return {
-        type: 'response',
-        requestId: 'none',
         ok: false,
         error: {
           code: 'not_attached',
@@ -289,7 +295,7 @@ export function createSessionHub() {
         },
       }
     }
-    return attachment.client.request(body)
+    return attachment.client.command(path, body)
   }
 
   function stop(): void {

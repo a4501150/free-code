@@ -1138,10 +1138,7 @@ function runHeadlessStreaming(
           ? (getAppState().toolPermissionContext.mode as PermissionMode)
           : undefined,
       getCommands: () =>
-        uniqBy(
-          [...headlessCommands, ...getAppState().mcp.commands],
-          'name',
-        ),
+        uniqBy([...headlessCommands, ...getAppState().mcp.commands], 'name'),
       getTasks: () => getAppState().tasks ?? {},
       interrupt: () => abortController?.abort('user-cancel'),
       // `run` is declared below, but only a browser command calls this.

@@ -102,8 +102,7 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
             ? cmd.value
             : cmd.value
                 .filter(
-                  (b): b is { type: 'text'; text: string } =>
-                    b.type === 'text',
+                  (b): b is { type: 'text'; text: string } => b.type === 'text',
                 )
                 .map(b => b.text)
                 .join('\n')

@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionListEntry } from '../../gateway/sessionHub.js'
 import type {
-  WebPermissionDecision,
-  WebPermissionRequest,
-} from '../../protocol/attachSchemas.js'
+  WirePermissionDecision,
+  WireRequestResponse,
+} from '../../../session/wire.js'
 import { useGateway } from '../hooks/useGateway.js'
 import { useSessions } from '../hooks/useSessions.js'
-import { createViewStore, useViewStore } from '../store.js'
+import {
+  createViewStore,
+  useViewStore,
+  type PermissionEntry,
+} from '../store.js'
 import { Composer } from './Composer.js'
 import { InstrumentSheet } from './InstrumentSheet.js'
 import { Instruments } from './Instruments.js'
@@ -47,8 +51,8 @@ export function redirectAfterRestart(
  * Picks the process that serves `sessionId` now.
  *
  * `goneKeys` is not optional bookkeeping. The session list is a poll behind, so
- * it still advertises a process that has already ended, and attaching to that
- * key answers `attach_failed` and delivers no snapshot.
+ * it still advertises a process that has already ended, and opening a stream on
+ * that key answers non-ok and delivers no snapshot.
  */
 export function chooseFollowTarget(
   entries: readonly SessionListEntry[],
@@ -90,34 +94,22 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   const view = useViewStore(store)
 
   // Process keys that are known dead. The session list is a poll behind, so
-  // without this the follow below re-attaches to the very process that just
-  // ended and lands on an `attach_failed` with no snapshot to show for it.
+  // without this the follow below re-opens a stream on the very process that
+  // just ended and lands on a refusal with no snapshot to show for it.
   const goneKeys = useRef(new Set<string>())
 
-  // Declared before the socket, because the process-gone handler refreshes the
+  // Declared before the gateway, because the offline handler refreshes the
   // list to find whoever serves the session now.
   const sessions = useSessions(csrf)
 
   const gateway = useGateway({
     csrf,
     onEvent: (seq, event) => store.apply(seq, event),
-    onProcessGone: info => {
-      goneKeys.current.add(info.processKey)
-      // A close for a process the user already left must not disturb the one
-      // they are watching now.
-      if (info.processKey !== activeKey) return
-      gateway.detach()
-      setActiveKey(null)
-      setActiveSessionId(info.sessionId)
-      store.reset()
-      void sessions.refresh()
-    },
-    onAttachFailed: () => {
-      // No snapshot is coming, so leaving the key set would strand the view on
-      // an empty transcript with a composer that cannot send.
-      if (!activeKey) return
-      goneKeys.current.add(activeKey)
-      gateway.detach()
+    onStreamOffline: processKey => {
+      goneKeys.current.add(processKey)
+      // A stream closing for a process the user already left must not disturb
+      // the one they are watching now.
+      if (processKey !== activeKey) return
       setActiveKey(null)
       store.reset()
       void sessions.refresh()
@@ -133,7 +125,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
       store.reset()
       setActiveKey(processKey)
       setActiveSessionId(sessionId)
-      gateway.attach(processKey)
+      gateway.attachSession(processKey)
     },
     [gateway, store],
   )
@@ -244,19 +236,18 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   // Image bytes never ride the transcript, so a reader who wants to see one
   // asks the session for it.
   const fetchImage = useCallback(
-    async (itemId: string) => {
-      const answer = await gateway.request({ kind: 'get_image', itemId })
-      if (!answer.ok) {
-        throw new Error(answer.error?.message ?? 'the session refused')
-      }
-      return answer.result as { mediaType: string; data: string }
-    },
+    (itemId: string) => gateway.fetchImage(itemId),
     [gateway],
   )
 
   const meta = view.meta
   const busy = meta?.state === 'running'
-  const pending = view.permissions[0]
+  // Only permission requests have a tray. TODO(v2): hook_prompt and
+  // elicitation requests have no browser surface yet; they sit in the queue
+  // unseen, as they did before this client knew those kinds existed.
+  const pending = view.requests.find(
+    (r): r is PermissionEntry => r.kind === 'permission',
+  )
   // The browser cannot browse the filesystem, so the only sensible default is a
   // directory some session already runs in.
   const defaultCwd =
@@ -276,56 +267,80 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     if (hasPending) setSheetOpen(false)
   }, [hasPending])
 
-  function decide(requestId: string, decision: WebPermissionDecision): void {
-    gateway.send({ kind: 'permission_decision', requestId, decision })
+  function decide(requestId: string, response: WireRequestResponse): void {
+    void gateway.command('request_respond', {
+      kind: 'request_respond',
+      requestId,
+      response,
+    })
+  }
+
+  function permission(
+    decision: WirePermissionDecision,
+  ): Extract<WireRequestResponse, { kind: 'permission' }> {
+    return { kind: 'permission', decision }
   }
 
   /**
-   * Two tools cannot be answered yes or no. Both always ask, and the terminal
-   * answers them by allowing with an enriched input, so each needs a surface
-   * that can produce that input.
+   * Two request shapes cannot be answered yes or no. Both always ask, and the
+   * terminal answers them by allowing with enriched input, so each needs a
+   * surface that can produce that input. The wire marks them with `ui`.
    */
-  function renderTray(request: WebPermissionRequest): React.ReactElement {
-    const queued = view.permissions.length
+  function renderTray(request: PermissionEntry): React.ReactElement {
+    const queued = view.requests.length
 
-    if (request.toolName === 'AskUserQuestion') {
+    if (request.ui?.kind === 'question') {
       return (
         <QuestionTray
           request={request}
+          questions={request.ui.questions}
           queued={queued}
           onAnswer={updatedInput =>
-            decide(request.requestId, { behavior: 'allow', updatedInput })
+            decide(
+              request.requestId,
+              permission({ behavior: 'allow', updatedInput }),
+            )
           }
           onCancel={() =>
-            decide(request.requestId, {
-              behavior: 'deny',
-              message: 'User declined to answer questions',
-            })
+            decide(
+              request.requestId,
+              permission({
+                behavior: 'deny',
+                message: 'User declined to answer questions',
+              }),
+            )
           }
         />
       )
     }
 
-    if (request.toolName === 'ExitPlanMode') {
+    if (request.ui?.kind === 'plan') {
       return (
         <PlanTray
           request={request}
+          planContent={request.ui.planContent}
           queued={queued}
           onApprove={mode => {
-            // Ordered, not raced: one socket delivers these in sequence, so
-            // the mode is in place before the tool runs. An allow cannot
-            // carry a permission update, which is how the terminal does it.
-            gateway.send({ kind: 'set_permission_mode', mode })
-            decide(request.requestId, {
-              behavior: 'allow',
-              updatedInput: approvalInput(request.input),
-            })
+            // One round trip: `setMode` is in place by the time the tool runs,
+            // which is the ordering the terminal gets from sending the mode
+            // before the allow.
+            decide(
+              request.requestId,
+              permission({
+                behavior: 'allow',
+                updatedInput: approvalInput(request.input),
+                setMode: mode,
+              }),
+            )
           }}
           onKeepPlanning={feedback =>
-            decide(request.requestId, {
-              behavior: 'deny',
-              message: feedback || 'Keep planning',
-            })
+            decide(
+              request.requestId,
+              permission({
+                behavior: 'deny',
+                message: feedback || 'Keep planning',
+              }),
+            )
           }
         />
       )
@@ -336,13 +351,13 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         request={request}
         queued={queued}
         onAllow={persist =>
-          decide(request.requestId, { behavior: 'allow', persist })
+          decide(request.requestId, permission({ behavior: 'allow', persist }))
         }
         onDeny={message =>
-          decide(request.requestId, {
-            behavior: 'deny',
-            message: message || undefined,
-          })
+          decide(
+            request.requestId,
+            permission({ behavior: 'deny', message: message || undefined }),
+          )
         }
       />
     )
@@ -388,7 +403,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
           <Transcript
             items={view.items}
             order={view.order}
-            pendingCommands={view.pendingCommands}
+            pendingCommands={view.queue}
             inProgressToolUseIds={view.meta?.inProgressToolUseIds}
             activity={view.meta?.activity}
             followSignal={followSignal}
@@ -419,11 +434,13 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
             <Instruments
               meta={meta}
               todos={view.todos}
-              models={view.models}
+              catalog={view.catalog}
               onSetMode={mode =>
-                gateway.send({ kind: 'set_permission_mode', mode })
+                void gateway.command('mode', { kind: 'mode_set', mode })
               }
-              onSetModel={model => gateway.send({ kind: 'set_model', model })}
+              onSetModel={model =>
+                void gateway.command('model', { kind: 'model_set', model })
+              }
             />
           </InstrumentSheet>
         ) : null}
@@ -432,10 +449,10 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
           <Composer
             busy={busy}
             knownPaths={knownPaths}
-            commands={view.commands}
+            commands={view.catalog.commands}
             onSubmit={(text, delivery, images) => {
-              gateway.send({
-                kind: 'submit',
+              void gateway.command('prompt', {
+                kind: 'prompt',
                 commandId: crypto.randomUUID(),
                 content: text,
                 ...(images.length ? { images } : {}),
@@ -444,7 +461,9 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
               })
               setFollowSignal(n => n + 1)
             }}
-            onInterrupt={() => gateway.send({ kind: 'interrupt' })}
+            onInterrupt={() => {
+              void gateway.command('cancel', { kind: 'cancel' })
+            }}
           />
         ) : null}
       </main>

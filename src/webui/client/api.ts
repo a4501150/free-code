@@ -1,32 +1,11 @@
 import type {
-  AttachEventBody,
-  AttachRequestBody,
-} from '../protocol/attachSchemas.js'
+  WireCommand,
+  WireEvent,
+  WireEventEnvelope,
+  WireImagePayload,
+} from '../../session/wire.js'
 import type { SessionListEntry } from '../gateway/sessionHub.js'
 import type { DirectoryListing } from '../gateway/directories.js'
-
-export type ServerFrame =
-  | { type: 'ready'; protocolVersion: number }
-  | { type: 'attached'; ok: boolean }
-  | { type: 'event'; seq: number; event: AttachEventBody }
-  | {
-      type: 'response'
-      id: string
-      ok: boolean
-      result?: unknown
-      error?: { code: string; message: string }
-    }
-  | { type: 'error'; code: string; message?: string }
-  /**
-   * The attached process ended. A gateway frame rather than an
-   * `AttachEventBody`, because no process is left to have emitted it.
-   */
-  | { type: 'process_gone'; processKey: string; sessionId: string }
-  | {
-      type: 'restart_ready'
-      publicUrl: string | null
-      localUrl: string | null
-    }
 
 export type LoginResult = 'ok' | 'invalid' | 'throttled' | 'error'
 
@@ -171,44 +150,41 @@ export async function logout(csrf: string): Promise<void> {
   })
 }
 
-/** What a command answered. `ok` false carries the gateway's short code. */
+/** What a command answered. `ok` false carries the route's short code. */
 export type CommandResult = {
   ok: boolean
   result?: unknown
   error?: { code: string; message: string }
 }
 
-export type GatewaySocket = {
-  attach(processKey: string): void
-  /**
-   * Stop watching the current process. React state alone cannot do this: the
-   * socket remembers the key so it can re-attach after a reconnect, and would
-   * keep reaching for a process that has ended.
-   */
-  detach(): void
-  send(body: AttachRequestBody): void
-  /** Send and wait for the answer. Rejects if the socket closes first. */
-  request(body: AttachRequestBody): Promise<CommandResult>
+/** The command routes under `/api/sessions/<processKey>/`. */
+export type SessionCommandRoute =
+  | 'prompt'
+  | 'cancel'
+  | 'request_respond'
+  | 'model'
+  | 'mode'
+  | 'rpc'
+
+/**
+ * The one gateway websocket. It carries gateway-level frames only —
+ * `ready` and `restart_ready`; session traffic is HTTP plus SSE.
+ */
+export type GatewayInfoSocket = {
   close(): void
 }
 
-/**
- * One websocket for the whole app. Reconnects with backoff, because a phone
- * that locks its screen drops the socket and must recover without a reload.
- */
-export function connectGateway(handlers: {
-  csrf: string
-  onFrame(frame: ServerFrame): void
+export function connectGatewayInfo(handlers: {
   onOpen(): void
   onClose(): void
-}): GatewaySocket {
+  onRestartReady(info: {
+    publicUrl: string | null
+    localUrl: string | null
+  }): void
+}): GatewayInfoSocket {
   let socket: WebSocket | null = null
   let closedByUs = false
   let attempt = 0
-  let currentProcessKey: string | null = null
-  let commandId = 0
-  const pending = new Map<string, (result: CommandResult) => void>()
-  const rejecters = new Map<string, (error: Error) => void>()
 
   function open(): void {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
@@ -217,85 +193,147 @@ export function connectGateway(handlers: {
     socket.addEventListener('open', () => {
       attempt = 0
       handlers.onOpen()
-      // Re-attach after a reconnect so the transcript resumes on its own.
-      if (currentProcessKey) attach(currentProcessKey)
     })
 
     socket.addEventListener('message', event => {
-      let frame: ServerFrame
+      let frame: { type?: string } & Record<string, unknown>
       try {
-        frame = JSON.parse(String(event.data)) as ServerFrame
+        frame = JSON.parse(String(event.data)) as typeof frame
       } catch {
         // A frame we cannot parse is not worth tearing the socket down for.
         return
       }
-      if (frame.type === 'response') {
-        const settle = pending.get(frame.id)
-        pending.delete(frame.id)
-        rejecters.delete(frame.id)
-        settle?.({ ok: frame.ok, result: frame.result, error: frame.error })
+      if (frame.type === 'restart_ready') {
+        handlers.onRestartReady({
+          publicUrl: (frame.publicUrl as string | null) ?? null,
+          localUrl: (frame.localUrl as string | null) ?? null,
+        })
       }
-      handlers.onFrame(frame)
     })
 
     socket.addEventListener('close', () => {
       handlers.onClose()
-      // A pending answer can never arrive on a dead socket, and a caller
-      // awaiting one would hang forever.
-      for (const reject of rejecters.values()) {
-        reject(new Error('the connection dropped'))
-      }
-      pending.clear()
-      rejecters.clear()
       if (closedByUs) return
       attempt += 1
       setTimeout(open, Math.min(500 * 2 ** (attempt - 1), 10_000))
     })
   }
 
-  function attach(processKey: string): void {
-    currentProcessKey = processKey
-    // A send on a CONNECTING socket is dropped, not queued. Recording the key is
-    // enough, because the open handler re-attaches to it.
-    if (socket?.readyState !== WebSocket.OPEN) return
-    socket.send(
-      JSON.stringify({ type: 'attach', processKey, csrf: handlers.csrf }),
-    )
-  }
-
-  function detach(): void {
-    currentProcessKey = null
-    if (socket?.readyState !== WebSocket.OPEN) return
-    socket.send(JSON.stringify({ type: 'detach' }))
-  }
-
   open()
 
   return {
-    attach,
-    detach,
-    send(body) {
-      commandId += 1
-      socket?.send(
-        JSON.stringify({ type: 'command', id: String(commandId), body }),
-      )
-    },
-    request(body) {
-      commandId += 1
-      const id = String(commandId)
-      return new Promise<CommandResult>((resolve, reject) => {
-        if (socket?.readyState !== WebSocket.OPEN) {
-          reject(new Error('not connected'))
-          return
-        }
-        pending.set(id, resolve)
-        rejecters.set(id, reject)
-        socket.send(JSON.stringify({ type: 'command', id, body }))
-      })
-    },
     close() {
       closedByUs = true
       socket?.close()
     },
   }
+}
+
+export type SessionStream = {
+  close(): void
+}
+
+/**
+ * The session event stream. `EventSource` replays with `Last-Event-ID` on its
+ * own, because the SSE frames carry `id:`.
+ */
+export function connectSessionStream(
+  processKey: string,
+  handlers: {
+    onEvent(seq: number, event: WireEvent): void
+    /**
+     * The stream will not recover on its own: the server answered the (re)connect
+     * with a non-ok status, so the process behind the key is gone or the session
+     * was never there.
+     */
+    onOffline(): void
+  },
+): SessionStream {
+  const source = new EventSource(`/api/sessions/${processKey}/events`)
+
+  source.addEventListener('message', event => {
+    let envelope: WireEventEnvelope
+    try {
+      envelope = JSON.parse(
+        String((event as MessageEvent).data),
+      ) as WireEventEnvelope
+    } catch {
+      return
+    }
+    if (typeof envelope?.seq !== 'number' || !envelope.event) return
+    handlers.onEvent(envelope.seq, envelope.event)
+  })
+
+  source.addEventListener('error', () => {
+    // `CLOSED` on an error means the server answered non-ok: a retry would
+    // answer the same way. Anything else, the browser retries by itself.
+    if (source.readyState === EventSource.CLOSED) handlers.onOffline()
+  })
+
+  return { close: () => source.close() }
+}
+
+/**
+ * POSTs one command to the attached session's route.
+ *
+ * The answer is `{ok:true,result?}` or `{ok:false,error:{code,message}}`; a
+ * 409 (`stale_epoch`, `interaction_not_pending`) is an ordinary answer, not a
+ * transport failure.
+ */
+export async function sendCommand(
+  processKey: string,
+  csrf: string,
+  route: SessionCommandRoute,
+  command: WireCommand,
+): Promise<CommandResult> {
+  let response: Response
+  try {
+    response = await fetch(`/api/sessions/${processKey}/${route}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', [CSRF_HEADER]: csrf },
+      body: JSON.stringify(command),
+    })
+  } catch {
+    return {
+      ok: false,
+      error: { code: 'unreachable', message: 'the session did not answer' },
+    }
+  }
+  const body = (await response.json().catch(() => ({}))) as {
+    ok?: boolean
+    result?: unknown
+    error?: unknown
+  }
+  if (typeof body.ok === 'boolean') {
+    if (body.ok) return { ok: true, result: body.result }
+    const err = (body.error ?? {}) as { code?: string; message?: string }
+    const code = err.code ?? `failed (${response.status})`
+    return {
+      ok: false,
+      error: { code, message: err.message ?? ERROR_TEXT[code] ?? code },
+    }
+  }
+  // A gateway-level refusal is a bare `{error: code}`, not a route answer.
+  const code = typeof body.error === 'string' ? body.error : ''
+  return {
+    ok: false,
+    error: {
+      code: code || `failed (${response.status})`,
+      message: ERROR_TEXT[code] ?? code ?? 'the session refused',
+    },
+  }
+}
+
+/** Resolves one transcript image's bytes, or null when the session has none. */
+export async function fetchImage(
+  processKey: string,
+  itemId: string,
+): Promise<WireImagePayload | null> {
+  const response = await fetch(
+    `/api/sessions/${processKey}/image?itemId=${encodeURIComponent(itemId)}`,
+  ).catch(() => null)
+  if (!response?.ok) return null
+  return (await response
+    .json()
+    .catch((): null => null)) as WireImagePayload | null
 }

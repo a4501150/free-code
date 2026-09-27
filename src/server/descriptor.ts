@@ -14,7 +14,15 @@
  * session.
  */
 
-import { chmodSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, type Stats } from 'fs'
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  type Stats,
+} from 'fs'
 import { join } from 'path'
 import { z } from 'zod'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'

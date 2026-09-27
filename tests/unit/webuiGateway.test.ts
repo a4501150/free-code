@@ -40,14 +40,12 @@ import {
 } from '../../src/webui/gateway/directories.js'
 import { applyEvent, emptyView } from '../../src/webui/client/store.js'
 import {
-  diffSnapshots,
-  toWireSnapshot,
-} from '../../src/webui/protocol/transcriptWire.js'
-import { buildSubmitValue } from '../../src/webui/attach/runtime.js'
-import {
-  parseQuestions,
-  serializeAnswer,
-} from '../../src/webui/client/components/QuestionTray.js'
+  diffWireSnapshots,
+  toWireItems,
+  wireSnapshot,
+} from '../../src/session/toWire.js'
+import { buildSubmitValue } from '../../src/server/runtime.js'
+import { serializeAnswer } from '../../src/webui/client/components/QuestionTray.js'
 import { approvalInput } from '../../src/webui/client/components/PlanTray.js'
 import type { DomainUserContentBlock } from '../../src/types/domain.js'
 import type { Message } from '../../src/types/message.js'
@@ -224,9 +222,13 @@ function userMessage(uuid: string, text: string): Message {
   }
 }
 
+function snapshotOf(messages: Message[]) {
+  return wireSnapshot(toWireItems(messages))
+}
+
 describe('transcript wire', () => {
-  test('flattens messages and drops progress events', () => {
-    const snapshot = toWireSnapshot([
+  test('flattens messages and carries progress as items', () => {
+    const snapshot = snapshotOf([
       userMessage('11111111-1111-1111-1111-111111111111', 'hello'),
       {
         type: 'progress',
@@ -236,22 +238,21 @@ describe('transcript wire', () => {
         data: {} as never,
       },
     ])
-    expect(snapshot.items).toHaveLength(1)
-    expect(snapshot.items[0]!.kind).toBe('user')
-    expect(snapshot.order).toEqual([snapshot.items[0]!.id])
+    expect(snapshot.items.map(item => item.kind)).toEqual(['user', 'progress'])
+    expect(snapshot.order).toEqual(snapshot.items.map(item => item.id))
   })
 
   test('reports no patch when nothing changed', () => {
     const messages = [userMessage('11111111-1111-1111-1111-111111111111', 'a')]
-    const first = toWireSnapshot(messages)
-    const second = toWireSnapshot(messages)
-    expect(diffSnapshots(first, second)).toBeNull()
+    const first = snapshotOf(messages)
+    const second = snapshotOf(messages)
+    expect(diffWireSnapshots(first, second)).toBeNull()
   })
 
   test('expresses an append as orderAppend rather than a whole order', () => {
     const a = userMessage('11111111-1111-1111-1111-111111111111', 'a')
     const b = userMessage('22222222-2222-2222-2222-222222222222', 'b')
-    const patch = diffSnapshots(toWireSnapshot([a]), toWireSnapshot([a, b]))
+    const patch = diffWireSnapshots(snapshotOf([a]), snapshotOf([a, b]))
     expect(patch?.type).toBe('delta')
     if (patch?.type === 'delta') {
       expect(patch.orderAppend).toHaveLength(1)
@@ -264,10 +265,7 @@ describe('transcript wire', () => {
     const a = userMessage('11111111-1111-1111-1111-111111111111', 'a')
     const b = userMessage('22222222-2222-2222-2222-222222222222', 'b')
     const c = userMessage('33333333-3333-3333-3333-333333333333', 'c')
-    const patch = diffSnapshots(
-      toWireSnapshot([a, b, c]),
-      toWireSnapshot([a, c]),
-    )
+    const patch = diffWireSnapshots(snapshotOf([a, b, c]), snapshotOf([a, c]))
     expect(patch?.type).toBe('delta')
     if (patch?.type === 'delta') {
       expect(patch.remove).toHaveLength(1)
@@ -276,14 +274,14 @@ describe('transcript wire', () => {
   })
 
   test('changes an item revision when its text changes', () => {
-    const before = toWireSnapshot([
+    const before = snapshotOf([
       userMessage('11111111-1111-1111-1111-111111111111', 'a'),
     ])
-    const after = toWireSnapshot([
+    const after = snapshotOf([
       userMessage('11111111-1111-1111-1111-111111111111', 'a changed'),
     ])
     expect(before.items[0]!.rev).not.toBe(after.items[0]!.rev)
-    const patch = diffSnapshots(before, after)
+    const patch = diffWireSnapshots(before, after)
     if (patch?.type === 'delta') expect(patch.upsert).toHaveLength(1)
   })
 
@@ -308,7 +306,7 @@ describe('transcript wire', () => {
   }
 
   test('numbers image blocks per message and withholds the bytes', () => {
-    const snapshot = toWireSnapshot([
+    const snapshot = snapshotOf([
       imageMessage('11111111-1111-1111-1111-111111111111', 2, 'look'),
     ])
     const images = snapshot.items.filter(item => item.image)
@@ -323,7 +321,7 @@ describe('transcript wire', () => {
   test('holds an image revision steady across publishes', () => {
     const message = imageMessage('11111111-1111-1111-1111-111111111111', 1)
     expect(
-      diffSnapshots(toWireSnapshot([message]), toWireSnapshot([message])),
+      diffWireSnapshots(snapshotOf([message]), snapshotOf([message])),
     ).toBeNull()
   })
 })
@@ -387,12 +385,6 @@ describe('question answers', () => {
   test('reports nothing chosen as an empty answer', () => {
     expect(serializeAnswer(single, { labels: [], other: '' })).toBe('')
   })
-
-  test('reads the questions off a permission request input', () => {
-    expect(parseQuestions({ questions: [single] })).toHaveLength(1)
-    expect(parseQuestions({})).toEqual([])
-    expect(parseQuestions({ questions: 'nope' })).toEqual([])
-  })
 })
 
 describe('plan approval', () => {
@@ -411,22 +403,27 @@ describe('plan approval', () => {
 })
 
 describe('client store', () => {
+  const meta = {
+    sessionId: 's',
+    sessionEpoch: 0,
+    cwd: '/tmp',
+    startedAt: 1,
+    state: 'idle' as const,
+  }
+  const catalog = {
+    models: [{ value: 'claude-opus-5', label: 'Opus 5' }],
+    commands: [{ name: 'help' }, { name: 'compact' }],
+    permissionModes: ['default', 'acceptEdits'] as const,
+  }
   const snapshotEvent = {
     kind: 'snapshot' as const,
-    meta: {
-      pid: 1,
-      processNonce: 'n',
-      sessionId: 's',
-      sessionEpoch: 0,
-      cwd: '/tmp',
-      startedAt: 1,
-      state: 'idle' as const,
-    },
+    meta,
     transcript: { items: [], order: [] },
-    permissions: [],
+    requests: [],
     todos: [],
-    models: [{ value: 'claude-opus-5', label: 'Opus 5' }],
-    commands: ['help', 'compact', 'status'],
+    pendingCommands: [],
+    tasks: [],
+    catalog: { ...catalog, permissionModes: [...catalog.permissionModes] },
   }
 
   test('ignores an event at or below the last applied sequence', () => {
@@ -436,15 +433,26 @@ describe('client store', () => {
     expect(view).toBe(before)
   })
 
-  test('keeps the model list across a later event', () => {
+  test('carries the stream position past an unknown event kind', () => {
+    // A newer host adding a union member must not strand an older client.
     let view = applyEvent(emptyView(), 1, snapshotEvent)
-    expect(view.models).toEqual([{ value: 'claude-opus-5', label: 'Opus 5' }])
-    // Models ride only the snapshot, so a metadata update must not drop them.
+    view = applyEvent(view, 2, { kind: 'something_newer' } as never)
+    expect(view.lastSeq).toBe(2)
+    expect(view.catalog.models).toHaveLength(1)
+  })
+
+  test('keeps the catalog across a later event', () => {
+    let view = applyEvent(emptyView(), 1, snapshotEvent)
+    expect(view.catalog.models).toEqual([
+      { value: 'claude-opus-5', label: 'Opus 5' },
+    ])
+    // The catalog rides only the snapshot and its own event, so a metadata
+    // update must not drop it.
     view = applyEvent(view, 2, {
       kind: 'meta',
-      meta: { ...snapshotEvent.meta, model: 'claude-opus-5' },
+      meta: { ...meta, model: 'claude-opus-5' },
     })
-    expect(view.models).toHaveLength(1)
+    expect(view.catalog.models).toHaveLength(1)
     expect(view.meta?.model).toBe('claude-opus-5')
   })
 
@@ -502,25 +510,26 @@ describe('client store', () => {
     expect(view.meta?.sessionEpoch).toBe(1)
   })
 
-  test('replaces a permission of the same id rather than stacking it', () => {
+  test('replaces a request of the same id rather than stacking it', () => {
     const request = {
       requestId: 'r1',
+      kind: 'permission' as const,
+      openedAt: 1,
       toolName: 'Bash',
       toolUseId: 't1',
       description: 'run something',
       input: {},
-      openedAt: 1,
     }
     let view = applyEvent(emptyView(), 1, snapshotEvent)
-    view = applyEvent(view, 2, { kind: 'permission_opened', request })
-    view = applyEvent(view, 3, { kind: 'permission_opened', request })
-    expect(view.permissions).toHaveLength(1)
+    view = applyEvent(view, 2, { kind: 'request_opened', request })
+    view = applyEvent(view, 3, { kind: 'request_opened', request })
+    expect(view.requests).toHaveLength(1)
     view = applyEvent(view, 4, {
-      kind: 'permission_closed',
+      kind: 'request_closed',
       requestId: 'r1',
-      outcome: 'allow',
+      outcome: 'resolved',
     })
-    expect(view.permissions).toHaveLength(0)
+    expect(view.requests).toHaveLength(0)
   })
 })
 

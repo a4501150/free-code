@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { connectAttachClient } from '../webui/gateway/attachClient.js'
+import { connectSurfaceClient } from '../webui/gateway/surfaceClient.js'
 import { listLiveSessions } from './concurrentSessions.js'
 
 export type SessionDelivery = { ok: boolean; error?: string }
@@ -8,7 +8,7 @@ export type SessionDelivery = { ok: boolean; error?: string }
  * Deliver a message to another live session as a prompt turn.
  *
  * Addressing rides the session registry (concurrentSessions) plus the target
- * process's attach socket — the same submit channel the webui uses. A session
+ * process's wire surface — the same submit channel the webui uses. A session
  * whose process exposes no attach descriptor (a standalone TUI without the
  * webui, or a holder owned by another user) is reported as not addressable;
  * registry liveness checks fail open, so a just-exited session can also show
@@ -29,14 +29,14 @@ export async function deliverToSession(
     }
   }
 
-  let client: Awaited<ReturnType<typeof connectAttachClient>> | null = null
+  let client: Awaited<ReturnType<typeof connectSurfaceClient>> | null = null
   try {
-    client = await connectAttachClient(entry.pid, {
+    client = await connectSurfaceClient(entry.pid, {
       onEvent: () => {},
       onClose: () => {},
     })
-    const response = await client.request({
-      kind: 'submit',
+    const response = await client.command('prompt', {
+      kind: 'prompt',
       commandId: `peer-msg-${randomUUID()}`,
       content: text,
       delivery: 'next',
@@ -52,7 +52,7 @@ export async function deliverToSession(
   } catch (err) {
     return {
       ok: false,
-      error: `Session ${sessionId} (pid ${entry.pid}) is not addressable over its attach socket: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Session ${sessionId} (pid ${entry.pid}) is not addressable over its wire surface: ${err instanceof Error ? err.message : String(err)}`,
     }
   } finally {
     client?.close()

@@ -1,4 +1,4 @@
-import type { WebSessionMeta } from '../../protocol/attachSchemas.js'
+import type { WireSessionMeta } from '../../../session/wire.js'
 
 export function TopBar({
   meta,
@@ -6,7 +6,7 @@ export function TopBar({
   railOpen,
   onToggleRail,
 }: {
-  meta: WebSessionMeta | null
+  meta: WireSessionMeta | null
   connected: boolean
   railOpen: boolean
   onToggleRail(): void

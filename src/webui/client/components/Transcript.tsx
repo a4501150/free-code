@@ -6,8 +6,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { WebTranscriptItem } from '../../protocol/transcriptWire.js'
-import type { WebPendingCommand } from '../../protocol/attachSchemas.js'
+import type { WireItem, WirePendingCommand } from '../../../session/wire.js'
 import { renderMarkdown } from '../markdown.js'
 import { ToolCard } from './ToolCard.js'
 
@@ -21,12 +20,10 @@ type ToolGroup = {
   kind: 'tool_group'
   messageId: string
   toolName: string
-  items: Array<{ item: WebTranscriptItem; result?: WebTranscriptItem }>
+  items: Array<{ item: WireItem; result?: WireItem }>
 }
 
-type RowEntry =
-  | { kind: 'row'; item: WebTranscriptItem; result?: WebTranscriptItem }
-  | ToolGroup
+type RowEntry = { kind: 'row'; item: WireItem; result?: WireItem } | ToolGroup
 
 const Row = memo(function Row({
   item,
@@ -34,10 +31,10 @@ const Row = memo(function Row({
   inProgressToolUseIds,
   onOpenImage,
 }: {
-  item: WebTranscriptItem
-  result?: WebTranscriptItem
+  item: WireItem
+  result?: WireItem
   inProgressToolUseIds?: string[]
-  onOpenImage(item: WebTranscriptItem): void
+  onOpenImage(item: WireItem): void
 }): React.ReactElement | null {
   switch (item.kind) {
     case 'user':
@@ -99,9 +96,11 @@ const Row = memo(function Row({
         </div>
       )
 
-    // Tool results render inside their tool card, and attachments are noise.
+    // Tool results render inside their tool card, progress rides the tool
+    // card's running state, and attachments are noise.
     case 'tool_result':
     case 'attachment':
+    case 'progress':
       return null
   }
 })
@@ -157,7 +156,7 @@ const AgentGroup = memo(function AgentGroup({
 const FOLLOW_SLACK_PX = 80
 
 type OpenImage = {
-  item: WebTranscriptItem
+  item: WireItem
   state: 'loading' | 'ready' | 'failed'
   /**
    * A data URL, which the page's CSP allows through `img-src 'self' data:`.
@@ -177,9 +176,9 @@ export function Transcript({
   followSignal,
   onFetchImage,
 }: {
-  items: Map<string, WebTranscriptItem>
+  items: Map<string, WireItem>
   order: string[]
-  pendingCommands: WebPendingCommand[]
+  pendingCommands: WirePendingCommand[]
   inProgressToolUseIds?: string[]
   activity?: string
   /**
@@ -194,10 +193,10 @@ export function Transcript({
   const entries = useMemo(() => {
     const list = order
       .map(id => items.get(id))
-      .filter((item): item is WebTranscriptItem => Boolean(item))
+      .filter((item): item is WireItem => Boolean(item))
 
     // Pair each result with its tool_use so a card owns its output.
-    const resultsByToolUse = new Map<string, WebTranscriptItem>()
+    const resultsByToolUse = new Map<string, WireItem>()
     for (const item of list) {
       if (item.kind === 'tool_result' && item.toolUseId) {
         resultsByToolUse.set(item.toolUseId, item)
@@ -216,8 +215,8 @@ export function Transcript({
       ) {
         // Collect consecutive Agent calls with same messageId
         const groupItems: Array<{
-          item: WebTranscriptItem
-          result?: WebTranscriptItem
+          item: WireItem
+          result?: WireItem
         }> = []
         const messageId = item.messageId
         while (
@@ -305,7 +304,7 @@ export function Transcript({
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
 
-  async function openImage(item: WebTranscriptItem): Promise<void> {
+  async function openImage(item: WireItem): Promise<void> {
     setOpen({ item, state: 'loading' })
     try {
       const image = await onFetchImage(item.id)

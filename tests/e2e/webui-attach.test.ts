@@ -14,10 +14,9 @@ import { MockAnthropicServer } from '../helpers/mock-server'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
 import { waitFor } from '../helpers/wait-helpers'
 import { createLoggingTest, sleep, TmuxSession } from './tmux-helpers'
-import { readAttachDescriptor } from '../../src/webui/attach/attachDescriptor'
-import { connectAttachClient } from '../../src/webui/gateway/attachClient'
-import type { AttachEventBody } from '../../src/webui/protocol/attachSchemas'
-import type { WebTranscriptItem } from '../../src/webui/protocol/transcriptWire'
+import { readAttachDescriptor } from '../../src/server/descriptor'
+import { connectSurfaceClient } from '../../src/webui/gateway/surfaceClient'
+import type { WireEvent, WireItem } from '../../src/session/wire'
 
 setDefaultTimeout(180_000)
 const test = createLoggingTest(bunTest)
@@ -25,10 +24,10 @@ const test = createLoggingTest(bunTest)
 /**
  * Waits until the CLI is attachable and returns its pid.
  *
- * The pid file lands before the attach descriptor does: the host starts after
- * session registration resolves, and writes its descriptor from the listen
- * callback. A gateway sees that window as "registered but not yet attachable",
- * so the test waits for the descriptor rather than the pid file.
+ * The pid file lands before the wire surface's descriptor does: the surface
+ * starts after session registration resolves, and writes its descriptor from
+ * the listen callback. A gateway sees that window as "registered but not yet
+ * attachable", so the test waits for the descriptor rather than the pid file.
  */
 async function waitForAttachablePid(configDir: string): Promise<number> {
   // The attach paths derive from the config home, and the CLI runs with an
@@ -52,28 +51,27 @@ async function waitForAttachablePid(configDir: string): Promise<number> {
   )
 }
 
-/** Collects attach events, with helpers to await a particular one. */
+/** Collects stream events, with helpers to await a particular one. */
 function makeCollector() {
-  const events: AttachEventBody[] = []
+  const events: WireEvent[] = []
   return {
     events,
     handlers: {
-      onEvent: (_seq: number, event: AttachEventBody) => {
+      onEvent: (_seq: number, event: WireEvent) => {
         events.push(event)
       },
       onClose: () => {},
     },
-    waitForEvent: <K extends AttachEventBody['kind']>(
+    waitForEvent: <K extends WireEvent['kind']>(
       kind: K,
-      predicate: (
-        event: Extract<AttachEventBody, { kind: K }>,
-      ) => boolean = () => true,
+      predicate: (event: Extract<WireEvent, { kind: K }>) => boolean = () =>
+        true,
       description = `a ${kind} event`,
     ) =>
       waitFor(
         () =>
           events.filter(
-            (e): e is Extract<AttachEventBody, { kind: K }> => e.kind === kind,
+            (e): e is Extract<WireEvent, { kind: K }> => e.kind === kind,
           ),
         matches => matches.some(predicate),
         { description, timeoutMs: 30_000 },
@@ -82,8 +80,8 @@ function makeCollector() {
 }
 
 /** Every transcript item the browser would hold, after applying all patches. */
-function materialize(events: AttachEventBody[]): WebTranscriptItem[] {
-  const byId = new Map<string, WebTranscriptItem>()
+function materialize(events: WireEvent[]): WireItem[] {
+  const byId = new Map<string, WireItem>()
   let order: string[] = []
 
   for (const event of events) {
@@ -106,7 +104,7 @@ function materialize(events: AttachEventBody[]): WebTranscriptItem[] {
     }
   }
 
-  return order.map(id => byId.get(id)).filter(Boolean) as WebTranscriptItem[]
+  return order.map(id => byId.get(id)).filter(Boolean) as WireItem[]
 }
 
 describe('WebUI attach', () => {
@@ -133,11 +131,11 @@ describe('WebUI attach', () => {
 
     const pid = await waitForAttachablePid(session.configDirPath!)
     const collector = makeCollector()
-    const client = await connectAttachClient(pid, collector.handlers)
+    const client = await connectSurfaceClient(pid, collector.handlers)
 
     try {
-      const subscribed = await client.request({ kind: 'subscribe' })
-      expect(subscribed.ok).toBe(true)
+      // The connect itself is the subscription: the stream opens with a
+      // snapshot, no round-trip needed.
       await collector.waitForEvent('snapshot')
 
       await session.submitAndWaitForResponse('What is the answer?')
@@ -174,14 +172,13 @@ describe('WebUI attach', () => {
 
     const pid = await waitForAttachablePid(session.configDirPath!)
     const collector = makeCollector()
-    const client = await connectAttachClient(pid, collector.handlers)
+    const client = await connectSurfaceClient(pid, collector.handlers)
 
     try {
-      await client.request({ kind: 'subscribe' })
       const snapshot = await collector.waitForEvent('snapshot')
 
-      const submitted = await client.request({
-        kind: 'submit',
+      const submitted = await client.command('prompt', {
+        kind: 'prompt',
         commandId: crypto.randomUUID(),
         content: 'hello from the attached client',
         delivery: 'next',
@@ -208,14 +205,13 @@ describe('WebUI attach', () => {
 
     const pid = await waitForAttachablePid(session.configDirPath!)
     const collector = makeCollector()
-    const client = await connectAttachClient(pid, collector.handlers)
+    const client = await connectSurfaceClient(pid, collector.handlers)
 
     try {
-      await client.request({ kind: 'subscribe' })
       await collector.waitForEvent('snapshot')
 
-      const stale = await client.request({
-        kind: 'submit',
+      const stale = await client.command('prompt', {
+        kind: 'prompt',
         commandId: crypto.randomUUID(),
         content: 'composed against a session that moved on',
         delivery: 'next',
@@ -240,31 +236,35 @@ describe('WebUI attach', () => {
 
     const pid = await waitForAttachablePid(session.configDirPath!)
     const collector = makeCollector()
-    const client = await connectAttachClient(pid, collector.handlers)
+    const client = await connectSurfaceClient(pid, collector.handlers)
 
     try {
-      await client.request({ kind: 'subscribe' })
       await collector.waitForEvent('snapshot')
 
       await session.sendLine('Run the touch command')
 
       const opened = await collector.waitForEvent(
-        'permission_opened',
-        event => event.request.toolName === 'Bash',
+        'request_opened',
+        event =>
+          event.request.kind === 'permission' &&
+          event.request.toolName === 'Bash',
         'the Bash permission prompt to reach the attached client',
       )
+      if (opened.request.kind !== 'permission') {
+        throw new Error('expected a permission request')
+      }
       expect(opened.request.description.length).toBeGreaterThan(0)
 
       // The terminal dialog is open at the same time; the browser wins the race.
-      const decided = await client.request({
-        kind: 'permission_decision',
+      const decided = await client.command('request_respond', {
+        kind: 'request_respond',
         requestId: opened.request.requestId,
-        decision: { behavior: 'allow' },
+        response: { kind: 'permission', decision: { behavior: 'allow' } },
       })
       expect(decided.ok).toBe(true)
 
       await collector.waitForEvent(
-        'permission_closed',
+        'request_closed',
         event => event.requestId === opened.request.requestId,
         'the permission to close',
       )
@@ -295,14 +295,15 @@ describe('WebUI attach', () => {
 
     const pid = await waitForAttachablePid(session.configDirPath!)
     const collector = makeCollector()
-    const client = await connectAttachClient(pid, collector.handlers)
+    const client = await connectSurfaceClient(pid, collector.handlers)
 
-    await client.request({ kind: 'subscribe' })
     await collector.waitForEvent('snapshot')
     await session.sendLine('Run the touch command')
     await collector.waitForEvent(
-      'permission_opened',
-      event => event.request.toolName === 'Bash',
+      'request_opened',
+      event =>
+        event.request.kind === 'permission' &&
+        event.request.toolName === 'Bash',
     )
 
     // Drop the browser mid-decision. A disconnect must not deny by omission.

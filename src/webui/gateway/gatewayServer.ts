@@ -2,10 +2,7 @@ import type { ServerWebSocket } from 'bun'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { validateUuid } from '../../utils/uuid.js'
-import {
-  AttachRequestBodySchema,
-  type AttachEventBody,
-} from '../protocol/attachSchemas.js'
+import { WIRE_VERSION, WireCommandSchema } from '../../session/wire.js'
 import {
   WEBUI_CSS,
   WEBUI_CSS_HASH,
@@ -36,15 +33,16 @@ import {
   type ChildSessionDefaults,
   type ChildSession,
 } from './childSessions.js'
-import { readAttachDescriptor } from '../attach/attachDescriptor.js'
-import { connectAttachClient } from './attachClient.js'
+import {
+  readAttachDescriptor,
+  type AttachDescriptor,
+} from '../../server/descriptor.js'
+import { SURFACE_TOKEN_HEADER } from '../../server/surface.js'
+import { connectSurfaceClient } from './surfaceClient.js'
+import type { SurfaceCommandPath } from './surfaceClient.js'
 import { listDirectories, PathError, PATH_ERROR_STATUS } from './directories.js'
 import { startGracefulRestart, type RestartReadyFrame } from './restart.js'
-import {
-  createSessionHub,
-  type HubSubscriber,
-  type SessionHub,
-} from './sessionHub.js'
+import { createSessionHub, type SessionHub } from './sessionHub.js'
 
 export type GatewayAssistantStatus =
   | { state: 'live'; pid: number; sessionId: string }
@@ -97,34 +95,15 @@ const SECURITY_HEADERS: Record<string, string> = {
 
 const JS_PATH = `/assets/app.${WEBUI_JS_HASH}.js`
 const CSS_PATH = `/assets/app.${WEBUI_CSS_HASH}.css`
-const MAX_BODY_BYTES = 256 * 1024
-
 /**
- * The socket carries prompts, and a prompt can carry images. Kept separate from
- * the REST body limit, which has no reason to grow.
+ * Prompts ride the command routes, and a prompt can carry images.
  */
-const MAX_WS_PAYLOAD_BYTES = 6 * 1024 * 1024
+const MAX_COMMAND_BODY_BYTES = 8 * 1024 * 1024
 
 type SocketData = {
   /** The cookie this socket authenticated with. CSRF tokens bind to it. */
   sessionToken: string
-  processKey: string | null
-  subscriber: HubSubscriber | null
 }
-
-const ClientFrameSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('attach'),
-    processKey: z.string().min(1).max(200),
-    csrf: z.string().min(1),
-  }),
-  z.object({ type: z.literal('detach') }),
-  z.object({
-    type: z.literal('command'),
-    id: z.string().min(1).max(200),
-    body: AttachRequestBodySchema,
-  }),
-])
 
 function htmlShell(): string {
   return `<!doctype html>
@@ -144,6 +123,41 @@ function htmlShell(): string {
 </body>
 </html>
 `
+}
+
+type SessionProxyRoute =
+  | { key: string; route: 'events' }
+  | { key: string; route: 'image' }
+  | { key: string; route: 'agent_transcript'; agentId: string }
+  | { key: string; route: SurfaceCommandPath }
+
+const SURFACE_COMMAND_ROUTES: SurfaceCommandPath[] = [
+  'prompt',
+  'cancel',
+  'request_respond',
+  'model',
+  'mode',
+  'rpc',
+]
+
+/** `/api/sessions/<pid:nonce>/<route>` — the browser's view of a surface. */
+function sessionProxyRoute(pathname: string): SessionProxyRoute | null {
+  const parts = pathname.split('/').filter(Boolean)
+  // ['api', 'sessions', <processKey>, <route>, ...]
+  if (parts.length < 4 || parts[0] !== 'api' || parts[1] !== 'sessions') {
+    return null
+  }
+  const key = parts[2]!
+  const route = parts[3]!
+  if (route === 'events') return { key, route }
+  if (route === 'image') return { key, route }
+  if (route === 'agents' && parts[5] === 'transcript' && parts[4]) {
+    return { key, route: 'agent_transcript', agentId: parts[4] }
+  }
+  if ((SURFACE_COMMAND_ROUTES as string[]).includes(route)) {
+    return { key, route: route as SurfaceCommandPath }
+  }
+  return null
 }
 
 function respond(
@@ -247,10 +261,32 @@ export function startGatewayServer(
     return verifySessionToken(auth, token) ? { auth, token } : null
   }
 
+  /**
+   * Resolves a process key to its verified descriptor: the nonce in the key
+   * must match the file, or the process behind the PID is not the one the
+   * browser was told about.
+   */
+  function verifiedDescriptor(
+    key: string,
+  ): { descriptor: AttachDescriptor } | { response: Response } {
+    const [pidText, nonce] = key.split(':')
+    const pid = Number(pidText)
+    if (!Number.isInteger(pid) || pid <= 0 || !nonce) {
+      return { response: json({ error: 'bad_session_id' }, 400) }
+    }
+    const descriptor = readAttachDescriptor(pid)
+    if (!descriptor.ok || descriptor.descriptor.processNonce !== nonce) {
+      return { response: json({ error: 'unknown_session' }, 404) }
+    }
+    return { descriptor: descriptor.descriptor }
+  }
+
   const server = Bun.serve<SocketData, never>({
     hostname: '127.0.0.1',
     port: options.port ?? 0,
-    maxRequestBodySize: MAX_BODY_BYTES,
+    // Command bodies can carry prompt images, so this covers the whole
+    // session route table, not just the small /api/* forms.
+    maxRequestBodySize: MAX_COMMAND_BODY_BYTES,
 
     async fetch(request, srv) {
       const url = new URL(request.url)
@@ -262,11 +298,7 @@ export function startGatewayServer(
         const session = authenticate(request)
         if (!session) return new Response('unauthorized', { status: 401 })
         const upgraded = srv.upgrade(request, {
-          data: {
-            sessionToken: session.token,
-            processKey: null,
-            subscriber: null,
-          } satisfies SocketData,
+          data: { sessionToken: session.token } satisfies SocketData,
         })
         return upgraded
           ? undefined
@@ -481,6 +513,135 @@ export function startGatewayServer(
         }
       }
 
+      // v2 session proxy: the browser speaks the session wire to the
+      // gateway; the gateway forwards with the surface token from the
+      // descriptor. One password at the edge, one token between processes.
+      const proxy = sessionProxyRoute(url.pathname)
+      if (proxy) {
+        if (!originOk(request)) return json({ error: 'bad_origin' }, 403)
+        const session = authenticate(request)
+        if (!session) return json({ error: 'unauthorized' }, 401)
+
+        const verified = verifiedDescriptor(proxy.key)
+        if ('response' in verified) return verified.response
+        const d = verified.descriptor
+        const surfaceBase = `http://127.0.0.1:${d.port}`
+        const surfaceHeaders: Record<string, string> = {
+          [SURFACE_TOKEN_HEADER]: d.token,
+        }
+
+        if (proxy.route === 'events') {
+          if (request.method !== 'GET') {
+            return json({ error: 'method_not_allowed' }, 405)
+          }
+          const lastEventId = request.headers.get('last-event-id')
+          const upstream = await fetch(
+            `${surfaceBase}/v1/sessions/${d.sessionId}/events`,
+            {
+              headers: {
+                ...surfaceHeaders,
+                ...(lastEventId ? { 'last-event-id': lastEventId } : {}),
+              },
+              // Tearing the browser stream down must tear the child stream
+              // down with it, or a background tab holds a journal subscriber.
+              signal: request.signal,
+            },
+          ).catch(() => null)
+          if (!upstream?.ok || !upstream.body) {
+            return json({ error: 'attach_failed' }, 502)
+          }
+          return new Response(upstream.body, {
+            headers: {
+              ...SECURITY_HEADERS,
+              'content-type': 'text/event-stream',
+              'cache-control': 'no-store',
+              'x-accel-buffering': 'no',
+            },
+          })
+        }
+
+        if (proxy.route === 'image') {
+          const itemId = url.searchParams.get('itemId') ?? ''
+          const upstream = await fetch(
+            `${surfaceBase}/v1/sessions/${d.sessionId}/image?itemId=${encodeURIComponent(itemId)}`,
+            { headers: surfaceHeaders },
+          ).catch(() => null)
+          if (!upstream) return json({ error: 'attach_failed' }, 502)
+          return new Response(upstream.body, {
+            status: upstream.status,
+            headers: {
+              ...SECURITY_HEADERS,
+              'content-type': 'application/json',
+              'cache-control': 'no-store',
+            },
+          })
+        }
+
+        if (proxy.route === 'agent_transcript') {
+          const upstream = await fetch(
+            `${surfaceBase}/v1/sessions/${d.sessionId}/agents/${encodeURIComponent(proxy.agentId)}/transcript`,
+            { headers: surfaceHeaders },
+          ).catch(() => null)
+          if (!upstream) return json({ error: 'attach_failed' }, 502)
+          return new Response(upstream.body, {
+            status: upstream.status,
+            headers: {
+              ...SECURITY_HEADERS,
+              'content-type': 'application/json',
+              'cache-control': 'no-store',
+            },
+          })
+        }
+
+        // Commands.
+        if (request.method !== 'POST') {
+          return json({ error: 'method_not_allowed' }, 405)
+        }
+        if (
+          !csrfMatches(
+            session.auth,
+            session.token,
+            request.headers.get(CSRF_HEADER),
+          )
+        ) {
+          return json({ error: 'bad_csrf' }, 403)
+        }
+        let commandBody: unknown
+        try {
+          commandBody = await request.json()
+        } catch {
+          return json({ error: 'bad_json' }, 400)
+        }
+        const command = WireCommandSchema.safeParse(commandBody)
+        if (!command.success) return json({ error: 'bad_command' }, 400)
+        const routeKind =
+          proxy.route === 'model'
+            ? 'model_set'
+            : proxy.route === 'mode'
+              ? 'mode_set'
+              : proxy.route
+        if (command.data.kind !== routeKind) {
+          return json({ error: 'wrong_route' }, 400)
+        }
+        const upstream = await fetch(
+          `${surfaceBase}/v1/sessions/${d.sessionId}/${proxy.route}`,
+          {
+            method: 'POST',
+            headers: {
+              ...surfaceHeaders,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify(commandBody),
+          },
+        ).catch(() => null)
+        if (!upstream) return json({ error: 'attach_failed' }, 502)
+        const answer = await upstream.json().catch((): unknown => ({
+          ok: false,
+          error: { code: 'bad_upstream', message: 'unreadable answer' },
+        }))
+        return json(answer, upstream.status)
+      }
+
       switch (url.pathname) {
         case '/':
           return respond(htmlShell(), 'text/html; charset=utf-8', 'no-store')
@@ -504,118 +665,19 @@ export function startGatewayServer(
     },
 
     websocket: {
-      maxPayloadLength: MAX_WS_PAYLOAD_BYTES,
-
       open(ws: ServerWebSocket<SocketData>) {
         browsers.add(ws)
-        ws.send(JSON.stringify({ type: 'ready', protocolVersion: 1 }))
+        ws.send(JSON.stringify({ type: 'ready', wireVersion: WIRE_VERSION }))
       },
 
-      async message(ws: ServerWebSocket<SocketData>, raw) {
-        let parsed: unknown
-        try {
-          parsed = JSON.parse(String(raw))
-        } catch {
-          ws.send(JSON.stringify({ type: 'error', code: 'bad_json' }))
-          return
-        }
-
-        const frame = ClientFrameSchema.safeParse(parsed)
-        if (!frame.success) {
-          ws.send(JSON.stringify({ type: 'error', code: 'bad_frame' }))
-          return
-        }
-
-        if (frame.data.type === 'attach') {
-          // The CSRF token is bound to the session cookie, so a cross-site
-          // socket that somehow carried the cookie still cannot drive a
-          // session.
-          const auth = readAuthFile()
-          if (!auth) {
-            ws.send(JSON.stringify({ type: 'error', code: 'not_configured' }))
-            return
-          }
-          if (!csrfMatches(auth, ws.data.sessionToken, frame.data.csrf)) {
-            ws.send(JSON.stringify({ type: 'error', code: 'bad_csrf' }))
-            return
-          }
-          if (ws.data.subscriber) hub.unsubscribe(ws.data.subscriber)
-
-          try {
-            const { subscriber } = await hub.subscribe(
-              frame.data.processKey,
-              event => {
-                ws.send(JSON.stringify({ type: 'event', ...event }))
-              },
-              info => {
-                // A stale close must not clear an attachment the browser has
-                // already replaced.
-                if (ws.data.processKey === info.processKey) {
-                  ws.data.subscriber = null
-                  ws.data.processKey = null
-                }
-                ws.send(
-                  JSON.stringify({
-                    type: 'process_gone',
-                    processKey: info.processKey,
-                    sessionId: info.sessionId,
-                  }),
-                )
-              },
-            )
-            ws.data.subscriber = subscriber
-            ws.data.processKey = frame.data.processKey
-            const response = await hub.request(frame.data.processKey, {
-              kind: 'subscribe',
-            })
-            ws.send(JSON.stringify({ type: 'attached', ok: response.ok }))
-          } catch (err) {
-            ws.send(
-              JSON.stringify({
-                type: 'error',
-                code: 'attach_failed',
-                message: String(err instanceof Error ? err.message : err),
-              }),
-            )
-          }
-          return
-        }
-
-        if (frame.data.type === 'detach') {
-          if (ws.data.subscriber) hub.unsubscribe(ws.data.subscriber)
-          ws.data.subscriber = null
-          ws.data.processKey = null
-          return
-        }
-
-        if (!ws.data.processKey) {
-          ws.send(JSON.stringify({ type: 'error', code: 'not_attached' }))
-          return
-        }
-        // `hello` is the socket's own handshake and is never proxied: a browser
-        // must not be able to re-authenticate or impersonate on the attach
-        // connection.
-        if (frame.data.body.kind === 'hello') {
-          ws.send(JSON.stringify({ type: 'error', code: 'forbidden' }))
-          return
-        }
-
-        const response = await hub.request(ws.data.processKey, frame.data.body)
-        ws.send(
-          JSON.stringify({
-            type: 'response',
-            id: frame.data.id,
-            ok: response.ok,
-            result: response.result,
-            error: response.error,
-          }),
-        )
+      message() {
+        // v2 clients do not speak on the gateway socket. It exists for
+        // gateway-level frames (restart_ready) only; session traffic is
+        // HTTP commands plus the SSE proxy below.
       },
 
       close(ws: ServerWebSocket<SocketData>) {
         browsers.delete(ws)
-        if (ws.data.subscriber) hub.unsubscribe(ws.data.subscriber)
-        ws.data.subscriber = null
       },
     },
   })
@@ -660,15 +722,15 @@ export function startGatewayServer(
       const deadline = Date.now() + 10_000
       let lastError = 'the assistant is not reachable'
       while (Date.now() < deadline) {
-        let client: Awaited<ReturnType<typeof connectAttachClient>> | null =
+        let client: Awaited<ReturnType<typeof connectSurfaceClient>> | null =
           null
         try {
-          client = await connectAttachClient(assistantChild.pid, {
+          client = await connectSurfaceClient(assistantChild.pid, {
             onEvent: () => {},
             onClose: () => {},
           })
-          const response = await client.request({
-            kind: 'submit',
+          const response = await client.command('prompt', {
+            kind: 'prompt',
             commandId: `notify-${randomUUID()}`,
             content: text,
             delivery: 'next',
@@ -676,7 +738,10 @@ export function startGatewayServer(
           })
           if (response.ok) return { ok: true }
           lastError = response.error?.message ?? 'submit failed'
-          if (response.error?.code !== 'runtime_not_ready') {
+          if (
+            response.error?.code !== 'runtime_not_ready' &&
+            response.error?.code !== 'unreachable'
+          ) {
             return { ok: false, error: lastError }
           }
         } catch (err) {
@@ -689,7 +754,6 @@ export function startGatewayServer(
       return { ok: false, error: lastError }
     },
     async stop() {
-      hub.stop()
       // The assistant chat survives the restart: record where it was before
       // the child dies, so the next boot resumes the same conversation.
       if (assistantChild) await writeAssistantResumeId(assistantChild.sessionId)
@@ -701,4 +765,4 @@ export function startGatewayServer(
   }
 }
 
-export type { AttachEventBody }
+export type { WireEvent } from '../../session/wire.js'

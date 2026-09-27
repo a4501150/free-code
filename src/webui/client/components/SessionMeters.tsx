@@ -1,8 +1,5 @@
 import { useEffect, useState } from 'react'
-import type {
-  WebModelOption,
-  WebSessionMeta,
-} from '../../protocol/attachSchemas.js'
+import type { WireCatalog, WireSessionMeta } from '../../../session/wire.js'
 
 /**
  * Keeps the tail of a path, which is the informative end. Done here rather than
@@ -41,17 +38,21 @@ export function SessionMeters({
   models,
   onSetModel,
 }: {
-  meta: WebSessionMeta | null
-  models: WebModelOption[]
-  onSetModel(model: string): void
+  meta: WireSessionMeta | null
+  /** `catalog.models`, where a null value is the account default. */
+  models: WireCatalog['models']
+  onSetModel(model: string | null): void
 }): React.ReactElement {
   // The session reports its model on a poll, so binding the control straight to
   // it makes the choice visibly snap back until the report arrives.
   const [pendingModel, setPendingModel] = useState<string | null>(null)
   useEffect(() => {
-    if (pendingModel && meta?.model === pendingModel) setPendingModel(null)
+    if (pendingModel !== null && meta?.model === pendingModel) {
+      setPendingModel(null)
+    }
   }, [meta?.model, pendingModel])
-  const shownModel = pendingModel ?? meta?.model ?? ''
+  // A null meta.model is the default, and the select spells it `''`.
+  const shownModel = (pendingModel ?? meta?.model ?? '') as string
 
   return (
     <section className="panel">
@@ -77,8 +78,9 @@ export function SessionMeters({
             className="meter__select"
             value={shownModel}
             onChange={event => {
-              setPendingModel(event.target.value)
-              onSetModel(event.target.value)
+              const value = event.target.value || null
+              setPendingModel(value)
+              onSetModel(value)
             }}
           >
             {/* The session may run a model the registry no longer lists. */}
@@ -86,7 +88,10 @@ export function SessionMeters({
               <option value={shownModel}>{shownModel}</option>
             ) : null}
             {models.map(option => (
-              <option key={option.value} value={option.value}>
+              <option
+                key={option.value ?? '__default__'}
+                value={option.value ?? ''}
+              >
                 {option.label}
               </option>
             ))}

@@ -1,30 +1,40 @@
 /**
  * The client follows sessions across processes: exclude known-dead process
- * keys despite the polling lag, and call gateway `detach()` rather than
+ * keys despite the polling lag, and close the event stream rather than just
  * clearing React state, or reconnect strands the view on an empty dead
  * process.
  */
 import { useSyncExternalStore } from 'react'
 import type {
-  AttachEventBody,
-  WebPendingCommand,
-  WebPermissionRequest,
-  WebModelOption,
-  WebSessionMeta,
-  WebTodo,
-} from '../protocol/attachSchemas.js'
-import type { WebTranscriptItem } from '../protocol/transcriptWire.js'
+  WireCatalog,
+  WireEvent,
+  WireItem,
+  WirePendingCommand,
+  WireRequest,
+  WireSessionMeta,
+  WireTask,
+  WireTodo,
+} from '../../session/wire.js'
 
 export type SessionView = {
-  meta: WebSessionMeta | null
-  items: Map<string, WebTranscriptItem>
+  meta: WireSessionMeta | null
+  items: Map<string, WireItem>
   order: string[]
-  permissions: WebPermissionRequest[]
-  todos: WebTodo[]
-  pendingCommands: WebPendingCommand[]
-  models: WebModelOption[]
-  commands: string[]
+  requests: WireRequest[]
+  todos: WireTodo[]
+  queue: WirePendingCommand[]
+  tasks: WireTask[]
+  catalog: WireCatalog
   lastSeq: number
+}
+
+/** A permission request, which is the kind the trays render. */
+export type PermissionEntry = Extract<WireRequest, { kind: 'permission' }>
+
+const EMPTY_CATALOG: WireCatalog = {
+  models: [],
+  commands: [],
+  permissionModes: [],
 }
 
 export function emptyView(): SessionView {
@@ -32,25 +42,27 @@ export function emptyView(): SessionView {
     meta: null,
     items: new Map(),
     order: [],
-    permissions: [],
+    requests: [],
     todos: [],
-    pendingCommands: [],
-    models: [],
-    commands: [],
+    queue: [],
+    tasks: [],
+    catalog: EMPTY_CATALOG,
     lastSeq: 0,
   }
 }
 
 /**
- * Applies one attach event.
+ * Applies one wire event.
  *
  * Every operation is idempotent by sequence, item id and revision, so a replay
- * after a reconnect cannot duplicate or reorder anything.
+ * after a reconnect cannot duplicate or reorder anything. Unknown kinds are
+ * ignored: the wire only adds members, and a client built against an older
+ * union must still follow the stream.
  */
 export function applyEvent(
   view: SessionView,
   seq: number,
-  event: AttachEventBody,
+  event: WireEvent,
 ): SessionView {
   if (seq <= view.lastSeq && event.kind !== 'snapshot') return view
   const next: SessionView = { ...view, lastSeq: Math.max(view.lastSeq, seq) }
@@ -60,11 +72,11 @@ export function applyEvent(
       next.meta = event.meta
       next.items = new Map(event.transcript.items.map(item => [item.id, item]))
       next.order = [...event.transcript.order]
-      next.permissions = event.permissions
+      next.requests = event.requests
       next.todos = event.todos
-      next.pendingCommands = event.pendingCommands ?? []
-      next.models = event.models
-      next.commands = event.commands ?? []
+      next.queue = event.pendingCommands
+      next.tasks = event.tasks
+      next.catalog = event.catalog
       next.lastSeq = seq
       return next
     }
@@ -90,27 +102,31 @@ export function applyEvent(
       next.meta = event.meta
       return next
 
-    case 'permission_opened':
-      next.permissions = [
-        ...view.permissions.filter(
-          p => p.requestId !== event.request.requestId,
-        ),
+    case 'request_opened':
+      next.requests = [
+        ...view.requests.filter(r => r.requestId !== event.request.requestId),
         event.request,
       ]
       return next
 
-    case 'permission_closed':
-      next.permissions = view.permissions.filter(
-        p => p.requestId !== event.requestId,
-      )
+    case 'request_closed':
+      next.requests = view.requests.filter(r => r.requestId !== event.requestId)
       return next
 
     case 'todos':
       next.todos = event.todos
       return next
 
-    case 'pending_commands':
-      next.pendingCommands = event.commands
+    case 'queue':
+      next.queue = event.commands
+      return next
+
+    case 'tasks':
+      next.tasks = event.tasks
+      return next
+
+    case 'catalog':
+      next.catalog = event.catalog
       return next
 
     case 'session_changed':
@@ -118,7 +134,7 @@ export function applyEvent(
       // re-subscribe that follows delivers a fresh snapshot.
       next.items = new Map()
       next.order = []
-      next.permissions = []
+      next.requests = []
       if (next.meta) {
         next.meta = {
           ...next.meta,
@@ -129,8 +145,14 @@ export function applyEvent(
       return next
 
     case 'resync_required':
+      // The journal expired. The snapshot that follows refills everything, so
+      // there is nothing to throw away here.
       return next
   }
+
+  // An unknown kind is a newer server adding a member: keep the view and just
+  // advance the sequence.
+  return next
 }
 
 /** A tiny external store, so transcript churn does not re-render the shell. */
@@ -146,7 +168,7 @@ export function createViewStore() {
     snapshot(): SessionView {
       return view
     },
-    apply(seq: number, event: AttachEventBody): void {
+    apply(seq: number, event: WireEvent): void {
       const next = applyEvent(view, seq, event)
       if (next === view) return
       view = next

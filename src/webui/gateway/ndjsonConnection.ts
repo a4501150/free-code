@@ -1,5 +1,7 @@
 import type { Socket } from 'net'
-import { MAX_ATTACH_LINE_BYTES } from '../protocol/attachSchemas.js'
+
+// The daemon control socket carries request/response bodies, not transcripts.
+const MAX_NDJSON_LINE_BYTES = 8 * 1024 * 1024
 
 export type NdjsonHandlers = {
   onLine: (line: string) => void
@@ -9,10 +11,10 @@ export type NdjsonHandlers = {
 
 /**
  * Newline-delimited JSON over a socket. A line longer than
- * MAX_ATTACH_LINE_BYTES fails the connection rather than buffering without
+ * MAX_NDJSON_LINE_BYTES fails the connection rather than buffering without
  * bound, because the peer is local but not necessarily well behaved.
  */
-export function attachNdjsonReader(
+export function readNdjsonSocket(
   socket: Socket,
   handlers: NdjsonHandlers,
 ): void {
@@ -23,7 +25,7 @@ export function attachNdjsonReader(
   socket.on('data', (chunk: string) => {
     buffer += chunk
 
-    if (Buffer.byteLength(buffer) > MAX_ATTACH_LINE_BYTES) {
+    if (Buffer.byteLength(buffer) > MAX_NDJSON_LINE_BYTES) {
       handlers.onError('line_too_long', 'NDJSON line exceeded the size limit')
       socket.destroy()
       buffer = ''

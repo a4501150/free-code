@@ -337,11 +337,7 @@ export function startWireSurface(
   // -----------------------------------------------------------------------
   // HTTP plumbing
 
-  const json = (
-    res: ServerResponse,
-    status: number,
-    body: unknown,
-  ): void => {
+  const json = (res: ServerResponse, status: number, body: unknown): void => {
     const payload = JSON.stringify(body)
     res.writeHead(status, {
       'content-type': 'application/json',
@@ -439,11 +435,21 @@ export function startWireSurface(
     switch (cmd.kind) {
       case 'prompt': {
         if (cmd.sessionEpoch !== sessionEpoch) {
-          fail(res, 409, 'stale_epoch', 'the session changed; resynchronize and retry')
+          fail(
+            res,
+            409,
+            'stale_epoch',
+            'the session changed; resynchronize and retry',
+          )
           return
         }
         if (!cmd.content && !cmd.images?.length) {
-          fail(res, 400, 'empty_submit', 'a prompt needs text or at least one image')
+          fail(
+            res,
+            400,
+            'empty_submit',
+            'a prompt needs text or at least one image',
+          )
           return
         }
         runtime.submit(cmd.content, cmd.delivery, cmd.commandId, cmd.images)
@@ -472,14 +478,24 @@ export function startWireSurface(
             : undefined
         if (decision?.behavior === 'allow' && decision.setMode) {
           if (MODES_DENIED_TO_REMOTE.has(decision.setMode)) {
-            fail(res, 403, 'mode_not_allowed', 'this surface cannot set that mode')
+            fail(
+              res,
+              403,
+              'mode_not_allowed',
+              'this surface cannot set that mode',
+            )
             return
           }
           runtime.setMode(decision.setMode)
         }
         const handled = broker.respondTo(cmd.requestId, response.data)
         if (!handled) {
-          fail(res, 409, 'interaction_not_pending', 'that request was already resolved')
+          fail(
+            res,
+            409,
+            'interaction_not_pending',
+            'that request was already resolved',
+          )
           return
         }
         ok(res)
@@ -492,7 +508,12 @@ export function startWireSurface(
       }
       case 'mode_set': {
         if (MODES_DENIED_TO_REMOTE.has(cmd.mode)) {
-          fail(res, 403, 'mode_not_allowed', 'this surface cannot set that mode')
+          fail(
+            res,
+            403,
+            'mode_not_allowed',
+            'this surface cannot set that mode',
+          )
           return
         }
         runtime.setMode(cmd.mode)
@@ -501,7 +522,12 @@ export function startWireSurface(
       }
       case 'rpc': {
         if (!runtime.rpc) {
-          fail(res, 501, 'rpc_not_supported', 'this session does not serve that rpc')
+          fail(
+            res,
+            501,
+            'rpc_not_supported',
+            'this session does not serve that rpc',
+          )
           return
         }
         try {
@@ -589,10 +615,20 @@ export function startWireSurface(
             const itemId = url.searchParams.get('itemId') ?? ''
             const image = runtime ? findImage(runtime, itemId) : undefined
             if (!image) {
-              fail(res, 404, 'no_such_image', 'that transcript item is not an image')
+              fail(
+                res,
+                404,
+                'no_such_image',
+                'that transcript item is not an image',
+              )
               return
             }
             json(res, 200, image)
+            return
+          }
+          case 'meta': {
+            // The handshake read: identity + state without opening a stream.
+            json(res, 200, buildMeta())
             return
           }
           case 'agent_transcript': {

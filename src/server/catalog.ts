@@ -1,7 +1,4 @@
-import {
-  getCommandName,
-  type CommandBase,
-} from '../types/command.js'
+import { getCommandName, type CommandBase } from '../types/command.js'
 import { getModelOptions } from '../utils/model/modelOptions.js'
 import type { TaskState } from '../tasks/types.js'
 import {
@@ -17,9 +14,7 @@ import {
  * and reading every file on every publish would make the panel the most
  * expensive thing on the wire.
  */
-export function tasksToWire(
-  tasks: Record<string, TaskState>,
-): WireTask[] {
+export function tasksToWire(tasks: Record<string, TaskState>): WireTask[] {
   return Object.values(tasks).map(task => ({
     id: task.id,
     kind: task.type,

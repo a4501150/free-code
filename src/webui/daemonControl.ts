@@ -3,7 +3,7 @@ import { createConnection, createServer, type Server } from 'net'
 import { join } from 'path'
 import { z } from 'zod'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
-import { attachNdjsonReader, writeNdjson } from './attach/ndjsonConnection.js'
+import { readNdjsonSocket, writeNdjson } from './gateway/ndjsonConnection.js'
 import { WebStartOptionsSchema, type WebStatus } from './gateway/service.js'
 
 const DIR_MODE = 0o700
@@ -47,7 +47,7 @@ export type DaemonControlHandlers = {
 /**
  * The supervisor's control socket.
  *
- * Same posture as the attach socket: owner-only directory and socket, so the
+ * Same posture as the surface descriptor: owner-only directory and socket, so the
  * trust boundary is the filesystem. This socket can start a publicly reachable
  * server, so it must not be readable by another user.
  */
@@ -63,7 +63,7 @@ export function startDaemonControlServer(handlers: DaemonControlHandlers): {
   rmSync(path, { force: true })
 
   const server: Server = createServer(socket => {
-    attachNdjsonReader(socket, {
+    readNdjsonSocket(socket, {
       onLine(line) {
         void (async () => {
           let response: DaemonControlResponse
@@ -171,7 +171,7 @@ export async function sendDaemonControl(
 
     socket.once('connect', () => writeNdjson(socket, request))
     socket.once('error', () => finish(null))
-    attachNdjsonReader(socket, {
+    readNdjsonSocket(socket, {
       onLine(line) {
         try {
           finish(JSON.parse(line) as DaemonControlResponse)

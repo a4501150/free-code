@@ -1,25 +1,33 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  useSyncExternalStore,
+} from 'react'
 import { randomUUID } from 'crypto'
 import { Box, Text, useInput, useApp } from '../ink.js'
 import ScrollBox, { type ScrollBoxHandle } from '../ink/components/ScrollBox.js'
 import { ScrollKeybindingHandler } from '../components/ScrollKeybindingHandler.js'
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js'
 import {
-  connectAttachClient,
-  type AttachClient,
-} from '../webui/gateway/attachClient.js'
-import { createViewStore, useViewStore } from '../webui/client/store.js'
+  connectSurfaceClient,
+  type SurfaceClient,
+} from '../webui/gateway/surfaceClient.js'
 import type {
-  WebPermissionRequest,
-  WebSessionMeta,
-} from '../webui/protocol/attachSchemas.js'
-import type { WebTranscriptItem } from '../webui/protocol/transcriptWire.js'
+  WireEvent,
+  WireItem,
+  WireRequest,
+  WireSessionMeta,
+  WireTranscriptPatch,
+} from '../session/wire.js'
 import { PermissionDialog } from '../components/permissions/PermissionDialog.js'
 import { Select } from '../components/CustomSelect/index.js'
 
 type ConnectionState =
   | { status: 'connecting' }
-  | { status: 'connected'; client: AttachClient }
+  | { status: 'connected'; client: SurfaceClient }
   | { status: 'disconnected'; reason: string }
   | { status: 'error'; message: string }
 
@@ -28,20 +36,178 @@ export type AttachedSessionProps = {
   onExit?: () => void
 }
 
+// ---------------------------------------------------------------------------
+// Joined-session view state
+//
+// Self-contained on purpose: the browser store (`src/webui/client/store.ts`)
+// is ported on its own schedule and this screen must not race its edits.
+// ---------------------------------------------------------------------------
+
+type SessionView = {
+  meta: WireSessionMeta | null
+  items: Map<string, WireItem>
+  order: string[]
+  requests: WireRequest[]
+  lastSeq: number
+}
+
+function emptyView(): SessionView {
+  return {
+    meta: null,
+    items: new Map(),
+    order: [],
+    requests: [],
+    lastSeq: 0,
+  }
+}
+
+/**
+ * Applies one wire event.
+ *
+ * Every operation is idempotent by sequence, item id and revision, so a replay
+ * after a reconnect cannot duplicate or reorder anything. The snapshot is the
+ * exception to the seq gate: it carries the journal watermark rather than a
+ * new seq, and it always rebuilds the view wholesale.
+ */
+function applyEvent(
+  view: SessionView,
+  seq: number,
+  event: WireEvent,
+): SessionView {
+  if (seq <= view.lastSeq && event.kind !== 'snapshot') return view
+  const next: SessionView = { ...view, lastSeq: Math.max(view.lastSeq, seq) }
+
+  switch (event.kind) {
+    case 'snapshot': {
+      next.meta = event.meta
+      next.items = new Map(event.transcript.items.map(item => [item.id, item]))
+      next.order = [...event.transcript.order]
+      next.requests = event.requests
+      next.lastSeq = seq
+      return next
+    }
+
+    case 'transcript': {
+      return applyPatch(view, next, event.patch)
+    }
+
+    case 'meta':
+      next.meta = event.meta
+      return next
+
+    case 'request_opened':
+      next.requests = [
+        ...view.requests.filter(r => r.requestId !== event.request.requestId),
+        event.request,
+      ]
+      return next
+
+    case 'request_closed':
+      next.requests = view.requests.filter(r => r.requestId !== event.requestId)
+      return next
+
+    case 'session_changed':
+      // The process moved to another session. Everything below is stale; the
+      // replace patch the surface publishes after this event rebuilds the
+      // transcript under the new identity.
+      next.items = new Map()
+      next.order = []
+      next.requests = []
+      if (next.meta) {
+        next.meta = {
+          ...next.meta,
+          sessionId: event.sessionId,
+          sessionEpoch: event.sessionEpoch,
+        }
+      }
+      return next
+
+    case 'todos':
+    case 'queue':
+    case 'tasks':
+    case 'catalog':
+      // This screen does not render them yet; the seq bump above still counts.
+      return next
+
+    case 'resync_required':
+      // The server follows it with a fresh snapshot on this same stream.
+      return next
+
+    default:
+      // Additive kinds within a release are forward-safe: ignore, never fail.
+      return next
+  }
+}
+
+function applyPatch(
+  view: SessionView,
+  next: SessionView,
+  patch: WireTranscriptPatch,
+): SessionView {
+  if (patch.type === 'replace') {
+    next.items = new Map(patch.snapshot.items.map(i => [i.id, i]))
+    next.order = [...patch.snapshot.order]
+    return next
+  }
+  const items = new Map(view.items)
+  for (const id of patch.remove) items.delete(id)
+  for (const item of patch.upsert) items.set(item.id, item)
+  next.items = items
+  if (patch.order) next.order = [...patch.order]
+  else if (patch.orderAppend) next.order = [...view.order, ...patch.orderAppend]
+  return next
+}
+
+/** A tiny external store, so transcript churn does not re-render the shell. */
+function createWireStore() {
+  let view = emptyView()
+  const listeners = new Set<() => void>()
+
+  return {
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    snapshot(): SessionView {
+      return view
+    },
+    apply(seq: number, event: WireEvent): void {
+      const next = applyEvent(view, seq, event)
+      if (next === view) return
+      view = next
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
+type WireStore = ReturnType<typeof createWireStore>
+
+function useWireStore(store: WireStore): SessionView {
+  return useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot)
+}
+
+// ---------------------------------------------------------------------------
+// Screen
+// ---------------------------------------------------------------------------
+
 export function AttachedSession({
   pid,
   onExit,
 }: AttachedSessionProps): React.ReactNode {
-  const store = useMemo(() => createViewStore(), [])
-  const view = useViewStore(store)
+  const store = useMemo(() => createWireStore(), [])
+  const view = useWireStore(store)
   const [connection, setConnection] = useState<ConnectionState>({
     status: 'connecting',
   })
-  const clientRef = useRef<AttachClient | null>(null)
+  const clientRef = useRef<SurfaceClient | null>(null)
   const scrollRef = useRef<ScrollBoxHandle>(null)
   const [inputText, setInputText] = useState('')
   const [submitError, setSubmitError] = useState<string | null>(null)
   const { exit } = useApp()
+
+  const cancel = useCallback(() => {
+    void clientRef.current?.command('cancel', { kind: 'cancel' })
+  }, [])
 
   const doExit = useCallback(() => {
     clientRef.current?.close()
@@ -51,7 +217,7 @@ export function AttachedSession({
 
   const exitState = useExitOnCtrlCDWithKeybindings(doExit, () => {
     if (view.meta?.state === 'running' && clientRef.current) {
-      void clientRef.current.request({ kind: 'interrupt' })
+      cancel()
       return true
     }
     return false
@@ -59,16 +225,16 @@ export function AttachedSession({
 
   useEffect(() => {
     let cancelled = false
-    let client: AttachClient | null = null
+    let client: SurfaceClient | null = null
 
     async function connect(): Promise<void> {
       try {
-        client = await connectAttachClient(pid, {
+        // connectSurfaceClient reads and verifies the descriptor and the
+        // surface delivers a full snapshot as the stream's first event, so
+        // there is nothing to send after the handshake resolves.
+        client = await connectSurfaceClient(pid, {
           onEvent(seq, event) {
             store.apply(seq, event)
-            if (event.kind === 'resync_required') {
-              void client?.request({ kind: 'subscribe' })
-            }
           },
           onClose(reason) {
             if (!cancelled) {
@@ -85,7 +251,6 @@ export function AttachedSession({
 
         clientRef.current = client
         setConnection({ status: 'connected', client })
-        await client.request({ kind: 'subscribe' })
       } catch (err) {
         if (!cancelled) {
           setConnection({
@@ -110,13 +275,14 @@ export function AttachedSession({
       const client = clientRef.current
       if (!client || !view.meta) return
 
-      const response = await client.request({
-        kind: 'submit',
+      const response = await client.command('prompt', {
+        kind: 'prompt',
         content: text,
         delivery: 'next',
         commandId: randomUUID(),
         sessionEpoch: view.meta.sessionEpoch,
       })
+      // A stale epoch comes back as 409 {ok:false} with the reason attached.
       if (!response.ok) {
         setSubmitError(response.error?.message ?? 'Submission failed')
         setTimeout(() => setSubmitError(null), 3000)
@@ -130,13 +296,16 @@ export function AttachedSession({
       const client = clientRef.current
       if (!client) return
 
-      void client.request({
-        kind: 'permission_decision',
+      void client.command('request_respond', {
+        kind: 'request_respond',
         requestId,
-        decision:
-          behavior === 'allow'
-            ? { behavior: 'allow' as const }
-            : { behavior: 'deny' as const },
+        response: {
+          kind: 'permission',
+          decision:
+            behavior === 'allow'
+              ? ({ behavior: 'allow' } as const)
+              : ({ behavior: 'deny' } as const),
+        },
       })
     },
     [],
@@ -146,14 +315,14 @@ export function AttachedSession({
     () =>
       view.order
         .map(id => view.items.get(id))
-        .filter((item): item is WebTranscriptItem => Boolean(item)),
+        .filter((item): item is WireItem => Boolean(item)),
     [view.items, view.order],
   )
 
   const isRunning = view.meta?.state === 'running'
   const isConnected = connection.status === 'connected'
-  const pendingPermission = view.permissions[0] ?? null
-  const composerActive = isConnected && !pendingPermission
+  const pendingRequest = view.requests[0] ?? null
+  const composerActive = isConnected && !pendingRequest
 
   useInput((input, key) => {
     if (!composerActive) return
@@ -174,7 +343,7 @@ export function AttachedSession({
 
     if (key.escape) {
       if (isRunning) {
-        void clientRef.current?.request({ kind: 'interrupt' })
+        cancel()
       }
       return
     }
@@ -221,9 +390,9 @@ export function AttachedSession({
         ))}
 
         {/* Permission overlay */}
-        {pendingPermission && isConnected && (
-          <AttachedPermissionOverlay
-            permission={pendingPermission}
+        {pendingRequest && isConnected && (
+          <AttachedRequestOverlay
+            request={pendingRequest}
             onDecision={handlePermissionDecision}
           />
         )}
@@ -299,14 +468,11 @@ function formatToolInput(input: unknown): string {
   }
 }
 
-function TranscriptItemRow({
-  item,
-}: {
-  item: WebTranscriptItem
-}): React.ReactNode {
+function TranscriptItemRow({ item }: { item: WireItem }): React.ReactNode {
   switch (item.kind) {
     case 'user': {
       if (item.image) {
+        // Bytes stay on the surface; this screen shows metadata only.
         return (
           <Box paddingX={2} paddingTop={1}>
             <Text color="claude" bold>
@@ -377,9 +543,15 @@ function TranscriptItemRow({
     case 'attachment':
       return (
         <Box paddingX={4}>
-          <Text dimColor>{item.text ?? 'attachment'}</Text>
+          <Text dimColor>
+            {item.attachment?.display ?? item.text ?? 'attachment'}
+          </Text>
         </Box>
       )
+
+    default:
+      // progress and any kind this screen does not render yet.
+      return null
   }
 }
 
@@ -390,7 +562,7 @@ function TranscriptItemRow({
 function AttachedStatusBar({
   meta,
 }: {
-  meta: WebSessionMeta | null
+  meta: WireSessionMeta | null
 }): React.ReactNode {
   if (!meta) return null
 
@@ -415,34 +587,49 @@ function AttachedStatusBar({
 }
 
 // ---------------------------------------------------------------------------
-// Permission overlay
+// Request overlay
 // ---------------------------------------------------------------------------
 
-function AttachedPermissionOverlay({
-  permission,
+function AttachedRequestOverlay({
+  request,
   onDecision,
 }: {
-  permission: WebPermissionRequest
+  request: WireRequest
   onDecision: (requestId: string, behavior: string) => void
 }): React.ReactNode {
+  if (request.kind !== 'permission') {
+    // hook_prompt and elicitation block the session too; this screen has no
+    // rich UI for them yet, so it only says one is waiting.
+    return (
+      <Box paddingX={2} paddingTop={1}>
+        <Text dimColor>
+          {request.kind === 'hook_prompt'
+            ? 'A hook prompt is pending'
+            : 'A server elicitation is pending'}{' '}
+          — answer it in the host session
+        </Text>
+      </Box>
+    )
+  }
+
   return (
     <PermissionDialog title="Permission Required" color="permission">
       <Box flexDirection="column" gap={1} paddingTop={1}>
-        <Text bold>{permission.toolName}</Text>
-        <Text>{permission.description}</Text>
-        {permission.blockedPath && (
-          <Text color="warning">Path: {permission.blockedPath}</Text>
+        <Text bold>{request.toolName}</Text>
+        <Text>{request.description}</Text>
+        {request.blockedPath && (
+          <Text color="warning">Path: {request.blockedPath}</Text>
         )}
         <Box maxHeight={8} overflow="hidden">
-          <Text dimColor>{formatToolInput(permission.input)}</Text>
+          <Text dimColor>{formatToolInput(request.input)}</Text>
         </Box>
         <Select
           options={[
             { label: 'Allow', value: 'allow' },
             { label: 'Deny', value: 'deny' },
           ]}
-          onChange={value => onDecision(permission.requestId, value)}
-          onCancel={() => onDecision(permission.requestId, 'deny')}
+          onChange={value => onDecision(request.requestId, value)}
+          onCancel={() => onDecision(request.requestId, 'deny')}
         />
       </Box>
     </PermissionDialog>
