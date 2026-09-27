@@ -1,62 +1,33 @@
-import { useCallback } from 'react'
-import { randomUUID } from 'crypto'
-import { fireCompanionObserver } from '../../buddy/observer.js'
+/**
+ * The TUI adapter around SessionCore.
+ *
+ * The loop lives in `src/session/SessionCore.ts`: context assembly, the
+ * generator, every transcript mutation (applied through the host's
+ * `setMessages`) and every surface change (announced as typed events). This
+ * hook keeps the exact prop contract the REPL screen was built against and
+ * does three jobs:
+ *
+ * 1. Own one core instance per mounted REPL session, fed by a live deps
+ *    object refreshed after every render — the core never sees a stale
+ *    permission context or agent definition (the same ref-carrier trick the
+ *    attach bridge used).
+ * 2. Project core events onto the React setters: stream state and
+ *    conversation identity. Transcript events need no re-apply here because
+ *    the core wrote through `setMessages`; the wire projector consumes them.
+ * 3. Keep the host-only turn-lifecycle bookkeeping around the core call:
+ *    timing refs, completion time, the long-turn summary message, and the
+ *    cancel-and-restore-last-prompt behavior (input history is a terminal
+ *    concern, not session state).
+ */
+import { useCallback, useEffect, useRef } from 'react'
 import { count } from '../../utils/array.js'
-import { logForDebugging } from '../../utils/debug.js'
-import { logError } from '../../utils/log.js'
-import { isHumanTurn } from '../../utils/messagePredicates.js'
 import {
-  getOriginalCwd,
-  getSessionId,
-  resetTurnHookDuration,
-  resetTurnToolDuration,
-  resetTurnClassifierDuration,
-} from '../../bootstrap/state.js'
-import { query } from '../../query.js'
-import { mergeClients } from '../useMergedClients.js'
-import { getQuerySourceForREPL } from '../../utils/promptCategory.js'
-import {
-  queryCheckpoint,
-  logQueryProfileReport,
-} from '../../utils/queryProfiler.js'
-import { getSystemPrompt } from '../../constants/prompts.js'
-import { buildEffectiveSystemPrompt } from '../../utils/systemPrompt.js'
-import { getSystemContext, getUserContext } from '../../context.js'
-import {
-  checkAndDisableBypassPermissionsIfNeeded,
-  checkAndDisableAutoModeIfNeeded,
-} from '../../utils/permissions/bypassPermissionsKillswitch.js'
-import {
-  getScratchpadDir,
-  isScratchpadEnabled,
-} from '../../utils/permissions/filesystem.js'
-import { maybeMarkProjectOnboardingComplete } from '../../projectOnboardingState.js'
-import { closeOpenDiffs, getConnectedIdeClient } from '../../utils/ide.js'
-import { diagnosticTracker } from '../../services/diagnosticTracking.js'
-import { generateSessionTitle } from '../../utils/sessionTitle.js'
-import { saveAiGeneratedTitle } from '../../utils/sessionStorage.js'
-import {
-  handleMessageFromStream,
-  isCompactBoundaryMessage,
-  getMessagesAfterCompactBoundary,
-  getContentText,
   createUserMessage,
-  createAssistantMessage,
   createTurnDurationMessage,
+  handleMessageFromStream,
 } from '../../utils/messages.js'
+import { isLoggableMessage } from '../../utils/sessionStorage.js'
 import {
-  removeTranscriptMessage,
-  isLoggableMessage,
-  isEphemeralToolProgress,
-} from '../../utils/sessionStorage.js'
-import {
-  BASH_INPUT_TAG,
-  COMMAND_MESSAGE_TAG,
-  COMMAND_NAME_TAG,
-  LOCAL_COMMAND_STDOUT_TAG,
-} from '../../constants/xml.js'
-import {
-  enqueue,
   getCommandQueue,
   getCommandQueueLength,
 } from '../../utils/messageQueueManager.js'
@@ -74,70 +45,16 @@ import type { EffortValue } from '../../utils/effort.js'
 import type { ProcessUserInputContext } from '../../utils/processUserInput/processUserInput.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import type { MCPServerConnection } from '../../services/mcp/types.js'
-import type { UUID } from 'crypto'
 import type { QueryGuard } from '../../utils/QueryGuard.js'
 import type { SpinnerMode } from '../../components/Spinner.js'
 import type {
   StreamingToolUse,
   StreamingThinking,
 } from '../../utils/messages.js'
+import { SessionCore, type SessionCoreDeps } from '../../session/SessionCore.js'
+import type { SessionEvent } from '../../session/events.js'
 
-import * as coordinatorModeModule from '../../coordinator/coordinatorMode.js'
-
-function getCoordinatorUserContext(
-  mcpClients: ReadonlyArray<{ name: string }>,
-  scratchpadDir?: string,
-): { [k: string]: string } {
-  return coordinatorModeModule.getCoordinatorUserContext(
-    mcpClients,
-    scratchpadDir,
-  )
-}
-
-export function useReplQueryExecution({
-  messagesRef,
-  setMessages,
-  setStreamMode,
-  setStreamingToolUses,
-  setStreamingThinking,
-  setStreamingText,
-  setResponseLength,
-  onStreamingText,
-  setSpinnerMessage,
-  setSpinnerColor,
-  setSpinnerShimmerColor,
-  setCompactingStartTime,
-  resetLoadingState,
-  resetTimingRefs,
-  queryGuard,
-  setAbortController,
-  scrollRef,
-  setConversationId,
-  setLastQueryCompletionTime,
-  setAutoTitle,
-  autoTitleAttemptedRef,
-  setUserInputOnProcessing,
-  inputValueRef,
-  loadingStartTimeRef,
-  totalPausedMsRef,
-  restoreMessageSyncRef,
-  getToolUseContext,
-  mainThreadAgentDefinition,
-  initialMcpClients,
-  toolPermissionContext,
-  setAppState,
-  store,
-  customSystemPrompt,
-  appendSystemPrompt,
-  canUseTool,
-  onBeforeQuery,
-  onTurnComplete,
-  mrOnBeforeQuery,
-  mrOnTurnComplete,
-  titleDisabled,
-  sessionTitle,
-  agentTitle,
-}: {
+export function useReplQueryExecution(props: {
   messagesRef: React.RefObject<MessageType[]>
   setMessages: (action: React.SetStateAction<MessageType[]>) => void
   setStreamMode: (mode: SpinnerMode) => void
@@ -197,259 +114,125 @@ export function useReplQueryExecution({
   sessionTitle: string | undefined
   agentTitle: string | undefined
 }) {
+  // Live-props carrier. The core and the event projection both read through
+  // it, and the identity-free effect refreshes it after every render, so the
+  // one core instance always acts on current values.
+  const propsRef = useRef(props)
+  useEffect(() => {
+    propsRef.current = props
+  })
+
+  const depsRef = useRef<SessionCoreDeps | null>(null)
+  if (depsRef.current === null) {
+    const p = props
+    depsRef.current = {
+      messagesRef: p.messagesRef as React.MutableRefObject<MessageType[]>,
+      setMessages: next => propsRef.current.setMessages(next),
+      queryGuard: p.queryGuard,
+      getToolUseContext: p.getToolUseContext,
+      canUseTool: p.canUseTool,
+      store: p.store,
+      toolPermissionContext: p.toolPermissionContext,
+      setAppState: p.setAppState,
+      initialMcpClients: p.initialMcpClients,
+      mainThreadAgentDefinition: p.mainThreadAgentDefinition,
+      customSystemPrompt: p.customSystemPrompt,
+      appendSystemPrompt: p.appendSystemPrompt,
+      title: {
+        disabled: p.titleDisabled,
+        current: p.sessionTitle,
+        agentTitle: p.agentTitle,
+        onAutoTitle: t => propsRef.current.setAutoTitle(t),
+      },
+      onBeforeQuery: (input, messages, newCount) =>
+        propsRef.current.mrOnBeforeQuery(input, messages, newCount),
+      onTurnComplete: messages => propsRef.current.onTurnComplete?.(messages),
+    }
+  }
+  const coreRef = useRef<SessionCore | null>(null)
+  if (coreRef.current === null) {
+    coreRef.current = new SessionCore(depsRef.current)
+  }
+  const core = coreRef.current
+
+  // Refresh the volatile deps after every render.
+  useEffect(() => {
+    const d = depsRef.current!
+    const p = propsRef.current
+    d.queryGuard = p.queryGuard
+    d.getToolUseContext = p.getToolUseContext
+    d.canUseTool = p.canUseTool
+    d.store = p.store
+    d.toolPermissionContext = p.toolPermissionContext
+    d.setAppState = p.setAppState
+    d.initialMcpClients = p.initialMcpClients
+    d.mainThreadAgentDefinition = p.mainThreadAgentDefinition
+    d.customSystemPrompt = p.customSystemPrompt
+    d.appendSystemPrompt = p.appendSystemPrompt
+    d.title = {
+      disabled: p.titleDisabled,
+      current: p.sessionTitle,
+      agentTitle: p.agentTitle,
+      onAutoTitle: t => propsRef.current.setAutoTitle(t),
+    }
+  })
+
+  // React projection of core events. Handlers read setters off the live
+  // carrier at call time, so one mount-time subscription covers the session.
+  useEffect(() => {
+    return core.subscribe((event: SessionEvent) => {
+      const p = propsRef.current
+      switch (event.type) {
+        case 'turn_started':
+          p.setResponseLength(() => 0)
+          p.setStreamingToolUses([])
+          p.setStreamingText(null)
+          return
+        case 'activity':
+          if (event.activity) p.setStreamMode(event.activity)
+          return
+        case 'response_length_delta':
+          p.setResponseLength(len => len + event.chars)
+          return
+        case 'streaming_text': {
+          // The capability gate (reduced motion / viewport-yank bug) lives
+          // in onStreamingText; the core owns the fold, the TUI renders its
+          // word when the terminal can show it.
+          const text = event.text
+          p.onStreamingText(() => text)
+          return
+        }
+        case 'streaming_tool_uses':
+          p.setStreamingToolUses(event.toolUses)
+          return
+        case 'streaming_thinking':
+          p.setStreamingThinking(event.thinking)
+          return
+        case 'transcript_replaced':
+          // The new array already arrived via setMessages (the core wrote
+          // through it); this is the one render-side reaction compaction
+          // wants.
+          if (event.reason === 'compact') {
+            p.scrollRef.current?.scrollToBottom()
+          }
+          return
+        case 'conversation_id':
+          p.setConversationId(event.id)
+          return
+        default:
+          // transcript_* mutations arrived through setMessages; surface
+          // events (meta/todos/queue/tasks) are consumed by the wire
+          // projector, not re-applied here.
+          return
+      }
+    })
+  }, [core])
+
   const onQueryEvent = useCallback(
     (event: Parameters<typeof handleMessageFromStream>[0]) => {
-      handleMessageFromStream(
-        event,
-        newMessage => {
-          if (isCompactBoundaryMessage(newMessage)) {
-            setMessages(old => [
-              ...getMessagesAfterCompactBoundary(old),
-              newMessage,
-            ])
-            setConversationId(randomUUID())
-            scrollRef.current?.scrollToBottom()
-          } else if (
-            newMessage.type === 'progress' &&
-            isEphemeralToolProgress(newMessage.data.type)
-          ) {
-            setMessages(oldMessages => {
-              const last = oldMessages.at(-1)
-              if (
-                last?.type === 'progress' &&
-                last.parentToolUseID === newMessage.parentToolUseID &&
-                last.data.type === newMessage.data.type
-              ) {
-                const copy = oldMessages.slice()
-                copy[copy.length - 1] = newMessage
-                return copy
-              }
-              return [...oldMessages, newMessage]
-            })
-          } else {
-            setMessages(oldMessages => [...oldMessages, newMessage])
-          }
-        },
-        newContent => {
-          setResponseLength(length => length + newContent.length)
-        },
-        setStreamMode,
-        setStreamingToolUses,
-        tombstonedMessage => {
-          setMessages(oldMessages =>
-            oldMessages.filter(m => m !== tombstonedMessage),
-          )
-          void removeTranscriptMessage(tombstonedMessage.uuid)
-        },
-        setStreamingThinking,
-        undefined,
-        onStreamingText,
-      )
+      core.handleStreamEvent(event)
     },
-    [
-      setMessages,
-      setResponseLength,
-      setStreamMode,
-      setStreamingToolUses,
-      setStreamingThinking,
-      onStreamingText,
-      scrollRef,
-      setConversationId,
-    ],
-  )
-
-  const onQueryImpl = useCallback(
-    async (
-      messagesIncludingNewMessages: MessageType[],
-      newMessages: MessageType[],
-      abortController: AbortController,
-      shouldQuery: boolean,
-      additionalAllowedTools: string[],
-      mainLoopModelParam: string,
-      effort?: EffortValue,
-    ) => {
-      if (shouldQuery) {
-        const freshClients = mergeClients(
-          initialMcpClients,
-          store.getState().mcp.clients,
-        )
-        void diagnosticTracker.handleQueryStart(freshClients)
-        const ideClient = getConnectedIdeClient(freshClients)
-        if (ideClient) {
-          void closeOpenDiffs(ideClient)
-        }
-      }
-
-      void maybeMarkProjectOnboardingComplete()
-
-      if (
-        !titleDisabled &&
-        !sessionTitle &&
-        !agentTitle &&
-        !autoTitleAttemptedRef.current
-      ) {
-        const firstUserMessage = newMessages.find(
-          m => m.type === 'user' && !m.isMeta,
-        )
-        const text =
-          firstUserMessage?.type === 'user'
-            ? getContentText(firstUserMessage.message.content)
-            : null
-        if (
-          text &&
-          !text.startsWith(`<${LOCAL_COMMAND_STDOUT_TAG}>`) &&
-          !text.startsWith(`<${COMMAND_MESSAGE_TAG}>`) &&
-          !text.startsWith(`<${COMMAND_NAME_TAG}>`) &&
-          !text.startsWith(`<${BASH_INPUT_TAG}>`)
-        ) {
-          autoTitleAttemptedRef.current = true
-          void generateSessionTitle(text, new AbortController().signal).then(
-            title => {
-              if (title) {
-                setAutoTitle(title)
-                saveAiGeneratedTitle(getSessionId() as UUID, title)
-              } else autoTitleAttemptedRef.current = false
-            },
-            () => {
-              autoTitleAttemptedRef.current = false
-            },
-          )
-        }
-      }
-
-      store.setState(prev => {
-        const cur = prev.toolPermissionContext.alwaysAllowRules.command
-        if (
-          cur === additionalAllowedTools ||
-          (cur?.length === additionalAllowedTools.length &&
-            cur.every(
-              (v: string, i: number) => v === additionalAllowedTools[i],
-            ))
-        ) {
-          return prev
-        }
-        return {
-          ...prev,
-          toolPermissionContext: {
-            ...prev.toolPermissionContext,
-            alwaysAllowRules: {
-              ...prev.toolPermissionContext.alwaysAllowRules,
-              command: additionalAllowedTools,
-            },
-          },
-        }
-      })
-
-      if (!shouldQuery) {
-        if (newMessages.some(isCompactBoundaryMessage)) {
-          setConversationId(randomUUID())
-        }
-        resetLoadingState()
-        setAbortController(null)
-        return
-      }
-
-      const toolUseContext = getToolUseContext(
-        messagesIncludingNewMessages,
-        newMessages,
-        abortController,
-        mainLoopModelParam,
-      )
-      const { tools: freshTools, mcpClients: freshMcpClients } =
-        toolUseContext.options
-
-      if (effort !== undefined) {
-        toolUseContext.effortOverride = effort
-      }
-
-      queryCheckpoint('query_context_loading_start')
-      const [, , defaultSystemPrompt, baseUserContext, systemContext] =
-        await Promise.all([
-          checkAndDisableBypassPermissionsIfNeeded(
-            toolPermissionContext,
-            setAppState,
-          ),
-          checkAndDisableAutoModeIfNeeded(
-            toolPermissionContext,
-            setAppState,
-            store.getState().fastMode,
-          ),
-          getSystemPrompt(
-            freshTools,
-            Array.from(
-              toolPermissionContext.additionalWorkingDirectories.keys(),
-            ),
-          ),
-          getUserContext(),
-          getSystemContext(),
-        ])
-      const userContext = {
-        ...baseUserContext,
-        ...getCoordinatorUserContext(
-          freshMcpClients,
-          isScratchpadEnabled() ? getScratchpadDir() : undefined,
-        ),
-      }
-      queryCheckpoint('query_context_loading_end')
-
-      const systemPrompt = buildEffectiveSystemPrompt({
-        mainThreadAgentDefinition,
-        toolUseContext,
-        customSystemPrompt,
-        defaultSystemPrompt,
-        appendSystemPrompt,
-      })
-      toolUseContext.renderedSystemPrompt = systemPrompt
-
-      queryCheckpoint('query_query_start')
-      resetTurnHookDuration()
-      resetTurnToolDuration()
-      resetTurnClassifierDuration()
-
-      for await (const event of query({
-        messages: messagesIncludingNewMessages,
-        systemPrompt,
-        userContext,
-        systemContext,
-        canUseTool,
-        toolUseContext,
-        querySource: getQuerySourceForREPL(),
-      })) {
-        onQueryEvent(event)
-      }
-
-      queryCheckpoint('query_end')
-      resetLoadingState()
-      logQueryProfileReport()
-      await onTurnComplete?.(messagesRef.current)
-      // Companion keyword reactions on the finished turn (self-debounced,
-      // no-ops unhatched/muted).
-      void fireCompanionObserver(messagesRef.current, reaction =>
-        setAppState(prev => ({ ...prev, companionReaction: reaction })),
-      )
-    },
-    [
-      initialMcpClients,
-      resetLoadingState,
-      getToolUseContext,
-      toolPermissionContext,
-      setAppState,
-      customSystemPrompt,
-      onTurnComplete,
-      appendSystemPrompt,
-      canUseTool,
-      mainThreadAgentDefinition,
-      onQueryEvent,
-      sessionTitle,
-      titleDisabled,
-      agentTitle,
-      autoTitleAttemptedRef,
-      setAutoTitle,
-      store,
-      setAbortController,
-      setConversationId,
-      messagesRef,
-    ],
+    [core],
   )
 
   const onQuery = useCallback(
@@ -466,124 +249,70 @@ export function useReplQueryExecution({
       input?: string,
       effort?: EffortValue,
     ): Promise<void> => {
-      const thisGeneration = queryGuard.tryStart()
-      if (thisGeneration === null) {
-        newMessages
-          .filter((m): m is UserMessage => m.type === 'user' && !m.isMeta)
-          .map(_ => getContentText(_.message.content))
-          .filter(_ => _ !== null)
-          .forEach((msg, i) => {
-            enqueue({ value: msg, mode: 'prompt' })
-          })
-        return
+      const p = propsRef.current
+      p.resetTimingRefs()
+
+      const result = await core.submitTurn({
+        newMessages,
+        abortController,
+        shouldQuery,
+        additionalAllowedTools,
+        mainLoopModel: mainLoopModelParam,
+        input,
+        effort,
+        proceedGate: onBeforeQueryCallback,
+      })
+      // A queued turn ran nothing beyond the enqueue; no post-turn
+      // bookkeeping (the pre-core finally was skipped the same way).
+      if (result === 'queued') return
+
+      p.setLastQueryCompletionTime(Date.now())
+      p.resetLoadingState()
+      await p.mrOnTurnComplete(
+        propsRef.current.messagesRef.current,
+        abortController.signal.aborted,
+      )
+
+      const turnDurationMs =
+        Date.now() - p.loadingStartTimeRef.current - p.totalPausedMsRef.current
+      if (turnDurationMs > 30000 && !abortController.signal.aborted) {
+        const prev = propsRef.current.messagesRef.current
+        p.setMessages(prev => [
+          ...prev,
+          createTurnDurationMessage(
+            turnDurationMs,
+            count(prev, isLoggableMessage),
+          ),
+        ])
       }
 
-      try {
-        resetTimingRefs()
-        setMessages(oldMessages => [...oldMessages, ...newMessages])
-        setResponseLength(_ => 0)
-        setStreamingToolUses([])
-        setStreamingText(null)
+      p.setAbortController(null)
 
-        const latestMessages = messagesRef.current
-
-        if (input) {
-          await mrOnBeforeQuery(input, latestMessages, newMessages.length)
-        }
-
-        if (onBeforeQueryCallback && input) {
-          const shouldProceed = await onBeforeQueryCallback(
-            input,
-            latestMessages,
-          )
-          if (!shouldProceed) {
-            return
-          }
-        }
-
-        await onQueryImpl(
-          latestMessages,
-          newMessages,
-          abortController,
-          shouldQuery,
-          additionalAllowedTools,
-          mainLoopModelParam,
-          effort,
-        ).catch(e => {
-          logError(e)
-          throw e
-        })
-      } finally {
-        if (queryGuard.end(thisGeneration)) {
-          setLastQueryCompletionTime(Date.now())
-          resetLoadingState()
-
-          await mrOnTurnComplete(
-            messagesRef.current,
-            abortController.signal.aborted,
-          )
-
-          const turnDurationMs =
-            Date.now() - loadingStartTimeRef.current - totalPausedMsRef.current
-          if (turnDurationMs > 30000 && !abortController.signal.aborted) {
-            setMessages(prev => [
-              ...prev,
-              createTurnDurationMessage(
-                turnDurationMs,
-                count(prev, isLoggableMessage),
-              ),
-            ])
-          }
-
-          setAbortController(null)
-        }
-
-        if (
-          abortController.signal.reason === 'user-cancel' &&
-          !queryGuard.isActive &&
-          inputValueRef.current === '' &&
-          getCommandQueueLength() === 0 &&
-          !store.getState().viewingAgentTaskId
-        ) {
-          const msgs = messagesRef.current
-          const lastUserMsg = msgs.findLast(selectableUserMessagesFilter)
-          if (lastUserMsg) {
-            const idx = msgs.lastIndexOf(lastUserMsg)
-            if (messagesAfterAreOnlySynthetic(msgs, idx)) {
-              removeLastFromHistory()
-              restoreMessageSyncRef.current(lastUserMsg)
-            }
+      if (
+        abortController.signal.reason === 'user-cancel' &&
+        !p.queryGuard.isActive &&
+        p.inputValueRef.current === '' &&
+        getCommandQueueLength() === 0 &&
+        !p.store.getState().viewingAgentTaskId
+      ) {
+        const msgs = propsRef.current.messagesRef.current
+        const lastUserMsg = msgs.findLast(selectableUserMessagesFilter)
+        if (lastUserMsg) {
+          const idx = msgs.lastIndexOf(lastUserMsg)
+          if (messagesAfterAreOnlySynthetic(msgs, idx)) {
+            removeLastFromHistory()
+            p.restoreMessageSyncRef.current(lastUserMsg)
           }
         }
       }
     },
-    [
-      onQueryImpl,
-      setAppState,
-      resetLoadingState,
-      queryGuard,
-      mrOnBeforeQuery,
-      mrOnTurnComplete,
-      resetTimingRefs,
-      setMessages,
-      setResponseLength,
-      setStreamingToolUses,
-      setStreamingText,
-      messagesRef,
-      setAbortController,
-      setConversationId,
-      setLastQueryCompletionTime,
-      inputValueRef,
-      loadingStartTimeRef,
-      totalPausedMsRef,
-      restoreMessageSyncRef,
-      store,
-    ],
+    [core],
   )
 
   const handleIncomingPrompt = useCallback(
     (content: string, options?: { isMeta?: boolean }): boolean => {
-      if (queryGuard.isActive) return false
+      const p = propsRef.current
+      if (p.queryGuard.isActive) return false
 
       if (
         getCommandQueue().some(
@@ -594,7 +323,7 @@ export function useReplQueryExecution({
       }
 
       const newAbortController = createAbortController()
-      setAbortController(newAbortController)
+      p.setAbortController(newAbortController)
 
       const userMessage = createUserMessage({
         content,
@@ -606,16 +335,16 @@ export function useReplQueryExecution({
         newAbortController,
         true,
         [],
-        store.getState().mainLoopModelForSession ?? 'claude-sonnet-4-20250514',
+        p.store.getState().mainLoopModelForSession ??
+          'claude-sonnet-4-20250514',
       )
       return true
     },
-    [onQuery, store, queryGuard, setAbortController],
+    [onQuery],
   )
 
   return {
     onQueryEvent,
-    onQueryImpl,
     onQuery,
     handleIncomingPrompt,
   }

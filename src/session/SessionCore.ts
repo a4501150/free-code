@@ -23,6 +23,7 @@
  */
 
 import { randomUUID } from 'crypto'
+import { fireCompanionObserver } from '../buddy/observer.js'
 import { query } from '../query.js'
 import { getQuerySourceForREPL } from '../utils/promptCategory.js'
 import { getSystemPrompt } from '../constants/prompts.js'
@@ -89,8 +90,16 @@ export type SessionCoreDeps = {
    * run against the root scope.
    */
   scope?: SessionState
-  /** The authoritative transcript, mutated in place (see header note). */
+  /** Read view of the authoritative transcript. */
   messagesRef: { current: Message[] }
+  /**
+   * The host's transcript write channel (the REPL's ref-eager `setMessages`
+   * wrapper, later the core's own store). The core computes every new array
+   * itself and hands it over whole; the host decides how its projection
+   * catches up, and the matching `transcript_*` event is the only signal to
+   * other subscribers.
+   */
+  setMessages: (next: Message[]) => void
   queryGuard: QueryGuard
   getToolUseContext: (
     messages: Message[],
@@ -134,6 +143,11 @@ export type TurnRequest = {
   mainLoopModel: string
   input?: string
   effort?: EffortValue
+  /**
+   * The host's own gate (assessor / plan flows), run after the core's
+   * `onBeforeQuery` observer and able to stop the turn before the loop.
+   */
+  proceedGate?: (input: string, messages: Message[]) => Promise<boolean>
 }
 
 export class SessionCore {
@@ -176,8 +190,8 @@ export class SessionCore {
    * fresh user prompts instead of dropping them), and always releases the
    * guard.
    */
-  async submitTurn(req: TurnRequest): Promise<void> {
-    const { newMessages, abortController, shouldQuery, input } = req
+  async submitTurn(req: TurnRequest): Promise<'queued' | 'done' | 'declined'> {
+    const { newMessages, shouldQuery, input } = req
     const generation = this.deps.queryGuard.tryStart()
     if (generation === null) {
       newMessages
@@ -185,7 +199,7 @@ export class SessionCore {
         .map(m => getContentText(m.message.content))
         .filter((text): text is string => text !== null)
         .forEach(text => enqueue({ value: text, mode: 'prompt' }))
-      return
+      return 'queued'
     }
 
     try {
@@ -196,23 +210,32 @@ export class SessionCore {
           this.deps.messagesRef.current,
           newMessages.length,
         )
-        if (!proceed) return
+        // A declined turn still runs the completion callbacks — the
+        // pre-query gate short-circuits the loop, not the turn lifecycle.
+        if (!proceed) return 'declined'
+      }
+      if (input && req.proceedGate) {
+        const proceed = await req.proceedGate(
+          input,
+          this.deps.messagesRef.current,
+        )
+        if (!proceed) return 'declined'
       }
       await this.runTurn(req)
+      return 'done'
     } catch (e) {
       logError(e)
       throw e
     } finally {
-      if (this.deps.queryGuard.end(generation)) {
-        await this.deps.onTurnComplete?.(this.deps.messagesRef.current)
-      }
+      // Releases the guard only. The host reacts to the result ('queued'
+      // means the turn parked in the session queue and nothing else ran).
+      this.deps.queryGuard.end(generation)
     }
   }
 
   /** Append at the tail, announcing each message. */
   private applyNewMessages(newMessages: Message[]): void {
-    const current = this.deps.messagesRef.current
-    this.deps.messagesRef.current = [...current, ...newMessages]
+    this.deps.setMessages([...this.deps.messagesRef.current, ...newMessages])
     for (const message of newMessages) {
       this.emit({ type: 'transcript_appended', message })
     }
@@ -223,7 +246,7 @@ export class SessionCore {
     messages: Message[],
     reason: 'compact' | 'rewind' | 'switch' | 'restore',
   ): void {
-    this.deps.messagesRef.current = messages
+    this.deps.setMessages(messages)
     this.emit({ type: 'transcript_replaced', messages, reason })
   }
 
@@ -366,6 +389,17 @@ export class SessionCore {
         type: 'turn_finished',
         aborted: abortController.signal.aborted,
       })
+      // Turn observers run only for a loop that actually ran: the
+      // !shouldQuery path returned above, matching the pre-core behavior.
+      await d.onTurnComplete?.(d.messagesRef.current)
+      // Companion keyword reactions on the finished turn (self-debounced,
+      // no-ops unhatched/muted).
+      void fireCompanionObserver(d.messagesRef.current, reaction =>
+        d.setAppState((prev: any) => ({
+          ...prev,
+          companionReaction: reaction,
+        })),
+      )
     }
 
     if (this.scope) {
@@ -376,7 +410,7 @@ export class SessionCore {
   }
 
   /** The moved `onQueryEvent` fan-out: transcript applies, per-block UI feeds. */
-  private handleStreamEvent(
+  handleStreamEvent(
     event: Parameters<typeof handleMessageFromStream>[0],
   ): void {
     handleMessageFromStream(
@@ -385,10 +419,11 @@ export class SessionCore {
         const current = this.deps.messagesRef.current
         if (isCompactBoundaryMessage(newMessage)) {
           const kept = getMessagesAfterCompactBoundary(current)
-          this.deps.messagesRef.current = [...kept, newMessage]
+          const next = [...kept, newMessage]
+          this.deps.setMessages(next)
           this.emit({
             type: 'transcript_replaced',
-            messages: this.deps.messagesRef.current,
+            messages: next,
             reason: 'compact',
           })
           this.emit({ type: 'conversation_id', id: randomUUID() })
@@ -404,17 +439,17 @@ export class SessionCore {
           ) {
             const copy = current.slice()
             copy[copy.length - 1] = newMessage
-            this.deps.messagesRef.current = copy
+            this.deps.setMessages(copy)
             this.emit({
               type: 'transcript_progress_replaced',
               message: newMessage,
             })
           } else {
-            this.deps.messagesRef.current = [...current, newMessage]
+            this.deps.setMessages([...current, newMessage])
             this.emit({ type: 'transcript_appended', message: newMessage })
           }
         } else {
-          this.deps.messagesRef.current = [...current, newMessage]
+          this.deps.setMessages([...current, newMessage])
           this.emit({ type: 'transcript_appended', message: newMessage })
         }
       },
@@ -430,8 +465,8 @@ export class SessionCore {
         this.emit({ type: 'streaming_tool_uses', toolUses: next })
       },
       tombstonedMessage => {
-        this.deps.messagesRef.current = this.deps.messagesRef.current.filter(
-          m => m !== tombstonedMessage,
+        this.deps.setMessages(
+          this.deps.messagesRef.current.filter(m => m !== tombstonedMessage),
         )
         this.emit({ type: 'transcript_removed', uuid: tombstonedMessage.uuid })
         void removeTranscriptMessage(tombstonedMessage.uuid)
