@@ -19,7 +19,7 @@ import { createSessionToolAllowUpdate } from '../../../utils/permissions/Permiss
 import { hasPermissionsToUseTool } from '../../../utils/permissions/permissions.js'
 import type { PermissionContext } from '../PermissionContext.js'
 import { createResolveOnce } from '../PermissionContext.js'
-import * as webuiAttachModule from '../../../webui/attach/hostSingleton.js'
+import { currentSessionRequests } from '../../../session/requests.js'
 
 type InteractivePermissionParams = {
   ctx: PermissionContext
@@ -243,17 +243,18 @@ function handleInteractivePermission(
     }
   }
 
-  // WebUI relay — a fourth racer. A browser attached over the session's Unix
-  // socket sees the same prompt and can answer it. Whoever answers first wins
-  // through the same claim(); the others are torn down.
-  const host = webuiAttachModule.getAttachHost()
-  if (host) {
-    const broker = host.permissions
+  // Remote-client relay — a fourth racer, on the session's request broker
+  // (session-scoped, resolved from inside the core's scope). Any attached
+  // surface sees the same prompt and can answer it. Whoever answers first
+  // wins through the same claim(); the others are torn down.
+  {
+    const broker = currentSessionRequests()
     const webRequestId = broker.newRequestId()
     const webSignal = ctx.toolUseContext.abortController.signal
 
     const brokerUnsub = broker.open(
       {
+        kind: 'permission',
         requestId: webRequestId,
         toolName: ctx.tool.name,
         toolUseId: ctx.toolUseID,
@@ -263,7 +264,9 @@ function handleInteractivePermission(
         agentId: ctx.assistantMessage.agentId,
         openedAt: permissionPromptStartTimeMs,
       },
-      async decision => {
+      async response => {
+        if (response.kind !== 'permission') return
+        const decision = response.decision
         if (!claim()) return // atomic check-and-mark before await
         cleanupRemoteRacers()
         ctx.removeFromQueue()
@@ -312,7 +315,9 @@ function handleInteractivePermission(
             { permissionPromptStartTimeMs },
           )
           resolveOnce(
-            ctx.cancelAndAbort(decision.message ?? 'Denied from the WebUI'),
+            ctx.cancelAndAbort(
+              decision.message ?? 'Denied by a session client',
+            ),
           )
         }
       },

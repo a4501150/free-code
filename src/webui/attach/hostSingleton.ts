@@ -8,9 +8,46 @@ import {
 import { registerCleanup } from '../../utils/cleanupRegistry.js'
 import { startAttachHost, type AttachHost } from './attachHost.js'
 import type { AttachRuntime } from './runtime.js'
+import { currentSessionRequests } from '../../session/requests.js'
 
 let host: AttachHost | null = null
 let pendingRuntime: AttachRuntime | null = null
+
+// TRANSITIONAL (deleted with the v1 bridge): the permission relay now opens
+// on the session request broker; mirror it onto the v1 wire so today's browser
+// contract keeps working until the v2 server lands. Request ids pass through,
+// so either side's answer resolves the other's pending entry, and a close
+// from any racer unsubscribes the v1 entry exactly like the pre-broker world.
+function bridgeSessionRequestsToV1(started: AttachHost): void {
+  const broker = currentSessionRequests()
+  const unsubscribers = new Map<string, () => void>()
+  broker.subscribe(event => {
+    if (event.type === 'opened') {
+      const request = event.request
+      if (request.kind !== 'permission') return
+      const unsubscribe = started.permissions.open(
+        {
+          requestId: request.requestId,
+          toolName: request.toolName,
+          toolUseId: request.toolUseId,
+          description: request.description,
+          input: request.input,
+          title: request.title,
+          blockedPath: request.blockedPath,
+          agentId: request.agentId,
+          openedAt: request.openedAt,
+        },
+        decision => {
+          broker.respondTo(request.requestId, { kind: 'permission', decision })
+        },
+      )
+      unsubscribers.set(request.requestId, unsubscribe)
+    } else {
+      unsubscribers.get(event.requestId)?.()
+      unsubscribers.delete(event.requestId)
+    }
+  })
+}
 
 /**
  * The process's attach host, or null when the WebUI is compiled out, the
@@ -74,6 +111,7 @@ export function startProcessAttachHost(options: {
   if (!host) return null
   const started = host
 
+  bridgeSessionRequestsToV1(started)
   if (pendingRuntime) started.registerRuntime(pendingRuntime)
 
   // /resume and /clear both change the session under a live process. The socket
