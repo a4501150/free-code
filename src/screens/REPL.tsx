@@ -73,7 +73,7 @@ import {
   ResumeSessionConflictDialog,
   type ResumeSessionConflictChoice,
 } from '../components/ResumeSessionConflictDialog.js'
-import { readAttachDescriptor } from '../webui/attach/attachDescriptor.js'
+import { readAttachDescriptor } from '../server/descriptor.js'
 import type { PromptRequest, PromptResponse } from '../types/hooks.js'
 import PromptInput from '../components/PromptInput/PromptInput.js'
 import { PromptInputQueuedCommands } from '../components/PromptInput/PromptInputQueuedCommands.js'
@@ -256,8 +256,12 @@ import {
 } from '../utils/sessionRestore.js'
 import { updateSessionName } from '../utils/concurrentSessions.js'
 import { useScheduledTasks } from '../hooks/useScheduledTasks.js'
-import * as webuiAttachModule from '../webui/attach/hostSingleton.js'
-import { useReplAttachBridge } from '../webui/attach/replBridge.js'
+import * as webuiAttachModule from '../server/hostSingleton.js'
+import { useReplAttachBridge } from '../server/replBridge.js'
+import {
+  EXTERNAL_PERMISSION_MODES,
+  type ExternalPermissionMode,
+} from '../types/permissions.js'
 const SUGGEST_BG_PR_NOOP = (_p: string, _n: string): boolean => false
 import { useTaskListWatcher } from '../hooks/useTaskListWatcher.js'
 
@@ -656,17 +660,6 @@ export function REPL({
   const commands = useMemo(
     () => (disableSlashCommands ? [] : mergedCommands),
     [disableSlashCommands, mergedCommands],
-  )
-
-  const commandNames = useMemo(
-    () => [
-      ...new Set(
-        commands
-          .filter(c => !c.isHidden)
-          .flatMap(c => [getCommandName(c), ...(c.aliases ?? [])]),
-      ),
-    ],
-    [commands],
   )
 
   useIdeLogging(mcp.clients)
@@ -1648,7 +1641,7 @@ export function REPL({
     insertTextRef,
   })
 
-  // Mirror this session onto its attach socket so a browser can watch and
+  // Mirror this session onto its wire surface so a browser can watch and
   // drive it.
   useReplAttachBridge({
     messagesRef,
@@ -1662,10 +1655,18 @@ export function REPL({
     getActivity: () => (isLoading ? streamMode : undefined),
     getIsCompacting: () => compactingStartTime !== null,
     getModel: () => mainLoopModel,
-    getPermissionMode: () => toolPermissionContext.mode,
+    // Internal-only modes are not part of the wire enum; a surface that
+    // cannot set them should not be told a name it cannot render.
+    getPermissionMode: () =>
+      (EXTERNAL_PERMISSION_MODES as readonly string[]).includes(
+        toolPermissionContext.mode,
+      )
+        ? (toolPermissionContext.mode as ExternalPermissionMode)
+        : undefined,
     getInProgressToolUseIds: () => inProgressToolUseIDs,
     todos: tasksV2,
-    commandNames,
+    commands,
+    tasks,
     onCancel,
     onSetPermissionMode: mode => {
       setAppState(prev => {

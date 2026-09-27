@@ -116,6 +116,7 @@ import type {
   ExternalPermissionMode as PermissionMode,
   PermissionMode as InternalPermissionMode,
 } from 'src/types/permissions.js'
+import { EXTERNAL_PERMISSION_MODES } from 'src/types/permissions.js'
 import { cwd } from 'process'
 import { getCwd } from 'src/utils/cwd.js'
 import omit from 'lodash-es/omit.js'
@@ -306,7 +307,11 @@ import {
   shouldAttachHeadless,
   startHeadlessAttach,
   wrapCanUseToolWithWebUI,
-} from '../webui/attach/headlessBridge.js'
+} from '../server/headlessBridge.js'
+import {
+  publishAttachMeta,
+  publishAttachPendingCommands,
+} from '../server/hostSingleton.js'
 import { createCronScheduler } from '../utils/cronScheduler.js'
 import { getCronJitterConfig } from '../utils/cronJitterConfig.js'
 import { isAssistantCronEnabled } from '../tools/ScheduleCronTool/prompt.js'
@@ -378,16 +383,6 @@ export function canBatchWith(
     next.workload === head.workload &&
     next.isMeta === head.isMeta
   )
-}
-
-function commandsToNames(cmds: Command[]): string[] {
-  return [
-    ...new Set(
-      cmds
-        .filter(c => !c.isHidden)
-        .flatMap(c => [getCommandName(c), ...(c.aliases ?? [])]),
-    ),
-  ]
 }
 
 export async function runHeadless(
@@ -1113,7 +1108,7 @@ function runHeadlessStreaming(
   // instant the socket exists, and reading that binding from above its
   // declaration throws a temporal-dead-zone error inside the socket handler,
   // which leaves the connection accepted but never answered.
-  let headlessCommandNames = commandsToNames(commands)
+  let headlessCommands: Command[] = commands
   if (shouldAttachHeadless()) {
     startHeadlessAttach({
       cwd: cwd(),
@@ -1135,12 +1130,25 @@ function runHeadlessStreaming(
           return undefined
         }
       },
-      getPermissionMode: () => getAppState().toolPermissionContext.mode,
-      getCommands: () => headlessCommandNames,
+      // Internal-only modes are not part of the wire enum.
+      getPermissionMode: () =>
+        (EXTERNAL_PERMISSION_MODES as readonly string[]).includes(
+          getAppState().toolPermissionContext.mode,
+        )
+          ? (getAppState().toolPermissionContext.mode as PermissionMode)
+          : undefined,
+      getCommands: () =>
+        uniqBy(
+          [...headlessCommands, ...getAppState().mcp.commands],
+          'name',
+        ),
+      getTasks: () => getAppState().tasks ?? {},
       interrupt: () => abortController?.abort('user-cancel'),
       // `run` is declared below, but only a browser command calls this.
       requestRun: () => void run(),
-      setModel: model => applyModelSwitch(model),
+      // null means the account/config default, which is what an unset
+      // --model resolves to.
+      setModel: model => applyModelSwitch(model ?? 'default'),
       setPermissionMode: mode => {
         setAppState(prev => {
           const context = prev.toolPermissionContext
@@ -1206,6 +1214,22 @@ function runHeadlessStreaming(
       output.enqueue(message)
     }
   })
+
+  // The wire projector: the engine mutates `mutableMessages` in place, so an
+  // attached browser learns about each message when the driver delivers it
+  // and about the turn's end when the core announces it. The 400 ms attach
+  // poll of the pre-core world is gone: every publish now rides an event.
+  if (shouldAttachHeadless()) {
+    sessionCore.subscribe(event => {
+      if (event.type === 'sdk_message' || event.type === 'turn_finished') {
+        publishHeadlessTranscript()
+      }
+      if (event.type === 'activity') {
+        publishAttachMeta()
+      }
+    })
+    subscribeToCommandQueue(() => publishAttachPendingCommands())
+  }
 
   // Cache SDK MCP clients to avoid reconnecting on each run
   let sdkClients: MCPServerConnection[] = []
@@ -1670,7 +1694,7 @@ function runHeadlessStreaming(
     // captured by the query loop (REPL uses AppState instead). getCommands is
     // fresh because refreshActivePlugins cleared its cache.
     currentCommands = await getCommands(cwd())
-    headlessCommandNames = commandsToNames(currentCommands)
+    headlessCommands = currentCommands
 
     // Preserve SDK-provided agents (--agents CLI flag or SDK initialize
     // control_request) — both inject via parseAgentsFromJson with
@@ -1728,7 +1752,7 @@ function runHeadlessStreaming(
     clearCommandsCache()
     void getCommands(cwd()).then(newCommands => {
       currentCommands = newCommands
-      headlessCommandNames = commandsToNames(currentCommands)
+      headlessCommands = currentCommands
     })
   })
 
@@ -2678,7 +2702,7 @@ function runHeadlessStreaming(
             ])
             if (cmdsR.status === 'fulfilled') {
               currentCommands = cmdsR.value
-              headlessCommandNames = commandsToNames(currentCommands)
+              headlessCommands = currentCommands
             } else {
               logError(cmdsR.reason)
             }

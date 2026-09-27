@@ -49,7 +49,7 @@ import * as loadAgentsDirNs from '../tools/AgentTool/loadAgentsDir.js'
 import type { ThinkingConfig } from '../utils/thinking.js'
 import type { ContentReplacementRecord } from '../utils/toolResultStorage.js'
 import { REPL } from './REPL.js'
-import { readAttachDescriptor } from '../webui/attach/attachDescriptor.js'
+import { readAttachDescriptor } from '../server/descriptor.js'
 import { AttachedSession } from './AttachedSession.js'
 
 function parsePrIdentifier(value: string): number | null {
