@@ -1,6 +1,6 @@
 import type { DomainUserContentBlock } from '../types/domain.js'
 import type { Permutations } from 'src/types/utils.js'
-import { getSessionId } from '../bootstrap/state.js'
+import { getSessionId, scopedStore } from '../bootstrap/state.js'
 import type { AppState } from '../state/AppStateStore.js'
 import type {
   QueueOperation,
@@ -37,26 +37,41 @@ function logOperation(operation: QueueOperation, content?: string): void {
 }
 
 // ============================================================================
-// Unified command queue (module-level, independent of React state)
+// Unified command queue (session-scoped, independent of React state)
 //
 // All commands — user input, task notifications, orphaned permissions — go
-// through this single queue. React components subscribe via
+// through this queue. React components subscribe via
 // useSyncExternalStore (subscribeToCommandQueue / getCommandQueueSnapshot).
-// Non-React code (print.ts streaming loop) reads directly via
+// Non-React code (the session core's drain loop) reads directly via
 // getCommandQueue() / getCommandQueueLength().
+//
+// The queue lives in session scope (`scopedStore`): an unscoped process —
+// every process today — shares the root instance; a session core running
+// inside `runInSessionScope` gets its own. Subscribers must resolve the
+// signal from the same scope as their reads (in multi-session mode the UI
+// consumes queue state over the wire, not this module).
 //
 // Priority determines dequeue order: 'now' > 'next' > 'later'.
 // Within the same priority, commands are processed FIFO.
 // ============================================================================
 
-const commandQueue: QueuedCommand[] = []
-/** Frozen snapshot — recreated on every mutation for useSyncExternalStore. */
-let snapshot: readonly QueuedCommand[] = Object.freeze([])
-const queueChanged = createSignal()
+type CommandQueueStore = {
+  commands: QueuedCommand[]
+  /** Frozen snapshot — recreated on every mutation for useSyncExternalStore. */
+  snapshot: readonly QueuedCommand[]
+  changed: ReturnType<typeof createSignal>
+}
+
+const store = scopedStore<CommandQueueStore>(() => ({
+  commands: [],
+  snapshot: Object.freeze([]),
+  changed: createSignal(),
+}))
 
 function notifySubscribers(): void {
-  snapshot = Object.freeze([...commandQueue])
-  queueChanged.emit()
+  const st = store()
+  st.snapshot = Object.freeze([...st.commands])
+  st.changed.emit()
 }
 
 // ============================================================================
@@ -67,7 +82,8 @@ function notifySubscribers(): void {
  * Subscribe to command queue changes.
  * Compatible with React's useSyncExternalStore.
  */
-export const subscribeToCommandQueue = queueChanged.subscribe
+export const subscribeToCommandQueue: (cb: () => void) => () => void = cb =>
+  store().changed.subscribe(cb)
 
 /**
  * Get current snapshot of the command queue.
@@ -75,7 +91,7 @@ export const subscribeToCommandQueue = queueChanged.subscribe
  * Returns a frozen array that only changes reference on mutation.
  */
 export function getCommandQueueSnapshot(): readonly QueuedCommand[] {
-  return snapshot
+  return store().snapshot
 }
 
 // ============================================================================
@@ -87,21 +103,21 @@ export function getCommandQueueSnapshot(): readonly QueuedCommand[] {
  * Use for one-off reads where you need the actual commands.
  */
 export function getCommandQueue(): QueuedCommand[] {
-  return [...commandQueue]
+  return [...store().commands]
 }
 
 /**
  * Get the current queue length without copying.
  */
 export function getCommandQueueLength(): number {
-  return commandQueue.length
+  return store().commands.length
 }
 
 /**
  * Check if there are commands in the queue.
  */
 export function hasCommandsInQueue(): boolean {
-  return commandQueue.length > 0
+  return store().commands.length > 0
 }
 
 // ============================================================================
@@ -114,7 +130,7 @@ export function hasCommandsInQueue(): boolean {
  * Defaults priority to 'next' (processed before task notifications).
  */
 export function enqueue(command: QueuedCommand): void {
-  commandQueue.push({ ...command, priority: command.priority ?? 'next' })
+  store().commands.push({ ...command, priority: command.priority ?? 'next' })
   notifySubscribers()
   logOperation(
     'enqueue',
@@ -128,7 +144,7 @@ export function enqueue(command: QueuedCommand): void {
  * is never starved by system messages.
  */
 export function enqueuePendingNotification(command: QueuedCommand): void {
-  commandQueue.push({ ...command, priority: command.priority ?? 'later' })
+  store().commands.push({ ...command, priority: command.priority ?? 'later' })
   notifySubscribers()
   logOperation(
     'enqueue',
@@ -155,15 +171,15 @@ const PRIORITY_ORDER: Record<QueuePriority, number> = {
 export function dequeue(
   filter?: (cmd: QueuedCommand) => boolean,
 ): QueuedCommand | undefined {
-  if (commandQueue.length === 0) {
+  if (store().commands.length === 0) {
     return undefined
   }
 
   // Find the first command with the highest priority (respecting filter)
   let bestIdx = -1
   let bestPriority = Infinity
-  for (let i = 0; i < commandQueue.length; i++) {
-    const cmd = commandQueue[i]!
+  for (let i = 0; i < store().commands.length; i++) {
+    const cmd = store().commands[i]!
     if (filter && !filter(cmd)) continue
     const priority = PRIORITY_ORDER[cmd.priority ?? 'next']
     if (priority < bestPriority) {
@@ -174,7 +190,7 @@ export function dequeue(
 
   if (bestIdx === -1) return undefined
 
-  const [dequeued] = commandQueue.splice(bestIdx, 1)
+  const [dequeued] = store().commands.splice(bestIdx, 1)
   notifySubscribers()
   logOperation('dequeue')
   return dequeued
@@ -187,13 +203,13 @@ export function dequeue(
 export function peek(
   filter?: (cmd: QueuedCommand) => boolean,
 ): QueuedCommand | undefined {
-  if (commandQueue.length === 0) {
+  if (store().commands.length === 0) {
     return undefined
   }
   let bestIdx = -1
   let bestPriority = Infinity
-  for (let i = 0; i < commandQueue.length; i++) {
-    const cmd = commandQueue[i]!
+  for (let i = 0; i < store().commands.length; i++) {
+    const cmd = store().commands[i]!
     if (filter && !filter(cmd)) continue
     const priority = PRIORITY_ORDER[cmd.priority ?? 'next']
     if (priority < bestPriority) {
@@ -202,7 +218,7 @@ export function peek(
     }
   }
   if (bestIdx === -1) return undefined
-  return commandQueue[bestIdx]
+  return store().commands[bestIdx]
 }
 
 /**
@@ -214,7 +230,7 @@ export function dequeueAllMatching(
 ): QueuedCommand[] {
   const matched: QueuedCommand[] = []
   const remaining: QueuedCommand[] = []
-  for (const cmd of commandQueue) {
+  for (const cmd of store().commands) {
     if (predicate(cmd)) {
       matched.push(cmd)
     } else {
@@ -224,8 +240,8 @@ export function dequeueAllMatching(
   if (matched.length === 0) {
     return []
   }
-  commandQueue.length = 0
-  commandQueue.push(...remaining)
+  store().commands.length = 0
+  store().commands.push(...remaining)
   notifySubscribers()
   for (const _cmd of matched) {
     logOperation('dequeue')
@@ -243,14 +259,14 @@ export function remove(commandsToRemove: QueuedCommand[]): void {
     return
   }
 
-  const before = commandQueue.length
-  for (let i = commandQueue.length - 1; i >= 0; i--) {
-    if (commandsToRemove.includes(commandQueue[i]!)) {
-      commandQueue.splice(i, 1)
+  const before = store().commands.length
+  for (let i = store().commands.length - 1; i >= 0; i--) {
+    if (commandsToRemove.includes(store().commands[i]!)) {
+      store().commands.splice(i, 1)
     }
   }
 
-  if (commandQueue.length !== before) {
+  if (store().commands.length !== before) {
     notifySubscribers()
   }
 
@@ -267,9 +283,9 @@ export function removeByFilter(
   predicate: (cmd: QueuedCommand) => boolean,
 ): QueuedCommand[] {
   const removed: QueuedCommand[] = []
-  for (let i = commandQueue.length - 1; i >= 0; i--) {
-    if (predicate(commandQueue[i]!)) {
-      removed.unshift(commandQueue.splice(i, 1)[0]!)
+  for (let i = store().commands.length - 1; i >= 0; i--) {
+    if (predicate(store().commands[i]!)) {
+      removed.unshift(store().commands.splice(i, 1)[0]!)
     }
   }
 
@@ -288,10 +304,10 @@ export function removeByFilter(
  * Used by ESC cancellation to discard queued notifications.
  */
 export function clearCommandQueue(): void {
-  if (commandQueue.length === 0) {
+  if (store().commands.length === 0) {
     return
   }
-  commandQueue.length = 0
+  store().commands.length = 0
   notifySubscribers()
 }
 
@@ -390,12 +406,12 @@ export function popAllEditable(
   currentInput: string,
   currentCursorOffset: number,
 ): PopAllEditableResult | undefined {
-  if (commandQueue.length === 0) {
+  if (store().commands.length === 0) {
     return undefined
   }
 
   const { editable = [], nonEditable = [] } = objectGroupBy(
-    [...commandQueue],
+    [...store().commands],
     cmd => (isQueuedCommandEditable(cmd) ? 'editable' : 'nonEditable'),
   )
 
@@ -437,8 +453,8 @@ export function popAllEditable(
   }
 
   // Replace queue contents with only the non-editable commands
-  commandQueue.length = 0
-  commandQueue.push(...nonEditable)
+  store().commands.length = 0
+  store().commands.push(...nonEditable)
   notifySubscribers()
 
   return { text: newInput, cursorOffset, images }
@@ -455,7 +471,7 @@ export function getCommandsByMaxPriority(
   maxPriority: QueuePriority,
 ): QueuedCommand[] {
   const threshold = PRIORITY_ORDER[maxPriority]
-  return commandQueue.filter(
+  return store().commands.filter(
     cmd => PRIORITY_ORDER[cmd.priority ?? 'next'] <= threshold,
   )
 }

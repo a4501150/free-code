@@ -352,33 +352,106 @@ function getInitialState(): State {
 // AND ESPECIALLY HERE
 const STATE: State = getInitialState()
 
+// ---------------------------------------------------------------------------
+// Session scope (one-process-many-sessions support)
+//
+// `STATE` is the ROOT scope: what every accessor resolves to today, because
+// nothing runs inside a scope. A session core that wants its own view of the
+// per-session fields (identity, cwd, costs, caches, latches) creates one via
+// `newSessionState()` and runs its loop inside `runInSessionScope()`; every
+// accessor below — all ~150 `getSessionId()`-style call sites unchanged —
+// then resolves to that scope, including across `await` boundaries and timers
+// created within it. Process-owned fields (telemetry providers/counters,
+// client type, setting sources, flag settings, fd-injected credentials,
+// interactive flag) are deliberately NOT scoped: they are set once at startup
+// and shared by every session in the process.
+//
+// AsyncLocalStorage propagates through async/await, intervals and immediate
+// callbacks, which is exactly the propagation the query loop needs. It does
+// NOT propagate through a bare EventEmitter listener or a Promise created
+// elsewhere and awaited here — a scope-bound callback must be invoked from
+// inside the scope, and long-lived cross-session singletons (the command
+// queue, session storage) resolve their scope at the call site, not at
+// construction.
+
+import { AsyncLocalStorage } from 'node:async_hooks'
+
+const sessionScope = new AsyncLocalStorage<State>()
+
+/** The per-session state object a `SessionCore` owns. See the scope note above. */
+export type SessionState = State
+
+export function newSessionState(overrides?: Partial<State>): SessionState {
+  return { ...getInitialState(), ...overrides }
+}
+
+/**
+ * Run `fn` (and everything it awaits, schedules or calls) against `state`
+ * instead of the root scope. Nesting a session inside another session's
+ * async chain is legal: the inner scope wins while it runs.
+ */
+export function runInSessionScope<T>(state: SessionState, fn: () => T): T {
+  return sessionScope.run(state, fn)
+}
+
+/** The state the current call resolves against (root when unscoped). */
+export function currentSessionState(): SessionState {
+  return sessionScope.getStore() ?? STATE
+}
+
+function S(): State {
+  return sessionScope.getStore() ?? STATE
+}
+
+/**
+ * Back a module-level singleton with per-session storage. Calling the
+ * returned function resolves (creating on first use) an instance against the
+ * ACTIVE session state; unscoped code shares the root instance, which is what
+ * single-session processes always see. Modules like the command queue and
+ * stream activity keep their exported API and gain session isolation for
+ * free — their subscribers must likewise resolve from inside the scope (or
+ * go through the wire, which is the multi-session path).
+ */
+export function scopedStore<T>(create: () => T): () => T {
+  const instances = new WeakMap<State, T>()
+  return () => {
+    const state = S()
+    let instance = instances.get(state)
+    if (instance === undefined) {
+      instance = create()
+      instances.set(state, instance)
+    }
+    return instance
+  }
+}
+
 export function getSessionId(): SessionId {
-  return STATE.sessionId
+  return S().sessionId
 }
 
 export function regenerateSessionId(
   options: { setCurrentAsParent?: boolean } = {},
 ): SessionId {
   if (options.setCurrentAsParent) {
-    STATE.parentSessionId = STATE.sessionId
+    S().parentSessionId = S().sessionId
   }
   // Drop the outgoing session's plan-slug entry so the Map doesn't
   // accumulate stale keys. Callers that need to carry the slug across
   // (REPL.tsx clearContext) read it before calling clearConversation.
-  STATE.planSlugCache.delete(STATE.sessionId)
+  S().planSlugCache.delete(S().sessionId)
   // Regenerated sessions live in the current project: reset projectDir to
   // null so getTranscriptPath() derives from originalCwd.
-  STATE.sessionId = randomUUID() as SessionId
-  STATE.sessionProjectDir = null
+  S().sessionId = randomUUID() as SessionId
+  S().sessionProjectDir = null
   // Emit like switchSession does. /clear changes the active session as surely
   // as /resume, and subscribers that index by session ID (the PID registry, the
   // WebUI attach descriptor) go stale without this.
-  sessionSwitched.emit(STATE.sessionId)
-  return STATE.sessionId
+  sessionSwitched.emit(S().sessionId)
+  return S().sessionId
 }
 
 export function getParentSessionId(): SessionId | undefined {
-  return STATE.parentSessionId
+  return S().parentSessionId
 }
 
 /**
@@ -400,9 +473,9 @@ export function switchSession(
   // Drop the outgoing session's plan-slug entry so the Map stays bounded
   // across repeated /resume. Only the current session's slug is ever read
   // (plans.ts getPlanSlug defaults to getSessionId()).
-  STATE.planSlugCache.delete(STATE.sessionId)
-  STATE.sessionId = sessionId
-  STATE.sessionProjectDir = projectDir
+  S().planSlugCache.delete(S().sessionId)
+  S().sessionId = sessionId
+  S().sessionProjectDir = projectDir
   sessionSwitched.emit(sessionId)
 }
 
@@ -422,11 +495,11 @@ export const onSessionSwitch = sessionSwitched.subscribe
  * originalCwd). See `switchSession()`.
  */
 export function getSessionProjectDir(): string | null {
-  return STATE.sessionProjectDir
+  return S().sessionProjectDir
 }
 
 export function getOriginalCwd(): string {
-  return STATE.originalCwd
+  return S().originalCwd
 }
 
 /**
@@ -437,11 +510,11 @@ export function getOriginalCwd(): string {
  * Use for project identity (history, skills, sessions) not file operations.
  */
 export function getProjectRoot(): string {
-  return STATE.projectRoot
+  return S().projectRoot
 }
 
 export function setOriginalCwd(cwd: string): void {
-  STATE.originalCwd = cwd.normalize('NFC')
+  S().originalCwd = cwd.normalize('NFC')
 }
 
 /**
@@ -449,23 +522,23 @@ export function setOriginalCwd(cwd: string): void {
  * call this — skills/history should stay anchored to where the session started.
  */
 export function setProjectRoot(cwd: string): void {
-  STATE.projectRoot = cwd.normalize('NFC')
+  S().projectRoot = cwd.normalize('NFC')
 }
 
 export function getCwdState(): string {
-  return STATE.cwd
+  return S().cwd
 }
 
 export function setCwdState(cwd: string): void {
-  STATE.cwd = cwd.normalize('NFC')
+  S().cwd = cwd.normalize('NFC')
 }
 
 export function addToTotalDurationState(
   duration: number,
   durationWithoutRetries: number,
 ): void {
-  STATE.totalAPIDuration += duration
-  STATE.totalAPIDurationWithoutRetries += durationWithoutRetries
+  S().totalAPIDuration += duration
+  S().totalAPIDurationWithoutRetries += durationWithoutRetries
 }
 
 /**
@@ -477,26 +550,28 @@ export function addToModelAPIDurationState(
   model: string,
   durationMs: number,
 ): void {
-  STATE.modelAPIDurationMs[model] =
-    (STATE.modelAPIDurationMs[model] ?? 0) + durationMs
+  S().modelAPIDurationMs[model] =
+    (S().modelAPIDurationMs[model] ?? 0) + durationMs
 }
 
 export function getModelAPIDurationMs(): { [modelName: string]: number } {
-  return STATE.modelAPIDurationMs
+  return S().modelAPIDurationMs
 }
 
 export function resetTotalDurationStateAndCost_FOR_TESTS_ONLY(): void {
-  STATE.totalAPIDuration = 0
-  STATE.totalAPIDurationWithoutRetries = 0
-  STATE.totalCostUSD = 0
+  S().totalAPIDuration = 0
+  S().totalAPIDurationWithoutRetries = 0
+  S().totalCostUSD = 0
 }
 
-const costUpdated = createSignal()
+const costUpdated = createSignal<[sessionId: SessionId]>()
 
 /**
  * Register a callback that fires after addToTotalCostState updates token/cost
  * counters. The StatusLine component uses this to refresh immediately when
  * output tokens change, instead of waiting for the next message-based trigger.
+ * The payload is the session whose counters changed: with one process holding
+ * several sessions, consumers filter on their own session id.
  */
 export const onCostUpdate = costUpdated.subscribe
 
@@ -505,84 +580,84 @@ export function addToTotalCostState(
   modelUsage: ModelUsage,
   model: string,
 ): void {
-  STATE.modelUsage[model] = modelUsage
-  STATE.totalCostUSD += cost
-  costUpdated.emit()
+  S().modelUsage[model] = modelUsage
+  S().totalCostUSD += cost
+  costUpdated.emit(S().sessionId)
 }
 
 export function getTotalCostUSD(): number {
-  return STATE.totalCostUSD
+  return S().totalCostUSD
 }
 
 export function getTotalAPIDuration(): number {
-  return STATE.totalAPIDuration
+  return S().totalAPIDuration
 }
 
 export function getTotalDuration(): number {
-  return Date.now() - STATE.startTime
+  return Date.now() - S().startTime
 }
 
 export function getTotalAPIDurationWithoutRetries(): number {
-  return STATE.totalAPIDurationWithoutRetries
+  return S().totalAPIDurationWithoutRetries
 }
 
 export function getTotalToolDuration(): number {
-  return STATE.totalToolDuration
+  return S().totalToolDuration
 }
 
 export function addToToolDuration(duration: number): void {
-  STATE.totalToolDuration += duration
-  STATE.turnToolDurationMs += duration
-  STATE.turnToolCount++
+  S().totalToolDuration += duration
+  S().turnToolDurationMs += duration
+  S().turnToolCount++
 }
 
 export function getTurnHookDurationMs(): number {
-  return STATE.turnHookDurationMs
+  return S().turnHookDurationMs
 }
 
 export function addToTurnHookDuration(duration: number): void {
-  STATE.turnHookDurationMs += duration
-  STATE.turnHookCount++
+  S().turnHookDurationMs += duration
+  S().turnHookCount++
 }
 
 export function resetTurnHookDuration(): void {
-  STATE.turnHookDurationMs = 0
-  STATE.turnHookCount = 0
+  S().turnHookDurationMs = 0
+  S().turnHookCount = 0
 }
 
 export function getTurnHookCount(): number {
-  return STATE.turnHookCount
+  return S().turnHookCount
 }
 
 export function getTurnToolDurationMs(): number {
-  return STATE.turnToolDurationMs
+  return S().turnToolDurationMs
 }
 
 export function resetTurnToolDuration(): void {
-  STATE.turnToolDurationMs = 0
-  STATE.turnToolCount = 0
+  S().turnToolDurationMs = 0
+  S().turnToolCount = 0
 }
 
 export function getTurnToolCount(): number {
-  return STATE.turnToolCount
+  return S().turnToolCount
 }
 
 export function getTurnClassifierDurationMs(): number {
-  return STATE.turnClassifierDurationMs
+  return S().turnClassifierDurationMs
 }
 
 export function addToTurnClassifierDuration(duration: number): void {
-  STATE.turnClassifierDurationMs += duration
-  STATE.turnClassifierCount++
+  S().turnClassifierDurationMs += duration
+  S().turnClassifierCount++
 }
 
 export function resetTurnClassifierDuration(): void {
-  STATE.turnClassifierDurationMs = 0
-  STATE.turnClassifierCount = 0
+  S().turnClassifierDurationMs = 0
+  S().turnClassifierCount = 0
 }
 
 export function getTurnClassifierCount(): number {
-  return STATE.turnClassifierCount
+  return S().turnClassifierCount
 }
 
 export function getStatsStore(): {
@@ -631,83 +706,83 @@ export function flushInteractionTime(): void {
 }
 
 function flushInteractionTime_inner(): void {
-  STATE.lastInteractionTime = Date.now()
+  S().lastInteractionTime = Date.now()
   interactionTimeDirty = false
 }
 
 export function addToTotalLinesChanged(added: number, removed: number): void {
-  STATE.totalLinesAdded += added
-  STATE.totalLinesRemoved += removed
+  S().totalLinesAdded += added
+  S().totalLinesRemoved += removed
 }
 
 export function getTotalLinesAdded(): number {
-  return STATE.totalLinesAdded
+  return S().totalLinesAdded
 }
 
 export function getTotalLinesRemoved(): number {
-  return STATE.totalLinesRemoved
+  return S().totalLinesRemoved
 }
 
 export function getTotalInputTokens(): number {
-  return sumBy(Object.values(STATE.modelUsage), 'inputTokens')
+  return sumBy(Object.values(S().modelUsage), 'inputTokens')
 }
 
 export function getTotalOutputTokens(): number {
-  return sumBy(Object.values(STATE.modelUsage), 'outputTokens')
+  return sumBy(Object.values(S().modelUsage), 'outputTokens')
 }
 
 export function getTotalCacheReadInputTokens(): number {
-  return sumBy(Object.values(STATE.modelUsage), 'cacheReadInputTokens')
+  return sumBy(Object.values(S().modelUsage), 'cacheReadInputTokens')
 }
 
 export function getTotalCacheCreationInputTokens(): number {
-  return sumBy(Object.values(STATE.modelUsage), 'cacheCreationInputTokens')
+  return sumBy(Object.values(S().modelUsage), 'cacheCreationInputTokens')
 }
 
 export function getTotalWebSearchRequests(): number {
-  return sumBy(Object.values(STATE.modelUsage), 'webSearchRequests')
+  return sumBy(Object.values(S().modelUsage), 'webSearchRequests')
 }
 
 export function setHasUnknownModelCost(): void {
-  STATE.hasUnknownModelCost = true
+  S().hasUnknownModelCost = true
 }
 
 export function hasUnknownModelCost(): boolean {
-  return STATE.hasUnknownModelCost
+  return S().hasUnknownModelCost
 }
 
 export function getLastMainRequestId(): string | undefined {
-  return STATE.lastMainRequestId
+  return S().lastMainRequestId
 }
 
 export function setLastMainRequestId(requestId: string): void {
-  STATE.lastMainRequestId = requestId
+  S().lastMainRequestId = requestId
 }
 
 export function getLastApiCompletionTimestamp(): number | null {
-  return STATE.lastApiCompletionTimestamp
+  return S().lastApiCompletionTimestamp
 }
 
 export function setLastApiCompletionTimestamp(timestamp: number): void {
-  STATE.lastApiCompletionTimestamp = timestamp
+  S().lastApiCompletionTimestamp = timestamp
 }
 
 /** Mark that a compaction just occurred. The next API success event will
  *  include isPostCompaction=true, then the flag auto-resets. */
 export function markPostCompaction(): void {
-  STATE.pendingPostCompaction = true
+  S().pendingPostCompaction = true
 }
 
 /** Consume the post-compaction flag. Returns true once after compaction,
  *  then returns false until the next compaction. */
 export function consumePostCompaction(): boolean {
-  const was = STATE.pendingPostCompaction
-  STATE.pendingPostCompaction = false
+  const was = S().pendingPostCompaction
+  S().pendingPostCompaction = false
   return was
 }
 
 export function getLastInteractionTime(): number {
-  return STATE.lastInteractionTime
+  return S().lastInteractionTime
 }
 
 // Scroll drain suspension — background intervals check this before doing work
@@ -750,11 +825,11 @@ export async function waitForScrollIdle(): Promise<void> {
 }
 
 export function getModelUsage(): { [modelName: string]: ModelUsage } {
-  return STATE.modelUsage
+  return S().modelUsage
 }
 
 export function getUsageForModel(model: string): ModelUsage | undefined {
-  return STATE.modelUsage[model]
+  return S().modelUsage[model]
 }
 
 /**
@@ -762,43 +837,43 @@ export function getUsageForModel(model: string): ModelUsage | undefined {
  * updates their configured model.
  */
 export function getMainLoopModelOverride(): ModelSetting | undefined {
-  return STATE.mainLoopModelOverride
+  return S().mainLoopModelOverride
 }
 
 export function getInitialMainLoopModel(): ModelSetting {
-  return STATE.initialMainLoopModel
+  return S().initialMainLoopModel
 }
 
 export function setMainLoopModelOverride(
   model: ModelSetting | undefined,
 ): void {
-  STATE.mainLoopModelOverride = model
+  S().mainLoopModelOverride = model
 }
 
 export function setInitialMainLoopModel(model: ModelSetting): void {
-  STATE.initialMainLoopModel = model
+  S().initialMainLoopModel = model
 }
 
 export function getSdkBetas(): string[] | undefined {
-  return STATE.sdkBetas
+  return S().sdkBetas
 }
 
 export function setSdkBetas(betas: string[] | undefined): void {
-  STATE.sdkBetas = betas
+  S().sdkBetas = betas
 }
 
 export function resetCostState(): void {
-  STATE.totalCostUSD = 0
-  STATE.totalAPIDuration = 0
-  STATE.totalAPIDurationWithoutRetries = 0
-  STATE.totalToolDuration = 0
-  STATE.startTime = Date.now()
-  STATE.totalLinesAdded = 0
-  STATE.totalLinesRemoved = 0
-  STATE.hasUnknownModelCost = false
-  STATE.modelUsage = {}
-  STATE.modelAPIDurationMs = {}
-  STATE.promptId = null
+  S().totalCostUSD = 0
+  S().totalAPIDuration = 0
+  S().totalAPIDurationWithoutRetries = 0
+  S().totalToolDuration = 0
+  S().startTime = Date.now()
+  S().totalLinesAdded = 0
+  S().totalLinesRemoved = 0
+  S().hasUnknownModelCost = false
+  S().modelUsage = {}
+  S().modelAPIDurationMs = {}
+  S().promptId = null
 }
 
 /**
@@ -826,24 +901,24 @@ export function setCostStateForRestore({
   modelUsage: { [modelName: string]: ModelUsage } | undefined
   modelAPIDurationMs?: { [modelName: string]: number }
 }): void {
-  STATE.totalCostUSD = totalCostUSD
-  STATE.totalAPIDuration = totalAPIDuration
-  STATE.totalAPIDurationWithoutRetries = totalAPIDurationWithoutRetries
-  STATE.totalToolDuration = totalToolDuration
-  STATE.totalLinesAdded = totalLinesAdded
-  STATE.totalLinesRemoved = totalLinesRemoved
+  S().totalCostUSD = totalCostUSD
+  S().totalAPIDuration = totalAPIDuration
+  S().totalAPIDurationWithoutRetries = totalAPIDurationWithoutRetries
+  S().totalToolDuration = totalToolDuration
+  S().totalLinesAdded = totalLinesAdded
+  S().totalLinesRemoved = totalLinesRemoved
 
   // Restore per-model usage breakdown
   if (modelUsage) {
-    STATE.modelUsage = modelUsage
+    S().modelUsage = modelUsage
   }
   if (modelAPIDurationMs) {
-    STATE.modelAPIDurationMs = modelAPIDurationMs
+    S().modelAPIDurationMs = modelAPIDurationMs
   }
 
   // Adjust startTime to make wall duration accumulate
   if (lastDuration) {
-    STATE.startTime = Date.now() - lastDuration
+    S().startTime = Date.now() - lastDuration
   }
 }
 
@@ -989,19 +1064,19 @@ export function setClientType(type: string): void {
 }
 
 export function getSdkAgentProgressSummariesEnabled(): boolean {
-  return STATE.sdkAgentProgressSummariesEnabled
+  return S().sdkAgentProgressSummariesEnabled
 }
 
 export function setSdkAgentProgressSummariesEnabled(value: boolean): void {
-  STATE.sdkAgentProgressSummariesEnabled = value
+  S().sdkAgentProgressSummariesEnabled = value
 }
 
 export function getAssistantActive(): boolean {
-  return STATE.assistantActive
+  return S().assistantActive
 }
 
 export function setAssistantActive(value: boolean): void {
-  STATE.assistantActive = value
+  S().assistantActive = value
 }
 
 export function getStrictToolResultPairing(): boolean {
@@ -1016,31 +1091,31 @@ export function setStrictToolResultPairing(value: boolean): void {
 // 'SendUserMessage' — case-insensitive). All callers are inside feature()
 // guards so these accessors don't need their own (matches getAssistantActive).
 export function getUserMsgOptIn(): boolean {
-  return STATE.userMsgOptIn
+  return S().userMsgOptIn
 }
 
 export function setUserMsgOptIn(value: boolean): void {
-  STATE.userMsgOptIn = value
+  S().userMsgOptIn = value
 }
 
 export function getSessionSource(): string | undefined {
-  return STATE.sessionSource
+  return S().sessionSource
 }
 
 export function setSessionSource(source: string): void {
-  STATE.sessionSource = source
+  S().sessionSource = source
 }
 
 export function getQuestionPreviewFormat(): 'markdown' | 'html' | undefined {
-  return STATE.questionPreviewFormat
+  return S().questionPreviewFormat
 }
 
 export function setQuestionPreviewFormat(format: 'markdown' | 'html'): void {
-  STATE.questionPreviewFormat = format
+  S().questionPreviewFormat = format
 }
 
 export function getAgentColorMap(): Map<string, AgentColorName> {
-  return STATE.agentColorMap
+  return S().agentColorMap
 }
 
 export function getFlagSettingsPath(): string | undefined {
@@ -1080,19 +1155,19 @@ export function setApiKeyFromFd(key: string | null): void {
 export function setLastAPIRequest(
   params: CapturedAPIRequestParams | null,
 ): void {
-  STATE.lastAPIRequest = params
+  S().lastAPIRequest = params
 }
 
 export function getLastAPIRequest(): CapturedAPIRequestParams | null {
-  return STATE.lastAPIRequest
+  return S().lastAPIRequest
 }
 
 export function setCachedClaudeMdContent(content: string | null): void {
-  STATE.cachedClaudeMdContent = content
+  S().cachedClaudeMdContent = content
 }
 
 export function getCachedClaudeMdContent(): string | null {
-  return STATE.cachedClaudeMdContent
+  return S().cachedClaudeMdContent
 }
 
 export function addToInMemoryErrorLog(errorInfo: {
@@ -1100,10 +1175,10 @@ export function addToInMemoryErrorLog(errorInfo: {
   timestamp: string
 }): void {
   const MAX_IN_MEMORY_ERRORS = 100
-  if (STATE.inMemoryErrorLog.length >= MAX_IN_MEMORY_ERRORS) {
-    STATE.inMemoryErrorLog.shift() // Remove oldest error
+  if (S().inMemoryErrorLog.length >= MAX_IN_MEMORY_ERRORS) {
+    S().inMemoryErrorLog.shift() // Remove oldest error
   }
-  STATE.inMemoryErrorLog.push(errorInfo)
+  S().inMemoryErrorLog.push(errorInfo)
 }
 
 export function getAllowedSettingSources(): SettingSource[] {
@@ -1120,36 +1195,36 @@ export function preferThirdPartyAuthentication(): boolean {
 }
 
 export function setInlinePlugins(plugins: Array<string>): void {
-  STATE.inlinePlugins = plugins
+  S().inlinePlugins = plugins
 }
 
 export function getInlinePlugins(): Array<string> {
-  return STATE.inlinePlugins
+  return S().inlinePlugins
 }
 
 export function setUseCoworkPlugins(value: boolean): void {
-  STATE.useCoworkPlugins = value
+  S().useCoworkPlugins = value
   resetSettingsCache()
 }
 
 export function getUseCoworkPlugins(): boolean {
-  return STATE.useCoworkPlugins
+  return S().useCoworkPlugins
 }
 
 export function setSessionBypassPermissionsMode(enabled: boolean): void {
-  STATE.sessionBypassPermissionsMode = enabled
+  S().sessionBypassPermissionsMode = enabled
 }
 
 export function getSessionBypassPermissionsMode(): boolean {
-  return STATE.sessionBypassPermissionsMode
+  return S().sessionBypassPermissionsMode
 }
 
 export function setScheduledTasksEnabled(enabled: boolean): void {
-  STATE.scheduledTasksEnabled = enabled
+  S().scheduledTasksEnabled = enabled
 }
 
 export function getScheduledTasksEnabled(): boolean {
-  return STATE.scheduledTasksEnabled
+  return S().scheduledTasksEnabled
 }
 
 export type SessionCronTask = {
@@ -1161,11 +1236,11 @@ export type SessionCronTask = {
 }
 
 export function getSessionCronTasks(): SessionCronTask[] {
-  return STATE.sessionCronTasks
+  return S().sessionCronTasks
 }
 
 export function addSessionCronTask(task: SessionCronTask): void {
-  STATE.sessionCronTasks.push(task)
+  S().sessionCronTasks.push(task)
 }
 
 /**
@@ -1176,43 +1251,43 @@ export function addSessionCronTask(task: SessionCronTask): void {
 export function removeSessionCronTasks(ids: readonly string[]): number {
   if (ids.length === 0) return 0
   const idSet = new Set(ids)
-  const remaining = STATE.sessionCronTasks.filter(t => !idSet.has(t.id))
-  const removed = STATE.sessionCronTasks.length - remaining.length
+  const remaining = S().sessionCronTasks.filter(t => !idSet.has(t.id))
+  const removed = S().sessionCronTasks.length - remaining.length
   if (removed === 0) return 0
-  STATE.sessionCronTasks = remaining
+  S().sessionCronTasks = remaining
   return removed
 }
 
 export function setSessionTrustAccepted(accepted: boolean): void {
-  STATE.sessionTrustAccepted = accepted
+  S().sessionTrustAccepted = accepted
 }
 
 export function getSessionTrustAccepted(): boolean {
-  return STATE.sessionTrustAccepted
+  return S().sessionTrustAccepted
 }
 
 export function setSessionPersistenceDisabled(disabled: boolean): void {
-  STATE.sessionPersistenceDisabled = disabled
+  S().sessionPersistenceDisabled = disabled
 }
 
 export function isSessionPersistenceDisabled(): boolean {
-  return STATE.sessionPersistenceDisabled
+  return S().sessionPersistenceDisabled
 }
 
 export function hasExitedPlanModeInSession(): boolean {
-  return STATE.hasExitedPlanMode
+  return S().hasExitedPlanMode
 }
 
 export function setHasExitedPlanMode(value: boolean): void {
-  STATE.hasExitedPlanMode = value
+  S().hasExitedPlanMode = value
 }
 
 export function needsPlanModeExitAttachment(): boolean {
-  return STATE.needsPlanModeExitAttachment
+  return S().needsPlanModeExitAttachment
 }
 
 export function setNeedsPlanModeExitAttachment(value: boolean): void {
-  STATE.needsPlanModeExitAttachment = value
+  S().needsPlanModeExitAttachment = value
 }
 
 export function handlePlanModeTransition(
@@ -1222,21 +1297,21 @@ export function handlePlanModeTransition(
   // If switching TO plan mode, clear any pending exit attachment
   // This prevents sending both plan_mode and plan_mode_exit when user toggles quickly
   if (toMode === 'plan' && fromMode !== 'plan') {
-    STATE.needsPlanModeExitAttachment = false
+    S().needsPlanModeExitAttachment = false
   }
 
   // If switching out of plan mode, trigger the plan_mode_exit attachment
   if (fromMode === 'plan' && toMode !== 'plan') {
-    STATE.needsPlanModeExitAttachment = true
+    S().needsPlanModeExitAttachment = true
   }
 }
 
 export function needsAutoModeExitAttachment(): boolean {
-  return STATE.needsAutoModeExitAttachment
+  return S().needsAutoModeExitAttachment
 }
 
 export function setNeedsAutoModeExitAttachment(value: boolean): void {
-  STATE.needsAutoModeExitAttachment = value
+  S().needsAutoModeExitAttachment = value
 }
 
 export function handleAutoModeTransition(
@@ -1258,58 +1333,61 @@ export function handleAutoModeTransition(
   // If switching TO auto mode, clear any pending exit attachment
   // This prevents sending both auto_mode and auto_mode_exit when user toggles quickly
   if (toIsAuto && !fromIsAuto) {
-    STATE.needsAutoModeExitAttachment = false
+    S().needsAutoModeExitAttachment = false
   }
 
   // If switching out of auto mode, trigger the auto_mode_exit attachment
   if (fromIsAuto && !toIsAuto) {
-    STATE.needsAutoModeExitAttachment = true
+    S().needsAutoModeExitAttachment = true
   }
 }
 
 // SDK init event state
 export function setInitJsonSchema(schema: Record<string, unknown>): void {
-  STATE.initJsonSchema = schema
+  S().initJsonSchema = schema
 }
 
 export function getInitJsonSchema(): Record<string, unknown> | null {
-  return STATE.initJsonSchema
+  return S().initJsonSchema
 }
 
 export function registerHookCallbacks(
   hooks: Partial<Record<HookEvent, RegisteredHookMatcher[]>>,
 ): void {
-  if (!STATE.registeredHooks) {
-    STATE.registeredHooks = {}
-  }
+  // `S()` re-evaluates per call, so capture the reference after ensuring it
+  // exists; property narrowing cannot carry across calls.
+  const registered = S().registeredHooks ?? (S().registeredHooks = {})
 
   // `registerHookCallbacks` may be called multiple times, so we need to merge (not overwrite)
   for (const [event, matchers] of Object.entries(hooks)) {
     const eventKey = event as HookEvent
-    if (!STATE.registeredHooks[eventKey]) {
-      STATE.registeredHooks[eventKey] = []
+    if (!registered[eventKey]) {
+      registered[eventKey] = []
     }
-    STATE.registeredHooks[eventKey]!.push(...matchers)
+    registered[eventKey]!.push(...matchers)
   }
 }
 
 export function getRegisteredHooks(): Partial<
   Record<HookEvent, RegisteredHookMatcher[]>
 > | null {
-  return STATE.registeredHooks
+  return S().registeredHooks
 }
 
 export function clearRegisteredHooks(): void {
-  STATE.registeredHooks = null
+  S().registeredHooks = null
 }
 
 export function clearRegisteredPluginHooks(): void {
-  if (!STATE.registeredHooks) {
+  // `S()` re-evaluates per call, so the null check must capture the reference
+  // or narrowing cannot carry into the loop.
+  const registered = S().registeredHooks
+  if (!registered) {
     return
   }
 
   const filtered: Partial<Record<HookEvent, RegisteredHookMatcher[]>> = {}
-  for (const [event, matchers] of Object.entries(STATE.registeredHooks)) {
+  for (const [event, matchers] of Object.entries(registered)) {
     // Keep only callback hooks (those without pluginRoot)
     const callbackHooks = matchers.filter(m => !('pluginRoot' in m))
     if (callbackHooks.length > 0) {
@@ -1317,16 +1395,16 @@ export function clearRegisteredPluginHooks(): void {
     }
   }
 
-  STATE.registeredHooks = Object.keys(filtered).length > 0 ? filtered : null
+  S().registeredHooks = Object.keys(filtered).length > 0 ? filtered : null
 }
 
 export function resetSdkInitState(): void {
-  STATE.initJsonSchema = null
-  STATE.registeredHooks = null
+  S().initJsonSchema = null
+  S().registeredHooks = null
 }
 
 export function getPlanSlugCache(): Map<string, string> {
-  return STATE.planSlugCache
+  return S().planSlugCache
 }
 
 // Invoked skills tracking for preservation across compaction
@@ -1345,7 +1423,7 @@ export function addInvokedSkill(
   agentId: string | null = null,
 ): void {
   const key = `${agentId ?? ''}:${skillName}`
-  STATE.invokedSkills.set(key, {
+  S().invokedSkills.set(key, {
     skillName,
     skillPath,
     content,
@@ -1355,7 +1433,7 @@ export function addInvokedSkill(
 }
 
 export function getInvokedSkills(): Map<string, InvokedSkillInfo> {
-  return STATE.invokedSkills
+  return S().invokedSkills
 }
 
 export function getInvokedSkillsForAgent(
@@ -1363,7 +1441,7 @@ export function getInvokedSkillsForAgent(
 ): Map<string, InvokedSkillInfo> {
   const normalizedId = agentId ?? null
   const filtered = new Map<string, InvokedSkillInfo>()
-  for (const [key, skill] of STATE.invokedSkills) {
+  for (const [key, skill] of S().invokedSkills) {
     if (skill.agentId === normalizedId) {
       filtered.set(key, skill)
     }
@@ -1375,105 +1453,105 @@ export function clearInvokedSkills(
   preservedAgentIds?: ReadonlySet<string>,
 ): void {
   if (!preservedAgentIds || preservedAgentIds.size === 0) {
-    STATE.invokedSkills.clear()
+    S().invokedSkills.clear()
     return
   }
-  for (const [key, skill] of STATE.invokedSkills) {
+  for (const [key, skill] of S().invokedSkills) {
     if (skill.agentId === null || !preservedAgentIds.has(skill.agentId)) {
-      STATE.invokedSkills.delete(key)
+      S().invokedSkills.delete(key)
     }
   }
 }
 
 export function clearInvokedSkillsForAgent(agentId: string): void {
-  for (const [key, skill] of STATE.invokedSkills) {
+  for (const [key, skill] of S().invokedSkills) {
     if (skill.agentId === agentId) {
-      STATE.invokedSkills.delete(key)
+      S().invokedSkills.delete(key)
     }
   }
 }
 
 export function getMainThreadAgentType(): string | undefined {
-  return STATE.mainThreadAgentType
+  return S().mainThreadAgentType
 }
 
 export function setMainThreadAgentType(agentType: string | undefined): void {
-  STATE.mainThreadAgentType = agentType
+  S().mainThreadAgentType = agentType
 }
 
 // System prompt section accessors
 
 export function getSystemPromptSectionCache(): Map<string, string | null> {
-  return STATE.systemPromptSectionCache
+  return S().systemPromptSectionCache
 }
 
 export function setSystemPromptSectionCacheEntry(
   name: string,
   value: string | null,
 ): void {
-  STATE.systemPromptSectionCache.set(name, value)
+  S().systemPromptSectionCache.set(name, value)
 }
 
 export function clearSystemPromptSectionState(): void {
-  STATE.systemPromptSectionCache.clear()
+  S().systemPromptSectionCache.clear()
 }
 
 // Last emitted date accessors (for detecting midnight date changes)
 
 export function getLastEmittedDate(): string | null {
-  return STATE.lastEmittedDate
+  return S().lastEmittedDate
 }
 
 export function setLastEmittedDate(date: string | null): void {
-  STATE.lastEmittedDate = date
+  S().lastEmittedDate = date
 }
 
 export function getAdditionalDirectoriesForClaudeMd(): string[] {
-  return STATE.additionalDirectoriesForClaudeMd
+  return S().additionalDirectoriesForClaudeMd
 }
 
 export function setAdditionalDirectoriesForClaudeMd(
   directories: string[],
 ): void {
-  STATE.additionalDirectoriesForClaudeMd = directories
+  S().additionalDirectoriesForClaudeMd = directories
 }
 
 export function getAllowedChannels(): ChannelEntry[] {
-  return STATE.allowedChannels
+  return S().allowedChannels
 }
 
 export function setAllowedChannels(entries: ChannelEntry[]): void {
-  STATE.allowedChannels = entries
+  S().allowedChannels = entries
 }
 
 export function getHasDevChannels(): boolean {
-  return STATE.hasDevChannels
+  return S().hasDevChannels
 }
 
 export function setHasDevChannels(value: boolean): void {
-  STATE.hasDevChannels = value
+  S().hasDevChannels = value
 }
 
 export function getPromptCache1hAllowlist(): string[] | null {
-  return STATE.promptCache1hAllowlist
+  return S().promptCache1hAllowlist
 }
 
 export function setPromptCache1hAllowlist(allowlist: string[] | null): void {
-  STATE.promptCache1hAllowlist = allowlist
+  S().promptCache1hAllowlist = allowlist
 }
 
 export function getPromptCache1hEligible(): boolean | null {
-  return STATE.promptCache1hEligible
+  return S().promptCache1hEligible
 }
 
 export function setPromptCache1hEligible(eligible: boolean | null): void {
-  STATE.promptCache1hEligible = eligible
+  S().promptCache1hEligible = eligible
 }
 
 export function getPromptId(): string | null {
-  return STATE.promptId
+  return S().promptId
 }
 
 export function setPromptId(id: string | null): void {
-  STATE.promptId = id
+  S().promptId = id
 }

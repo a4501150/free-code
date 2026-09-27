@@ -7,8 +7,15 @@
  * `includePartialMessages` is set, which a gateway-spawned session does not
  * pass, and turning it on would serialize every delta into a stdout pipe the
  * gateway discards.
+ *
+ * All fields live in session scope (`scopedStore`): unscoped code shares the
+ * root instance; a session core running inside `runInSessionScope` gets its
+ * own activity, compacting flag and in-progress tool set. The listener is
+ * per-scope for the same reason — it is registered by the session's own
+ * wire projector, from inside that session's scope.
  */
 
+import { scopedStore } from '../bootstrap/state.js'
 import type { SpinnerMode } from '../components/Spinner/types.js'
 import type { DomainStreamEvent } from '../types/domain.js'
 import { isAnyReasoningBlock, isToolUseBlock } from '../types/domainGuards.js'
@@ -16,45 +23,54 @@ import { isAnyReasoningBlock, isToolUseBlock } from '../types/domainGuards.js'
 /** The phases the TUI spinner names, so both surfaces say the same word. */
 export type StreamActivity = SpinnerMode
 
-let current: StreamActivity | undefined
-
-export function getStreamActivity(): StreamActivity | undefined {
-  return current
+type StreamActivityStore = {
+  current: StreamActivity | undefined
+  compacting: boolean
+  onActivityChanged: (() => void) | undefined
+  inProgressToolUseIds: Set<string>
 }
 
-let compacting = false
-let onActivityChanged: (() => void) | undefined
+const store = scopedStore<StreamActivityStore>(() => ({
+  current: undefined,
+  compacting: false,
+  onActivityChanged: undefined,
+  inProgressToolUseIds: new Set(),
+}))
+
+export function getStreamActivity(): StreamActivity | undefined {
+  return store().current
+}
 
 export function setStreamActivityListener(cb: (() => void) | undefined): void {
-  onActivityChanged = cb
+  store().onActivityChanged = cb
 }
 
 export function getIsCompacting(): boolean {
-  return compacting
+  return store().compacting
 }
 
 export function setIsCompacting(value: boolean): void {
-  const changed = compacting !== value
-  compacting = value
-  if (changed) onActivityChanged?.()
+  const st = store()
+  const changed = st.compacting !== value
+  st.compacting = value
+  if (changed) st.onActivityChanged?.()
 }
 
-let inProgressToolUseIds: Set<string> = new Set()
-
 export function getInProgressToolUseIds(): ReadonlySet<string> {
-  return inProgressToolUseIds
+  return store().inProgressToolUseIds
 }
 
 /** Mirrors the phase transitions in `handleMessageFromStream`. */
 export function recordStreamActivity(event: DomainStreamEvent): void {
+  const st = store()
   switch (event.type) {
     case 'message_start':
-      current = 'requesting'
+      st.current = 'requesting'
       return
     case 'content_block_start':
       // A domain content_block widens to `{ type: string }`, so a bare
       // comparison against a wire type would compile and never match.
-      current = isAnyReasoningBlock(event.content_block)
+      st.current = isAnyReasoningBlock(event.content_block)
         ? 'thinking'
         : isToolUseBlock(event.content_block)
           ? 'tool-input'
@@ -63,7 +79,7 @@ export function recordStreamActivity(event: DomainStreamEvent): void {
     case 'message_stop':
       // The assistant has stopped talking. Anything still to come this turn is
       // a tool running.
-      current = 'tool-use'
+      st.current = 'tool-use'
       return
     default:
   }
