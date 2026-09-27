@@ -12,10 +12,7 @@
 
 import { randomUUID } from 'crypto'
 import { createHostedSession, type HostedSession } from './hosted.js'
-import {
-  groupLiveHolders,
-  type SessionListEntry,
-} from '../webui/gateway/sessionHub.js'
+import { groupLiveHolders, type SessionListEntry } from './sessionList.js'
 import { readAttachDescriptor } from '../server/descriptor.js'
 import {
   listLiveSessions,

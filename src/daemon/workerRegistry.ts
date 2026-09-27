@@ -19,16 +19,29 @@ const workers: Record<string, WorkerFn> = {
     try {
       // Host the WebUI. The control socket is what makes `claude web start`
       // able to return while the server keeps running here.
-      const { createWebService } = await import('../webui/gateway/service.js')
+      const { createSessiondService } = await import('../sessiond/service.js')
       const { startDaemonControlServer } =
         await import('../webui/daemonControl.js')
 
-      const service = createWebService()
+      const service = createSessiondService()
       const control = startDaemonControlServer({
         start: options => service.start(options),
-        stop: () => service.stop(),
+        stop: async () => {
+          await service.stop()
+        },
         status: () => service.status,
-        notifyAssistant: text => service.assistantNotify(text),
+        // The socket answers `{ok}`; the service throws to fail.
+        notifyAssistant: async text => {
+          try {
+            await service.assistantNotify(text)
+            return { ok: true }
+          } catch (err) {
+            return {
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            }
+          }
+        },
       })
 
       service.setControlUnbind(() => control.unbind())

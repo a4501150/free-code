@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { SessionListEntry } from '../../gateway/sessionHub.js'
+import type { SessionListEntry } from '../../../sessiond/sessionList.js'
 import { logout, restartGateway } from '../api.js'
 import { SessionRail } from './SessionRail.js'
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SessionListEntry } from '../../gateway/sessionHub.js'
+import type { SessionListEntry } from '../../../sessiond/sessionList.js'
 import {
   fetchSessions,
   startSession,

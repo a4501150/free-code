@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import { writeFileSync } from 'fs'
 import { join } from 'path'
-import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
 
 export type RestartReadyFrame = {
   type: 'restart_ready'
@@ -30,7 +30,7 @@ async function waitForTunnelReachable(url: string): Promise<void> {
 }
 
 /**
- * Graceful restart: keep the old gateway alive while the replacement starts,
+ * Graceful restart: keep the old serve process alive while the replacement starts,
  * then push the new URLs to every connected browser before exiting.
  *
  * 1. Release the daemon control socket so the new supervisor can bind it.
@@ -40,16 +40,15 @@ async function waitForTunnelReachable(url: string): Promise<void> {
  * 5. Broadcast the URL to all browsers.
  * 6. Exit the old process.
  *
- * Imports that touch `service.ts` or `daemonControl.ts` are dynamic, because
- * `gatewayServer.ts` imports this file and `service.ts` imports
- * `gatewayServer.ts`.
+ * Imports that touch `service.ts` or `daemonControl.ts` are dynamic: the
+ * serve process imports this file and the service imports the serve.
  */
 export async function gracefulRestart(ctx: {
   unbindControl: () => void
   broadcast: (frame: RestartReadyFrame) => void
 }): Promise<void> {
-  const { readWebState } = await import('./webState.js')
-  const { sendDaemonControl } = await import('../daemonControl.js')
+  const { readWebState } = await import('../webui/gateway/webState.js')
+  const { sendDaemonControl } = await import('../webui/daemonControl.js')
 
   const previous = readWebState()
   const options = previous
@@ -81,7 +80,7 @@ export async function gracefulRestart(ctx: {
     if (await sendDaemonControl({ kind: 'web.status' }, 2000)) break
   }
 
-  // Tell the new daemon to start its gateway and tunnel.
+  // Tell the new daemon to start its serve and tunnel.
   const result = await sendDaemonControl({ kind: 'web.start', options }, 60_000)
 
   const publicUrl = result?.ok ? (result.status.publicUrl ?? null) : null

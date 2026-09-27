@@ -70,12 +70,16 @@ export type StartServeOptions = {
   port?: number
   sessionDefaults?: SessionDefaults
   /**
-   * The machine's assistant: the registry entry the list stamps
-   * `role: 'assistant'` with, once hosted. Bootstrapping is task #12's
-   * concern; the stamping and status shape exist now so nothing reshapes
-   * later.
+   * True while the service is bootstrapping the machine's assistant. Until
+   * `setAssistant` settles it the status reads `starting`; settled without
+   * an ID reads `gone`. The list stamps `role: 'assistant'` on the entry.
    */
-  assistantSessionId?: string
+  assistantPending?: boolean
+  /**
+   * Wired by the service to begin the graceful supervisor replacement.
+   * Without it `POST /api/restart` answers 501.
+   */
+  onRestart?: () => void
 }
 
 export type SessiondServe = {
@@ -83,6 +87,8 @@ export type SessiondServe = {
   readonly port: number
   readonly registry: SessionRegistry
   setPublicUrl(url: string | null): void
+  /** Settles the assistant lifecycle: the bootstrapped id, or none. */
+  setAssistant(sessionId: string | null): void
   assistantStatus(): ServeAssistantStatus
   broadcastRestartReady(frame: unknown): void
   stop(): Promise<void>
@@ -265,8 +271,8 @@ export async function startSessiondServe(
     windowMs: 15 * 60 * 1000,
   })
   let publicUrl: string | null = null
-  let assistantSessionId: string | null = options.assistantSessionId ?? null
-  let assistantSettled = options.assistantSessionId === undefined
+  let assistantSessionId: string | null = null
+  let assistantSettled = !options.assistantPending
   const browsers = new Set<WebSocket>()
 
   function allowedOrigins(port: number): string[] {
@@ -429,8 +435,13 @@ export async function startSessiondServe(
       if (!session) return json(res, 401, { error: 'unauthorized' })
       if (!csrfOk(session, request))
         return json(res, 403, { error: 'bad_csrf' })
-      // TODO(sessiond #12): port the graceful supervisor replacement.
-      return json(res, 501, { error: 'restart_not_supported' })
+      if (!options.onRestart) {
+        return json(res, 501, { error: 'restart_not_supported' })
+      }
+      // The old process stays alive through the handoff; the browsers learn
+      // the new URLs from the `restart_ready` frame right before it exits.
+      void Promise.resolve(options.onRestart()).catch(() => {})
+      return json(res, 202, { restarting: true })
     }
 
     if (url.pathname === '/api/sessions' && method === 'POST') {
@@ -753,6 +764,10 @@ export async function startSessiondServe(
     registry,
     setPublicUrl(next) {
       publicUrl = next
+    },
+    setAssistant(sessionId) {
+      assistantSessionId = sessionId
+      assistantSettled = true
     },
     assistantStatus() {
       if (!assistantSessionId) {

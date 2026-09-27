@@ -3,7 +3,8 @@ import {
   sendDaemonControl,
   type DaemonControlResponse,
 } from './daemonControl.js'
-import type { WebStartOptions, WebStatus } from './gateway/service.js'
+import type { WebStartOptions } from './gateway/webState.js'
+import type { WebStatus } from '../sessiond/service.js'
 import { readWebState } from './gateway/webState.js'
 
 function print(line: string): void {
@@ -333,11 +334,11 @@ export async function webMain(args: string[]): Promise<void> {
 
     case 'serve': {
       // Foreground sessiond: this process hosts the sessions and serves the
-      // browser directly — no daemon, no tunnel, no child spawning. The
-      // daemon/tunnel/restart path is ported onto it in the next task.
+      // browser directly — no daemon, no tunnel, no control socket (the
+      // same service the supervisor runs, driven in-process).
       if (rest.includes('--help')) {
         print(
-          'Usage: claude web serve [--foreground] [--port <n>] [--password-stdin]',
+          'Usage: claude web serve [--foreground] [--port <n>] [--password-stdin] [--permission-mode <mode>]',
         )
         return
       }
@@ -345,13 +346,26 @@ export async function webMain(args: string[]): Promise<void> {
         process.exitCode = 1
         return
       }
-      const portIdx = rest.indexOf('--port')
-      const port = portIdx >= 0 ? Number(rest[portIdx + 1]) : undefined
-      const { startSessiondServe } = await import('./../sessiond/serve.js')
-      const serve = await startSessiondServe({ port })
-      print(`sessiond serving ${serve.url}`)
-      process.on('SIGINT', () => void serve.stop().then(() => process.exit(0)))
-      process.on('SIGTERM', () => void serve.stop().then(() => process.exit(0)))
+      let serveOptions: WebStartOptions
+      try {
+        serveOptions = { ...parseStartOptions(rest), tunnel: 'none' as const }
+      } catch (err) {
+        print(`Error: ${err instanceof Error ? err.message : String(err)}`)
+        process.exitCode = 1
+        return
+      }
+      const { createSessiondService } = await import('../sessiond/service.js')
+      const service = createSessiondService()
+      const status = await service.start(serveOptions)
+      print(`sessiond serving ${status.url}`)
+      process.on(
+        'SIGINT',
+        () => void service.stop().then(() => process.exit(0)),
+      )
+      process.on(
+        'SIGTERM',
+        () => void service.stop().then(() => process.exit(0)),
+      )
       // Stay alive: the listener owns the loop.
       await new Promise(() => {})
       return

@@ -4,7 +4,7 @@ import type {
   WireEventEnvelope,
   WireImagePayload,
 } from '../../session/wire.js'
-import type { SessionListEntry } from '../gateway/sessionHub.js'
+import type { SessionListEntry } from '../../sessiond/sessionList.js'
 import type { DirectoryListing } from '../gateway/directories.js'
 
 export type LoginResult = 'ok' | 'invalid' | 'throttled' | 'error'

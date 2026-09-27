@@ -2,10 +2,42 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { z } from 'zod'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
-import { WebStartOptionsSchema } from './service.js'
 
 const DIR_MODE = 0o700
 const FILE_MODE = 0o600
+
+/**
+ * The `web start` options, defined here because this file is the state the
+ * restart replays: the service and the control socket both read the schema
+ * from the persisted store, so no import cycle can leave it undefined at
+ * module evaluation time.
+ */
+export const WebStartOptionsSchema = z.object({
+  port: z.number().int().min(0).max(65535).optional(),
+  tunnel: z
+    .enum(['cloudflared', 'localtunnel', 'command', 'none'])
+    .default('cloudflared'),
+  tunnelCommand: z.string().optional(),
+  tunnelHost: z.string().optional(),
+  subdomain: z.string().optional(),
+
+  /**
+   * Permission settings the serve process hands to every hosted session.
+   *
+   * A hosted core otherwise loads only the disk settings for the session's
+   * own directory, so anything the operator chose here would be lost.
+   * `bypassPermissions` is absent on purpose: the browser is reachable
+   * behind one password, and the surface refuses that mode for the same
+   * reason.
+   */
+  permissionMode: z.enum(['default', 'acceptEdits', 'plan']).optional(),
+  allowedTools: z.array(z.string()).optional(),
+  disallowedTools: z.array(z.string()).optional(),
+  settings: z.string().optional(),
+  settingSources: z.string().optional(),
+})
+
+export type WebStartOptions = z.infer<typeof WebStartOptionsSchema>
 
 const WebStateSchema = z.object({
   options: WebStartOptionsSchema,

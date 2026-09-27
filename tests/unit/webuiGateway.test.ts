@@ -26,7 +26,7 @@ import {
   groupLiveHolders,
   type LiveHolder,
   type SessionListEntry,
-} from '../../src/webui/gateway/sessionHub.js'
+} from '../../src/sessiond/sessionList.js'
 import {
   chooseFollowTarget,
   redirectAfterRestart,
