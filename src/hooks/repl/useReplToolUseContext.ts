@@ -4,7 +4,6 @@ import { assembleToolPool } from '../../tools.js'
 import { mergeAndFilterTools } from '../../utils/toolPool.js'
 import { resolveAgentTools } from '../../tools/AgentTool/agentToolUtils.js'
 import { sendNotification } from '../../services/notifier.js'
-import { compactProgressLabel } from '../../services/compact/compactProgressLabel.js'
 import type { ProcessUserInputContext } from '../../utils/processUserInput/processUserInput.js'
 import type { Message as MessageType } from '../../types/message.js'
 import type { FileHistoryState } from '../../utils/fileHistory.js'
@@ -13,7 +12,11 @@ import type { MCPServerConnection } from '../../services/mcp/types.js'
 import type { ScopedMcpServerConfig } from '../../services/mcp/types.js'
 import type { ThinkingConfig } from '../../utils/thinking.js'
 import type { Command } from '../../commands.js'
-import type { Tool, ToolPermissionContext } from '../../Tool.js'
+import type {
+  CompactProgressEvent,
+  Tool,
+  ToolPermissionContext,
+} from '../../Tool.js'
 import type { PromptRequest, PromptResponse } from '../../types/hooks.js'
 
 export function useReplToolUseContext({
@@ -44,10 +47,7 @@ export function useReplToolUseContext({
   loadedNestedMemoryPathsRef,
   setResponseLength,
   setStreamMode,
-  setSpinnerMessage,
-  setSpinnerColor,
-  setSpinnerShimmerColor,
-  setCompactingStartTime,
+  onCompactProgress,
   setInProgressToolUseIDs,
   hasInterruptibleToolInProgressRef,
   scrollRef,
@@ -90,10 +90,7 @@ export function useReplToolUseContext({
   loadedNestedMemoryPathsRef: React.RefObject<Set<string>>
   setResponseLength: (f: (prev: number) => number) => void
   setStreamMode: (mode: any) => void
-  setSpinnerMessage: (msg: string | null) => void
-  setSpinnerColor: (color: any) => void
-  setSpinnerShimmerColor: (color: any) => void
-  setCompactingStartTime: (time: any) => void
+  onCompactProgress: (event: CompactProgressEvent) => void
   setInProgressToolUseIDs: React.Dispatch<React.SetStateAction<Set<string>>>
   hasInterruptibleToolInProgressRef: { current: boolean }
   scrollRef: React.RefObject<any>
@@ -183,20 +180,9 @@ export function useReplToolUseContext({
         dynamicSkillDirTriggers: new Set<string>(),
         setResponseLength,
         setStreamMode,
-        onCompactProgress: event => {
-          setSpinnerMessage(compactProgressLabel(event))
-          if (event.type === 'compact_end') {
-            setSpinnerColor(null)
-            setSpinnerShimmerColor(null)
-            setCompactingStartTime(null)
-          } else {
-            if (event.type === 'hooks_start') {
-              setSpinnerColor('claudeBlue_FOR_SYSTEM_SPINNER')
-              setSpinnerShimmerColor('claudeBlueShimmer_FOR_SYSTEM_SPINNER')
-            }
-            setCompactingStartTime((prev: number | null) => prev ?? Date.now())
-          }
-        },
+        // The session core is the sink: it records the compacting state and
+        // announces it; the spinner wording is the projection's job.
+        onCompactProgress,
         setInProgressToolUseIDs,
         setHasInterruptibleToolInProgress: (v: boolean) => {
           hasInterruptibleToolInProgressRef.current = v

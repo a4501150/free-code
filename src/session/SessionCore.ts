@@ -74,7 +74,11 @@ import type { SDKMessage } from '../structuredProtocol/index.js'
 import type { StreamingToolUse, StreamingThinking } from '../utils/messages.js'
 import type { EffortValue } from '../utils/effort.js'
 import type { ProcessUserInputContext } from '../utils/processUserInput/processUserInput.js'
-import type { CanUseToolFn, ToolPermissionContext } from '../Tool.js'
+import type {
+  CanUseToolFn,
+  CompactProgressEvent,
+  ToolPermissionContext,
+} from '../Tool.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 import type { MCPServerConnection } from '../services/mcp/types.js'
 import type { QueryGuard } from '../utils/QueryGuard.js'
@@ -206,6 +210,36 @@ export class SessionCore {
   getMessages(): readonly Message[] {
     return this.deps.messagesRef.current
   }
+
+  /** When the current compaction began; null while nothing is compacting. */
+  get compactStartedAt(): number | null {
+    return this.compactStarted
+  }
+
+  /** True while a manual /compact or auto-compaction is in flight. */
+  get isCompacting(): boolean {
+    return this.compactStarted !== null
+  }
+
+  /**
+   * The single sink for compaction progress (the tool-use context's
+   * `onCompactProgress`, wherever that context was built). Records the
+   * state and announces it with the raw service event — surfaces choose
+   * their own wording, the core owns the fact.
+   */
+  handleCompactProgress(event: CompactProgressEvent): void {
+    if (event.type === 'compact_end') {
+      this.compactStarted = null
+    } else if (this.compactStarted === null) {
+      this.compactStarted = Date.now()
+    }
+    this.emit({
+      type: 'compacting',
+      startedAt: this.compactStarted,
+      progress: event,
+    })
+  }
+  private compactStarted: number | null = null
 
   /**
    * Drive one turn — the successor of the REPL's `onQuery`. Guarded, queued

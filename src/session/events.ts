@@ -14,6 +14,7 @@
 import type { Message, ProgressMessage, UserMessage } from '../types/message.js'
 import type { StreamingToolUse, StreamingThinking } from '../utils/messages.js'
 import type { SpinnerMode } from '../components/Spinner/types.js'
+import type { CompactProgressEvent } from '../Tool.js'
 import type { SessionId } from '../types/ids.js'
 import type {
   WireRequest,
@@ -58,8 +59,16 @@ export type SessionEvent =
   | { type: 'streaming_text'; text: string | null }
   | { type: 'streaming_tool_uses'; toolUses: StreamingToolUse[] }
   | { type: 'streaming_thinking'; thinking: StreamingThinking | null }
-  /** Auto-compaction / manual /compact phase for the meters and spinner. */
-  | { type: 'compacting'; startedAt: number | null }
+  /**
+   * Auto-compaction / manual /compact phase for the meters and spinner.
+   * `startedAt` is the current phase's start (null once it ends); `progress`
+   * is the raw service event so each surface picks its own wording and tone.
+   */
+  | {
+      type: 'compacting'
+      startedAt: number | null
+      progress: CompactProgressEvent
+    }
   /**
    * Bumped whenever the transcript's identity as a conversation changes
    * (compact boundary, manual summarize, resume) so renderers reset memoized

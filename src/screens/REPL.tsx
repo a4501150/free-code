@@ -358,6 +358,8 @@ import { useReplExit } from '../hooks/repl/useReplExit.js'
 import { useReplTerminalStatus } from '../hooks/repl/useReplTerminalStatus.js'
 import { useReplSessionResume } from '../hooks/repl/useReplSessionResume.js'
 import { useReplQueryExecution } from '../hooks/repl/useReplQueryExecution.js'
+import type { SessionCore } from '../session/SessionCore.js'
+import type { CompactProgressEvent } from '../Tool.js'
 import { useReplStreaming } from '../hooks/repl/useReplStreaming.js'
 import { useReplQueryLifecycle } from '../hooks/repl/useReplQueryLifecycle.js'
 import { useReplToolUseContext } from '../hooks/repl/useReplToolUseContext.js'
@@ -1149,6 +1151,16 @@ export function REPL({
 
   // Dialog focus, cancel, permission context, canUseTool, requestPrompt → useReplDialogs
 
+  // Compaction progress is fed to the session core, which is mounted by the
+  // query-execution hook below. This stable forward reference joins the
+  // context builder (built first, and shared by every command path) to the
+  // core (built second): the handler only ever runs once a turn or command
+  // is in flight, by which point the reference is set.
+  const coreRef = useRef<SessionCore | null>(null)
+  const handleCompactProgress = useCallback((event: CompactProgressEvent) => {
+    coreRef.current?.handleCompactProgress(event)
+  }, [])
+
   const { getToolUseContext } = useReplToolUseContext({
     commands,
     combinedInitialTools,
@@ -1177,10 +1189,7 @@ export function REPL({
     loadedNestedMemoryPathsRef,
     setResponseLength,
     setStreamMode,
-    setSpinnerMessage,
-    setSpinnerColor,
-    setSpinnerShimmerColor,
-    setCompactingStartTime,
+    onCompactProgress: handleCompactProgress,
     setInProgressToolUseIDs,
     hasInterruptibleToolInProgressRef,
     scrollRef,
@@ -1208,8 +1217,8 @@ export function REPL({
     setAbortController,
   })
 
-  const { onQuery, onQueryEvent, handleIncomingPrompt } = useReplQueryExecution(
-    {
+  const { core, onQuery, onQueryEvent, handleIncomingPrompt } =
+    useReplQueryExecution({
       messagesRef,
       setMessages,
       setStreamMode,
@@ -1252,8 +1261,8 @@ export function REPL({
       titleDisabled,
       sessionTitle,
       agentTitle,
-    },
-  )
+    })
+  coreRef.current = core
 
   // ── Submission (onSubmit, onAgentSubmit, processInitialMessage) ──
   const { onSubmit, onAgentSubmit, handleOpenRateLimitOptions } =
@@ -1653,7 +1662,7 @@ export function REPL({
           : 'idle',
     // streamMode keeps its last value after a turn ends, so gate it on loading.
     getActivity: () => (isLoading ? streamMode : undefined),
-    getIsCompacting: () => compactingStartTime !== null,
+    getIsCompacting: () => core.isCompacting,
     getModel: () => mainLoopModel,
     // Internal-only modes are not part of the wire enum; a surface that
     // cannot set them should not be told a name it cannot render.

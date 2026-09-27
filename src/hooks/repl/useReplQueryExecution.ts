@@ -21,6 +21,7 @@
  */
 import { useCallback, useEffect, useRef } from 'react'
 import { count } from '../../utils/array.js'
+import { compactProgressLabel } from '../../services/compact/compactProgressLabel.js'
 import {
   createUserMessage,
   createTurnDurationMessage,
@@ -216,6 +217,26 @@ export function useReplQueryExecution(props: {
             p.scrollRef.current?.scrollToBottom()
           }
           return
+        case 'compacting': {
+          // The spinner wording and tone are TUI reactions to the announced
+          // phase; the compacting state itself lives on the core.
+          const progress = event.progress
+          p.setSpinnerMessage(compactProgressLabel(progress))
+          if (progress.type === 'compact_end') {
+            p.setSpinnerColor(null)
+            p.setSpinnerShimmerColor(null)
+            p.setCompactingStartTime(null)
+          } else {
+            if (progress.type === 'hooks_start') {
+              p.setSpinnerColor('claudeBlue_FOR_SYSTEM_SPINNER')
+              p.setSpinnerShimmerColor('claudeBlueShimmer_FOR_SYSTEM_SPINNER')
+            }
+            p.setCompactingStartTime(
+              (prev: number | null) => prev ?? event.startedAt ?? Date.now(),
+            )
+          }
+          return
+        }
         case 'conversation_id':
           p.setConversationId(event.id)
           return
@@ -344,6 +365,7 @@ export function useReplQueryExecution(props: {
   )
 
   return {
+    core,
     onQueryEvent,
     onQuery,
     handleIncomingPrompt,
