@@ -70,6 +70,7 @@ import { logError } from '../utils/log.js'
 import { generateSessionTitle } from '../utils/sessionTitle.js'
 import { saveAiGeneratedTitle } from '../utils/sessionStorage.js'
 import type { Message, UserMessage } from '../types/message.js'
+import type { SDKMessage } from '../structuredProtocol/index.js'
 import type { StreamingToolUse, StreamingThinking } from '../utils/messages.js'
 import type { EffortValue } from '../utils/effort.js'
 import type { ProcessUserInputContext } from '../utils/processUserInput/processUserInput.js'
@@ -101,7 +102,11 @@ export type SessionCoreDeps = {
    */
   setMessages: (next: Message[]) => void
   queryGuard: QueryGuard
-  getToolUseContext: (
+  /**
+   * Per-turn context assembly for the core's own query loop. An
+   * executor-mode host (headless `-p`) never calls it, so it may be omitted.
+   */
+  getToolUseContext?: (
     messages: Message[],
     newMessages: Message[],
     abortController: AbortController,
@@ -135,6 +140,18 @@ export type SessionCoreDeps = {
   onTurnComplete?: (messages: Message[]) => void | Promise<void>
 }
 
+/**
+ * A host-provided loop driver (the headless `-p` path, whose QueryEngine
+ * pipeline owns everything inside the loop — transcript recording, usage
+ * accumulation, the SDKMessage stdout contract). The core still owns the
+ * guard and announces the turn lifecycle; everything the driver emits is
+ * handed to `deliver`, which the core also mirrors onto the event bus as
+ * `sdk_message`.
+ */
+export type TurnExecutor = (
+  deliver: (message: SDKMessage) => void,
+) => Promise<void>
+
 export type TurnRequest = {
   newMessages: Message[]
   abortController: AbortController
@@ -148,6 +165,12 @@ export type TurnRequest = {
    * `onBeforeQuery` observer and able to stop the turn before the loop.
    */
   proceedGate?: (input: string, messages: Message[]) => Promise<boolean>
+  /**
+   * Run this turn through the host's driver instead of the core's own
+   * query loop (see `TurnExecutor`). Set per-request because the headless
+   * driver is rebuilt from fresh per-turn inputs.
+   */
+  executor?: TurnExecutor
 }
 
 export class SessionCore {
@@ -235,6 +258,11 @@ export class SessionCore {
 
   /** Append at the tail, announcing each message. */
   private applyNewMessages(newMessages: Message[]): void {
+    // An empty batch must not rewrite the transcript: a headless host's
+    // transcript is an in-place-mutated array and rewriting the identity
+    // would desync every closure holding it (the executor driver appends
+    // to the host's array itself).
+    if (newMessages.length === 0) return
     this.deps.setMessages([...this.deps.messagesRef.current, ...newMessages])
     for (const message of newMessages) {
       this.emit({ type: 'transcript_appended', message })
@@ -265,6 +293,26 @@ export class SessionCore {
         effort,
       } = req
       const d = this.deps
+
+      // Executor mode (headless `-p`): the host's driver owns the loop, so
+      // none of the assembly below runs — the driver's own pipeline does
+      // that today. The core keeps only the guard and the turn lifecycle.
+      if (req.executor) {
+        resetTurnHookDuration()
+        resetTurnToolDuration()
+        resetTurnClassifierDuration()
+        this.visibleStreamingText = null
+        this.emit({ type: 'turn_started' })
+        await req.executor(message => {
+          this.emit({ type: 'sdk_message', message })
+        })
+        this.emit({
+          type: 'turn_finished',
+          aborted: req.abortController.signal.aborted,
+        })
+        await d.onTurnComplete?.(d.messagesRef.current)
+        return
+      }
 
       if (shouldQuery) {
         const freshClients = mergeClients(
@@ -312,7 +360,7 @@ export class SessionCore {
         return
       }
 
-      const toolUseContext = d.getToolUseContext(
+      const toolUseContext = d.getToolUseContext!(
         d.messagesRef.current,
         newMessages,
         abortController,
@@ -413,6 +461,9 @@ export class SessionCore {
   handleStreamEvent(
     event: Parameters<typeof handleMessageFromStream>[0],
   ): void {
+    // Raw pass-through first: projections that need the unfolded event (the
+    // SDK adapter) must see it even if folding consumes it.
+    this.emit({ type: 'raw_turn_event', event })
     handleMessageFromStream(
       event,
       newMessage => {

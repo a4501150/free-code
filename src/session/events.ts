@@ -68,6 +68,27 @@ export type SessionEvent =
   | { type: 'conversation_id'; id: string }
   /** A user message was cancelled and pulled back for editing. */
   | { type: 'user_message_restored'; message: UserMessage }
+  /**
+   * Pass-through of every event the loop yielded, before folding. The SDK
+   * projection (`-p --output-format stream-json`) re-derives `stream_event`
+   * frames from this; UIs that don't want raw provider chatter ignore it.
+   */
+  | {
+      type: 'raw_turn_event'
+      event: Parameters<
+        typeof import('../utils/messages.js').handleMessageFromStream
+      >[0]
+    }
+  /**
+   * A driver-delivered stream message from an executor-mode turn (the
+   * headless path mirrors its `SDKMessage` stream here). UIs that render
+   * transcript state ignore it — the transcript applies arrive as the
+   * `transcript_*` events; this is for stdout-shaped projections.
+   */
+  | {
+      type: 'sdk_message'
+      message: import('../structuredProtocol/index.js').SDKMessage
+    }
   // --- session surface state (each maps 1:1 to a wire event) ---
   | { type: 'meta'; meta: WireSessionMeta }
   | { type: 'request_opened'; request: WireRequest }

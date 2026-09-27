@@ -73,6 +73,8 @@ import { parsePluginIdentifier } from 'src/utils/plugins/pluginIdentifier.js'
 import { validateUuid } from 'src/utils/uuid.js'
 import { fromArray } from 'src/utils/generators.js'
 import { ask } from 'src/QueryEngine.js'
+import { SessionCore, type TurnExecutor } from 'src/session/SessionCore.js'
+import { QueryGuard } from 'src/utils/QueryGuard.js'
 import type { PermissionPromptTool } from 'src/utils/queryHelpers.js'
 import {
   createFileStateCacheWithSizeLimit,
@@ -1154,6 +1156,57 @@ function runHeadlessStreaming(
     })
   }
 
+  // One core per process. This path drives it in executor mode: the core
+  // owns the guard and announces the turn lifecycle; the per-turn
+  // QueryEngine executor below owns the loop itself, so the SDKMessage
+  // stdout contract stays exactly as the pre-core drain loop produced it.
+  // The transcript remains the in-place-mutated `mutableMessages` array —
+  // every closure holding it (engine, result builders, resume snapshots)
+  // must observe appends through the same array instance.
+  const queryGuard = new QueryGuard()
+  const sessionCore = new SessionCore({
+    messagesRef: { current: mutableMessages },
+    setMessages: next => {
+      mutableMessages.length = 0
+      mutableMessages.push(...next)
+    },
+    queryGuard,
+    canUseTool,
+    store: { getState: getAppState, setState: setAppState },
+    toolPermissionContext: getAppState().toolPermissionContext,
+    setAppState,
+    // Titles are set through the control protocol here; the drain path
+    // never auto-titled pre-core and still doesn't.
+    title: {
+      disabled: true,
+      current: undefined,
+      agentTitle: undefined,
+      onAutoTitle: () => {},
+    },
+  })
+
+  // The stdout projector: mirrors every driver-delivered message onto the
+  // stream in the order the pre-core loop body did — structured events
+  // flush first, and a result is held back while background agents run.
+  sessionCore.subscribe(event => {
+    if (event.type !== 'sdk_message') return
+    const message = event.message
+    for (const structuredEvent of drainStructuredEvents()) {
+      output.enqueue(structuredEvent)
+    }
+    if (
+      message.type === 'result' &&
+      getRunningTasks(getAppState()).some(
+        t => t.type === 'local_agent' && isBackgroundTask(t),
+      )
+    ) {
+      heldBackResult = message
+    } else {
+      if (message.type === 'result') heldBackResult = null
+      output.enqueue(message)
+    }
+  })
+
   // Cache SDK MCP clients to avoid reconnecting on each run
   let sdkClients: MCPServerConnection[] = []
   let sdkTools: Tools = []
@@ -1954,7 +2007,8 @@ function runHeadlessStreaming(
             }
           }
 
-          abortController = createAbortController()
+          const turnAbort = createAbortController()
+          abortController = turnAbort
 
           headlessProfilerCheckpoint('before_ask')
           startQueryProfile()
@@ -1964,7 +2018,7 @@ function runHeadlessStreaming(
           // const-capture: TS loses `while ((command = dequeue()))` narrowing
           // inside the closure.
           const cmd = command!
-          await runWithWorkload(cmd.workload ?? options.workload, async () => {
+          const executor: TurnExecutor = async deliver => {
             for await (const message of ask({
               commands: uniqBy(
                 [...currentCommands, ...appState.mcp.commands],
@@ -2028,33 +2082,22 @@ function runHeadlessStreaming(
                 })
               },
             })) {
-              if (message.type === 'result') {
-                // Flush pending SDK events so they appear before result on the stream.
-                for (const event of drainStructuredEvents()) {
-                  output.enqueue(event)
-                }
-
-                // Hold-back: don't emit result while background agents are running
-                const currentState = getAppState()
-                if (
-                  getRunningTasks(currentState).some(
-                    t => t.type === 'local_agent' && isBackgroundTask(t),
-                  )
-                ) {
-                  heldBackResult = message
-                } else {
-                  heldBackResult = null
-                  output.enqueue(message)
-                }
-              } else {
-                // Flush SDK events (task_started, task_progress) so background
-                // agent progress is streamed in real-time, not batched until result.
-                for (const event of drainStructuredEvents()) {
-                  output.enqueue(event)
-                }
-                output.enqueue(message)
-              }
+              // The core mirrors this onto its bus as `sdk_message`; the
+              // stdout projector subscribed above does the stream writes.
+              deliver(message)
             }
+          }
+          await runWithWorkload(cmd.workload ?? options.workload, async () => {
+            await sessionCore.submitTurn({
+              newMessages: [],
+              abortController: turnAbort,
+              shouldQuery: true,
+              additionalAllowedTools: [],
+              // Unused in executor mode: the driver resolves the model itself.
+              mainLoopModel: activeUserSpecifiedModel ?? '',
+              input: typeof input === 'string' ? input : undefined,
+              executor,
+            })
           }) // end runWithWorkload
 
           for (const uuid of batchUuids) {
