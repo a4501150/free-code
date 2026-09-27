@@ -256,7 +256,6 @@ import {
 } from '../utils/sessionRestore.js'
 import { updateSessionName } from '../utils/concurrentSessions.js'
 import { useScheduledTasks } from '../hooks/useScheduledTasks.js'
-import * as webuiAttachModule from '../server/hostSingleton.js'
 import { useReplAttachBridge } from '../server/replBridge.js'
 import {
   EXTERNAL_PERMISSION_MODES,
@@ -358,7 +357,7 @@ import { useReplExit } from '../hooks/repl/useReplExit.js'
 import { useReplTerminalStatus } from '../hooks/repl/useReplTerminalStatus.js'
 import { useReplSessionResume } from '../hooks/repl/useReplSessionResume.js'
 import { useReplQueryExecution } from '../hooks/repl/useReplQueryExecution.js'
-import type { SessionCore } from '../session/SessionCore.js'
+import { SessionCore } from '../session/SessionCore.js'
 import type { CompactProgressEvent } from '../Tool.js'
 import { useReplStreaming } from '../hooks/repl/useReplStreaming.js'
 import { useReplQueryLifecycle } from '../hooks/repl/useReplQueryLifecycle.js'
@@ -668,6 +667,16 @@ export function REPL({
   useIdeSelection(mcp.clients, setIDESelection)
 
   // ── Message state (must come before streaming/query hooks) ──
+  // One session core per mounted session, owning the transcript from the
+  // first render. The query-execution hook binds its loop inputs; the event
+  // projections (this screen's hooks, the wire bridge) only ever subscribe.
+  const sessionCoreRef = useRef<SessionCore | null>(null)
+  if (sessionCoreRef.current === null) {
+    sessionCoreRef.current = new SessionCore({
+      initialTranscript: initialMessages ? [...initialMessages] : [],
+    })
+  }
+  const core = sessionCoreRef.current
   const {
     messages,
     messagesRef,
@@ -681,10 +690,10 @@ export function REPL({
     contentReplacementStateRef,
     awaitPendingHooks,
   } = useReplMessages({
+    core,
     initialMessages,
     initialContentReplacements,
     pendingHookMessages,
-    publishTranscript: () => webuiAttachModule.publishAttachTranscript(),
   })
 
   // ── Streaming state ──
@@ -1151,16 +1160,6 @@ export function REPL({
 
   // Dialog focus, cancel, permission context, canUseTool, requestPrompt → useReplDialogs
 
-  // Compaction progress is fed to the session core, which is mounted by the
-  // query-execution hook below. This stable forward reference joins the
-  // context builder (built first, and shared by every command path) to the
-  // core (built second): the handler only ever runs once a turn or command
-  // is in flight, by which point the reference is set.
-  const coreRef = useRef<SessionCore | null>(null)
-  const handleCompactProgress = useCallback((event: CompactProgressEvent) => {
-    coreRef.current?.handleCompactProgress(event)
-  }, [])
-
   const { getToolUseContext } = useReplToolUseContext({
     commands,
     combinedInitialTools,
@@ -1189,7 +1188,9 @@ export function REPL({
     loadedNestedMemoryPathsRef,
     setResponseLength,
     setStreamMode,
-    onCompactProgress: handleCompactProgress,
+    // The single sink for every command and tool path's compaction progress.
+    onCompactProgress: (event: CompactProgressEvent) =>
+      core.handleCompactProgress(event),
     setInProgressToolUseIDs,
     hasInterruptibleToolInProgressRef,
     scrollRef,
@@ -1217,10 +1218,9 @@ export function REPL({
     setAbortController,
   })
 
-  const { core, onQuery, onQueryEvent, handleIncomingPrompt } =
-    useReplQueryExecution({
-      messagesRef,
-      setMessages,
+  const { onQuery, onQueryEvent, handleIncomingPrompt } = useReplQueryExecution(
+    {
+      core,
       setStreamMode,
       setStreamingToolUses,
       setStreamingThinking,
@@ -1261,8 +1261,8 @@ export function REPL({
       titleDisabled,
       sessionTitle,
       agentTitle,
-    })
-  coreRef.current = core
+    },
+  )
 
   // ── Submission (onSubmit, onAgentSubmit, processInitialMessage) ──
   const { onSubmit, onAgentSubmit, handleOpenRateLimitOptions } =
@@ -1653,7 +1653,7 @@ export function REPL({
   // Mirror this session onto its wire surface so a browser can watch and
   // drive it.
   useReplAttachBridge({
-    messagesRef,
+    core,
     getState: () =>
       toolUseConfirmQueue.length > 0
         ? 'requires_action'

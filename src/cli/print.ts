@@ -1170,23 +1170,21 @@ function runHeadlessStreaming(
   // must observe appends through the same array instance.
   const queryGuard = new QueryGuard()
   const sessionCore = new SessionCore({
-    messagesRef: { current: mutableMessages },
-    setMessages: next => {
-      mutableMessages.length = 0
-      mutableMessages.push(...next)
-    },
-    queryGuard,
-    canUseTool,
-    store: { getState: getAppState, setState: setAppState },
-    toolPermissionContext: getAppState().toolPermissionContext,
-    setAppState,
-    // Titles are set through the control protocol here; the drain path
-    // never auto-titled pre-core and still doesn't.
-    title: {
-      disabled: true,
-      current: undefined,
-      agentTitle: undefined,
-      onAutoTitle: () => {},
+    transcriptHost: { current: mutableMessages },
+    turnInputs: {
+      queryGuard,
+      canUseTool,
+      store: { getState: getAppState, setState: setAppState },
+      toolPermissionContext: getAppState().toolPermissionContext,
+      setAppState,
+      // Titles are set through the control protocol here; the drain path
+      // never auto-titled pre-core and still doesn't.
+      title: {
+        disabled: true,
+        current: undefined,
+        agentTitle: undefined,
+        onAutoTitle: () => {},
+      },
     },
   })
 

@@ -8,13 +8,13 @@
  * UIs subscribe (the TUI directly, remote clients through the wire
  * projector).
  *
- * Ownership in this phase: the transcript array is still the host's ref
- * (the REPL's `messagesRef`, mutated in place and announced — the ref IS
- * the truth, exactly as the REPL already treats it), and per-turn context
- * assembly (`getToolUseContext`, permission racing) is injected. Extracting
- * those behind the core boundary is the remaining work of the phase; what
- * must not regress is the single-driver invariant: one core, one query loop,
- * all state changes announced.
+ * Ownership: the core owns the transcript array (hosts that must keep one
+ * array instance pass `transcriptHost` and the core writes into it; every
+ * other host receives replacement arrays and follows the announced
+ * `transcript_*` events). Per-turn context assembly (`getToolUseContext`,
+ * permission racing) is bound per mount via `bindTurnInputs`. What must not
+ * regress is the single-driver invariant: one core, one query loop, all
+ * state changes announced.
  *
  * A core constructed with a `scope` runs every turn inside
  * `runInSessionScope`, which is what lets one process host several sessions.
@@ -89,22 +89,14 @@ import {
   type SessionEventSubscriber,
 } from './events.js'
 
-export type SessionCoreDeps = {
-  /**
-   * Own a private per-session state object (multi-session hosting). Omit to
-   * run against the root scope.
-   */
-  scope?: SessionState
-  /** Read view of the authoritative transcript. */
-  messagesRef: { current: Message[] }
-  /**
-   * The host's transcript write channel (the REPL's ref-eager `setMessages`
-   * wrapper, later the core's own store). The core computes every new array
-   * itself and hands it over whole; the host decides how its projection
-   * catches up, and the matching `transcript_*` event is the only signal to
-   * other subscribers.
-   */
-  setMessages: (next: Message[]) => void
+/**
+ * Everything the core's own query loop reads per turn. The headless host
+ * passes these straight to the constructor; the TUI binds them after mount
+ * with `bindTurnInputs`, because its core exists from the first render (it
+ * owns the transcript the screen projects) while these are woven together
+ * with React state.
+ */
+export type SessionCoreTurnInputs = {
   queryGuard: QueryGuard
   /**
    * Per-turn context assembly for the core's own query loop. An
@@ -142,6 +134,27 @@ export type SessionCoreDeps = {
     newMessageCount: number,
   ) => Promise<boolean>
   onTurnComplete?: (messages: Message[]) => void | Promise<void>
+}
+
+export type SessionCoreDeps = {
+  /**
+   * Own a private per-session state object (multi-session hosting). Omit to
+   * run against the root scope.
+   */
+  scope?: SessionState
+  /**
+   * A transcript array owned by the HOST. Headless `-p` keeps one array
+   * instance that every closure (engine, result builders, resume snapshots)
+   * reads, so the core writes into it in place instead of swapping in a new
+   * one. A host without this dependency lets the core own the transcript —
+   * every write then replaces the array, and the announced `transcript_*`
+   * events are how projections catch up.
+   */
+  transcriptHost?: { current: Message[] }
+  /** The transcript the core starts out owning (empty when absent). */
+  initialTranscript?: Message[]
+  /** Loop inputs; optional only because the TUI binds them after mount. */
+  turnInputs?: SessionCoreTurnInputs
 }
 
 /**
@@ -182,15 +195,39 @@ export class SessionCore {
   private readonly deps: SessionCoreDeps
   private readonly scope: SessionState | undefined
   private autoTitleAttempted = false
+  /** The transcript this core owns (or mirrors through deps.transcriptHost). */
+  private transcript: Message[]
+  private inputs: SessionCoreTurnInputs | undefined
 
   constructor(deps: SessionCoreDeps) {
     this.deps = deps
     this.scope = deps.scope ?? undefined
+    this.transcript =
+      deps.transcriptHost?.current ?? deps.initialTranscript ?? []
+    this.inputs = deps.turnInputs
     if (deps.scope === undefined) {
       // Root-scope mode: the process-wide state is already initialized by
       // startup; nothing to create. Recorded explicitly because `newSessionState`
       // here would fork the host's identity away from the root.
     }
+  }
+
+  /**
+   * Bind (or rebind) the per-turn loop inputs. The TUI calls this from its
+   * query-execution hook on every render with a stable carrier object, so
+   * the core always acts on current values.
+   */
+  bindTurnInputs(inputs: SessionCoreTurnInputs): void {
+    this.inputs = inputs
+  }
+
+  private get turnInputs(): SessionCoreTurnInputs {
+    if (!this.inputs) {
+      throw new Error(
+        'SessionCore turn inputs not bound (bindTurnInputs before submitTurn)',
+      )
+    }
+    return this.inputs
   }
 
   /** The session-state object this core's accessors resolve against. */
@@ -208,7 +245,26 @@ export class SessionCore {
 
   /** The transcript, for snapshotting consumers (wire projector, -p bridge). */
   getMessages(): readonly Message[] {
-    return this.deps.messagesRef.current
+    return this.transcript
+  }
+
+  /**
+   * Commit a whole computed transcript. With a host array the write goes
+   * into that instance (its identity is the contract); without one the core
+   * adopts the new array. Announced by whichever public mutation called this.
+   */
+  private writeTranscript(next: Message[]): void {
+    const host = this.deps.transcriptHost
+    if (host) {
+      const live = host.current
+      if (live !== next) {
+        live.length = 0
+        live.push(...next)
+      }
+      this.transcript = live
+    } else {
+      this.transcript = next
+    }
   }
 
   /** When the current compaction began; null while nothing is compacting. */
@@ -249,7 +305,8 @@ export class SessionCore {
    */
   async submitTurn(req: TurnRequest): Promise<'queued' | 'done' | 'declined'> {
     const { newMessages, shouldQuery, input } = req
-    const generation = this.deps.queryGuard.tryStart()
+    const inputs = this.turnInputs
+    const generation = inputs.queryGuard.tryStart()
     if (generation === null) {
       newMessages
         .filter((m): m is UserMessage => m.type === 'user' && !m.isMeta)
@@ -260,11 +317,11 @@ export class SessionCore {
     }
 
     try {
-      this.applyNewMessages(newMessages)
-      if (input && this.deps.onBeforeQuery) {
-        const proceed = await this.deps.onBeforeQuery(
+      this.appendMessages(newMessages)
+      if (input && inputs.onBeforeQuery) {
+        const proceed = await inputs.onBeforeQuery(
           input,
-          this.deps.messagesRef.current,
+          this.transcript,
           newMessages.length,
         )
         // A declined turn still runs the completion callbacks — the
@@ -272,10 +329,7 @@ export class SessionCore {
         if (!proceed) return 'declined'
       }
       if (input && req.proceedGate) {
-        const proceed = await req.proceedGate(
-          input,
-          this.deps.messagesRef.current,
-        )
+        const proceed = await req.proceedGate(input, this.transcript)
         if (!proceed) return 'declined'
       }
       await this.runTurn(req)
@@ -286,29 +340,37 @@ export class SessionCore {
     } finally {
       // Releases the guard only. The host reacts to the result ('queued'
       // means the turn parked in the session queue and nothing else ran).
-      this.deps.queryGuard.end(generation)
+      inputs.queryGuard.end(generation)
     }
   }
 
-  /** Append at the tail, announcing each message. */
-  private applyNewMessages(newMessages: Message[]): void {
+  /**
+   * Append at the transcript tail, announcing each message. Also the host's
+   * channel for outside-turn appends (the optimistic user row, dialog
+   * notices): every transcript write goes through the core.
+   */
+  appendMessages(newMessages: Message[]): void {
     // An empty batch must not rewrite the transcript: a headless host's
     // transcript is an in-place-mutated array and rewriting the identity
     // would desync every closure holding it (the executor driver appends
     // to the host's array itself).
     if (newMessages.length === 0) return
-    this.deps.setMessages([...this.deps.messagesRef.current, ...newMessages])
+    this.writeTranscript([...this.transcript, ...newMessages])
     for (const message of newMessages) {
       this.emit({ type: 'transcript_appended', message })
     }
   }
 
-  /** Replace the whole transcript (compact, rewind, switch, restore). */
+  /**
+   * Replace the whole transcript (compact, rewind, session switch/restore).
+   * Also the host's channel for host-side edits — the projection follows
+   * from the event, whatever the reason.
+   */
   replaceMessages(
     messages: Message[],
-    reason: 'compact' | 'rewind' | 'switch' | 'restore',
+    reason: 'compact' | 'rewind' | 'switch' | 'restore' | 'edit',
   ): void {
-    this.deps.setMessages(messages)
+    this.writeTranscript(messages)
     this.emit({ type: 'transcript_replaced', messages, reason })
   }
 
@@ -326,7 +388,7 @@ export class SessionCore {
         mainLoopModel,
         effort,
       } = req
-      const d = this.deps
+      const d = this.turnInputs
 
       // Executor mode (headless `-p`): the host's driver owns the loop, so
       // none of the assembly below runs — the driver's own pipeline does
@@ -344,7 +406,7 @@ export class SessionCore {
           type: 'turn_finished',
           aborted: req.abortController.signal.aborted,
         })
-        await d.onTurnComplete?.(d.messagesRef.current)
+        await d.onTurnComplete?.(this.transcript)
         return
       }
 
@@ -395,7 +457,7 @@ export class SessionCore {
       }
 
       const toolUseContext = d.getToolUseContext!(
-        d.messagesRef.current,
+        this.transcript,
         newMessages,
         abortController,
         mainLoopModel,
@@ -454,7 +516,7 @@ export class SessionCore {
       this.emit({ type: 'turn_started' })
 
       for await (const event of query({
-        messages: d.messagesRef.current,
+        messages: this.transcript,
         systemPrompt,
         userContext,
         systemContext,
@@ -473,10 +535,10 @@ export class SessionCore {
       })
       // Turn observers run only for a loop that actually ran: the
       // !shouldQuery path returned above, matching the pre-core behavior.
-      await d.onTurnComplete?.(d.messagesRef.current)
+      await d.onTurnComplete?.(this.transcript)
       // Companion keyword reactions on the finished turn (self-debounced,
       // no-ops unhatched/muted).
-      void fireCompanionObserver(d.messagesRef.current, reaction =>
+      void fireCompanionObserver(this.transcript, reaction =>
         d.setAppState((prev: any) => ({
           ...prev,
           companionReaction: reaction,
@@ -501,11 +563,11 @@ export class SessionCore {
     handleMessageFromStream(
       event,
       newMessage => {
-        const current = this.deps.messagesRef.current
+        const current = this.transcript
         if (isCompactBoundaryMessage(newMessage)) {
           const kept = getMessagesAfterCompactBoundary(current)
           const next = [...kept, newMessage]
-          this.deps.setMessages(next)
+          this.writeTranscript(next)
           this.emit({
             type: 'transcript_replaced',
             messages: next,
@@ -524,17 +586,17 @@ export class SessionCore {
           ) {
             const copy = current.slice()
             copy[copy.length - 1] = newMessage
-            this.deps.setMessages(copy)
+            this.writeTranscript(copy)
             this.emit({
               type: 'transcript_progress_replaced',
               message: newMessage,
             })
           } else {
-            this.deps.setMessages([...current, newMessage])
+            this.writeTranscript([...current, newMessage])
             this.emit({ type: 'transcript_appended', message: newMessage })
           }
         } else {
-          this.deps.setMessages([...current, newMessage])
+          this.writeTranscript([...current, newMessage])
           this.emit({ type: 'transcript_appended', message: newMessage })
         }
       },
@@ -550,8 +612,8 @@ export class SessionCore {
         this.emit({ type: 'streaming_tool_uses', toolUses: next })
       },
       tombstonedMessage => {
-        this.deps.setMessages(
-          this.deps.messagesRef.current.filter(m => m !== tombstonedMessage),
+        this.writeTranscript(
+          this.transcript.filter(m => m !== tombstonedMessage),
         )
         this.emit({ type: 'transcript_removed', uuid: tombstonedMessage.uuid })
         void removeTranscriptMessage(tombstonedMessage.uuid)
@@ -579,7 +641,7 @@ export class SessionCore {
   private lastStreamingThinking: StreamingThinking | null = null
 
   private maybeGenerateAutoTitle(newMessages: Message[]): void {
-    const d = this.deps
+    const d = this.turnInputs
     if (
       d.title.disabled ||
       d.title.current ||

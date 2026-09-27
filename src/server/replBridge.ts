@@ -4,7 +4,6 @@
  */
 import { useEffect, useRef } from 'react'
 import type { UUID } from 'crypto'
-import type { Message } from '../types/message.js'
 import type { Task as TodoTask } from '../utils/taskSchemas.js'
 import type { CommandBase } from '../types/command.js'
 import type { TaskState } from '../tasks/types.js'
@@ -24,13 +23,23 @@ import {
   publishAttachPendingCommands,
   publishAttachTasks,
   publishAttachTodos,
+  publishAttachTranscript,
   registerAttachRuntime,
 } from './hostSingleton.js'
 import { buildSubmitValue, type SessionRuntime } from './runtime.js'
 import { buildWireCatalog, tasksToWire } from './catalog.js'
+import type { SessionCore } from '../session/SessionCore.js'
+
+const TRANSCRIPT_EVENT_TYPES = new Set<string>([
+  'transcript_appended',
+  'transcript_progress_replaced',
+  'transcript_replaced',
+  'transcript_removed',
+])
 
 export type ReplAttachBridgeParams = {
-  messagesRef: { current: readonly Message[] }
+  /** The session core: transcript reads come from it, publishes ride its events. */
+  core: SessionCore
   getState: () => WireSessionState
   getActivity: () => WireSessionActivity | undefined
   getIsCompacting: () => boolean
@@ -57,9 +66,19 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
   const latest = useRef(params)
   latest.current = params
 
+  // Every transcript mutation the core announces (its own loop or a host
+  // write) republishes the wire transcript. The serializer diffs, so this
+  // is cheap when nothing visible changed and correct when it did — no
+  // render-side hook has to remember to publish.
+  useEffect(() => {
+    return params.core.subscribe(event => {
+      if (TRANSCRIPT_EVENT_TYPES.has(event.type)) publishAttachTranscript()
+    })
+  }, [params.core])
+
   useEffect(() => {
     const runtime: SessionRuntime = {
-      getMessages: () => latest.current.messagesRef.current,
+      getMessages: () => params.core.getMessages(),
       getState: () => latest.current.getState(),
       getActivity: () => latest.current.getActivity(),
       getIsCompacting: () => latest.current.getIsCompacting(),

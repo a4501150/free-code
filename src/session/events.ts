@@ -42,7 +42,7 @@ export type SessionEvent =
   | {
       type: 'transcript_replaced'
       messages: Message[]
-      reason: 'compact' | 'rewind' | 'switch' | 'restore'
+      reason: 'compact' | 'rewind' | 'switch' | 'restore' | 'edit'
     }
   /** A message removed from the middle (tombstoned assistant partial). */
   | { type: 'transcript_removed'; uuid: Message['uuid'] }

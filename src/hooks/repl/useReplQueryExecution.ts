@@ -2,18 +2,16 @@
  * The TUI adapter around SessionCore.
  *
  * The loop lives in `src/session/SessionCore.ts`: context assembly, the
- * generator, every transcript mutation (applied through the host's
- * `setMessages`) and every surface change (announced as typed events). This
- * hook keeps the exact prop contract the REPL screen was built against and
- * does three jobs:
+ * generator, every transcript mutation (the core owns the array) and every
+ * surface change (announced as typed events). This hook keeps the exact
+ * prop contract the REPL screen was built against and does three jobs:
  *
- * 1. Own one core instance per mounted REPL session, fed by a live deps
- *    object refreshed after every render — the core never sees a stale
- *    permission context or agent definition (the same ref-carrier trick the
- *    attach bridge used).
- * 2. Project core events onto the React setters: stream state and
- *    conversation identity. Transcript events need no re-apply here because
- *    the core wrote through `setMessages`; the wire projector consumes them.
+ * 1. Bind the core's per-turn inputs from a live carrier refreshed after
+ *    every render — the core never sees a stale permission context or agent
+ *    definition (the same ref-carrier trick the attach bridge used).
+ * 2. Project core events onto the React setters: stream state, the
+ *    compacting spinner and conversation identity. Transcript events need no
+ *    re-apply here; `useReplMessages` projects them.
  * 3. Keep the host-only turn-lifecycle bookkeeping around the core call:
  *    timing refs, completion time, the long-turn summary message, and the
  *    cancel-and-restore-last-prompt behavior (input history is a terminal
@@ -52,12 +50,15 @@ import type {
   StreamingToolUse,
   StreamingThinking,
 } from '../../utils/messages.js'
-import { SessionCore, type SessionCoreDeps } from '../../session/SessionCore.js'
+import type {
+  SessionCore,
+  SessionCoreTurnInputs,
+} from '../../session/SessionCore.js'
 import type { SessionEvent } from '../../session/events.js'
 
 export function useReplQueryExecution(props: {
-  messagesRef: React.RefObject<MessageType[]>
-  setMessages: (action: React.SetStateAction<MessageType[]>) => void
+  /** The session core (created with the transcript by the host hook). */
+  core: SessionCore
   setStreamMode: (mode: SpinnerMode) => void
   setStreamingToolUses: React.Dispatch<React.SetStateAction<StreamingToolUse[]>>
   setStreamingThinking: React.Dispatch<
@@ -123,26 +124,29 @@ export function useReplQueryExecution(props: {
     propsRef.current = props
   })
 
-  const depsRef = useRef<SessionCoreDeps | null>(null)
-  if (depsRef.current === null) {
-    const p = props
-    depsRef.current = {
-      messagesRef: p.messagesRef as React.MutableRefObject<MessageType[]>,
-      setMessages: next => propsRef.current.setMessages(next),
-      queryGuard: p.queryGuard,
-      getToolUseContext: p.getToolUseContext,
-      canUseTool: p.canUseTool,
-      store: p.store,
-      toolPermissionContext: p.toolPermissionContext,
-      setAppState: p.setAppState,
-      initialMcpClients: p.initialMcpClients,
-      mainThreadAgentDefinition: p.mainThreadAgentDefinition,
-      customSystemPrompt: p.customSystemPrompt,
-      appendSystemPrompt: p.appendSystemPrompt,
+  const core = props.core
+
+  // The loop-inputs carrier. One object, built once, refreshed in place
+  // after every render and rebound every render — the core never sees a
+  // stale permission context or agent definition, and it never sees a
+  // second instance either.
+  const inputsRef = useRef<SessionCoreTurnInputs | null>(null)
+  if (inputsRef.current === null) {
+    inputsRef.current = {
+      queryGuard: props.queryGuard,
+      getToolUseContext: props.getToolUseContext,
+      canUseTool: props.canUseTool,
+      store: props.store,
+      toolPermissionContext: props.toolPermissionContext,
+      setAppState: props.setAppState,
+      initialMcpClients: props.initialMcpClients,
+      mainThreadAgentDefinition: props.mainThreadAgentDefinition,
+      customSystemPrompt: props.customSystemPrompt,
+      appendSystemPrompt: props.appendSystemPrompt,
       title: {
-        disabled: p.titleDisabled,
-        current: p.sessionTitle,
-        agentTitle: p.agentTitle,
+        disabled: props.titleDisabled,
+        current: props.sessionTitle,
+        agentTitle: props.agentTitle,
         onAutoTitle: t => propsRef.current.setAutoTitle(t),
       },
       onBeforeQuery: (input, messages, newCount) =>
@@ -150,15 +154,11 @@ export function useReplQueryExecution(props: {
       onTurnComplete: messages => propsRef.current.onTurnComplete?.(messages),
     }
   }
-  const coreRef = useRef<SessionCore | null>(null)
-  if (coreRef.current === null) {
-    coreRef.current = new SessionCore(depsRef.current)
-  }
-  const core = coreRef.current
+  core.bindTurnInputs(inputsRef.current)
 
-  // Refresh the volatile deps after every render.
+  // Refresh the volatile inputs after every render.
   useEffect(() => {
-    const d = depsRef.current!
+    const d = inputsRef.current!
     const p = propsRef.current
     d.queryGuard = p.queryGuard
     d.getToolUseContext = p.getToolUseContext
@@ -210,9 +210,8 @@ export function useReplQueryExecution(props: {
           p.setStreamingThinking(event.thinking)
           return
         case 'transcript_replaced':
-          // The new array already arrived via setMessages (the core wrote
-          // through it); this is the one render-side reaction compaction
-          // wants.
+          // The core already holds the new array; this is the one
+          // render-side reaction compaction wants.
           if (event.reason === 'compact') {
             p.scrollRef.current?.scrollToBottom()
           }
@@ -241,7 +240,7 @@ export function useReplQueryExecution(props: {
           p.setConversationId(event.id)
           return
         default:
-          // transcript_* mutations arrived through setMessages; surface
+          // transcript_* mutations are projected by useReplMessages; surface
           // events (meta/todos/queue/tasks) are consumed by the wire
           // projector, not re-applied here.
           return
@@ -290,16 +289,15 @@ export function useReplQueryExecution(props: {
       p.setLastQueryCompletionTime(Date.now())
       p.resetLoadingState()
       await p.mrOnTurnComplete(
-        propsRef.current.messagesRef.current,
+        core.getMessages() as MessageType[],
         abortController.signal.aborted,
       )
 
       const turnDurationMs =
         Date.now() - p.loadingStartTimeRef.current - p.totalPausedMsRef.current
       if (turnDurationMs > 30000 && !abortController.signal.aborted) {
-        const prev = propsRef.current.messagesRef.current
-        p.setMessages(prev => [
-          ...prev,
+        const prev = core.getMessages()
+        core.appendMessages([
           createTurnDurationMessage(
             turnDurationMs,
             count(prev, isLoggableMessage),
@@ -316,7 +314,7 @@ export function useReplQueryExecution(props: {
         getCommandQueueLength() === 0 &&
         !p.store.getState().viewingAgentTaskId
       ) {
-        const msgs = propsRef.current.messagesRef.current
+        const msgs = core.getMessages() as MessageType[]
         const lastUserMsg = msgs.findLast(selectableUserMessagesFilter)
         if (lastUserMsg) {
           const idx = msgs.lastIndexOf(lastUserMsg)
