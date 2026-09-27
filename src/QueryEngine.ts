@@ -86,7 +86,7 @@ import {
   type ThinkingConfig,
 } from './utils/thinking.js'
 
-import * as messageSelector from 'src/components/MessageSelector.js'
+import { selectableUserMessagesFilter } from './utils/messagePredicates.js'
 import {
   localCommandOutputToSDKAssistantMessage,
   toSDKCompactMetadata,
@@ -440,7 +440,7 @@ export class QueryEngine {
         (msg.type === 'user' &&
           !msg.isMeta && // Skip synthetic caveat messages
           !msg.toolUseResult && // Skip tool results (they'll be acked from query)
-          messageSelector.selectableUserMessagesFilter(msg)) || // Skip non-user-authored messages (task notifications, etc.)
+          selectableUserMessagesFilter(msg)) || // Skip non-user-authored messages (task notifications, etc.)
         (msg.type === 'system' && msg.subtype === 'compact_boundary'), // Always ack compact boundaries
     )
     const messagesToAck = replayUserMessages ? replayableMessages : []
@@ -620,7 +620,7 @@ export class QueryEngine {
 
     if (fileHistoryEnabled() && persistSession) {
       messagesFromUserInput
-        .filter(messageSelector.selectableUserMessagesFilter)
+        .filter(selectableUserMessagesFilter)
         .forEach(message => {
           void fileHistoryMakeSnapshot(
             (updater: (prev: FileHistoryState) => FileHistoryState) => {

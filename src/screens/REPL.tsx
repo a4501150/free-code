@@ -59,11 +59,11 @@ import type {
   QueuedCommand,
   VimMode,
 } from '../types/textInputTypes.js'
+import { MessageSelector } from '../components/MessageSelector.js'
 import {
-  MessageSelector,
   selectableUserMessagesFilter,
   messagesAfterAreOnlySynthetic,
-} from '../components/MessageSelector.js'
+} from '../utils/messagePredicates.js'
 import { useIdeLogging } from '../hooks/useIdeLogging.js'
 import {
   PermissionRequest,

@@ -1,0 +1,534 @@
+/**
+ * An in-process hosted session — the unit sessiond hosts N of.
+ *
+ * One `HostedSession` binds together the pieces a single-session process
+ * wires implicitly: a private session scope (`newSessionState`, so every
+ * `getSessionId()`-style accessor inside a turn resolves to this session),
+ * a private AppState store, a `SessionCore` that runs each turn inside that
+ * scope, a wire `SessionChannel` carrying the session's own request broker,
+ * and the framework-free input chain (`handlePromptSubmit` →
+ * `processUserInput` → `core.submitTurn`) that the TUI and the queue
+ * processor share.
+ *
+ * Submissions go through the session's command queue even in-process: a
+ * busy session parks fresh prompts (core.submitTurn enqueues on busy) and
+ * the drain picks them up at turn end, so an HTTP submit never races the
+ * loop. Permission asks open on the session's broker — the same single
+ * ask/race site every host uses — so a request stays open when nobody is
+ * attached rather than auto-denying.
+ *
+ * This module must not import react/ink: what the TUI passes from render
+ * state arrives as plain values or no-ops here.
+ */
+
+import { randomUUID, type UUID } from 'crypto'
+import type { SessionId } from '../types/ids.js'
+import {
+  newSessionState,
+  runInSessionScope,
+  setMainLoopModelOverride,
+  getTotalCostUSD,
+  getTotalLinesAdded,
+  getTotalLinesRemoved,
+  type SessionState,
+} from '../bootstrap/state.js'
+import {
+  SessionCore,
+  type SessionCoreTurnInputs,
+} from '../session/SessionCore.js'
+import { currentSessionRequests } from '../session/requests.js'
+import type {
+  WireImage,
+  WirePendingCommand,
+  WirePermissionMode,
+  WireSessionActivity,
+  WireSessionState,
+} from '../session/wire.js'
+import { createSessionChannel, type SessionChannel } from '../server/channel.js'
+import { buildSubmitValue, type SessionRuntime } from '../server/runtime.js'
+import { buildWireCatalog, tasksToWire } from '../server/catalog.js'
+import { createStore, type Store } from '../state/store.js'
+import { getDefaultAppState, type AppState } from '../state/AppStateStore.js'
+import { QueryGuard } from '../utils/QueryGuard.js'
+import {
+  enqueue,
+  getCommandQueueSnapshot,
+  subscribeToCommandQueue,
+} from '../utils/messageQueueManager.js'
+import { processQueueIfReady } from '../utils/queueProcessor.js'
+import { handlePromptSubmit } from '../utils/handlePromptSubmit.js'
+import { hasPermissionsToUseTool } from '../utils/permissions/permissions.js'
+import { EXTERNAL_PERMISSION_MODES } from '../utils/permissions/PermissionMode.js'
+import { transitionPermissionMode } from '../utils/permissions/permissionSetup.js'
+import { wrapCanUseToolWithWebUI } from '../server/headlessBridge.js'
+import { logError } from '../utils/log.js'
+import { provisionContentReplacementState } from '../utils/toolResultStorage.js'
+import { getStreamActivity } from '../utils/streamActivity.js'
+import { getDefaultMainLoopModel } from '../utils/model/modelResolution.js'
+import { buildToolUseContext } from './toolUseContext.js'
+import type { QueuedCommand } from '../types/textInputTypes.js'
+import type { Command } from '../commands.js'
+import type { Tool } from '../Tool.js'
+import type { Message } from '../types/message.js'
+import type { DomainUserContentBlock } from '../types/domain.js'
+
+export type HostedSessionOptions = {
+  /** Defaults to a fresh UUID; pass an existing id to adopt a resumed one. */
+  sessionId?: string
+  cwd: string
+  initialTranscript?: Message[]
+  /** Slash-command registry surfaced to the model and the wire catalog. */
+  commands?: Command[]
+  /** The session's own tool pool (assembleToolPool merges permission/MCP). */
+  tools?: Tool[]
+  /** null / undefined: the account/config default. */
+  model?: string | null
+  permissionMode?: WirePermissionMode
+  customSystemPrompt?: string
+  appendSystemPrompt?: string
+}
+
+export type HostedSession = {
+  readonly scope: SessionState
+  readonly store: Store<AppState>
+  readonly core: SessionCore
+  readonly channel: SessionChannel
+  readonly runtime: SessionRuntime
+  readonly queryGuard: QueryGuard
+  readonly sessionId: string
+  /** Queue a prompt on this session; starts a turn when idle. */
+  submit(
+    content: string | DomainUserContentBlock[],
+    options?: {
+      delivery?: 'next' | 'interrupt'
+      isMeta?: boolean
+      images?: WireImage[]
+      commandId?: string
+    },
+  ): void
+  /** Abort the running turn, if any. */
+  cancel(): void
+  stop(): void
+}
+
+export function createHostedSession(
+  options: HostedSessionOptions,
+): HostedSession {
+  const sessionId = (options.sessionId ?? randomUUID()) as SessionId
+  const scope = newSessionState({
+    sessionId,
+    cwd: options.cwd,
+    originalCwd: options.cwd,
+    projectRoot: options.cwd,
+  })
+  const store = createStore<AppState>(getDefaultAppState())
+  if (options.permissionMode) {
+    const mode = options.permissionMode
+    store.setState(prev => ({
+      ...prev,
+      toolPermissionContext: {
+        ...prev.toolPermissionContext,
+        mode,
+      },
+    }))
+  }
+  const setAppState = (updater: (prev: any) => any): void => {
+    store.setState(updater)
+  }
+  const queryGuard = new QueryGuard()
+
+  const broker = runInSessionScope(scope, () => currentSessionRequests())
+
+  // No terminal dialog exists for a hosted session: an `ask` decision goes
+  // to the session's broker (mirrored on the wire channel) and waits.
+  const canUseTool = wrapCanUseToolWithWebUI(
+    async (
+      tool,
+      input,
+      toolUseContext,
+      assistantMessage,
+      toolUseId,
+      forceDecision,
+    ) =>
+      forceDecision ??
+      (await hasPermissionsToUseTool(
+        tool,
+        input,
+        toolUseContext,
+        assistantMessage,
+        toolUseId,
+      )),
+  )
+
+  const readFileStateRef = { current: new Map<string, any>() }
+  const loadedNestedMemoryPathsRef = { current: new Set<string>() }
+  const hasInterruptibleToolInProgressRef = { current: false }
+  const contentReplacementStateRef = {
+    current: provisionContentReplacementState(),
+  }
+  let inProgressToolUseIds: ReadonlySet<string> = new Set()
+
+  // The context facade the builder shares with the TUI's projection:
+  // host-side edits route back through the core.
+  const setMessages = (
+    action: Message[] | ((prev: Message[]) => Message[]),
+  ): void => {
+    const prev = core.getMessages() as Message[]
+    core.replaceMessages(
+      typeof action === 'function' ? action(prev) : action,
+      'edit',
+    )
+  }
+
+  const resolveModel = (): string | undefined => {
+    const s = store.getState()
+    if (s.mainLoopModelForSession) return s.mainLoopModelForSession
+    if (options.model) return options.model
+    try {
+      return getDefaultMainLoopModel()
+    } catch {
+      return undefined
+    }
+  }
+
+  const getToolUseContext = buildToolUseContext({
+    commands: options.commands ?? [],
+    combinedInitialTools: options.tools ?? [],
+    mainThreadAgentDefinition: undefined,
+    debug: false,
+    ideInstallationStatus: undefined,
+    theme: 'dark',
+    allowedAgentTypes: undefined,
+    store,
+    setAppState,
+    reverify: () => {},
+    addNotification: () => {},
+    setMessages,
+    onChangeDynamicMcpConfig: () => {},
+    resume: undefined,
+    requestPrompt: undefined,
+    disabled: false,
+    customSystemPrompt: options.customSystemPrompt,
+    appendSystemPrompt: options.appendSystemPrompt,
+    setConversationId: () => {},
+    terminal: undefined,
+    readFileState: readFileStateRef,
+    setToolJSX: () => {},
+    loadedNestedMemoryPathsRef,
+    setResponseLength: () => {},
+    setStreamMode: () => {
+      channel.publishMeta()
+    },
+    // The core owns the compacting fact and announces it; the wire mirrors.
+    onCompactProgress: event => core.handleCompactProgress(event),
+    setInProgressToolUseIDs: action => {
+      inProgressToolUseIds =
+        typeof action === 'function'
+          ? action(new Set(inProgressToolUseIds))
+          : action
+    },
+    hasInterruptibleToolInProgressRef,
+    scrollRef: { current: null },
+    contentReplacementStateRef,
+    setIDEToInstallExtension: () => {},
+    setIsMessageSelectorVisible: () => {},
+    thinkingConfig: { type: 'adaptive' },
+  })
+
+  const inputs: SessionCoreTurnInputs = {
+    queryGuard,
+    getToolUseContext,
+    canUseTool,
+    store,
+    toolPermissionContext: store.getState().toolPermissionContext,
+    setAppState,
+    title: {
+      disabled: true,
+      current: undefined,
+      agentTitle: undefined,
+      onAutoTitle: () => {},
+    },
+  }
+
+  const core = new SessionCore({
+    scope,
+    initialTranscript: options.initialTranscript
+      ? [...options.initialTranscript]
+      : [],
+    turnInputs: inputs,
+  })
+
+  let currentAbortController: AbortController | null = null
+
+  const onQuery: Parameters<typeof handlePromptSubmit>[0]['onQuery'] = async (
+    newMessages,
+    abortController,
+    shouldQuery,
+    additionalAllowedTools,
+    mainLoopModel,
+    onBeforeQuery,
+    input,
+    effort,
+  ) => {
+    currentAbortController = abortController
+    inputs.toolPermissionContext = store.getState().toolPermissionContext
+    try {
+      await core.submitTurn({
+        newMessages,
+        abortController,
+        shouldQuery,
+        additionalAllowedTools,
+        mainLoopModel,
+        input,
+        effort,
+        proceedGate: onBeforeQuery,
+      })
+    } finally {
+      currentAbortController = null
+    }
+  }
+
+  const executeInput = async (commands: QueuedCommand[]): Promise<void> => {
+    await handlePromptSubmit({
+      helpers: {
+        setCursorOffset: () => {},
+        clearBuffer: () => {},
+        resetHistory: () => {},
+      },
+      queryGuard,
+      commands: options.commands ?? [],
+      onInputChange: () => {},
+      setPastedContents: () => {},
+      setToolJSX: () => {},
+      getToolUseContext,
+      messages: core.getMessages() as Message[],
+      mainLoopModel: resolveModel() ?? 'claude-sonnet-4-20250514',
+      ideSelection: undefined,
+      setUserInputOnProcessing: () => {},
+      setAbortController: controller => {
+        currentAbortController = controller
+      },
+      onQuery,
+      setAppState,
+      querySource: 'repl_main_thread',
+      canUseTool,
+      queuedCommands: commands,
+    })
+  }
+
+  /** Drain one step of this session's queue when the loop is free. */
+  function pump(): void {
+    if (queryGuard.isActive) return
+    runInSessionScope(scope, () => {
+      processQueueIfReady({
+        // A hosted turn must not take the serve process down: failures are
+        // logged and the queue is re-armed for the next item.
+        executeInput: async commands => {
+          try {
+            await executeInput(commands)
+          } catch (err) {
+            logError(err)
+            queueMicrotask(pump)
+          }
+        },
+      })
+    })
+  }
+
+  const channel = createSessionChannel({
+    sessionId,
+    cwd: options.cwd,
+    startedAt: Date.now(),
+    broker,
+    getCost: () =>
+      runInSessionScope(scope, () => ({
+        costUsd: getTotalCostUSD(),
+        linesAdded: getTotalLinesAdded(),
+        linesRemoved: getTotalLinesRemoved(),
+      })),
+  })
+
+  const runtime: SessionRuntime = {
+    getMessages: () => core.getMessages(),
+    getState: (): WireSessionState =>
+      runInSessionScope(scope, () =>
+        broker.pending().length > 0
+          ? 'requires_action'
+          : queryGuard.isActive
+            ? 'running'
+            : 'idle',
+      ),
+    getActivity: (): WireSessionActivity | undefined =>
+      queryGuard.isActive
+        ? runInSessionScope(scope, () => getStreamActivity())
+        : undefined,
+    getIsCompacting: () => core.isCompacting,
+    getModel: () => resolveModel(),
+    getPermissionMode: () => {
+      const mode = store.getState().toolPermissionContext.mode as string
+      return (EXTERNAL_PERMISSION_MODES as readonly string[]).includes(mode)
+        ? (mode as WirePermissionMode)
+        : undefined
+    },
+    getTodos: () => [],
+    getTasks: () => tasksToWire(store.getState().tasks ?? {}),
+    getCatalog: () => buildWireCatalog(options.commands ?? []),
+    getPendingCommands: () =>
+      runInSessionScope(scope, () => {
+        const commands: WirePendingCommand[] = []
+        for (const cmd of getCommandQueueSnapshot()) {
+          if (cmd.mode !== 'prompt') continue
+          const text =
+            typeof cmd.value === 'string'
+              ? cmd.value
+              : cmd.value
+                  .filter(
+                    (b): b is { type: 'text'; text: string } =>
+                      b.type === 'text',
+                  )
+                  .map(b => b.text)
+                  .join('\n')
+          if (text && cmd.uuid) {
+            commands.push({ id: cmd.uuid, text, isMeta: cmd.isMeta })
+          }
+        }
+        return commands
+      }),
+    getInProgressToolUseIds: () => inProgressToolUseIds,
+
+    submit(content, delivery, commandId, images) {
+      submitInner(
+        buildSubmitValue(content, images),
+        delivery,
+        commandId,
+        undefined,
+      )
+    },
+
+    cancel() {
+      cancel()
+    },
+
+    setModel(model) {
+      store.setState(prev => ({ ...prev, mainLoopModelForSession: model }))
+      runInSessionScope(scope, () =>
+        setMainLoopModelOverride(model ?? undefined),
+      )
+      channel.publishMeta()
+    },
+
+    setMode(mode) {
+      store.setState(prev => {
+        const context = prev.toolPermissionContext
+        const next = transitionPermissionMode(context.mode, mode, context)
+        return {
+          ...prev,
+          toolPermissionContext: { ...next, mode },
+        }
+      })
+      channel.publishMeta()
+    },
+  }
+  channel.registerRuntime(runtime)
+
+  // Core events drive the wire: every transcript write republishes the
+  // diff, every lifecycle beat refreshes meta, and turn end re-arms the
+  // queue drain.
+  const unsubscribeCore = core.subscribe(event => {
+    switch (event.type) {
+      case 'transcript_appended':
+      case 'transcript_replaced':
+      case 'transcript_progress_replaced':
+      case 'transcript_removed':
+        channel.publishTranscript()
+        return
+      case 'turn_finished':
+        channel.publishMeta()
+        pump()
+        return
+      case 'activity':
+      case 'turn_started':
+      case 'compacting':
+      case 'conversation_id':
+        channel.publishMeta()
+        return
+      default:
+        return
+    }
+  })
+
+  // The queue store is session-scoped: both the subscription registration
+  // and the callback body must resolve against this session's scope.
+  const onQueueChanged = (): void => {
+    runInSessionScope(scope, () => {
+      channel.publishQueue()
+      pump()
+    })
+  }
+  const unsubscribeQueue = runInSessionScope(scope, () =>
+    subscribeToCommandQueue(onQueueChanged),
+  )
+
+  function submitInner(
+    value: string | DomainUserContentBlock[],
+    delivery: 'next' | 'interrupt' | undefined,
+    commandId: string,
+    isMeta: boolean | undefined,
+  ): void {
+    runInSessionScope(scope, () => {
+      enqueue({
+        mode: 'prompt',
+        value,
+        priority: delivery === 'interrupt' ? 'now' : 'next',
+        uuid: commandId as UUID,
+        origin: { kind: 'webui' },
+        isMeta,
+      })
+    })
+    pump()
+  }
+
+  function submit(
+    content: string | DomainUserContentBlock[],
+    submitOptions?: {
+      delivery?: 'next' | 'interrupt'
+      isMeta?: boolean
+      images?: WireImage[]
+      commandId?: string
+    },
+  ): void {
+    submitInner(
+      typeof content === 'string'
+        ? buildSubmitValue(content, submitOptions?.images)
+        : content,
+      submitOptions?.delivery,
+      submitOptions?.commandId ?? randomUUID(),
+      submitOptions?.isMeta,
+    )
+  }
+
+  function cancel(): void {
+    currentAbortController?.abort('user-cancel')
+  }
+
+  function stop(): void {
+    currentAbortController?.abort('user-cancel')
+    runInSessionScope(scope, () => broker.cancelAll())
+    unsubscribeQueue()
+    unsubscribeCore()
+    channel.stop()
+  }
+
+  return {
+    scope,
+    store,
+    core,
+    channel,
+    runtime,
+    queryGuard,
+    sessionId,
+    submit,
+    cancel,
+    stop,
+  }
+}

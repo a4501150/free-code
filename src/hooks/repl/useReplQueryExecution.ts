@@ -33,7 +33,7 @@ import {
 import {
   selectableUserMessagesFilter,
   messagesAfterAreOnlySynthetic,
-} from '../../components/MessageSelector.js'
+} from '../../utils/messagePredicates.js'
 import { removeLastFromHistory } from '../../history.js'
 import { createAbortController } from '../../utils/abortController.js'
 import type {
