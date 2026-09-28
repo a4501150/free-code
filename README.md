@@ -115,6 +115,7 @@ Every UI is a client of one wire: HTTP commands in, an SSE event stream out
 - sessiond (`src/sessiond/`, `claude web serve`) hosts N cores in one process and serves the browser UI plus a tokened local surface.
 - A plain terminal process exposes the same wire surface; a descriptor in `~/.freecode/attach/` carries its loopback port and bearer token, which is how `claude attach`, other sessions and the browser pool find it.
 - The browser client and `claude attach` render from the same view-store reducer (`src/session/viewStore.ts`); each client keeps only its own input ergonomics and presentation.
+- The default terminal startup is itself a client: the CLI starts an in-process sessiond, hosts its session there, and renders the viewer. `--classic` (or `"wireTui": false` in settings) runs the traditional in-process REPL instead; `--ide`, `--mcp-config`, `--tasks` and `--coordinator` fall back to it with a visible notice until their machinery is hosted.
 
 The `-p`/SDK stdout (`SDKMessage` ndjson) is a separate, stable projection of the same core.
 
