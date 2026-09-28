@@ -21,6 +21,7 @@
     "format": "prettier --write .",
     "test": "bun run test:unit && bun run test:e2e",
     "test:e2e": "bun test tests/e2e/ --timeout 120000",
+    "test:e2e:hosted": "E2E_MODE=hosted bun test tests/e2e/ask-user-question-alignment.test.ts tests/e2e/ask-user-question-preview-scroll.test.ts tests/e2e/auto-mode-classifier-deny.test.ts tests/e2e/background-task-kill-notification.test.ts tests/e2e/border-blit.test.ts tests/e2e/clear-scroll-blank.test.ts tests/e2e/codex-reasoning-continuity.test.ts tests/e2e/commands-internal-survivors.test.ts tests/e2e/edge-cases.test.ts tests/e2e/edit-inflight-panel-repaint.test.ts tests/e2e/injected-context-visibility.test.ts tests/e2e/jump-to-bottom-pill.test.ts tests/e2e/plan-mode.test.ts tests/e2e/prompt-suggestion-ghost.test.ts tests/e2e/repl.test.ts tests/e2e/resume-context.test.ts tests/e2e/resume-session-ownership.test.ts tests/e2e/scroll-follow-resume.test.ts tests/e2e/shell-detail-command-scroll.test.ts tests/e2e/spinner-visible-during-streaming.test.ts tests/e2e/statusline.test.ts tests/e2e/task-create-collapsed-blink.test.ts tests/e2e/task-panel-idle-header.test.ts tests/e2e/task-update-title-repaint.test.ts tests/e2e/thinking-swap-repaint.test.ts --timeout 120000",
     "test:unit": "bun test tests/unit/",
     "typecheck": "tsc --noEmit"
   },

@@ -113,7 +113,10 @@ export class TmuxSession {
     // assertions written against the in-process REPL opt into `--classic`
     // by default here. A leading subcommand (attach, web, doctor…) is left
     // alone — hosted/classic is a REPL-path fork, not a subcommand flag.
-    this._hostedTui = options.hostedTui === true
+    // E2E_MODE=hosted flips the default for every file unchanged — the
+    // dual-mode matrix runs the same scenarios against the hosted viewer.
+    this._hostedTui =
+      options.hostedTui ?? process.env.E2E_MODE === 'hosted'
     const extraArgs = options.additionalArgs ?? []
     this._additionalArgs =
       !this._hostedTui && (extraArgs[0]?.startsWith('-') ?? true)
