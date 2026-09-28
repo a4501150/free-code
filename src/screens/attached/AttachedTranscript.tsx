@@ -176,6 +176,7 @@ export function AttachedTranscript({
             <Message
               message={row}
               lookups={bridge.lookups}
+              showInjectedContext={showInjectedContext}
               // Classic dispatch: a tool_result rides under its card with
               // no gap; every other row carries its own top margin.
               addMargin={
@@ -285,6 +286,10 @@ export function AttachedTranscript({
         <Message
           message={row as never}
           lookups={bridge.lookups}
+          // Without this the meta context row renders NOTHING (the prop
+          // defaults false and UserTextMessage hides meta reminders),
+          // which is how the `Session context` row silently disappeared.
+          showInjectedContext={showInjectedContext}
           addMargin
           tools={tools}
           commands={[]}
