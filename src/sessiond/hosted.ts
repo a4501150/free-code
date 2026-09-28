@@ -349,6 +349,11 @@ export function createHostedSession(
       // one point guaranteed to run after guard release. A steered
       // ('now'-priority) command runs next.
       pump()
+      // Same reason for meta: the turn_finished publish measured the state
+      // while the guard was still held, so it said `running`. Without this
+      // republication a viewer's status stays "working…" after the turn
+      // ends — nothing else publishes on guard release.
+      channel.publishMeta()
     }
   }
 

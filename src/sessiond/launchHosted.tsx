@@ -73,6 +73,9 @@ export async function launchHosted(
           pid={process.pid}
           sessionId={entry.hosted.channel.sessionId}
           initialPrompt={launch.initialPrompt}
+          // The pane this process shows at boot replaces the REPL's:
+          // the classic banner, not the remote attach's one-liner.
+          showWelcomeBanner
         />
       </App>,
     )

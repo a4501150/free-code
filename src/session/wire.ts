@@ -104,6 +104,15 @@ export type WireAttachmentPayload = {
   type: string
   display: string
   data?: unknown
+  /**
+   * The full system-reminder text this attachment injects (the same bodies
+   * the classic REPL transcript expands into), when the attachment injects
+   * any. Lets a remote client render the collapsed `System reminder · type
+   * (n lines)` row with the real line count instead of guessing from
+   * `display`. Absent means the body could not be derived; `display` still
+   * renders.
+   */
+  reminder?: string
 }
 
 export type WireItem = {
@@ -132,6 +141,12 @@ export type WireItem = {
   toolInput?: unknown
   /** tool_result */
   isError?: boolean
+  /**
+   * reasoning — thinking time measured host-side (recorded at
+   * content_block_stop), which lets a remote row say `thought for Xs`
+   * like the REPL's. Absent when the host never measured one.
+   */
+  durationMs?: number
   /** progress — live tool/hook activity, keyed so a UI can hang it on its tool */
   progress?: { toolUseId: string; toolName?: string; data?: unknown }
   /** attachment */

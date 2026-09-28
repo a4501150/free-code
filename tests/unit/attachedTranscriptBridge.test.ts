@@ -7,7 +7,6 @@ import {
   bridgeTranscript,
   isInjectedContextItem,
 } from '../../src/screens/attached/transcriptBridge.js'
-import { statusLineParts } from '../../src/screens/attached/itemViews.js'
 import type {
   WireItem,
   WireTranscriptSnapshot,
@@ -91,12 +90,16 @@ describe('bridgeTranscript', () => {
     expect(bridged.lookups.erroredToolUseIDs.has('tu-9')).toBe(true)
   })
 
-  test('injected-context rows are hidden by default and revealed on request', () => {
+  test('injected-context rows ride like every other row, flagged injected', () => {
     const snap = snapshot([
       item({
         id: 'x1',
         kind: 'attachment',
-        attachment: { type: 'user_context_snapshot', display: 'context' },
+        attachment: {
+          type: 'user_context_snapshot',
+          display: 'context',
+          reminder: 'ctx\nline two',
+        },
       }),
       item({
         id: 'x2',
@@ -104,21 +107,12 @@ describe('bridgeTranscript', () => {
         attachment: { type: 'session_guidance', display: 'guidance' },
       }),
       item({
-        id: 'x3',
-        kind: 'attachment',
-        attachment: { type: 'skill_listing', display: 'skills' },
-      }),
-      item({
         id: 'x4',
         kind: 'attachment',
         attachment: { type: 'file', display: 'a file' },
       }),
     ])
-    for (const type of [
-      'user_context_snapshot',
-      'session_guidance',
-      'skill_listing',
-    ]) {
+    for (const type of ['user_context_snapshot', 'session_guidance']) {
       expect(
         isInjectedContextItem(
           item({
@@ -129,12 +123,20 @@ describe('bridgeTranscript', () => {
         ),
       ).toBe(true)
     }
-    const hidden = bridgeTranscript(snap, false)
-    expect(hidden.units).toHaveLength(1) // only the `file` attachment
-    expect(hidden.units[0]!.kind).toBe('attachment')
-
-    const shown = bridgeTranscript(snap, true)
-    expect(shown.units).toHaveLength(4)
+    // The classic pane shows collapsed reminder rows by default, so the
+    // bridge never drops them: every attachment becomes a unit.
+    const bridged = bridgeTranscript(snap, false)
+    expect(bridged.units).toHaveLength(3)
+    const attachments = bridged.units.filter(
+      u => u.kind === 'attachment' && 'item' in u,
+    ) as Extract<(typeof bridged.units)[number], { kind: 'attachment' }>[]
+    const byId = new Map(attachments.map(u => [u.item.id, u]))
+    expect(byId.get('x1')!.injected).toBe(true)
+    expect(byId.get('x2')!.injected).toBe(true)
+    expect(byId.get('x4')!.injected).toBe(false)
+    // The reminder body rides the unit: the transcript component needs it
+    // for the real line count, and the bridge passes items through as is.
+    expect(byId.get('x1')!.item.attachment?.reminder).toBe('ctx\nline two')
   })
 
   test('a user item carries its text into a user message; isMeta is preserved', () => {
@@ -165,50 +167,5 @@ describe('bridgeTranscript', () => {
     expect(bridged.units).toEqual([
       { kind: 'system', item: expect.objectContaining({ id: 's1' }) },
     ])
-  })
-})
-
-describe('statusLineParts', () => {
-  const meta = {
-    sessionId: 's',
-    sessionEpoch: 0,
-    cwd: '/',
-    startedAt: 0,
-    state: 'idle' as const,
-    model: 'glm-5.3-flash-free',
-    permissionMode: 'plan' as const,
-    context: { usedTokens: 30, maxTokens: 100, usedPercent: 30 },
-    costUsd: 1.234,
-  }
-
-  test('reads model, mode, context and cost in order', () => {
-    expect(statusLineParts(meta)).toEqual([
-      'glm-5.3-flash-free',
-      'plan',
-      '30% context',
-      '$1.23',
-    ])
-  })
-
-  test('a running turn leads with the activity wording and elapsed time', () => {
-    const parts = statusLineParts(
-      { ...meta, state: 'running', activity: 'tool-use' },
-      { elapsedMs: 4200 },
-    )
-    expect(parts[0]).toBe('running tools…')
-    expect(parts[1]).toBe('4s')
-  })
-
-  test('a tray replaces the activity with the wait-for-you label', () => {
-    const parts = statusLineParts(
-      { ...meta, state: 'running', activity: 'tool-use' },
-      { waitingForUser: true },
-    )
-    expect(parts[0]).toBe('waiting for you')
-  })
-
-  test('the default permission mode is not shown', () => {
-    const parts = statusLineParts({ ...meta, permissionMode: 'default' })
-    expect(parts).not.toContain('default')
   })
 })

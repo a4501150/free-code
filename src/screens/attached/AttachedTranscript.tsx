@@ -20,6 +20,8 @@ import type { SessionView } from '../../session/viewStore.js'
 import { bridgeTranscript, type BridgedTranscript } from './transcriptBridge.js'
 import { attachmentGutter, compactDividerText, foldText } from './itemViews.js'
 import { attachmentView, progressView } from '../../webui/client/itemViews.js'
+import { InjectedContextMessage } from '../../components/messages/InjectedContextMessage.js'
+import { InVirtualListContext } from '../../components/messageActions.js'
 
 type Props = {
   view: SessionView
@@ -77,7 +79,12 @@ export function AttachedTranscript({
     return map
   }, [snapshot.items])
 
+  // The classic prompt-screen margin rule (MessageRow): every rendered row
+  // carries its own top margin, except an injected-context row whose
+  // previous rendered row is also injected context (a run shares one gap),
+  // and tool_result rows, which hang under their tool card with no gap.
   const body: React.ReactNode[] = []
+  let prevRenderedInjected = false
   for (const unit of bridge.units) {
     if (unit.kind === 'message') {
       const blocks = Array.isArray(unit.message.message.content)
@@ -104,6 +111,7 @@ export function AttachedTranscript({
             )
           }
         }
+        prevRenderedInjected = false
         continue
       }
       // A tool_result whose call it stands for is unresolvable here: its
@@ -130,15 +138,30 @@ export function AttachedTranscript({
         body.push(
           <Box
             key={`${(row as { uuid: string }).uuid}:${(row as { message?: { content?: unknown[] } }).message?.content?.length ?? 0}`}
-            paddingX={2}
           >
             <Message
               message={row}
               lookups={bridge.lookups}
-              addMargin={false}
+              // Classic dispatch: a tool_result rides under its card with
+              // no gap; every other row carries its own top margin.
+              addMargin={
+                !(
+                  Array.isArray(
+                    (row as { message?: { content?: unknown } }).message
+                      ?.content,
+                  ) &&
+                  (
+                    (row as { message: { content: Array<{ type: string }> } })
+                      .message.content[0] as { type: string } | undefined
+                  )?.type === 'tool_result'
+                )
+              }
               tools={tools}
               commands={[]}
-              verbose={false}
+              // The viewer's ctrl+O is the classic's expansion switch for
+              // this pane: the same prop that reveals reminder bodies
+              // reveals thinking bodies and verbose tool rows.
+              verbose={showInjectedContext}
               inProgressToolUseIDs={inProgress}
               progressMessagesForMessage={[]}
               shouldAnimate={false}
@@ -150,16 +173,18 @@ export function AttachedTranscript({
           </Box>,
         )
       }
+      prevRenderedInjected = false
       continue
     }
 
     if (unit.kind === 'system') {
       const divider = compactDividerText(unit.item)
       body.push(
-        <Box key={unit.item.id} paddingX={2}>
+        <Box key={unit.item.id} marginTop={1}>
           <Text dimColor>── {divider ?? unit.item.text} ──</Text>
         </Box>,
       )
+      prevRenderedInjected = false
       continue
     }
 
@@ -174,23 +199,53 @@ export function AttachedTranscript({
           </Text>
         </Box>,
       )
+      prevRenderedInjected = false
       continue
     }
 
-    // attachment (revealed)
+    // attachment
+    if (unit.injected) {
+      // The classic collapsed row: `▸ System reminder · type (n lines)`,
+      // expanded under showInjectedContext. The reminder body rides the
+      // wire for exactly this; without one (host older than the field,
+      // or a type that injects no reminder) the type name alone still
+      // matches what the classic pane would say for an empty body.
+      const reminder = unit.item.attachment?.reminder ?? ''
+      body.push(
+        <InjectedContextMessage
+          key={unit.item.id}
+          addMargin={!prevRenderedInjected}
+          label={`System reminder · ${unit.item.attachment?.type ?? 'context'}`}
+          content={reminder || unit.item.attachment?.display || ''}
+          verbose={showInjectedContext}
+        />,
+      )
+      prevRenderedInjected = true
+      continue
+    }
     const view0 = attachmentView(unit.item)
     if (!view0) continue
     body.push(
-      <Box key={unit.item.id} paddingX={4}>
+      <Box key={unit.item.id} marginTop={1} paddingX={2}>
         <Text dimColor>
           {attachmentGutter(unit.item.attachment?.type ?? '')} {view0.label}
           {view0.detail ? ` (${view0.detail.slice(0, 100)})` : ''}
         </Text>
       </Box>,
     )
+    prevRenderedInjected = false
   }
 
-  return <>{body}</>
+  // The classic pane renders its rows inside the virtual message list,
+  // which is what keeps the thinking/tool rows from printing a per-row
+  // `(ctrl+o to expand)` hint (the reminder rows carry their own). The
+  // viewer's ScrollBox is the same no-terminal-scrollback situation, so
+  // it claims the context to get the same look.
+  return (
+    <InVirtualListContext.Provider value={true}>
+      {body}
+    </InVirtualListContext.Provider>
+  )
 }
 
 function ToolResultFold({ item }: { item: WireItem }): React.ReactNode {
@@ -234,7 +289,7 @@ function FallbackToolUnitRow({
     : undefined
   const failed = result?.isError === true
   return (
-    <Box flexDirection="column" paddingX={4}>
+    <Box flexDirection="column" marginTop={1} paddingX={4}>
       <Text dimColor>
         {failed ? '✗ ' : '⚡ '}
         <Text bold>

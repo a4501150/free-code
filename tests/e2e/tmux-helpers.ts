@@ -135,8 +135,9 @@ export class TmuxSession {
     }
     this._reuseConfigDir = options.reuseConfigDir
     this._reuseHomeDir = options.reuseHomeDir
-    this._readyText =
-      options.readyText ?? (this._hostedTui ? 'Attached to' : 'for shortcuts')
+    // Pane-parity made the hosted viewer's idle footer the classic's
+    // `? for shortcuts`, so both paths can wait on the same marker.
+    this._readyText = options.readyText ?? 'for shortcuts'
     this._cliBinary = options.cliBinary ?? CLI_BINARY
   }
 

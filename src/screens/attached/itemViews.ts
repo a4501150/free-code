@@ -15,6 +15,13 @@ import type {
   WireStreamDraft,
 } from '../../session/wire.js'
 import { summarizeToolInput } from '../../webui/client/itemViews.js'
+import { PAUSE_ICON } from '../../constants/figures.js'
+import {
+  getModeColor,
+  permissionModeSymbol,
+  permissionModeTitle,
+  type PermissionMode,
+} from '../../utils/permissions/PermissionMode.js'
 
 export {
   summarizeToolInput,
@@ -103,66 +110,47 @@ export function tailLines(text: string, max: number): string {
   return lines.length <= max ? text : '…\n' + lines.slice(-max).join('\n')
 }
 
-/** Spinner label per activity phase. */
-export function activityLabel(
-  activity: string | undefined,
-  state: string | undefined,
-): string {
-  if (activity === 'compacting') return 'compacting context…'
-  if (state !== 'running') return state === 'requires_action' ? 'waiting' : ''
-  switch (activity) {
-    case 'requesting':
-      return 'requesting…'
-    case 'thinking':
-      return 'thinking…'
-    case 'responding':
-      return 'responding…'
-    case 'tool-use':
-      return 'running tools…'
-    case 'tool-input':
-      return 'planning calls…'
-    default:
-      return 'working…'
+/**
+ * The footer's permission-mode label, word-for-word what the classic
+ * REPL's footer left renders: the mode's own symbol and lowercase title
+ * for the modes that have one, and the manual-mode pause line for the
+ * default. The viewer says exactly what the classic pane says.
+ */
+export function modeLabel(mode: PermissionMode | undefined): {
+  text: string
+  /** The mode's own color, or undefined to render dim. */
+  color?: ReturnType<typeof getModeColor>
+} {
+  if (!mode || mode === 'default') {
+    return { text: `${PAUSE_ICON} manual mode on` }
+  }
+  return {
+    text: `${permissionModeSymbol(mode)} ${permissionModeTitle(mode).toLowerCase()} on`,
+    color: getModeColor(mode),
   }
 }
 
 /**
- * The status line, left to right: what the turn is doing, how long, then
- * session identity — model, permission mode, context, cost. Derived here
- * rather than in the component so the wording is unit-tested once.
+ * The classic-parity bottom bar: mode label + the hint the classic footer
+ * shows for the state, and the session metrics the viewer earns from the
+ * wire (model, context, cost) kept at the line's end.
  */
-export function statusLineParts(
+export function bottomBarParts(
   meta: WireSessionMeta,
   opts: {
-    /** Present while meta.state is running. */
-    elapsedMs?: number
-    /** Overrides the activity wording while a tray holds the keys. */
+    running: boolean
+    /** A blocking tray owns the keys; the hint says so. */
     waitingForUser?: boolean
-    now?: number
-  } = {},
-): string[] {
-  const parts: string[] = []
-  const activity = opts.waitingForUser
-    ? 'waiting for you'
-    : activityLabel(meta.activity, meta.state)
-  if (activity) parts.push(activity)
-  if (opts.elapsedMs !== undefined) {
-    parts.push(formatDuration(opts.elapsedMs))
-  }
-  if (meta.model) parts.push(meta.model)
-  if (meta.permissionMode && meta.permissionMode !== 'default') {
-    parts.push(meta.permissionMode)
-  }
-  if (meta.context) parts.push(`${meta.context.usedPercent}% context`)
-  if (meta.costUsd !== undefined) parts.push(`$${meta.costUsd.toFixed(2)}`)
-  return parts
-}
-
-/** Elapsed time label for the status line. */
-export function formatDuration(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  if (m < 60) return s % 60 === 0 ? `${m}m` : `${m}m ${s % 60}s`
-  return `${Math.floor(m / 60)}h ${m % 60}m`
+  },
+): { left: string; right: string[] } {
+  const hint = opts.waitingForUser
+    ? 'answer above to continue'
+    : opts.running
+      ? 'esc to interrupt'
+      : '? for shortcuts'
+  const right: string[] = []
+  if (meta.model) right.push(meta.model)
+  if (meta.context) right.push(`${meta.context.usedPercent}% context`)
+  if (meta.costUsd !== undefined) right.push(`$${meta.costUsd.toFixed(2)}`)
+  return { left: hint, right }
 }

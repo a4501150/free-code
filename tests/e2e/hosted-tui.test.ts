@@ -74,10 +74,12 @@ describe('hosted TUI (default startup)', () => {
       toolUseResponse([
         { name: 'Bash', input: { command: 'touch hosted-e2e-marker' } },
       ]),
-      textResponse('MARKER-WRITTEN-OK'),
+      // A slow-enough stream that the running footer can be captured
+      // mid-turn, the way a real tool run gives the pane time to show it.
+      textResponse('MARKER-WRITTEN-OK', { sseEventDelayMs: 1200 }),
     ])
     terminal = new TmuxSession({ serverUrl: server.url, hostedTui: true })
-    await terminal.start() // waits for the viewer's "Attached to" header
+    await terminal.start() // waits for the idle footer, the classic marker
 
     // Hosting proof: this pid publishes a sessiond descriptor listing the
     // hosted session — a classic REPL run would have written an
@@ -111,17 +113,52 @@ describe('hosted TUI (default startup)', () => {
     expect(JSON.stringify(followUp[1]!.body.messages)).toContain(
       'hosted-e2e-marker',
     )
+
+    // Mid-turn parity: while the closing reply streams, the pane carries
+    // the classic running hint — not a bespoke status line.
+    await terminal.waitForScreen(s => s.includes('esc to interrupt'), {
+      timeoutMs: 10_000,
+      intervalMs: 100,
+      description: 'the classic running hint while the turn streams',
+      currentPaneOnly: true,
+    })
+
     await terminal.waitForText('MARKER-WRITTEN-OK', 30_000)
     expect(existsSync(join(terminal.cwd, 'hosted-e2e-marker'))).toBe(true)
 
-    // Presentation parity: the model-facing context rows stay out of the
-    // pane by default (the classic REPL collapses them behind
-    // showInjectedContext; the viewer hides them behind ^T)…
-    const pane = await terminal.capturePaneWithHistory()
-    expect(pane).not.toContain('user_context_snapshot')
-    // …and the status line carries real session numbers: the running cost.
-    const statusPane = await terminal.capturePane()
-    expect(/\$\d+\.\d{2}/.test(statusPane)).toBe(true)
+    // After-turn parity: the turn ended, so the pane is idle again — the
+    // classic hint back, and no leftover running wording (the never-idle
+    // regression: the viewer used to sit on `working…` after the turn).
+    const idlePane = await terminal.waitForScreen(
+      s => s.includes('? for shortcuts') && !s.includes('working…'),
+      {
+        timeoutMs: 10_000,
+        intervalMs: 100,
+        description: 'the pane back to idle wording',
+        currentPaneOnly: true,
+      },
+    )
+
+    // Presentation parity: the model-facing context rows ride the pane as
+    // the classic collapsed disclosure row — label, real line count, and
+    // the ctrl+O hint — with the reminder body folded away. (Searched in
+    // history: these rows sit at the session's top, off a short screen.)
+    const history = await terminal.capturePaneWithHistory()
+    expect(history).toContain('System reminder · user_context_snapshot')
+    const reminderRow = history
+      .split('\n')
+      .find(line => line.includes('System reminder · user_context_snapshot'))!
+    // Real line count (pluralized like the classic row) and the expansion
+    // hint for a multi-line body — the classic collapsed disclosure.
+    expect(reminderRow).toMatch(/\(\d+ lines?\)/)
+    const multiLineRow = history
+      .split('\n')
+      .find(line => /\(\d+ lines\) \(ctrl\+o to expand\)/.test(line))
+    expect(multiLineRow).toBeDefined()
+
+    // …and the bottom line carries real session numbers: the running cost.
+    expect(/\$\d+\.\d{2}/.test(idlePane)).toBe(true)
+    expect(idlePane).toContain('manual mode on')
 
     // And the hosted session id rotated nothing: the wire session is the
     // one the descriptor advertises.

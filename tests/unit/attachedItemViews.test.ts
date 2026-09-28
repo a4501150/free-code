@@ -1,9 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import type { WireItem, WireStreamDraft } from '../../src/session/wire.js'
+import type {
+  WireItem,
+  WireSessionMeta,
+  WireStreamDraft,
+} from '../../src/session/wire.js'
+import { PAUSE_ICON } from '../../src/constants/figures.js'
 import {
-  activityLabel,
+  bottomBarParts,
   draftView,
-  formatDuration,
+  modeLabel,
   toolRowView,
   userRowView,
 } from '../../src/screens/attached/itemViews.js'
@@ -144,25 +149,58 @@ describe('draftView', () => {
   })
 })
 
-describe('activityLabel', () => {
-  test('compacting names itself', () => {
-    expect(activityLabel('compacting', 'running')).toBe('compacting context…')
+describe('modeLabel', () => {
+  test('the default mode says manual mode on, dim (no color)', () => {
+    expect(modeLabel('default')).toEqual({
+      text: `${PAUSE_ICON} manual mode on`,
+    })
+    expect(modeLabel(undefined).text).toBe(`${PAUSE_ICON} manual mode on`)
   })
-  test('phases name their spinner words', () => {
-    expect(activityLabel('thinking', 'running')).toBe('thinking…')
-    expect(activityLabel(undefined, 'running')).toBe('working…')
-  })
-  test('idle is silent, requires_action waits', () => {
-    expect(activityLabel(undefined, 'idle')).toBe('')
-    expect(activityLabel(undefined, 'requires_action')).toBe('waiting')
+  test('a mode with its own symbol and title says what the classic footer says', () => {
+    expect(modeLabel('plan')).toEqual({
+      text: `${PAUSE_ICON} plan mode on`,
+      color: 'planMode',
+    })
+    expect(modeLabel('acceptEdits')).toEqual({
+      text: '⏵⏵ accept edits on',
+      color: 'autoAccept',
+    })
   })
 })
 
-describe('formatDuration', () => {
-  test('seconds, minutes, hours', () => {
-    expect(formatDuration(9_400)).toBe('9s')
-    expect(formatDuration(120_000)).toBe('2m')
-    expect(formatDuration(125_000)).toBe('2m 5s')
-    expect(formatDuration(3_720_000)).toBe('1h 2m')
+describe('bottomBarParts', () => {
+  const meta: WireSessionMeta = {
+    sessionId: 's',
+    sessionEpoch: 0,
+    cwd: '/',
+    startedAt: 0,
+    state: 'idle',
+    model: 'glm-5.3-flash-free',
+    permissionMode: 'plan',
+    context: { usedTokens: 30, maxTokens: 100, usedPercent: 30 },
+    costUsd: 1.234,
+  }
+
+  test('the idle hint is the classic one, metrics ride at the right', () => {
+    const bar = bottomBarParts(meta, { running: false })
+    expect(bar.left).toBe('? for shortcuts')
+    expect(bar.right).toEqual(['glm-5.3-flash-free', '30% context', '$1.23'])
+  })
+
+  test('a running turn asks for esc, a tray asks for an answer', () => {
+    expect(bottomBarParts(meta, { running: true }).left).toBe(
+      'esc to interrupt',
+    )
+    expect(
+      bottomBarParts(meta, { running: true, waitingForUser: true }).left,
+    ).toBe('answer above to continue')
+  })
+
+  test('absent metrics are simply missing', () => {
+    const bar = bottomBarParts(
+      { ...meta, model: undefined, context: undefined, costUsd: undefined },
+      { running: false },
+    )
+    expect(bar.right).toEqual([])
   })
 })

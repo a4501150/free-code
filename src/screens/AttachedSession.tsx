@@ -22,7 +22,9 @@ import {
   type SessionView,
   type ViewStore,
 } from '../session/viewStore.js'
-import { draftView, statusLineParts } from './attached/itemViews.js'
+import { bottomBarParts, draftView, modeLabel } from './attached/itemViews.js'
+import { SpinnerWithVerb, type SpinnerMode } from '../components/Spinner.js'
+import { LogoV2 } from '../components/LogoV2/LogoV2.js'
 import { taskView } from '../webui/client/itemViews.js'
 import { AttachedTranscript } from './attached/AttachedTranscript.js'
 import { AssistantThinkingMessage } from '../components/messages/AssistantThinkingMessage.js'
@@ -64,6 +66,12 @@ export type AttachedSessionProps = {
    * commands ride the session's own input processing, as in the REPL.
    */
   initialPrompt?: string
+  /**
+   * Replace the viewer header with the classic welcome banner. Only the
+   * hosted launcher sets it: that process IS the session's, so the banner
+   * describes it; a remote attach shows the header instead.
+   */
+  showWelcomeBanner?: boolean
   onExit?: () => void
 }
 
@@ -86,6 +94,7 @@ export function AttachedSession({
   url,
   label,
   initialPrompt,
+  showWelcomeBanner,
   onExit,
 }: AttachedSessionProps): React.ReactNode {
   const store = useMemo(() => createViewStore(), [])
@@ -257,10 +266,20 @@ export function AttachedSession({
   const pendingRequest = view.requests[0] ?? null
   const composerActive = isConnected && !pendingRequest
 
-  // A running-turn clock for the status line: starts on the transition into
-  // running, and a 1s tick keeps the elapsed time and task durations fresh.
+  // A running-turn clock: starts on the transition into running, and a 1s
+  // tick keeps the elapsed time and task durations fresh. The refs back the
+  // classic SpinnerWithVerb — the viewer shows the REPL's own spinner, not
+  // a text mimic, so it carries the same loading-start/length/timer inputs.
+  const loadingStartTimeRef = useRef<number>(Date.now())
+  const totalPausedMsRef = useRef(0)
+  const pauseStartTimeRef = useRef<number | null>(null)
+  const responseLengthRef = useRef(0)
   useEffect(() => {
-    if (isRunning && runningSince === null) setRunningSince(Date.now())
+    if (isRunning && runningSince === null) {
+      setRunningSince(Date.now())
+      loadingStartTimeRef.current = Date.now()
+      responseLengthRef.current = 0
+    }
     if (!isRunning && runningSince !== null) setRunningSince(null)
   }, [isRunning, runningSince])
   useEffect(() => {
@@ -362,10 +381,9 @@ export function AttachedSession({
         }
       }
 
-      if (key.ctrl && input === 't') {
-        // Reveal/hide the model-facing context rows (user_context_snapshot,
-        // mcp_tools_delta, …) — the viewer's twin of the classic
-        // showInjectedContext setting, defaulted off.
+      if (key.ctrl && (input === 'o' || input === 't')) {
+        // Expand/collapse the injected-context rows — the classic
+        // transcript toggle, and the exact key the collapsed rows name.
         setShowInjectedContext(value => !value)
         return
       }
@@ -381,6 +399,16 @@ export function AttachedSession({
   )
 
   const draft = isRunning ? draftView(view.streamDraft) : null
+  // The classic spinner row: same component, same modes, driven from what
+  // the wire says the turn is doing. A compaction rides the spinner's
+  // progress bar instead of a mode word.
+  const spinnerMode: SpinnerMode =
+    view.meta?.activity === 'compacting' ||
+    view.meta?.activity === undefined ||
+    view.meta?.activity === null
+      ? 'responding'
+      : (view.meta.activity as SpinnerMode)
+  const showSpinner = isRunning && !pendingRequest
 
   // The screen brings its own keybinding provider: CustomSelect's
   // accept/next/previous (every tray keystroke) rides useKeybindings, which
@@ -397,13 +425,20 @@ export function AttachedSession({
           flexDirection="column"
           stickyScroll
         >
-          {/* Session header */}
-          <Box paddingX={2} paddingY={1}>
-            <Text dimColor>
-              ── Attached to {label ?? `PID ${pid}`}
-              {view.meta ? ` · ${view.meta.cwd}` : ''} ──
-            </Text>
-          </Box>
+          {/* Hosted launches mount the classic welcome banner — the
+              process owns the session, so the banner's model/cwd lines
+              describe what the classic REPL would show. A remote attach
+              gets the one-line header instead. */}
+          {showWelcomeBanner ? (
+            <LogoV2 />
+          ) : (
+            <Box paddingX={2} paddingY={1}>
+              <Text dimColor>
+                ── Attached to {label ?? `PID ${pid}`}
+                {view.meta ? ` · ${view.meta.cwd}` : ''} ──
+              </Text>
+            </Box>
+          )}
 
           {connection.status === 'connecting' && (
             <Box paddingX={2}>
@@ -426,6 +461,27 @@ export function AttachedSession({
 
           {/* Streaming preview at the transcript tail */}
           {draft && <StreamDraftRow draft={draft} />}
+
+          {/* The REPL's own spinner row, at the same place it sits in the
+              classic pane: bottom of the transcript, while the turn runs */}
+          {showSpinner && (
+            <SpinnerWithVerb
+              mode={spinnerMode}
+              loadingStartTimeRef={loadingStartTimeRef}
+              totalPausedMsRef={totalPausedMsRef}
+              pauseStartTimeRef={pauseStartTimeRef}
+              responseLengthRef={responseLengthRef}
+              verbose={false}
+              hasActiveTools={
+                (view.meta?.inProgressToolUseIds?.length ?? 0) > 0
+              }
+              compactingStartTime={
+                view.meta?.activity === 'compacting'
+                  ? (runningSince ?? Date.now())
+                  : null
+              }
+            />
+          )}
         </ScrollBox>
 
         <ScrollKeybindingHandler scrollRef={scrollRef} isActive />
@@ -524,9 +580,7 @@ export function AttachedSession({
               </Box>
             ) : (
               <Box paddingX={2}>
-                <Text color="claude">
-                  {editingQueueId ? '✎ ' : isRunning ? '⏳ ' : '❯ '}
-                </Text>
+                <Text color="claude">{editingQueueId ? '✎ ' : '❯ '}</Text>
                 <Text>{inputText}</Text>
                 <Text inverse> </Text>
               </Box>
@@ -561,25 +615,20 @@ export function AttachedSession({
                 </Text>
               </Box>
             )}
-            <Box paddingX={2} height={1}>
-              <Text dimColor>
-                {exitState.pending
+            {/* One bottom line, like the classic pane: the permission-mode
+                label and the hint for the state, with the wire-derived
+                metrics kept at the line's right end. */}
+            <AttachedBottomBar
+              meta={view.meta}
+              running={isRunning}
+              hasTray={pendingRequest !== null}
+              exitPending={
+                exitState.pending
                   ? `Press ${exitState.keyName} again to exit`
-                  : isRunning
-                    ? 'Esc to interrupt · Enter to queue'
-                    : 'Enter to send · ^T context lines'}
-              </Text>
-            </Box>
+                  : undefined
+              }
+            />
           </Box>
-        )}
-
-        {/* Status bar */}
-        {isConnected && (
-          <AttachedStatusBar
-            meta={view.meta}
-            runningSince={runningSince}
-            hasTray={pendingRequest !== null}
-          />
         )}
       </Box>
     </KeybindingSetup>
@@ -597,7 +646,7 @@ function StreamDraftRow({
   draft: NonNullable<ReturnType<typeof draftView>>
 }): React.ReactNode {
   return (
-    <Box flexDirection="column" paddingX={2} paddingTop={1}>
+    <Box flexDirection="column" paddingTop={1}>
       {draft.thinking ? (
         <AssistantThinkingMessage
           param={{ type: 'thinking', thinking: draft.thinking }}
@@ -608,10 +657,12 @@ function StreamDraftRow({
         />
       ) : null}
       {draft.text ? (
+        // The dot rides the preview too: the classic streaming row shows
+        // the same ⏺ gutter as the committed row will.
         <AssistantTextMessage
           param={{ type: 'text', text: draft.text }}
           addMargin={false}
-          shouldShowDot={false}
+          shouldShowDot={true}
           verbose={false}
         />
       ) : null}
@@ -630,36 +681,37 @@ function StreamDraftRow({
 // Status bar
 // ---------------------------------------------------------------------------
 
-function AttachedStatusBar({
+function AttachedBottomBar({
   meta,
-  runningSince,
+  running,
   hasTray,
+  exitPending,
 }: {
   meta: WireSessionMeta | null
-  runningSince: number | null
+  running: boolean
   hasTray: boolean
+  exitPending?: string
 }): React.ReactNode {
   if (!meta) return null
 
-  const parts = statusLineParts(meta, {
-    elapsedMs:
-      runningSince !== null
-        ? Math.max(0, Date.now() - runningSince)
-        : undefined,
-    waitingForUser: hasTray,
-  })
+  const mode = modeLabel(meta.permissionMode)
+  const bar = bottomBarParts(meta, { running, waitingForUser: hasTray })
 
   return (
-    // No height cap: a border box's height includes its border row, so a
-    // height of 1 clips the text line entirely.
-    <Box
-      paddingX={2}
-      borderStyle="single"
-      borderLeft={false}
-      borderRight={false}
-      borderBottom={false}
-    >
-      <Text dimColor>{parts.join(' · ')}</Text>
+    <Box paddingX={2}>
+      {exitPending ? (
+        <Text dimColor>{exitPending}</Text>
+      ) : (
+        <>
+          <Text color={mode.color ?? undefined} dimColor={!mode.color}>
+            {mode.text}
+          </Text>
+          <Text dimColor> · {bar.left}</Text>
+        </>
+      )}
+      <Box flexGrow={1} justifyContent="flex-end">
+        <Text dimColor>{bar.right.join(' · ')}</Text>
+      </Box>
     </Box>
   )
 }

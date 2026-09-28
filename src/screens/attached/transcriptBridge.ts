@@ -8,8 +8,9 @@
  * items so `<Message>` can render them unchanged, and encodes the two
  * policy decisions the viewer makes over the flat stream: assistant blocks
  * that came from one provider response regroup into one message (so the
- * tool cards' sibling lookups work), and the injected-context rows stay
- * out of sight until asked for.
+ * tool cards' sibling lookups work), and injected-context rows are flagged
+ * so the transcript can render them the classic way — collapsed by default,
+ * expanded under showInjectedContext.
  *
  * Pure: no JSX, no Ink — the unit test runs it like any reducer.
  */
@@ -35,11 +36,11 @@ import type { WireItem, WireTranscriptSnapshot } from '../../session/wire.js'
 
 /**
  * Attachment types that exist to show the model something the user did not
- * type. The classic REPL shows these collapsed under showInjectedContext;
- * the viewer keeps them hidden by default (they read as noise at the top
- * of every session) and reveals them on the ctrl+T toggle. Kept aligned
- * with TYPES_WITHOUT_SUMMARY_LINE in components/messages/attachmentVisibility.ts —
- * the same rows that contribute no summary line of their own.
+ * type. Like the classic REPL, the viewer shows these as collapsed
+ * reminder rows and expands them under showInjectedContext (ctrl+O, the
+ * transcript's own affordance). Kept aligned with TYPES_WITHOUT_SUMMARY_LINE
+ * in components/messages/attachmentVisibility.ts — the same rows that
+ * contribute no summary line of their own.
  */
 export const INJECTED_CONTEXT_TYPES: ReadonlySet<string> = new Set([
   'user_context_snapshot',
@@ -76,8 +77,12 @@ export type TranscriptUnit =
       message: UserMessage | AssistantMessage
       itemIds: string[]
     }
-  /** An attachment row the viewer renders natively (already revealed). */
-  | { kind: 'attachment'; item: WireItem }
+  /**
+   * An attachment row. Injected-context rows render as the classic
+   * collapsed `▸ System reminder · …` disclosure (Expanded under
+   * showInjectedContext); everything else keeps the viewer-native row.
+   */
+  | { kind: 'attachment'; item: WireItem; injected: boolean }
   /** A system/compact-seam row the viewer renders natively. */
   | { kind: 'system'; item: WireItem }
   /** A live-progress row, hung under the tool it belongs to. */
@@ -199,6 +204,11 @@ export function bridgeTranscript(
           type: 'reasoning',
           text: item.text,
         })
+        // The dispatcher reads durationMs off the message, as in the REPL.
+        if (item.durationMs !== undefined) {
+          ;(draft.message as Record<string, unknown>).thinkingDurationMs =
+            item.durationMs
+        }
         draft.itemIds.push(item.id)
         continue
       }
@@ -250,8 +260,16 @@ export function bridgeTranscript(
       }
       case 'attachment': {
         flushAssistant()
-        if (isInjectedContextItem(item) && !showInjectedContext) continue
-        units.push({ kind: 'attachment', item })
+        // Injected-context rows ride like every other row: the classic
+        // pane shows them collapsed by default (`▸ System reminder · …`),
+        // and the transcript component decides reveal vs collapse from
+        // showInjectedContext. Dropping them here hid rows the classic
+        // pane shows, which reads as a different product.
+        units.push({
+          kind: 'attachment',
+          item,
+          injected: isInjectedContextItem(item),
+        })
         continue
       }
       default: {
