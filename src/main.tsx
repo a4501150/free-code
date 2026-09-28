@@ -128,6 +128,7 @@ import {
 } from './tools/AgentTool/loadAgentsDir.js'
 import type { LogOption } from './types/logs.js'
 import type { Message as MessageType } from './types/message.js'
+import type { WirePermissionMode } from './session/wire.js'
 import { getContextWindowForModel } from './utils/context.js'
 import {
   loadConversationForResume,
@@ -188,7 +189,10 @@ import {
   searchSessionsByCustomTitle,
   sessionIdExists,
 } from './utils/sessionStorage.js'
-import { freecodeSettingsFileExists } from './utils/settings/freecodeSettings.js'
+import {
+  freecodeSettingsFileExists,
+  readFreecodeSettingsFile,
+} from './utils/settings/freecodeSettings.js'
 import {
   copyConfigDir,
   getFreecodeConfigDir,
@@ -1189,6 +1193,11 @@ async function run(): Promise<CommanderCommand> {
     .option(
       '--ide',
       'Automatically connect to IDE on startup if exactly one valid IDE is available',
+      () => true,
+    )
+    .option(
+      '--classic',
+      'Run the traditional in-process REPL instead of hosting the session in sessiond and rendering the wire viewer',
       () => true,
     )
     .option(
@@ -2479,6 +2488,36 @@ async function run(): Promise<CommanderCommand> {
           : undefined,
       })
 
+      // Hosted-TUI cutover: by default the interactive terminal is a wire
+      // client of an in-process sessiond (see sessiond/launchHosted.tsx),
+      // not the session's owner process. Decided here, before the PID
+      // registration chains the attach host: on the hosted path sessiond
+      // publishes this pid's descriptor itself, and a repl host writing a
+      // second one for the same pid would fight it for the file.
+      let hostedFallbackNotice: string | undefined
+      let hostedTui =
+        !(options as { classic?: boolean }).classic &&
+        readFreecodeSettingsFile()?.wireTui !== false
+      if (hostedTui) {
+        // Flags whose machinery lives in the in-process REPL for now:
+        // IDE autoconnect, the --mcp-config connect lifecycle, and the
+        // coordinator/task-list loop. Fall back with a visible notice —
+        // silently losing one of these would be worse than the REPL.
+        const classicReason = ide
+          ? '--ide'
+          : mcpConfig.length > 0
+            ? '--mcp-config'
+            : taskListId
+              ? '--tasks'
+              : (options as { coordinator?: boolean }).coordinator
+                ? '--coordinator'
+                : null
+        if (classicReason) {
+          hostedTui = false
+          hostedFallbackNotice = `${classicReason} is not wired for hosted sessions yet — running the classic REPL for this one`
+        }
+      }
+
       // Register PID file for concurrent-session detection (~/.freecode/sessions/)
       // and fire multi-clauding telemetry. Lives here (not init.ts) so only the
       // REPL path registers — not subcommands like `claude doctor`. Chained:
@@ -2490,13 +2529,16 @@ async function run(): Promise<CommanderCommand> {
         }
         // Gate on registration: a subagent or a subcommand does not own a
         // top-level session and must not publish an attach socket. Not
-        // awaited, so a slow listener never delays first render.
-        const { startProcessAttachHost } =
-          await import('./server/hostSingleton.js')
-        startProcessAttachHost({
-          cwd: getOriginalCwd(),
-          entrypoint: 'repl',
-        })
+        // awaited, so a slow listener never delays first render. On the
+        // hosted path the sessiond serve owns this pid's descriptor.
+        if (!hostedTui) {
+          const { startProcessAttachHost } =
+            await import('./server/hostSingleton.js')
+          startProcessAttachHost({
+            cwd: getOriginalCwd(),
+            entrypoint: 'repl',
+          })
+        }
         void countConcurrentSessions().then(count => {})
       })
 
@@ -2874,6 +2916,14 @@ async function run(): Promise<CommanderCommand> {
           priority: 'high',
         })
       }
+      if (hostedFallbackNotice) {
+        initialNotifications.push({
+          key: 'hosted-fallback',
+          text: hostedFallbackNotice,
+          color: 'warning',
+          priority: 'high',
+        })
+      }
 
       const effectiveToolPermissionContext = toolPermissionContext
       // All startup opt-in paths (--tools, --brief, defaultView) have fired
@@ -2985,6 +3035,53 @@ async function run(): Promise<CommanderCommand> {
         thinkingConfig,
       }
 
+      // Hosted startup (the default): hand the conversation to an
+      // in-process sessiond and render the wire viewer over it. The three
+      // launch sites below keep their exact REPL shapes for the classic
+      // path; `initialPrompt` is positional CLI input, which the hosted
+      // session's own input processing handles slash commands for, exactly
+      // as the REPL would.
+      const launchHostedSession = async (args: {
+        initialState: AppState
+        sessionId: string
+        initialTranscript?: MessageType[]
+      }): Promise<void> => {
+        const { launchHosted } = await import('./sessiond/launchHosted.js')
+        const wireModes: string[] = [
+          'default',
+          'acceptEdits',
+          'plan',
+          'bypassPermissions',
+          'dontAsk',
+        ]
+        await launchHosted(
+          root,
+          { getFpsMetrics, stats, initialState: args.initialState },
+          {
+            cwd: currentCwd,
+            sessionId: args.sessionId,
+            initialTranscript: args.initialTranscript,
+            initialPrompt: inputPrompt ? String(inputPrompt) : undefined,
+            defaults: {
+              // 'auto' has no wire-mode equivalent yet: an auto-mode CLI
+              // hosts under 'default' and the seeded rules decide.
+              permissionMode: (wireModes.includes(permissionMode)
+                ? permissionMode
+                : 'default') as WirePermissionMode,
+              allowedTools,
+              disallowedTools,
+              customSystemPrompt: systemPrompt,
+              appendSystemPrompt,
+              thinkingConfig,
+              mainThreadAgentDefinition,
+              mcpClients,
+              model: resolvedInitialModel,
+            },
+          },
+          renderAndRun,
+        )
+      }
+
       // Shared context for processResumedConversation calls
       const resumeContext = {
         modeApi: coordinatorModeModule,
@@ -3063,21 +3160,29 @@ async function run(): Promise<CommanderCommand> {
 
           resumeSucceeded = true
 
-          await launchRepl(
-            root,
-            { getFpsMetrics, stats, initialState: loaded.initialState },
-            {
-              ...sessionConfig,
-              mainThreadAgentDefinition:
-                loaded.restoredAgentDef ?? mainThreadAgentDefinition,
-              initialMessages: loaded.messages,
-              initialFileHistorySnapshots: loaded.fileHistorySnapshots,
-              initialContentReplacements: loaded.contentReplacements,
-              initialAgentName: loaded.agentName,
-              initialAgentColor: loaded.agentColor,
-            },
-            renderAndRun,
-          )
+          if (hostedTui) {
+            await launchHostedSession({
+              initialState: loaded.initialState,
+              sessionId: getSessionId(),
+              initialTranscript: loaded.messages,
+            })
+          } else {
+            await launchRepl(
+              root,
+              { getFpsMetrics, stats, initialState: loaded.initialState },
+              {
+                ...sessionConfig,
+                mainThreadAgentDefinition:
+                  loaded.restoredAgentDef ?? mainThreadAgentDefinition,
+                initialMessages: loaded.messages,
+                initialFileHistorySnapshots: loaded.fileHistorySnapshots,
+                initialContentReplacements: loaded.contentReplacements,
+                initialAgentName: loaded.agentName,
+                initialAgentColor: loaded.agentColor,
+              },
+              renderAndRun,
+            )
+          }
         } catch (error) {
           if (error instanceof ResumeCancelledError) {
             if (joinTargetPid !== null) {
@@ -3198,28 +3303,48 @@ async function run(): Promise<CommanderCommand> {
         if (processedResume) {
           maybeActivateBrief(options)
 
-          await launchRepl(
-            root,
-            {
-              getFpsMetrics,
-              stats,
+          if (hostedTui) {
+            await launchHostedSession({
               initialState: processedResume.initialState,
-            },
-            {
-              ...sessionConfig,
-              mainThreadAgentDefinition:
-                processedResume.restoredAgentDef ?? mainThreadAgentDefinition,
-              initialMessages: processedResume.messages,
-              initialFileHistorySnapshots: processedResume.fileHistorySnapshots,
-              initialContentReplacements: processedResume.contentReplacements,
-              initialAgentName: processedResume.agentName,
-              initialAgentColor: processedResume.agentColor,
-            },
-            renderAndRun,
-          )
+              sessionId: getSessionId(),
+              initialTranscript: processedResume.messages,
+            })
+          } else {
+            await launchRepl(
+              root,
+              {
+                getFpsMetrics,
+                stats,
+                initialState: processedResume.initialState,
+              },
+              {
+                ...sessionConfig,
+                mainThreadAgentDefinition:
+                  processedResume.restoredAgentDef ?? mainThreadAgentDefinition,
+                initialMessages: processedResume.messages,
+                initialFileHistorySnapshots:
+                  processedResume.fileHistorySnapshots,
+                initialContentReplacements: processedResume.contentReplacements,
+                initialAgentName: processedResume.agentName,
+                initialAgentColor: processedResume.agentColor,
+              },
+              renderAndRun,
+            )
+          }
         } else {
           // Show interactive selector (includes same-repo worktrees)
           // Note: ResumeConversation loads logs internally to ensure proper GC after selection
+          if (hostedTui) {
+            // The picker ends in the in-process REPL it ships with, so this
+            // process is a session owner after all: publish the attach
+            // descriptor the hosted decision skipped.
+            const { startProcessAttachHost } =
+              await import('./server/hostSingleton.js')
+            startProcessAttachHost({
+              cwd: getOriginalCwd(),
+              entrypoint: 'repl',
+            })
+          }
           await launchResumeChooser(
             root,
             { getFpsMetrics, stats, initialState },
@@ -3250,16 +3375,27 @@ async function run(): Promise<CommanderCommand> {
         const initialMessages =
           hookMessages.length > 0 ? hookMessages : undefined
 
-        await launchRepl(
-          root,
-          { getFpsMetrics, stats, initialState },
-          {
-            ...sessionConfig,
-            initialMessages,
-            pendingHookMessages,
-          },
-          renderAndRun,
-        )
+        if (hostedTui) {
+          // The hosted session seeds with the hook messages that resolved
+          // before launch; the pending-promise path is REPL-side, so hooks
+          // resolving after startup don't join the hosted transcript.
+          await launchHostedSession({
+            initialState,
+            sessionId: getSessionId(),
+            initialTranscript: initialMessages,
+          })
+        } else {
+          await launchRepl(
+            root,
+            { getFpsMetrics, stats, initialState },
+            {
+              ...sessionConfig,
+              initialMessages,
+              pendingHookMessages,
+            },
+            renderAndRun,
+          )
+        }
       }
     })
     .version(

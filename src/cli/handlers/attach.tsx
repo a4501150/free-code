@@ -15,7 +15,6 @@ import { readdirSync } from 'fs'
 import { join } from 'path'
 import { render } from '../../ink.js'
 import { AlternateScreen } from '../../ink/components/AlternateScreen.js'
-import { KeybindingSetup } from '../../keybindings/KeybindingProviderSetup.js'
 import { AppStateProvider } from '../../state/AppState.js'
 import {
   getAttachDir,
@@ -205,18 +204,19 @@ export async function attachHandler(
 
   const { unmount } = await render(
     // Same provider posture the other command TUIs use; the screen owns
-    // its exit affordances (Ctrl+C, disconnected-banner Select).
+    // its exit affordances (Ctrl+C, disconnected-banner Select) and its own
+    // keybinding provider (AttachedSession wraps itself, so joining from
+    // screens that lack one — the join paths, the hosted launcher — works
+    // identically).
     <AlternateScreen>
       <AppStateProvider>
-        <KeybindingSetup>
-          <AttachedSession
-            pid={pid}
-            sessionId={sessionId}
-            url={options.url}
-            label={sessionId.slice(0, 8)}
-            onExit={() => unmount()}
-          />
-        </KeybindingSetup>
+        <AttachedSession
+          pid={pid}
+          sessionId={sessionId}
+          url={options.url}
+          label={sessionId.slice(0, 8)}
+          onExit={() => unmount()}
+        />
       </AppStateProvider>
     </AlternateScreen>,
     { exitOnCtrlC: false },

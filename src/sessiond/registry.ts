@@ -69,6 +69,8 @@ export type SessionDefaults = {
   disallowedTools?: string[]
   /** Thinking policy; absent means adaptive. */
   thinkingConfig?: ThinkingConfig
+  /** Main-loop model override; null/absent means the account/config default. */
+  model?: string | null
   /** Main-thread agent definition (`--agent`); absent means the plain loop. */
   mainThreadAgentDefinition?: AgentDefinition
   /**
@@ -89,6 +91,19 @@ export type SessionRegistry = {
   /** Start a fresh hosted session in `cwd`. PathErrors surface as thrown. */
   create(options: {
     cwd: string
+    role?: 'assistant'
+    defaults?: SessionDefaults
+  }): Promise<HostedEntry>
+  /**
+   * Host a session under a caller-chosen id with a caller-supplied
+   * transcript — the in-process launcher's seam for a conversation the
+   * CLI has already loaded (a resume) or assembled (hook messages), where
+   * re-loading from disk would lose processing the caller already did.
+   */
+  adopt(options: {
+    sessionId: string
+    cwd: string
+    initialTranscript?: Message[]
     role?: 'assistant'
     defaults?: SessionDefaults
   }): Promise<HostedEntry>
@@ -159,6 +174,7 @@ export function createSessionRegistry(onChanged?: () => void): SessionRegistry {
       sessionId,
       cwd,
       initialTranscript,
+      model: full.model,
       commands: full.commands,
       tools: full.tools,
       toolPermissionContext: full.toolPermissionContext,
@@ -188,6 +204,10 @@ export function createSessionRegistry(onChanged?: () => void): SessionRegistry {
   return {
     create({ cwd, role, defaults }) {
       return start(cwd, randomUUID(), undefined, role, defaults)
+    },
+
+    adopt({ sessionId, cwd, initialTranscript, role, defaults }) {
+      return start(cwd, sessionId, initialTranscript, role, defaults)
     },
 
     async resume({ sessionId, cwd, role, defaults }) {

@@ -50,6 +50,7 @@ import {
 } from '../webui/client/composerViews.js'
 import { AttachedTrays } from './attached/AttachedTrays.js'
 import { Select } from '../components/CustomSelect/index.js'
+import { KeybindingSetup } from '../keybindings/KeybindingProviderSetup.js'
 
 type ConnectionState =
   | { status: 'connecting' }
@@ -69,6 +70,12 @@ export type AttachedSessionProps = {
   url?: string
   /** Header label; defaults to the PID. */
   label?: string
+  /**
+   * Submit this prompt once, right after the first connect — the hosted
+   * launcher's seam for the CLI's positional initial prompt. Slash
+   * commands ride the session's own input processing, as in the REPL.
+   */
+  initialPrompt?: string
   onExit?: () => void
 }
 
@@ -90,6 +97,7 @@ export function AttachedSession({
   sessionId,
   url,
   label,
+  initialPrompt,
   onExit,
 }: AttachedSessionProps): React.ReactNode {
   const store = useMemo(() => createViewStore(), [])
@@ -194,6 +202,28 @@ export function AttachedSession({
     },
     [view.meta],
   )
+
+  // One-shot initial prompt (the launcher's `initialPrompt`): fired once
+  // the snapshot has landed, so it carries the stream's session epoch and
+  // the transcript shows the user row in the right place.
+  const initialPromptSentRef = useRef(false)
+  useEffect(() => {
+    if (
+      !initialPrompt ||
+      initialPromptSentRef.current ||
+      connection.status !== 'connected' ||
+      !view.meta
+    )
+      return
+    initialPromptSentRef.current = true
+    void send({
+      kind: 'prompt',
+      content: initialPrompt,
+      delivery: 'next',
+      commandId: randomUUID(),
+      sessionEpoch: view.meta.sessionEpoch ?? 0,
+    } as Record<string, unknown>)
+  }, [initialPrompt, connection.status, view.meta, send])
 
   const handleSubmit = useCallback(
     async (text: string) => {
@@ -369,210 +399,220 @@ export function AttachedSession({
 
   const draft = isRunning ? draftView(view.streamDraft) : null
 
+  // The screen brings its own keybinding provider: CustomSelect's
+  // accept/next/previous (every tray keystroke) rides useKeybindings, which
+  // silently no-ops without one — the `App` wrapper does not install it, so
+  // joining from main.tsx or the hosted launcher needs it here, not at
+  // every call site. Callers that already provide one nest a redundant but
+  // harmless instance.
   return (
-    <Box flexDirection="column" flexGrow={1} overflow="hidden">
-      <ScrollBox
-        ref={scrollRef}
-        flexGrow={1}
-        flexDirection="column"
-        stickyScroll
-      >
-        {/* Session header */}
-        <Box paddingX={2} paddingY={1}>
-          <Text dimColor>
-            ── Attached to {label ?? `PID ${pid}`}
-            {view.meta ? ` · ${view.meta.cwd}` : ''} ──
-          </Text>
-        </Box>
-
-        {connection.status === 'connecting' && (
-          <Box paddingX={2}>
-            <Text dimColor>Connecting to session...</Text>
-          </Box>
-        )}
-
-        {connection.status === 'error' && (
-          <Box paddingX={2}>
-            <Text color="error">Connection failed: {connection.message}</Text>
-          </Box>
-        )}
-
-        {/* Transcript items */}
-        {items.map(item => (
-          <TranscriptItemRow
-            key={`${item.id}:${item.rev}`}
-            item={item}
-            result={
-              item.kind === 'tool_use' && item.toolUseId
-                ? resultsByToolUse.get(item.toolUseId)
-                : undefined
-            }
-            agentId={
-              item.kind === 'tool_use' && item.toolUseId
-                ? agentIds.get(item.toolUseId)
-                : undefined
-            }
-            inProgress={new Set(view.meta?.inProgressToolUseIds ?? [])}
-            toolNames={toolNames}
-          />
-        ))}
-
-        {/* Streaming preview at the transcript tail */}
-        {draft && <StreamDraftRow draft={draft} />}
-      </ScrollBox>
-
-      <ScrollKeybindingHandler scrollRef={scrollRef} isActive />
-
-      {/* Disconnected banner */}
-      {connection.status === 'disconnected' && (
-        <Box flexShrink={0} flexDirection="column" paddingX={2} paddingY={1}>
-          <Text color="warning" bold>
-            Session engine exited
-          </Text>
-          <Text dimColor>{connection.reason}</Text>
-          <Box marginTop={1}>
-            <Select
-              options={[{ label: 'Exit', value: 'exit' }]}
-              onChange={doExit}
-            />
-          </Box>
-        </Box>
-      )}
-
-      {/* Blocking request trays take the keys while anything is pending */}
-      {pendingRequest && isConnected && (
-        <Box flexShrink={0} paddingX={2} paddingTop={1}>
-          <AttachedTrays
-            requests={view.requests}
-            submit={(requestId, response) => {
-              void send({
-                kind: 'request_respond',
-                requestId,
-                response,
-              })
-            }}
-          />
-        </Box>
-      )}
-
-      {/* Queued prompts, todos, and background tasks */}
-      {isConnected &&
-        (queued.length > 0 ||
-          view.todos.length > 0 ||
-          view.tasks.length > 0) && (
-          <Box flexShrink={0} flexDirection="column" paddingX={2}>
-            {queued.length > 0 && (
-              <Box>
-                <Text dimColor>
-                  queued:{' '}
-                  {queued
-                    .map(row => row.text)
-                    .join(' · ')
-                    .slice(0, 120)}
-                  {inputText === '' ? '  (^e edit · ^x drop)' : ''}
-                </Text>
-              </Box>
-            )}
-            {view.todos.length > 0 && (
-              <Box>
-                <Text dimColor>
-                  todos:{' '}
-                  {view.todos
-                    .map(
-                      todo =>
-                        `${todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '▶' : '·'} ${todo.content}`,
-                    )
-                    .slice(0, 4)
-                    .join(' · ')
-                    .slice(0, 160)}
-                </Text>
-              </Box>
-            )}
-            {view.tasks.length > 0 && (
-              <Box>
-                <Text dimColor>
-                  tasks:{' '}
-                  {view.tasks
-                    .map(task => {
-                      const view0 = taskView(task, Date.now())
-                      return `${view0.marker} ${view0.label}${view0.duration ? ` ${view0.duration}` : ''}`
-                    })
-                    .slice(0, 4)
-                    .join(' · ')
-                    .slice(0, 160)}
-                </Text>
-              </Box>
-            )}
-          </Box>
-        )}
-
-      {/* Composer */}
-      {isConnected && (
-        <Box flexShrink={0} flexDirection="column">
-          {pendingRequest ? (
-            <Box paddingX={2}>
-              <Text dimColor>Answer the pending prompt above to continue</Text>
-            </Box>
-          ) : (
-            <Box paddingX={2}>
-              <Text color="claude">
-                {editingQueueId ? '✎ ' : isRunning ? '⏳ ' : '❯ '}
-              </Text>
-              <Text>{inputText}</Text>
-              <Text inverse> </Text>
-            </Box>
-          )}
-          {editingQueueId && (
-            <Box paddingX={2}>
-              <Text dimColor>
-                editing a queued command — Enter saves, Esc discards
-              </Text>
-            </Box>
-          )}
-          {palette.length > 0 && !editingQueueId && (
-            <Box paddingX={2}>
-              <Text dimColor>
-                {palette
-                  .slice(0, 5)
-                  .map(
-                    item =>
-                      `${item.value}${item.hint ? ` ${item.hint}` : ''}${item.detail ? ` — ${item.detail}` : ''}`,
-                  )
-                  .join('\n')}
-              </Text>
-            </Box>
-          )}
-          {(submitError || toast) && (
-            <Box paddingX={2}>
-              <Text
-                color={submitError ? 'error' : 'warning'}
-                dimColor={!submitError}
-              >
-                {submitError ?? toast}
-              </Text>
-            </Box>
-          )}
-          <Box paddingX={2} height={1}>
+    <KeybindingSetup>
+      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+        <ScrollBox
+          ref={scrollRef}
+          flexGrow={1}
+          flexDirection="column"
+          stickyScroll
+        >
+          {/* Session header */}
+          <Box paddingX={2} paddingY={1}>
             <Text dimColor>
-              {exitState.pending
-                ? `Press ${exitState.keyName} again to exit`
-                : isRunning
-                  ? 'Esc to interrupt · Enter to queue'
-                  : 'Enter to send'}
+              ── Attached to {label ?? `PID ${pid}`}
+              {view.meta ? ` · ${view.meta.cwd}` : ''} ──
             </Text>
           </Box>
-        </Box>
-      )}
 
-      {/* Status bar */}
-      {isConnected && (
-        <AttachedStatusBar
-          meta={view.meta}
-          runningSince={runningSince}
-          hasTray={pendingRequest !== null}
-        />
-      )}
-    </Box>
+          {connection.status === 'connecting' && (
+            <Box paddingX={2}>
+              <Text dimColor>Connecting to session...</Text>
+            </Box>
+          )}
+
+          {connection.status === 'error' && (
+            <Box paddingX={2}>
+              <Text color="error">Connection failed: {connection.message}</Text>
+            </Box>
+          )}
+
+          {/* Transcript items */}
+          {items.map(item => (
+            <TranscriptItemRow
+              key={`${item.id}:${item.rev}`}
+              item={item}
+              result={
+                item.kind === 'tool_use' && item.toolUseId
+                  ? resultsByToolUse.get(item.toolUseId)
+                  : undefined
+              }
+              agentId={
+                item.kind === 'tool_use' && item.toolUseId
+                  ? agentIds.get(item.toolUseId)
+                  : undefined
+              }
+              inProgress={new Set(view.meta?.inProgressToolUseIds ?? [])}
+              toolNames={toolNames}
+            />
+          ))}
+
+          {/* Streaming preview at the transcript tail */}
+          {draft && <StreamDraftRow draft={draft} />}
+        </ScrollBox>
+
+        <ScrollKeybindingHandler scrollRef={scrollRef} isActive />
+
+        {/* Disconnected banner */}
+        {connection.status === 'disconnected' && (
+          <Box flexShrink={0} flexDirection="column" paddingX={2} paddingY={1}>
+            <Text color="warning" bold>
+              Session engine exited
+            </Text>
+            <Text dimColor>{connection.reason}</Text>
+            <Box marginTop={1}>
+              <Select
+                options={[{ label: 'Exit', value: 'exit' }]}
+                onChange={doExit}
+              />
+            </Box>
+          </Box>
+        )}
+
+        {/* Blocking request trays take the keys while anything is pending */}
+        {pendingRequest && isConnected && (
+          <Box flexShrink={0} paddingX={2} paddingTop={1}>
+            <AttachedTrays
+              requests={view.requests}
+              submit={(requestId, response) => {
+                void send({
+                  kind: 'request_respond',
+                  requestId,
+                  response,
+                })
+              }}
+            />
+          </Box>
+        )}
+
+        {/* Queued prompts, todos, and background tasks */}
+        {isConnected &&
+          (queued.length > 0 ||
+            view.todos.length > 0 ||
+            view.tasks.length > 0) && (
+            <Box flexShrink={0} flexDirection="column" paddingX={2}>
+              {queued.length > 0 && (
+                <Box>
+                  <Text dimColor>
+                    queued:{' '}
+                    {queued
+                      .map(row => row.text)
+                      .join(' · ')
+                      .slice(0, 120)}
+                    {inputText === '' ? '  (^e edit · ^x drop)' : ''}
+                  </Text>
+                </Box>
+              )}
+              {view.todos.length > 0 && (
+                <Box>
+                  <Text dimColor>
+                    todos:{' '}
+                    {view.todos
+                      .map(
+                        todo =>
+                          `${todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '▶' : '·'} ${todo.content}`,
+                      )
+                      .slice(0, 4)
+                      .join(' · ')
+                      .slice(0, 160)}
+                  </Text>
+                </Box>
+              )}
+              {view.tasks.length > 0 && (
+                <Box>
+                  <Text dimColor>
+                    tasks:{' '}
+                    {view.tasks
+                      .map(task => {
+                        const view0 = taskView(task, Date.now())
+                        return `${view0.marker} ${view0.label}${view0.duration ? ` ${view0.duration}` : ''}`
+                      })
+                      .slice(0, 4)
+                      .join(' · ')
+                      .slice(0, 160)}
+                  </Text>
+                </Box>
+              )}
+            </Box>
+          )}
+
+        {/* Composer */}
+        {isConnected && (
+          <Box flexShrink={0} flexDirection="column">
+            {pendingRequest ? (
+              <Box paddingX={2}>
+                <Text dimColor>
+                  Answer the pending prompt above to continue
+                </Text>
+              </Box>
+            ) : (
+              <Box paddingX={2}>
+                <Text color="claude">
+                  {editingQueueId ? '✎ ' : isRunning ? '⏳ ' : '❯ '}
+                </Text>
+                <Text>{inputText}</Text>
+                <Text inverse> </Text>
+              </Box>
+            )}
+            {editingQueueId && (
+              <Box paddingX={2}>
+                <Text dimColor>
+                  editing a queued command — Enter saves, Esc discards
+                </Text>
+              </Box>
+            )}
+            {palette.length > 0 && !editingQueueId && (
+              <Box paddingX={2}>
+                <Text dimColor>
+                  {palette
+                    .slice(0, 5)
+                    .map(
+                      item =>
+                        `${item.value}${item.hint ? ` ${item.hint}` : ''}${item.detail ? ` — ${item.detail}` : ''}`,
+                    )
+                    .join('\n')}
+                </Text>
+              </Box>
+            )}
+            {(submitError || toast) && (
+              <Box paddingX={2}>
+                <Text
+                  color={submitError ? 'error' : 'warning'}
+                  dimColor={!submitError}
+                >
+                  {submitError ?? toast}
+                </Text>
+              </Box>
+            )}
+            <Box paddingX={2} height={1}>
+              <Text dimColor>
+                {exitState.pending
+                  ? `Press ${exitState.keyName} again to exit`
+                  : isRunning
+                    ? 'Esc to interrupt · Enter to queue'
+                    : 'Enter to send'}
+              </Text>
+            </Box>
+          </Box>
+        )}
+
+        {/* Status bar */}
+        {isConnected && (
+          <AttachedStatusBar
+            meta={view.meta}
+            runningSince={runningSince}
+            hasTray={pendingRequest !== null}
+          />
+        )}
+      </Box>
+    </KeybindingSetup>
   )
 }
 
