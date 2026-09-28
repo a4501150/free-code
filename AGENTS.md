@@ -31,7 +31,7 @@ commented IN the file that governs them.
 - Tool results are validated against `outputSchema` before rendering; a schema narrower than what `call()` returns silently removes the row — MCP output schemas must admit content arrays as well as strings.
 - Reasoning continuation is a per-`ProviderType` predicate table: a missing type loses all reasoning silently. Provider type does not imply auth method — Anthropic-only metadata, identity headers and signing stay behind the Anthropic-type gate.
 - A `stream_event` leaving `src/services/api/claude.ts` carries domain types: extended thinking is `reasoning`, not `thinking`; use `src/types/domainGuards.ts` — raw `content_block` comparisons typecheck and silently never match.
-- Sessions are shared and live-holder checks fail open deliberately (`src/utils/concurrentSessions.ts`). SendMessage `session:<id>` needs that registry entry plus the target's attach socket; no descriptor ⇒ "not addressable".
+- Sessions are shared and live-holder checks fail open deliberately (`src/utils/concurrentSessions.ts`). SendMessage `session:<id>` needs that registry entry plus the target's wire surface; with no descriptor in `~/.freecode/attach/` there is nothing to reach ⇒ "not addressable".
 - Backgrounded agent `output_file` is the agent's full JSONL transcript — the parent must never Read it; completion notifications are the only retrieval channel. Background SHELL output files are plain text and safe to Read.
 - Incremental sidechain writes must take their `startingParentUuid` from what actually persisted, not the in-memory message list: a hint pointing at an unpersisted message truncates the chain and silently blanks the drill-down.
 - Every hook path re-checks workspace trust; disabling all hooks must gate settings-, plugin- and session-derived hooks separately.
@@ -39,6 +39,14 @@ commented IN the file that governs them.
 - RunCode evaluates model-authored TS with `Bun.Transpiler` `transformSync` + `AsyncFunction` — disk-path `import()` does not exist in the compiled binary, and the `transpile`/`transpileAsync` method names do not exist in our Bun version. The catalog `.ts` files are documentation only: the loader builds runtime namespaces from the live pool with `catalogExportName` (writer). If docs and loader identifier rules drift, script imports fail with confusing "no export" errors.
 - RunCode's `outputSchema` and the bridge's segment builder are a lockstep pair — a schema narrower than what `call()` returns silently drops segments (same failure mode as MCP output schemas).
 - The tool-catalog state file (`<config-home>/tool-catalog.json`) is harness-owned and must never be named in prompts; the model-facing catalog is exactly `servers/*.ts` + `builtins.ts`.
+
+## Sessions and the wire
+
+- Session-scoped state (costs, cwd trio, model override, request broker, command queue, transcript storage handle) resolves through the active scope (`runInSessionScope` / `newSessionState` in `src/bootstrap/state.ts`). Work started outside a scope reads and writes the ROOT scope: harmless in a one-session process, silent cross-session pollution in sessiond. Subagents share the parent session's scope on purpose — do not scope-split them.
+- Every `SessionRuntime` read (`src/server/runtime.ts`) runs synchronously on the publish path while a turn streams: a blocking or copying read stalls every subscribed UI. Every publisher must check `hasSubscribers` first — a channel runs in every interactive process and almost none are attached to.
+- Wire event readers switch on `event.kind` with a default branch that IGNORES unknown kinds; zod-parsing the whole event union fails closed on an additive kind. The `-p`/SDK `SDKMessage` stdout contract is a separate projection, not this wire.
+- A transcript item's id is `${message.uuid}:${blockIndex}` (`toWireItems`) — `GET /image` resolves against it, so changing the id scheme orphans image fetches silently.
+- On a multi-session host the descriptor's `sessionId` is only the primary — route by its `sessionIds` array or the live `/v1/sessions` listing; a descriptor goes stale after an in-place `/clear` rotates the id.
 
 ## Bash security
 

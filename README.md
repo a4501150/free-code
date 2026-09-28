@@ -87,18 +87,36 @@ bun run ./scripts/build.ts --feature=VERIFY_PLAN
 ./cli --help                           # the full option list
 ```
 
-Subcommands: `web` (start/status/restart the browser session UI), `daemon`,
+Subcommands: `web` (start/status/serve/restart the browser session UI),
+`attach` (point the terminal at a running session host), `daemon`,
 `mcp` (add/list server), `auth`, `plugin`, `config`, `agents`, `auto-mode`.
 
 ### Features
 
 Subsystems that need runtime activation rather than a build flag:
 
-- **Assistant** — the webui gateway hosts one assistant session per machine (`web start` starts it; opt out with `assistant.enabled: false`). It is event-driven: browser/terminal submits, scheduled cron tasks, and `assistant.notify` control requests wake it — there is no tick loop. `--assistant` in the TUI joins that session; it cannot initialize one. `--brief` opts a normal session into brief replies.
+- **Assistant** — sessiond hosts one assistant session per machine (`web start` starts it; opt out with `assistant.enabled: false`). It is event-driven: browser/terminal submits, scheduled cron tasks, and `assistant.notify` control requests wake it — there is no tick loop. `--assistant` in the TUI joins that session; it cannot initialize one. `--brief` opts a normal session into brief replies.
 - **Coordinator mode** — `coordinatorMode` setting or `--tasks`.
 - **Voice mode** — `voiceEnabled` setting + OAuth; `/voice`.
 - **Scheduled tasks** (`CronCreate`/`CronList`, `/loop`) — `scheduledTasksEnabled` setting, on by default.
 - **Memory extraction** — `autoMemoryEnabled` setting.
+
+## Architecture
+
+The session is plain TypeScript — no UI drives it. `SessionCore`
+(`src/session/`) owns the transcript, drives the query loop, owns the
+permission broker and per-session state, and emits typed domain events on
+every mutation. Session-scoped process state resolves through a scope layer,
+so one process can legally host many sessions.
+
+Every UI is a client of one wire: HTTP commands in, an SSE event stream out
+(`src/session/wire.ts`).
+
+- sessiond (`src/sessiond/`, `claude web serve`) hosts N cores in one process and serves the browser UI plus a tokened local surface.
+- A plain terminal process exposes the same wire surface; a descriptor in `~/.freecode/attach/` carries its loopback port and bearer token, which is how `claude attach`, other sessions and the browser pool find it.
+- The browser client and `claude attach` render from the same view-store reducer (`src/session/viewStore.ts`); each client keeps only its own input ergonomics and presentation.
+
+The `-p`/SDK stdout (`SDKMessage` ndjson) is a separate, stable projection of the same core.
 
 ## Configuration
 
@@ -125,11 +143,15 @@ Precedence, lowest to highest: user → project → local → `--settings
 ```
 
 The first run asks for a password without echo. Anyone holding that password can
-approve a command that runs on your machine — treat it like an SSH key. The
-gateway lives inside the daemon, binds `127.0.0.1`, and the tunnel is the only
-public path. After a rebuild, `web restart` keeps the hostname the tunnel handed
-out before, so a URL already open on a phone keeps working. A terminal session
-is attachable only if its process came from a build with the webui compiled in.
+approve a command that runs on your machine — treat it like an SSH key. sessiond
+runs inside the daemon (`web serve` runs it in the foreground), binds
+`127.0.0.1`, and the tunnel is the only public path. Sessions you create in the
+browser run in-process in sessiond; sessions from your terminal join the same
+pool through their attach descriptors, and `claude attach <sessionIdPrefix>`
+turns a terminal into a viewer of any of them. After a rebuild, `web restart`
+keeps the hostname the tunnel handed out before, so a URL already open on a
+phone keeps working. A terminal session is attachable only if its process came
+from a build with the webui compiled in.
 
 By default the cloudflared tunnel is a quick tunnel: no account, a random
 `*.trycloudflare.com` URL per start. To pin a hostname on your own zone, add a
@@ -159,7 +181,8 @@ ingress are created or refreshed through the API on every start, and
 
 Bun, TypeScript, React 19 on a repository-local terminal renderer
 (`react-reconciler`) with a pure-TypeScript Yoga port — no native build step.
-Browser UI is React 19 and hand-written CSS over `Bun.serve`. Commander, Zod v4,
+Browser UI is React 19 and hand-written CSS, served by sessiond over
+`node:http` + `ws`. Commander, Zod v4,
 ripgrep/bfs/ugrep, MCP. Providers: Anthropic, OpenAI Responses and Chat
 Completions, Bedrock, Vertex, Foundry, Gemini.
 
