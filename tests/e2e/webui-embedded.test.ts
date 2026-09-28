@@ -21,7 +21,7 @@ const MARKERS = [
   'claude web <command>',
   'freecode_webui',
   'Denied from the WebUI',
-  'the session did not become attachable',
+  'attach_failed',
 ]
 
 function binaryContains(path: string, needle: string): boolean {
