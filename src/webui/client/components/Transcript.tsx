@@ -8,6 +8,15 @@ import {
 } from 'react'
 import type { WireItem, WirePendingCommand } from '../../../session/wire.js'
 import { renderMarkdown } from '../markdown.js'
+import {
+  attachmentGutter,
+  attachmentView,
+  compactDividerText,
+  progressView,
+  toolNamesByUseId,
+  type AttachmentView,
+  type ProgressView,
+} from '../itemViews.js'
 import { ToolCard } from './ToolCard.js'
 
 function sizeLabel(bytes: number): string {
@@ -25,15 +34,72 @@ type ToolGroup = {
 
 type RowEntry = { kind: 'row'; item: WireItem; result?: WireItem } | ToolGroup
 
+/** A muted, single-line system-ish row shared by progress and attachments. */
+function SideRow({
+  gutter,
+  cls,
+  label,
+  detail,
+  mono,
+}: {
+  gutter: string
+  cls: string
+  label: string
+  detail?: string
+  mono?: boolean
+}): React.ReactElement {
+  return (
+    <div className={`row ${cls}`}>
+      <span className="row__gutter">{gutter}</span>
+      <div className="row__body">
+        <span className="row__label">{label}</span>
+        {detail ? (
+          <pre className={`row__detail${mono ? ' is-mono' : ''}`}>{detail}</pre>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function ProgressRow({ view }: { view: ProgressView }): React.ReactElement {
+  return (
+    <SideRow
+      gutter="⋯"
+      cls="row--progress"
+      label={`${view.label}${view.detail ? ` — ${view.detail}` : ''}`}
+    />
+  )
+}
+
+function AttachmentRow({
+  view,
+  item,
+}: {
+  view: AttachmentView
+  item: WireItem
+}): React.ReactElement {
+  return (
+    <SideRow
+      gutter={attachmentGutter(item.attachment?.type ?? '')}
+      cls={`row--attachment ${view.cls}`}
+      label={view.label}
+      detail={view.detail}
+      mono={view.mono}
+    />
+  )
+}
+
 const Row = memo(function Row({
   item,
   result,
   inProgressToolUseIds,
+  toolNames,
   onOpenImage,
 }: {
   item: WireItem
   result?: WireItem
   inProgressToolUseIds?: string[]
+  toolNames: Map<string, string>
   onOpenImage(item: WireItem): void
 }): React.ReactElement | null {
   switch (item.kind) {
@@ -88,19 +154,39 @@ const Row = memo(function Row({
         />
       )
 
-    case 'system':
+    case 'system': {
+      const divider = compactDividerText(item)
+      if (divider) {
+        return (
+          <div className="row row--compact-seam" role="separator">
+            <span className="row__rule" aria-hidden />
+            <span className="row__seam-label">{divider}</span>
+            <span className="row__rule" aria-hidden />
+          </div>
+        )
+      }
       if (!item.text) return null
       return (
         <div className={`row row--system is-${item.level ?? 'info'}`}>
           <div className="row__body">{item.text}</div>
         </div>
       )
+    }
 
-    // Tool results render inside their tool card, progress rides the tool
-    // card's running state, and attachments are noise.
+    case 'progress': {
+      const view = progressView(item, toolNames)
+      if (!view) return null
+      return <ProgressRow view={view} />
+    }
+
+    case 'attachment': {
+      const view = attachmentView(item)
+      if (!view) return null
+      return <AttachmentRow view={view} item={item} />
+    }
+
+    // Tool results render inside their tool card.
     case 'tool_result':
-    case 'attachment':
-    case 'progress':
       return null
   }
 })
@@ -190,10 +276,11 @@ export function Transcript({
   /** Resolves the bytes for one image, which the wire deliberately omits. */
   onFetchImage(itemId: string): Promise<{ mediaType: string; data: string }>
 }): React.ReactElement {
-  const entries = useMemo(() => {
+  const { entries, toolNames } = useMemo(() => {
     const list = order
       .map(id => items.get(id))
       .filter((item): item is WireItem => Boolean(item))
+    const toolNames = toolNamesByUseId(list)
 
     // Pair each result with its tool_use so a card owns its output.
     const resultsByToolUse = new Map<string, WireItem>()
@@ -260,7 +347,7 @@ export function Transcript({
         i++
       }
     }
-    return entries
+    return { entries, toolNames }
   }, [items, order])
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -350,6 +437,7 @@ export function Transcript({
                   item={entry.item}
                   result={entry.result}
                   inProgressToolUseIds={inProgressToolUseIds}
+                  toolNames={toolNames}
                   onOpenImage={target => void openImage(target)}
                 />
               ),

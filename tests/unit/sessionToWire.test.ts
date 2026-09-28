@@ -91,6 +91,27 @@ describe('toWire v2', () => {
     for (const item of items) expect(item.rev).toMatch(/^[0-9a-z]+$/)
   })
 
+  test('compact boundaries ride the stream as a textless system seam', () => {
+    const items = toWireItems([
+      {
+        type: 'system',
+        uuid: randomUUID(),
+        timestamp: ts,
+        subtype: 'compact_boundary',
+      } as unknown as Message,
+      {
+        type: 'system',
+        uuid: randomUUID(),
+        timestamp: ts,
+        subtype: 'microcompact_boundary',
+      } as unknown as Message,
+    ])
+    expect(items.map(i => i.kind)).toEqual(['system', 'system'])
+    expect(items[0]!.subtype).toBe('compact_boundary')
+    expect(items[0]!.text).toBe('')
+    expect(items[1]!.subtype).toBe('microcompact_boundary')
+  })
+
   test('synthetic tags are stripped or unwrapped at the boundary', () => {
     const items = toWireItems([
       userMessage({

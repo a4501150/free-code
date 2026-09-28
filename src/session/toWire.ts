@@ -437,12 +437,25 @@ export function toWireItems(messages: readonly Message[]): WireItem[] {
         break
       }
       case 'system': {
-        // Hide compact boundaries, same as every other surface.
         const subtype = (message as { subtype?: string }).subtype
         if (
           subtype === 'compact_boundary' ||
           subtype === 'microcompact_boundary'
         ) {
+          // The terminal hides the boundary row; a remote transcript still
+          // needs the seam, or a long session reads as one continuous
+          // conversation that happens to forget things. No text: the
+          // subtype is the payload, and renderers draw a divider.
+          items.push(
+            finish({
+              id: `${message.uuid}:0`,
+              kind: 'system',
+              timestamp: message.timestamp,
+              text: '',
+              subtype,
+              isMeta: true,
+            }),
+          )
           break
         }
         items.push(

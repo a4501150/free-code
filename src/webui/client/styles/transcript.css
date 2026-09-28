@@ -378,3 +378,91 @@
     padding: 0.15rem 0 0.15rem 0.75rem;
   }
 }
+
+/* ── side channels: tool progress, attachments, the compact seam ──
+   Quiet rows: same gutter rhythm as the conversation, two steps down
+   in voice, so they annotate the exchange without interrupting it. */
+
+.row--progress {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.row--progress .row__gutter {
+  color: var(--text-faint);
+  letter-spacing: 1px;
+}
+
+.row--attachment {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.row--attachment .row__label {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.row--attachment.is-edited_text_file .row__gutter {
+  color: var(--add);
+}
+
+.row--attachment.is-hook_system_message .row__gutter {
+  color: var(--signal);
+}
+
+.row--attachment.is-diagnostics .row__gutter {
+  color: var(--del);
+}
+
+.row--attachment.is-task-completed .row__label {
+  color: var(--add);
+}
+
+.row--attachment.is-task-failed .row__label,
+.row--attachment.is-task-killed .row__label {
+  color: var(--del);
+}
+
+.row--attachment.is-task-running .row__label {
+  color: var(--signal);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.row__detail {
+  margin: 0.15rem 0 0;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--rule);
+  max-height: 6.5rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.row__detail.is-mono {
+  font-family: var(--mono);
+}
+
+/* The compact seam: the transcript's horizon line. */
+.row--compact-seam {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.1rem 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.row--compact-seam .row__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+.row--compact-seam .row__seam-label {
+  flex: none;
+  white-space: nowrap;
+}
