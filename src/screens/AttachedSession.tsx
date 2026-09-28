@@ -7,13 +7,14 @@ import React, {
   useSyncExternalStore,
 } from 'react'
 import { randomUUID } from 'crypto'
-import { Box, Text, useInput, useApp } from '../ink.js'
+import { Box, Text, useApp, useInput } from '../ink.js'
 import ScrollBox, { type ScrollBoxHandle } from '../ink/components/ScrollBox.js'
 import { ScrollKeybindingHandler } from '../components/ScrollKeybindingHandler.js'
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js'
 import {
   connectSurfaceClient,
   type SurfaceClient,
+  type SurfaceCommandPath,
 } from '../webui/gateway/surfaceClient.js'
 import type { WireItem, WireRequest, WireSessionMeta } from '../session/wire.js'
 import {
@@ -21,7 +22,33 @@ import {
   type SessionView,
   type ViewStore,
 } from '../session/viewStore.js'
-import { PermissionDialog } from '../components/permissions/PermissionDialog.js'
+import {
+  attachmentGutter,
+  compactDividerText,
+  foldText,
+} from './attached/itemViews.js'
+import {
+  activityLabel,
+  draftView,
+  formatDuration,
+  toolRowView,
+  userRowView,
+} from './attached/itemViews.js'
+import {
+  agentIdsByToolUse,
+  attachmentView,
+  progressView,
+  taskView,
+  toolNamesByUseId,
+} from '../webui/client/itemViews.js'
+import {
+  queueRows,
+  queueEditBody,
+  queueRemoveBody,
+  rpcBody,
+  slashSuggestions,
+} from '../webui/client/composerViews.js'
+import { AttachedTrays } from './attached/AttachedTrays.js'
 import { Select } from '../components/CustomSelect/index.js'
 
 type ConnectionState =
@@ -74,6 +101,12 @@ export function AttachedSession({
   const scrollRef = useRef<ScrollBoxHandle>(null)
   const [inputText, setInputText] = useState('')
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const historyRef = useRef<string[]>([])
+  const historyAtRef = useRef(-1)
+  const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [runningSince, setRunningSince] = useState<number | null>(null)
+  const [, setTick] = useState(0)
   const { exit } = useApp()
 
   const cancel = useCallback(() => {
@@ -145,45 +178,54 @@ export function AttachedSession({
     }
   }, [pid, sessionId, url, store])
 
-  const handleSubmit = useCallback(
-    async (text: string) => {
+  const send = useCallback(
+    async (body: Record<string, unknown>): Promise<void> => {
       const client = clientRef.current
       if (!client || !view.meta) return
-
-      const response = await client.command('prompt', {
-        kind: 'prompt',
-        content: text,
-        delivery: 'next',
-        commandId: randomUUID(),
-        sessionEpoch: view.meta.sessionEpoch,
-      })
+      const response = await client.command(
+        String(body.kind) as SurfaceCommandPath,
+        body,
+      )
       // A stale epoch comes back as 409 {ok:false} with the reason attached.
       if (!response.ok) {
-        setSubmitError(response.error?.message ?? 'Submission failed')
+        setSubmitError(response.error?.message ?? 'Command failed')
         setTimeout(() => setSubmitError(null), 3000)
       }
     },
     [view.meta],
   )
 
-  const handlePermissionDecision = useCallback(
-    (requestId: string, behavior: string) => {
-      const client = clientRef.current
-      if (!client) return
-
-      void client.command('request_respond', {
-        kind: 'request_respond',
-        requestId,
-        response: {
-          kind: 'permission',
-          decision:
-            behavior === 'allow'
-              ? ({ behavior: 'allow' } as const)
-              : ({ behavior: 'deny' } as const),
-        },
-      })
+  const handleSubmit = useCallback(
+    async (text: string) => {
+      // /compact and /clear render nothing when the host runs them, so the
+      // viewer sends those two as rpc — the same buttons the browser has.
+      const word = text.trim().split(/\s/)[0] ?? ''
+      if (word === '/compact' || word === '/clear') {
+        setEditingQueueId(null)
+        await send(
+          rpcBody(word === '/compact' ? 'compact' : 'clear') as Record<
+            string,
+            unknown
+          >,
+        )
+        return
+      }
+      if (editingQueueId) {
+        setEditingQueueId(null)
+        await send(
+          queueEditBody(editingQueueId, text) as Record<string, unknown>,
+        )
+        return
+      }
+      await send({
+        kind: 'prompt',
+        content: text,
+        delivery: 'next',
+        commandId: randomUUID(),
+        sessionEpoch: view.meta?.sessionEpoch ?? 0,
+      } as Record<string, unknown>)
     },
-    [],
+    [send, editingQueueId, view.meta],
   )
 
   const items = useMemo(
@@ -193,43 +235,139 @@ export function AttachedSession({
         .filter((item): item is WireItem => Boolean(item)),
     [view.items, view.order],
   )
+  const toolNames = useMemo(() => toolNamesByUseId(items), [items])
+  const resultsByToolUse = useMemo(() => {
+    const map = new Map<string, WireItem>()
+    for (const item of items) {
+      if (item.kind === 'tool_result' && item.toolUseId) {
+        map.set(item.toolUseId, item)
+      }
+    }
+    return map
+  }, [items])
+  const agentIds = useMemo(() => agentIdsByToolUse(items), [items])
 
   const isRunning = view.meta?.state === 'running'
   const isConnected = connection.status === 'connected'
   const pendingRequest = view.requests[0] ?? null
   const composerActive = isConnected && !pendingRequest
 
-  useInput((input, key) => {
-    if (!composerActive) return
+  // A running-turn clock for the status line: starts on the transition into
+  // running, and a 1s tick keeps the elapsed time and task durations fresh.
+  useEffect(() => {
+    if (isRunning && runningSince === null) setRunningSince(Date.now())
+    if (!isRunning && runningSince !== null) setRunningSince(null)
+  }, [isRunning, runningSince])
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 1000)
+    timer.unref?.()
+    return () => clearInterval(timer)
+  }, [])
 
-    if (key.return) {
-      const trimmed = inputText.trim()
-      if (trimmed) {
-        void handleSubmit(trimmed)
-        setInputText('')
+  // The newest host toast (settings errors, rate limits): shown briefly.
+  const notification =
+    view.notifications.error ??
+    view.notifications.warn ??
+    view.notifications.info
+  const notificationKey = notification?.text
+  useEffect(() => {
+    if (!notificationKey) return
+    setToast(notificationKey)
+    const timer = setTimeout(() => setToast(null), 5000)
+    return () => clearTimeout(timer)
+  }, [notificationKey])
+
+  const paletteToken = inputText.startsWith('/')
+    ? inputText.split(/\s/)[0]!
+    : ''
+  const palette = useMemo(
+    () =>
+      paletteToken ? slashSuggestions(view.catalog.commands, paletteToken) : [],
+    [paletteToken, view.catalog.commands],
+  )
+  const queued = queueRows(view.queue)
+
+  useInput(
+    (input, key) => {
+      if (!composerActive) return
+
+      if (key.return) {
+        const trimmed = inputText.trim()
+        if (key.shift && isRunning && !trimmed) {
+          // Steer: an empty Shift+Enter is the browser's interrupt affordance.
+          cancel()
+          return
+        }
+        if (trimmed) {
+          historyRef.current.push(trimmed)
+          if (historyRef.current.length > 50) historyRef.current.shift()
+          historyAtRef.current = -1
+          void handleSubmit(inputText)
+          setInputText('')
+        }
+        return
       }
-      return
-    }
 
-    if (key.backspace || key.delete) {
-      setInputText(prev => prev.slice(0, -1))
-      return
-    }
-
-    if (key.escape) {
-      if (isRunning) {
-        cancel()
+      if (key.backspace || key.delete) {
+        setInputText(prev => prev.slice(0, -1))
+        return
       }
-      return
-    }
 
-    if (key.ctrl || key.meta) return
-    if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) return
-    if (key.pageUp || key.pageDown) return
-    if (key.tab) return
+      if (key.escape) {
+        if (editingQueueId) {
+          setEditingQueueId(null)
+          setInputText('')
+          return
+        }
+        if (isRunning) cancel()
+        return
+      }
 
-    if (input) setInputText(prev => prev + input)
-  })
+      if (key.upArrow || key.downArrow) {
+        // History ring, newest first; only while the line is single-line.
+        const history = historyRef.current
+        if (history.length === 0 || inputText.includes('\n')) return
+        let at = historyAtRef.current
+        at = key.upArrow
+          ? at < 0
+            ? history.length - 1
+            : Math.max(0, at - 1)
+          : at < 0
+            ? at
+            : Math.min(history.length - 1, at + 1)
+        historyAtRef.current = at
+        if (at >= 0) setInputText(history[at]!)
+        return
+      }
+
+      // Queue row hotkeys on the first queued row, composer-empty only:
+      // ctrl+x drops it, ctrl+e loads it back for editing (the submit then
+      // rides rpc queue_edit). Ctrl so a prompt starting with e/x is never
+      // swallowed by a hotkey.
+      if (key.ctrl && inputText === '' && queued.length > 0) {
+        const row = queued[0]!
+        if (input === 'x') {
+          void send(queueRemoveBody(row.id) as Record<string, unknown>)
+          return
+        }
+        if (input === 'e') {
+          setEditingQueueId(row.id)
+          setInputText(row.text)
+          return
+        }
+      }
+
+      if (key.ctrl || key.meta) return
+      if (key.leftArrow || key.rightArrow) return
+      if (key.pageUp || key.pageDown) return
+      if (key.tab) return
+
+      if (input) setInputText(prev => prev + input)
+    },
+    { isActive: composerActive },
+  )
+
+  const draft = isRunning ? draftView(view.streamDraft) : null
 
   return (
     <Box flexDirection="column" flexGrow={1} overflow="hidden">
@@ -261,16 +399,26 @@ export function AttachedSession({
 
         {/* Transcript items */}
         {items.map(item => (
-          <TranscriptItemRow key={item.id} item={item} />
+          <TranscriptItemRow
+            key={`${item.id}:${item.rev}`}
+            item={item}
+            result={
+              item.kind === 'tool_use' && item.toolUseId
+                ? resultsByToolUse.get(item.toolUseId)
+                : undefined
+            }
+            agentId={
+              item.kind === 'tool_use' && item.toolUseId
+                ? agentIds.get(item.toolUseId)
+                : undefined
+            }
+            inProgress={new Set(view.meta?.inProgressToolUseIds ?? [])}
+            toolNames={toolNames}
+          />
         ))}
 
-        {/* Permission overlay */}
-        {pendingRequest && isConnected && (
-          <AttachedRequestOverlay
-            request={pendingRequest}
-            onDecision={handlePermissionDecision}
-          />
-        )}
+        {/* Streaming preview at the transcript tail */}
+        {draft && <StreamDraftRow draft={draft} />}
       </ScrollBox>
 
       <ScrollKeybindingHandler scrollRef={scrollRef} isActive />
@@ -291,18 +439,117 @@ export function AttachedSession({
         </Box>
       )}
 
-      {/* Status bar and composer */}
+      {/* Blocking request trays take the keys while anything is pending */}
+      {pendingRequest && isConnected && (
+        <Box flexShrink={0} paddingX={2} paddingTop={1}>
+          <AttachedTrays
+            requests={view.requests}
+            submit={(requestId, response) => {
+              void send({
+                kind: 'request_respond',
+                requestId,
+                response,
+              })
+            }}
+          />
+        </Box>
+      )}
+
+      {/* Queued prompts, todos, and background tasks */}
+      {isConnected &&
+        (queued.length > 0 ||
+          view.todos.length > 0 ||
+          view.tasks.length > 0) && (
+          <Box flexShrink={0} flexDirection="column" paddingX={2}>
+            {queued.length > 0 && (
+              <Box>
+                <Text dimColor>
+                  queued:{' '}
+                  {queued
+                    .map(row => row.text)
+                    .join(' · ')
+                    .slice(0, 120)}
+                  {inputText === '' ? '  (^e edit · ^x drop)' : ''}
+                </Text>
+              </Box>
+            )}
+            {view.todos.length > 0 && (
+              <Box>
+                <Text dimColor>
+                  todos:{' '}
+                  {view.todos
+                    .map(
+                      todo =>
+                        `${todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '▶' : '·'} ${todo.content}`,
+                    )
+                    .slice(0, 4)
+                    .join(' · ')
+                    .slice(0, 160)}
+                </Text>
+              </Box>
+            )}
+            {view.tasks.length > 0 && (
+              <Box>
+                <Text dimColor>
+                  tasks:{' '}
+                  {view.tasks
+                    .map(task => {
+                      const view0 = taskView(task, Date.now())
+                      return `${view0.marker} ${view0.label}${view0.duration ? ` ${view0.duration}` : ''}`
+                    })
+                    .slice(0, 4)
+                    .join(' · ')
+                    .slice(0, 160)}
+                </Text>
+              </Box>
+            )}
+          </Box>
+        )}
+
+      {/* Composer */}
       {isConnected && (
         <Box flexShrink={0} flexDirection="column">
-          <AttachedStatusBar meta={view.meta} />
-          <Box paddingX={2}>
-            <Text color="claude">{isRunning ? '⏳ ' : '❯ '}</Text>
-            <Text>{inputText}</Text>
-            <Text inverse> </Text>
-          </Box>
-          {submitError && (
+          {pendingRequest ? (
             <Box paddingX={2}>
-              <Text color="error">{submitError}</Text>
+              <Text dimColor>Answer the pending prompt above to continue</Text>
+            </Box>
+          ) : (
+            <Box paddingX={2}>
+              <Text color="claude">
+                {editingQueueId ? '✎ ' : isRunning ? '⏳ ' : '❯ '}
+              </Text>
+              <Text>{inputText}</Text>
+              <Text inverse> </Text>
+            </Box>
+          )}
+          {editingQueueId && (
+            <Box paddingX={2}>
+              <Text dimColor>
+                editing a queued command — Enter saves, Esc discards
+              </Text>
+            </Box>
+          )}
+          {palette.length > 0 && !editingQueueId && (
+            <Box paddingX={2}>
+              <Text dimColor>
+                {palette
+                  .slice(0, 5)
+                  .map(
+                    item =>
+                      `${item.value}${item.hint ? ` ${item.hint}` : ''}${item.detail ? ` — ${item.detail}` : ''}`,
+                  )
+                  .join('\n')}
+              </Text>
+            </Box>
+          )}
+          {(submitError || toast) && (
+            <Box paddingX={2}>
+              <Text
+                color={submitError ? 'error' : 'warning'}
+                dimColor={!submitError}
+              >
+                {submitError ?? toast}
+              </Text>
             </Box>
           )}
           <Box paddingX={2} height={1}>
@@ -316,6 +563,15 @@ export function AttachedSession({
           </Box>
         </Box>
       )}
+
+      {/* Status bar */}
+      {isConnected && (
+        <AttachedStatusBar
+          meta={view.meta}
+          runningSince={runningSince}
+          hasTray={pendingRequest !== null}
+        />
+      )}
     </Box>
   )
 }
@@ -324,110 +580,170 @@ export function AttachedSession({
 // Transcript item rendering
 // ---------------------------------------------------------------------------
 
-const MAX_DISPLAY_LINES = 20
-
-function truncateText(text: string | undefined): string {
-  if (!text) return ''
-  const lines = text.split('\n')
-  if (lines.length <= MAX_DISPLAY_LINES) return text
-  return lines.slice(0, MAX_DISPLAY_LINES).join('\n') + '\n… truncated'
-}
-
-function formatToolInput(input: unknown): string {
-  if (!input) return ''
-  try {
-    const json = JSON.stringify(input)
-    return json.length > 120 ? json.slice(0, 120) + '…' : json
-  } catch {
-    return ''
-  }
-}
-
-function TranscriptItemRow({ item }: { item: WireItem }): React.ReactNode {
+function TranscriptItemRow({
+  item,
+  result,
+  agentId,
+  inProgress,
+  toolNames,
+}: {
+  item: WireItem
+  result?: WireItem
+  agentId?: string
+  inProgress: ReadonlySet<string>
+  toolNames: Map<string, string>
+}): React.ReactNode {
   switch (item.kind) {
     case 'user': {
-      if (item.image) {
-        // Bytes stay on the surface; this screen shows metadata only.
-        return (
-          <Box paddingX={2} paddingTop={1}>
-            <Text color="claude" bold>
-              ❯{' '}
-            </Text>
-            <Text dimColor>[image {item.image.mediaType}]</Text>
-          </Box>
-        )
-      }
+      const row = userRowView(item)
+      if (!row.visible) return null
       return (
         <Box paddingX={2} paddingTop={1}>
           <Text color="claude" bold>
             ❯{' '}
           </Text>
-          <Text bold>{truncateText(item.text)}</Text>
+          <Text bold>{row.text}</Text>
+          {row.imageLabel ? <Text dimColor> {row.imageLabel}</Text> : null}
         </Box>
       )
     }
 
-    case 'assistant':
+    case 'assistant': {
+      if (!item.text) return null
       return (
         <Box paddingX={2} paddingTop={1}>
-          <Text>{truncateText(item.text)}</Text>
+          <Text>{item.text}</Text>
+          {item.messageId ? null : null}
         </Box>
       )
+    }
 
-    case 'reasoning':
+    case 'reasoning': {
       if (!item.text) return null
       return (
         <Box paddingX={2}>
           <Text dimColor italic>
-            {truncateText(item.text)}
-          </Text>
-        </Box>
-      )
-
-    case 'tool_use':
-      return (
-        <Box paddingX={4}>
-          <Text dimColor>
-            ⚡ {item.toolName}
-            {item.toolInput ? ` ${formatToolInput(item.toolInput)}` : ''}
-          </Text>
-        </Box>
-      )
-
-    case 'tool_result': {
-      const text = truncateText(item.text)
-      if (!text) return null
-      return (
-        <Box paddingX={4}>
-          <Text dimColor color={item.isError ? 'error' : undefined}>
-            {item.isError ? '✗ ' : ''}
-            {text}
+            {foldText(item.text, 6).text}
+            {foldText(item.text, 6).hidden > 0
+              ? `\n… +${foldText(item.text, 6).hidden} lines of thinking`
+              : ''}
           </Text>
         </Box>
       )
     }
 
-    case 'system':
-      if (item.isMeta) return null
+    case 'tool_use': {
+      const row = toolRowView(item, result, inProgress)
+      const failed = result?.isError === true
       return (
-        <Box paddingX={2}>
-          <Text dimColor>── {item.text} ──</Text>
+        <Box flexDirection="column" paddingX={4}>
+          <Text dimColor>
+            {row.running ? '⚡' : failed ? '✗' : '⚡'}{' '}
+            <Text bold>{row.name}</Text>
+            {row.summary ? ` ${row.summary}` : ''}
+            {agentId ? ` → agent ${agentId.slice(0, 8)}` : ''}
+          </Text>
+          {result?.text ? <ToolResultFold item={result} /> : null}
         </Box>
       )
+    }
 
-    case 'attachment':
+    case 'tool_result': {
+      // Results under a tool_use render inside that row; an orphan result
+      // (its call scrolled out of the wire's window) still prints.
+      if (item.toolUseId) return null
+      return <ToolResultFold item={item} />
+    }
+
+    case 'progress': {
+      const progress = progressView(item, toolNames)
+      if (!progress) return null
       return (
-        <Box paddingX={4}>
+        <Box paddingX={6}>
           <Text dimColor>
-            {item.attachment?.display ?? item.text ?? 'attachment'}
+            └ {progress.label}
+            {progress.detail ? `: ${progress.detail}` : ''}
           </Text>
         </Box>
       )
+    }
+
+    case 'system': {
+      if (item.isMeta) return null
+      const divider = compactDividerText(item)
+      return (
+        <Box paddingX={2}>
+          <Text dimColor>── {divider ?? item.text} ──</Text>
+        </Box>
+      )
+    }
+
+    case 'attachment': {
+      const view0 = attachmentView(item)
+      if (!view0) return null
+      return (
+        <Box paddingX={4}>
+          <Text dimColor>
+            {attachmentGutter(item.attachment?.type ?? '')} {view0.label}
+            {view0.detail ? ` (${view0.detail.slice(0, 100)})` : ''}
+          </Text>
+        </Box>
+      )
+    }
 
     default:
-      // progress and any kind this screen does not render yet.
+      // Any kind this screen does not render yet.
       return null
   }
+}
+
+function ToolResultFold({ item }: { item: WireItem }): React.ReactNode {
+  const fold = foldText(item.text, 4)
+  if (!fold.text) return null
+  return (
+    <Box paddingX={6}>
+      <Text dimColor color={item.isError ? 'error' : undefined}>
+        {item.isError ? '✗ ' : '└ '}
+        {fold.text}
+        {fold.hidden > 0 ? `\n… +${fold.hidden} more lines` : ''}
+      </Text>
+    </Box>
+  )
+}
+
+/**
+ * The in-flight preview: what the model is writing NOW, before any of it
+ * is a committed transcript row. Cumulative by contract, so this render is
+ * a whole take — no stale fragment can survive a frame.
+ */
+function StreamDraftRow({
+  draft,
+}: {
+  draft: NonNullable<ReturnType<typeof draftView>>
+}): React.ReactNode {
+  return (
+    <Box flexDirection="column" paddingX={2} paddingTop={1}>
+      {draft.thinking ? (
+        <Box>
+          <Text dimColor italic>
+            {draft.thinking}
+          </Text>
+        </Box>
+      ) : null}
+      {draft.text ? (
+        <Box>
+          <Text>{draft.text}</Text>
+        </Box>
+      ) : null}
+      {draft.tools.map((tool, at) => (
+        <Box key={at}>
+          <Text dimColor>
+            ⚡ {tool.toolName ?? 'tool'} {tool.partialJson}…
+          </Text>
+        </Box>
+      ))}
+    </Box>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -436,14 +752,23 @@ function TranscriptItemRow({ item }: { item: WireItem }): React.ReactNode {
 
 function AttachedStatusBar({
   meta,
+  runningSince,
+  hasTray,
 }: {
   meta: WireSessionMeta | null
+  runningSince: number | null
+  hasTray: boolean
 }): React.ReactNode {
   if (!meta) return null
 
   const parts: string[] = []
+  const activity = hasTray
+    ? 'waiting for you'
+    : activityLabel(meta.activity, meta.state)
+  if (activity) parts.push(activity)
+  if (runningSince !== null)
+    parts.push(formatDuration(Date.now() - runningSince))
   if (meta.model) parts.push(meta.model)
-  parts.push(meta.activity ?? meta.state)
   if (meta.context) parts.push(`${meta.context.usedPercent}% context`)
   if (meta.costUsd !== undefined) parts.push(`$${meta.costUsd.toFixed(2)}`)
 
@@ -458,55 +783,5 @@ function AttachedStatusBar({
     >
       <Text dimColor>{parts.join(' · ')}</Text>
     </Box>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Request overlay
-// ---------------------------------------------------------------------------
-
-function AttachedRequestOverlay({
-  request,
-  onDecision,
-}: {
-  request: WireRequest
-  onDecision: (requestId: string, behavior: string) => void
-}): React.ReactNode {
-  if (request.kind !== 'permission') {
-    // hook_prompt and elicitation block the session too; this screen has no
-    // rich UI for them yet, so it only says one is waiting.
-    return (
-      <Box paddingX={2} paddingTop={1}>
-        <Text dimColor>
-          {request.kind === 'hook_prompt'
-            ? 'A hook prompt is pending'
-            : 'A server elicitation is pending'}{' '}
-          — answer it in the host session
-        </Text>
-      </Box>
-    )
-  }
-
-  return (
-    <PermissionDialog title="Permission Required" color="permission">
-      <Box flexDirection="column" gap={1} paddingTop={1}>
-        <Text bold>{request.toolName}</Text>
-        <Text>{request.description}</Text>
-        {request.blockedPath && (
-          <Text color="warning">Path: {request.blockedPath}</Text>
-        )}
-        <Box maxHeight={8} overflow="hidden">
-          <Text dimColor>{formatToolInput(request.input)}</Text>
-        </Box>
-        <Select
-          options={[
-            { label: 'Allow', value: 'allow' },
-            { label: 'Deny', value: 'deny' },
-          ]}
-          onChange={value => onDecision(request.requestId, value)}
-          onCancel={() => onDecision(request.requestId, 'deny')}
-        />
-      </Box>
-    </PermissionDialog>
   )
 }

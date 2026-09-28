@@ -1,42 +1,7 @@
 import { useState } from 'react'
 import type { WireItem } from '../../../session/wire.js'
+import { summarizeToolInput as summarizeInput } from '../itemViews.js'
 import { DiffView } from './DiffView.js'
-
-/** Tools whose input is better shown as a diff or a command than as JSON. */
-function summarizeInput(item: WireItem): string {
-  const input = (item.toolInput ?? {}) as Record<string, unknown>
-  const first = (...keys: string[]): string | undefined => {
-    for (const key of keys) {
-      const value = input[key]
-      if (typeof value === 'string' && value) return value
-    }
-    return undefined
-  }
-  switch (item.toolName) {
-    case 'Bash':
-      return first('command') ?? ''
-    case 'Read':
-    case 'Write':
-    case 'Edit':
-      return first('file_path', 'path') ?? ''
-    case 'Glob':
-    case 'Grep':
-      return first('pattern', 'query') ?? ''
-    // Legacy built-in name; MCP agent-browser web_fetch replaced it.
-    case 'WebFetch':
-    case 'mcp__agent-browser__web_fetch':
-      return first('url') ?? ''
-    case 'Task':
-    case 'Agent':
-      return first('description', 'prompt') ?? ''
-    default: {
-      const keys = Object.keys(input)
-      return keys.length
-        ? `${keys.length} argument${keys.length > 1 ? 's' : ''}`
-        : ''
-    }
-  }
-}
 
 type ToolStatus = 'running' | 'completed' | 'error' | 'pending'
 

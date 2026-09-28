@@ -239,10 +239,68 @@ export function attachmentView(item: WireItem): AttachmentView | null {
   }
 }
 
+/**
+ * One-line summary of a tool call's input: the argument a human scans for,
+ * not the whole JSON. Shared by the browser's tool card and the TUI
+ * attached-session transcript — the wire carries the input, the summary is
+ * a view decision.
+ */
+export function summarizeToolInput(item: WireItem): string {
+  const input = (item.toolInput ?? {}) as Record<string, unknown>
+  const first = (...keys: string[]): string | undefined => {
+    for (const key of keys) {
+      const value = input[key]
+      if (typeof value === 'string' && value) return value
+    }
+    return undefined
+  }
+  switch (item.toolName) {
+    case 'Bash':
+      return first('command') ?? ''
+    case 'Read':
+    case 'Write':
+    case 'Edit':
+      return first('file_path', 'path') ?? ''
+    case 'Glob':
+    case 'Grep':
+      return first('pattern', 'query') ?? ''
+    // Legacy built-in name; MCP agent-browser web_fetch replaced it.
+    case 'WebFetch':
+    case 'mcp__agent-browser__web_fetch':
+      return first('url') ?? ''
+    case 'Task':
+    case 'Agent':
+      return first('description', 'prompt') ?? ''
+    default: {
+      const keys = Object.keys(input)
+      return keys.length
+        ? `${keys.length} argument${keys.length > 1 ? 's' : ''}`
+        : ''
+    }
+  }
+}
+
 /** The compact seam: what the divider says, keyed off the system subtype. */
 export function compactDividerText(item: WireItem): string | null {
   if (item.kind !== 'system') return null
   if (item.subtype === 'compact_boundary') return 'context compacted'
   if (item.subtype === 'microcompact_boundary') return 'context trimmed'
   return null
+}
+
+/**
+ * A tool result shown to a bounded height: the first `maxLines` and a
+ * count of what fell off, so collapsing is never losing.
+ */
+export function foldText(
+  text: string | undefined,
+  maxLines: number,
+): { text: string; hidden: number } {
+  if (!text) return { text: '', hidden: 0 }
+  const lines = text.split('\n')
+  if (lines.length <= maxLines) return { text, hidden: 0 }
+  return {
+    text: lines.slice(0, maxLines).join('\n'),
+    hidden: lines.length - maxLines,
+  }
 }
