@@ -1,10 +1,27 @@
 import { useState } from 'react'
+import type {
+  WirePermissionDecision,
+  WirePermissionMode,
+} from '../../../session/wire.js'
 import type { PermissionEntry } from '../store.js'
+import { ALLOW_SET_MODES, buildAllowDecision } from '../trayViews.js'
+
+/** The allow half of a permission decision, as this tray's controls build it. */
+export type AllowControls = Extract<
+  WirePermissionDecision,
+  { behavior: 'allow' }
+>
 
 /**
  * Permission is the one thing that must not be missed on a phone, so it is a
  * tray on the bottom edge rather than a centred dialog: it is reachable by
  * thumb, it cannot be scrolled past, and it keeps full width at 390px.
+ *
+ * The answer half got the terminal's enrichments: the input pane is editable
+ * (an allow can ship `updatedInput`), "stop asking" is a checkbox instead of
+ * a second button, and the mode can switch with the approval — from the modes
+ * the surface may set remotely, which is why bypass/dontAsk are not in the
+ * picker (the surface answers those 403).
  */
 export function PermissionTray({
   request,
@@ -14,12 +31,32 @@ export function PermissionTray({
 }: {
   request: PermissionEntry
   queued: number
-  /** `persist` stops this tool asking again for the rest of the session. */
-  onAllow(persist: boolean): void
+  onAllow(decision: AllowControls): void
   onDeny(message: string): void
 }): React.ReactElement {
-  const [showInput, setShowInput] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [inputText, setInputText] = useState(() =>
+    JSON.stringify(request.input, null, 2),
+  )
+  const [inputError, setInputError] = useState('')
+  const [persist, setPersist] = useState(false)
+  const [setMode, setSetMode] = useState<WirePermissionMode | ''>('')
   const [feedback, setFeedback] = useState('')
+
+  function allow(): void {
+    const result = buildAllowDecision({
+      persist,
+      setMode: setMode || null,
+      editedInput: editing ? inputText : null,
+      originalInput: request.input,
+    })
+    if (!result.ok) {
+      setInputError(result.error)
+      return
+    }
+    setInputError('')
+    onAllow(result.decision)
+  }
 
   return (
     <section
@@ -35,9 +72,9 @@ export function PermissionTray({
         <button
           type="button"
           className="tray__toggle"
-          onClick={() => setShowInput(v => !v)}
+          onClick={() => setEditing(v => !v)}
         >
-          {showInput ? 'hide input' : 'show input'}
+          {editing ? 'hide input' : 'edit input'}
         </button>
       </header>
 
@@ -48,10 +85,20 @@ export function PermissionTray({
         </p>
       ) : null}
 
-      {showInput ? (
-        <pre className="tray__pre">
-          {JSON.stringify(request.input, null, 2)}
-        </pre>
+      {editing ? (
+        <>
+          <textarea
+            className="tray__edit"
+            value={inputText}
+            spellCheck={false}
+            onChange={event => {
+              setInputText(event.target.value)
+              setInputError('')
+            }}
+            rows={6}
+          />
+          {inputError ? <p className="tray__error">{inputError}</p> : null}
+        </>
       ) : null}
 
       <textarea
@@ -62,6 +109,36 @@ export function PermissionTray({
         rows={2}
       />
 
+      <div className="tray__controls">
+        {/* Session scope only, and labelled as such. The terminal's equivalent
+            writes a durable rule to project-local settings, which a surface
+            reachable over a public tunnel must not do. */}
+        <label className="tray__check">
+          <input
+            type="checkbox"
+            checked={persist}
+            onChange={event => setPersist(event.target.checked)}
+          />
+          stop asking this tool (session only, nothing written to disk)
+        </label>
+        <label className="tray__mode">
+          then switch to{' '}
+          <select
+            value={setMode}
+            onChange={event =>
+              setSetMode(event.target.value as WirePermissionMode | '')
+            }
+          >
+            <option value="">(keep mode)</option>
+            {ALLOW_SET_MODES.map(mode => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       <div className="tray__actions">
         <button
           type="button"
@@ -70,23 +147,8 @@ export function PermissionTray({
         >
           Deny
         </button>
-        <button
-          type="button"
-          className="btn btn--allow"
-          onClick={() => onAllow(false)}
-        >
+        <button type="button" className="btn btn--allow" onClick={allow}>
           Allow
-        </button>
-        {/* Session scope only, and labelled as such. The terminal's equivalent
-            writes a durable rule to project-local settings, which a surface
-            reachable over a public tunnel must not do. */}
-        <button
-          type="button"
-          className="btn btn--allow"
-          title="This session only. Nothing is written to disk."
-          onClick={() => onAllow(true)}
-        >
-          Allow always
         </button>
       </div>
     </section>

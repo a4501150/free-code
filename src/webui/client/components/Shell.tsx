@@ -2,21 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionListEntry } from '../../../sessiond/sessionList.js'
 import type {
   WirePermissionDecision,
+  WireRequest,
   WireRequestResponse,
 } from '../../../session/wire.js'
 import { useGateway } from '../hooks/useGateway.js'
 import { useSessions } from '../hooks/useSessions.js'
-import {
-  createViewStore,
-  useViewStore,
-  type PermissionEntry,
-} from '../store.js'
+import { createViewStore, useViewStore } from '../store.js'
 import { Composer } from './Composer.js'
 import { InstrumentSheet } from './InstrumentSheet.js'
 import { Instruments } from './Instruments.js'
 import { PermissionTray } from './PermissionTray.js'
 import { approvalInput, PlanTray } from './PlanTray.js'
 import { QuestionTray } from './QuestionTray.js'
+import { HookPromptTray } from './HookPromptTray.js'
+import { ElicitationTray } from './ElicitationTray.js'
 import { MenuDrawer } from './MenuDrawer.js'
 import { TopBar } from './TopBar.js'
 import { Transcript } from './Transcript.js'
@@ -242,12 +241,6 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
 
   const meta = view.meta
   const busy = meta?.state === 'running'
-  // Only permission requests have a tray. TODO(v2): hook_prompt and
-  // elicitation requests have no browser surface yet; they sit in the queue
-  // unseen, as they did before this client knew those kinds existed.
-  const pending = view.requests.find(
-    (r): r is PermissionEntry => r.kind === 'permission',
-  )
   // The browser cannot browse the filesystem, so the only sensible default is a
   // directory some session already runs in.
   const defaultCwd =
@@ -262,7 +255,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
 
   // A permission request is the one thing that must not be missed on a phone,
   // and the sheet sits between it and the composer.
-  const hasPending = Boolean(pending)
+  const hasPending = view.requests.length > 0
   useEffect(() => {
     if (hasPending) setSheetOpen(false)
   }, [hasPending])
@@ -286,12 +279,39 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
    * terminal answers them by allowing with enriched input, so each needs a
    * surface that can produce that input. The wire marks them with `ui`.
    */
-  function renderTray(request: PermissionEntry): React.ReactElement {
+  function renderTray(request: WireRequest): React.ReactElement {
     const queued = view.requests.length
+
+    if (request.kind === 'hook_prompt') {
+      return (
+        <HookPromptTray
+          key={request.requestId}
+          request={request}
+          queued={queued}
+          onSelect={selected =>
+            decide(request.requestId, { kind: 'hook_prompt', selected })
+          }
+        />
+      )
+    }
+
+    if (request.kind === 'elicitation') {
+      return (
+        <ElicitationTray
+          key={request.requestId}
+          request={request}
+          queued={queued}
+          onRespond={response =>
+            decide(request.requestId, { kind: 'elicitation', ...response })
+          }
+        />
+      )
+    }
 
     if (request.ui?.kind === 'question') {
       return (
         <QuestionTray
+          key={request.requestId}
           request={request}
           questions={request.ui.questions}
           queued={queued}
@@ -317,6 +337,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     if (request.ui?.kind === 'plan') {
       return (
         <PlanTray
+          key={request.requestId}
           request={request}
           planContent={request.ui.planContent}
           queued={queued}
@@ -348,11 +369,10 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
 
     return (
       <PermissionTray
+        key={request.requestId}
         request={request}
         queued={queued}
-        onAllow={persist =>
-          decide(request.requestId, permission({ behavior: 'allow', persist }))
-        }
+        onAllow={controls => decide(request.requestId, permission(controls))}
         onDeny={message =>
           decide(
             request.requestId,
@@ -417,7 +437,15 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
           </div>
         )}
 
-        {pending ? renderTray(pending) : null}
+        {view.requests.length > 0 ? (
+          <div
+            className="trays"
+            role="group"
+            aria-label="Requests awaiting answers"
+          >
+            {view.requests.map(renderTray)}
+          </div>
+        ) : null}
 
         {/* Only while attached: with no session behind it the sheet is a
             handle over an empty panel. Before the composer in the DOM as well

@@ -533,6 +533,80 @@ describe('client store', () => {
   })
 })
 
+describe('client store: mixed request kinds', () => {
+  const permission = {
+    requestId: 'p1',
+    kind: 'permission' as const,
+    openedAt: 1,
+    toolName: 'Bash',
+    toolUseId: 't1',
+    description: 'run it',
+    input: { command: 'ls' },
+  }
+  const hook = {
+    requestId: 'h1',
+    kind: 'hook_prompt' as const,
+    openedAt: 2,
+    message: 'deploy?',
+    options: [{ key: 'y', label: 'Yes' }],
+  }
+  const elicitation = {
+    requestId: 'e1',
+    kind: 'elicitation' as const,
+    openedAt: 3,
+    serverName: 'srv',
+    params: {
+      message: 'pick',
+      requestedSchema: {
+        type: 'object',
+        properties: { name: { type: 'string', title: 'Name' } },
+        required: ['name'],
+      },
+    },
+  }
+
+  test('all three kinds coexist, snapshot replaces, close targets one', () => {
+    let view = emptyView()
+    for (const [seq, request] of [
+      [1, permission],
+      [2, hook],
+      [3, elicitation],
+    ] as const) {
+      view = applyEvent(view, seq, { kind: 'request_opened', request })
+    }
+    expect(view.requests.map(r => r.kind)).toEqual([
+      'permission',
+      'hook_prompt',
+      'elicitation',
+    ])
+    // A resync snapshot is authoritative, whatever the deltas accumulated.
+    view = applyEvent(view, 4, {
+      kind: 'snapshot',
+      meta: {
+        sessionId: 's',
+        sessionEpoch: 0,
+        cwd: '/tmp',
+        startedAt: 0,
+        model: null,
+        state: 'idle',
+      },
+      transcript: { items: [], order: [] },
+      requests: [hook, elicitation],
+      todos: [],
+      pendingCommands: [],
+      tasks: {},
+      catalog: { models: [], commands: [], permissionModes: [] },
+    })
+    expect(view.requests.map(r => r.requestId)).toEqual(['h1', 'e1'])
+    view = applyEvent(view, 5, {
+      kind: 'request_closed',
+      requestId: 'h1',
+      outcome: 'resolved',
+    })
+    expect(view.requests.map(r => r.requestId)).toEqual(['e1'])
+  })
+})
+
 describe('directory listing', () => {
   let root: string
 
