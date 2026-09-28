@@ -584,12 +584,21 @@ export function createSessionChannel(
         return
       }
       case 'agent_transcript': {
-        const snapshot = runtime?.getAgentTranscript?.(params[0]!)
-        if (!snapshot) {
-          fail(res, 404, 'no_such_agent', 'no transcript for that agent')
-          return
-        }
-        json(res, 200, snapshot)
+        // The loader is usually async (it reads the sidechain JSONL), so this
+        // half answers after the handler returned. The response head has not
+        // been written yet, and every path below answers exactly once; a
+        // throwing loader must still answer, or the request hangs.
+        void Promise.resolve(runtime?.getAgentTranscript?.(params[0]!)).then(
+          snapshot => {
+            if (!snapshot) {
+              fail(res, 404, 'no_such_agent', 'no transcript for that agent')
+              return
+            }
+            json(res, 200, snapshot)
+          },
+          () =>
+            fail(res, 500, 'rpc_failed', 'the agent transcript failed to load'),
+        )
         return
       }
       default:

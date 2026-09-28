@@ -9,7 +9,69 @@
  * optional detail belongs here, not in JSX.
  */
 
-import type { WireItem } from '../../session/wire.js'
+import type { WireItem, WireTask } from '../../session/wire.js'
+
+/**
+ * Agent id per tool_use id, gathered from the tool_result items that carry
+ * one: the agent receipt names the sidechain it answers for. A tool card
+ * with an entry here can offer the sidechain drill-down.
+ */
+export function agentIdsByToolUse(
+  items: Iterable<WireItem>,
+): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const item of items) {
+    if (item.kind === 'tool_result' && item.toolUseId && item.agentId) {
+      map.set(item.toolUseId, item.agentId)
+    }
+  }
+  return map
+}
+
+export type TaskView = {
+  /** Marker per task kind, shown in the row gutter. */
+  marker: string
+  label: string
+  /** Status class matching the tray status labels (`is-running`...). */
+  statusCls: string
+  /** Human duration: running tasks tick against `now`, finished ones are fixed. */
+  duration?: string
+  command?: string
+  outputTail?: string
+}
+
+function durationText(start: number, end: number): string {
+  const s = Math.max(0, Math.round((end - start) / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return s % 60 === 0 ? `${m}m` : `${m}m ${s % 60}s`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
+export function taskView(task: WireTask, now: number): TaskView {
+  const marker =
+    task.kind === 'local_bash' ? '$' : task.kind === 'local_agent' ? '◈' : '◷'
+  const running = task.status === 'running' || task.status === 'pending'
+  return {
+    marker,
+    label: task.description || task.id.slice(0, 8),
+    statusCls: `is-${task.status}`,
+    ...(task.startTime !== undefined &&
+    (running || task.endTime !== undefined) &&
+    task.startTime <= (running ? now : (task.endTime ?? now))
+      ? {
+          duration: durationText(
+            task.startTime,
+            running ? now : (task.endTime ?? now),
+          ),
+        }
+      : {}),
+    ...(typeof task.command === 'string' && task.command
+      ? { command: task.command }
+      : {}),
+    ...(task.outputTail ? { outputTail: task.outputTail } : {}),
+  }
+}
 
 /**
  * Tool name per tool_use id, gathered from the tool_use items already in

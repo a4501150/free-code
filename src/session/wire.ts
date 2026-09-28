@@ -319,6 +319,12 @@ export type WireTask = {
   kind: string
   description: string
   status: string
+  /** Wall-clock start; lets a remote panel show a running duration. */
+  startTime?: number
+  /** Set once the task reaches a terminal status. */
+  endTime?: number
+  /** The shell's command line; present for shells. */
+  command?: string
   /** Last lines of output, present for shells; the panel tails without a fetch. */
   outputTail?: string
 }

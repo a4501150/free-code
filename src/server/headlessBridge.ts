@@ -44,6 +44,7 @@ import {
 } from '../utils/permissions/PermissionUpdate.js'
 import { buildSubmitValue } from './runtime.js'
 import { buildWireCatalog, tasksToWire } from './catalog.js'
+import { loadAgentWireTranscript } from './agentTranscript.js'
 
 export function shouldAttachHeadless(): boolean {
   return isWebuiManagedProcess()
@@ -91,6 +92,7 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
     getPermissionMode: () => params.getPermissionMode(),
     getTodos: () => [],
     getTasks: () => tasksToWire(params.getTasks()),
+    getAgentTranscript: agentId => loadAgentWireTranscript(agentId),
     getCatalog: () => buildWireCatalog(params.getCommands()),
     getPendingCommands: () => {
       const snapshot = getCommandQueueSnapshot()

@@ -3,7 +3,7 @@
  * session CRUD, SSE snapshot) against a hosted session in the same process.
  */
 import { expect, test } from 'bun:test'
-import { mkdtempSync, realpathSync, rmSync } from 'fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
@@ -303,3 +303,91 @@ test('serve: resume refuses unknown ids', async () => {
     await cleanup(serve)
   }
 })
+
+test('serve: ?q filters the history only; live rows always show', async () => {
+  const { serve, base, cookie, csrf } = await bootServe()
+  const liveCwd = mkdtempSync(join(tmpdir(), 'webui-serve-q-live-'))
+  // The fixture cwd carries the word the search will look for.
+  const fixtureCwd = realpathSync(mkdtempSync(join(tmpdir(), 'webui-qsearch-')))
+  try {
+    // Two history rows written straight into the projects dir: transcript
+    // persistence is off under NODE_ENV=test, and the registry rescans
+    // this directory on every list.
+    const fixtureDir = join(
+      process.env.FREECODE_CONFIG_DIR!,
+      'projects',
+      'serve-q',
+    )
+    mkdirSync(fixtureDir, { recursive: true })
+    const hitId = randomUUID()
+    const missId = randomUUID()
+    const fixtureLine = (id: string, cwd: string, prompt: string) =>
+      JSON.stringify({
+        type: 'user',
+        sessionId: id,
+        uuid: randomUUID(),
+        timestamp: new Date(0).toISOString(),
+        cwd,
+        message: { role: 'user', content: prompt },
+      }) + '\n'
+    writeFileSync(
+      join(fixtureDir, `${hitId}.jsonl`),
+      fixtureLine(hitId, fixtureCwd, 'investigate qsearch flakiness'),
+    )
+    writeFileSync(
+      join(fixtureDir, `${missId}.jsonl`),
+      fixtureLine(missId, '/no/such/other/project', 'refactor the parser'),
+    )
+
+    const created = await fetch(`${base}/api/sessions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: base,
+        cookie,
+        'x-freecode-csrf': csrf,
+      },
+      body: JSON.stringify({ cwd: liveCwd }),
+    })
+    expect(created.status).toBe(200)
+    const { session } = (await created.json()) as {
+      session: { processKey: string; sessionId: string }
+    }
+
+    const rowsFor = async (url: string) =>
+      (
+        (await (await fetch(url, { headers: { cookie } })).json()) as {
+          sessions: Array<{ sessionId: string; live: boolean }>
+        }
+      ).sessions
+
+    // A search hits the history by cwd substring...
+    const hit = await rowsFor(`${base}/api/sessions?q=qsearch`)
+    expect(hit.some(r => r.sessionId === hitId)).toBe(true)
+    expect(hit.some(r => r.sessionId === missId)).toBe(false)
+    // ...and the live set survives any query: the row the user is
+    // watching must never be one keystroke away from disappearing.
+    expect(hit.find(r => r.sessionId === session.sessionId)?.live).toBe(true)
+
+    // The response shape is the plain listing's, searched or not.
+    const plain = await rowsFor(`${base}/api/sessions`)
+    const plainLive = plain.find(r => r.sessionId === session.sessionId)!
+    const searchedLive = hit.find(r => r.sessionId === session.sessionId)!
+    expect(Object.keys(searchedLive).sort()).toEqual(
+      Object.keys(plainLive).sort(),
+    )
+    // Both history rows are there unfiltered.
+    expect(plain.some(r => r.sessionId === hitId)).toBe(true)
+    expect(plain.some(r => r.sessionId === missId)).toBe(true)
+
+    // A query that matches nothing leaves only the live row.
+    const miss = await rowsFor(`${base}/api/sessions?q=zzzznomatch`)
+    expect(miss.find(r => r.sessionId === session.sessionId)?.live).toBe(true)
+    expect(miss.some(r => r.sessionId === hitId)).toBe(false)
+    expect(miss.some(r => r.sessionId === missId)).toBe(false)
+  } finally {
+    await cleanup(serve)
+    rmSync(liveCwd, { recursive: true, force: true })
+    rmSync(fixtureCwd, { recursive: true, force: true })
+  }
+}, 30_000)

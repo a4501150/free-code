@@ -89,9 +89,16 @@ export type SessionRegistry = {
   stopAll(): void
   get(processKey: string): HostedEntry | undefined
   bySessionId(sessionId: string): HostedEntry | undefined
-  /** The merged session list: hosted rows + external live rows + history. */
-  list(): Promise<SessionListEntry[]>
+  /**
+   * The merged session list: hosted rows + external live rows + history.
+   * `q` filters the HISTORY rows by title/cwd substring; live rows always
+   * come through — a search must never hide the session you are in.
+   */
+  list(options?: { q?: string }): Promise<SessionListEntry[]>
 }
+
+/** What a `q` search answers with; deep enough to scroll, light enough to poll. */
+const SEARCH_HISTORY_LIMIT = 50
 
 export function createSessionRegistry(): SessionRegistry {
   const hosted = new Map<string, HostedEntry>()
@@ -196,7 +203,8 @@ export function createSessionRegistry(): SessionRegistry {
       return undefined
     },
 
-    async list() {
+    async list(options?: { q?: string }) {
+      const q = options?.q?.trim().toLowerCase()
       const hostedEntries: SessionListEntry[] = [...hosted.values()].map(
         entry => ({
           processKey: entry.processKey,
@@ -256,8 +264,24 @@ export function createSessionRegistry(): SessionRegistry {
       } catch {
         history = []
       }
-      for (const info of history) {
-        if (liveIds.has(info.sessionId)) continue
+      // A search answers the history only: every live row survives the
+      // filter, and the searched fields are exactly the ones a row shows —
+      // a miss on unseen text is a row the user could not have typed for.
+      const historyRows = history
+        .filter(info => !liveIds.has(info.sessionId))
+        .filter(info => {
+          if (!q) return true
+          const title = (
+            info.summary || info.sessionId.slice(0, 8)
+          ).toLowerCase()
+          return (
+            title.includes(q) ||
+            (info.cwd ?? '').toLowerCase().includes(q) ||
+            (info.gitBranch ?? '').toLowerCase().includes(q)
+          )
+        })
+        .slice(0, q ? SEARCH_HISTORY_LIMIT : 100)
+      for (const info of historyRows) {
         rows.push({
           sessionId: info.sessionId,
           cwd: info.cwd,

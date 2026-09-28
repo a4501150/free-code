@@ -459,3 +459,78 @@
   flex: none;
   white-space: nowrap;
 }
+
+/* Sidechain drill-down: the affordance on an agent card, and the panel. */
+.tool__agent {
+  margin-left: auto;
+  border: 1px solid var(--rule);
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  padding: 0 0.4rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.tool__agent:hover {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+
+.agent-panel {
+  position: fixed;
+  top: var(--topbar-block);
+  right: 0;
+  bottom: 0;
+  width: min(42rem, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border-left: 1px solid var(--rule-bright);
+  box-shadow: -1.5rem 0 3rem rgb(0 0 0 / 45%);
+  z-index: 30;
+  animation: agent-panel-in 160ms ease-out;
+}
+@keyframes agent-panel-in {
+  from {
+    transform: translateX(6%);
+    opacity: 0.4;
+  }
+}
+.agent-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.agent-panel__title code {
+  font-family: var(--mono);
+  color: var(--signal);
+}
+.agent-panel__close {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+}
+.agent-panel__close:hover {
+  color: var(--text);
+}
+.agent-panel__note {
+  padding: 1rem 0.75rem;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.agent-panel__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.agent-panel__body .transcript {
+  flex: 1;
+}

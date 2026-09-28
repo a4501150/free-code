@@ -9,6 +9,7 @@ import {
 import type { WireItem } from '../../../session/wire.js'
 import { renderMarkdown } from '../markdown.js'
 import {
+  agentIdsByToolUse,
   attachmentGutter,
   attachmentView,
   compactDividerText,
@@ -94,13 +95,18 @@ const Row = memo(function Row({
   result,
   inProgressToolUseIds,
   toolNames,
+  agentIds,
   onOpenImage,
+  onOpenAgent,
 }: {
   item: WireItem
   result?: WireItem
   inProgressToolUseIds?: string[]
   toolNames: Map<string, string>
+  /** tool_use ids whose agent receipt proved a sidechain exists. */
+  agentIds: Map<string, string>
   onOpenImage(item: WireItem): void
+  onOpenAgent?: (agentId: string) => void
 }): React.ReactElement | null {
   switch (item.kind) {
     case 'user':
@@ -151,6 +157,14 @@ const Row = memo(function Row({
           item={item}
           result={result}
           inProgressToolUseIds={inProgressToolUseIds}
+          onOpenAgent={
+            onOpenAgent && item.toolUseId && agentIds.has(item.toolUseId)
+              ? () => {
+                  const id = agentIds.get(item.toolUseId!)
+                  if (id) onOpenAgent(id)
+                }
+              : undefined
+          }
         />
       )
 
@@ -194,9 +208,13 @@ const Row = memo(function Row({
 const AgentGroup = memo(function AgentGroup({
   group,
   inProgressToolUseIds,
+  agentIds,
+  onOpenAgent,
 }: {
   group: ToolGroup
   inProgressToolUseIds?: string[]
+  agentIds: Map<string, string>
+  onOpenAgent?: (agentId: string) => void
 }): React.ReactElement {
   const running = group.items.filter(
     ({ item }) =>
@@ -232,6 +250,14 @@ const AgentGroup = memo(function AgentGroup({
           result={result}
           inProgressToolUseIds={inProgressToolUseIds}
           compact
+          onOpenAgent={
+            onOpenAgent && item.toolUseId && agentIds.has(item.toolUseId)
+              ? () => {
+                  const id = agentIds.get(item.toolUseId!)
+                  if (id) onOpenAgent(id)
+                }
+              : undefined
+          }
         />
       ))}
     </div>
@@ -260,6 +286,7 @@ export function Transcript({
   activity,
   followSignal,
   onFetchImage,
+  onOpenAgent,
 }: {
   items: Map<string, WireItem>
   order: string[]
@@ -273,8 +300,13 @@ export function Transcript({
   followSignal: number
   /** Resolves the bytes for one image, which the wire deliberately omits. */
   onFetchImage(itemId: string): Promise<{ mediaType: string; data: string }>
+  /**
+   * Opens one agent's sidechain transcript. Absent in the sidechain panel
+   * itself: a drill-down that drills down is how you get lost.
+   */
+  onOpenAgent?: (agentId: string) => void
 }): React.ReactElement {
-  const { entries, toolNames } = useMemo(() => {
+  const { entries, toolNames, agentIds } = useMemo(() => {
     const list = order
       .map(id => items.get(id))
       .filter((item): item is WireItem => Boolean(item))
@@ -345,7 +377,7 @@ export function Transcript({
         i++
       }
     }
-    return { entries, toolNames }
+    return { entries, toolNames, agentIds: agentIdsByToolUse(list) }
   }, [items, order])
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -426,6 +458,8 @@ export function Transcript({
                   key={`group:${entry.messageId}`}
                   group={entry}
                   inProgressToolUseIds={inProgressToolUseIds}
+                  agentIds={agentIds}
+                  onOpenAgent={onOpenAgent}
                 />
               ) : (
                 <Row
@@ -434,7 +468,9 @@ export function Transcript({
                   result={entry.result}
                   inProgressToolUseIds={inProgressToolUseIds}
                   toolNames={toolNames}
+                  agentIds={agentIds}
                   onOpenImage={target => void openImage(target)}
+                  onOpenAgent={onOpenAgent}
                 />
               ),
             )}

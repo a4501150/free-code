@@ -3,6 +3,7 @@ import type {
   WireEvent,
   WireEventEnvelope,
   WireImagePayload,
+  WireTranscriptSnapshot,
 } from '../../session/wire.js'
 import type { SessionListEntry } from '../../sessiond/sessionList.js'
 import type { DirectoryListing } from '../gateway/directories.js'
@@ -27,11 +28,32 @@ export async function whoAmI(): Promise<{ csrf: string } | null> {
   return (await response.json()) as { csrf: string }
 }
 
-export async function fetchSessions(): Promise<SessionListEntry[]> {
-  const response = await fetch('/api/sessions')
+export async function fetchSessions(q?: string): Promise<SessionListEntry[]> {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''
+  const response = await fetch(`/api/sessions${query}`)
   if (!response.ok) return []
   const body = (await response.json()) as { sessions: SessionListEntry[] }
   return body.sessions
+}
+
+/**
+ * One agent's sidechain transcript, or null when the session cannot serve it
+ * (no such agent, or a host that predates the drill-down route).
+ */
+export async function fetchAgentTranscript(
+  processKey: string,
+  agentId: string,
+): Promise<WireTranscriptSnapshot | null> {
+  const response = await fetch(
+    `/api/sessions/${processKey}/agents/${encodeURIComponent(agentId)}/transcript`,
+  ).catch(() => null)
+  if (!response?.ok) return null
+  const body = (await response
+    .json()
+    .catch((): null => null)) as WireTranscriptSnapshot | null
+  return body && Array.isArray(body.items) && Array.isArray(body.order)
+    ? body
+    : null
 }
 
 export type DirectoryResult =
@@ -79,6 +101,7 @@ const ERROR_TEXT: Record<string, string> = {
   session_in_use: 'That session is already running.',
   unauthorized: 'The login expired. Reload the page.',
   unknown_session: 'That session is no longer in the history.',
+  no_such_agent: 'That agent has no transcript here (yet).',
 }
 
 async function readError(response: Response): Promise<string> {

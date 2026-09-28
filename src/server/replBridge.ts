@@ -28,6 +28,7 @@ import {
 } from './hostSingleton.js'
 import { buildSubmitValue, type SessionRuntime } from './runtime.js'
 import { buildWireCatalog, tasksToWire } from './catalog.js'
+import { loadAgentWireTranscript } from './agentTranscript.js'
 import type { SessionCore } from '../session/SessionCore.js'
 
 const TRANSCRIPT_EVENT_TYPES = new Set<string>([
@@ -114,6 +115,9 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
         return commands
       },
       getInProgressToolUseIds: () => latest.current.getInProgressToolUseIds(),
+
+      // Sidechain drill-down: the sidechain JSONL of this session's project.
+      getAgentTranscript: agentId => loadAgentWireTranscript(agentId),
 
       submit(content, delivery, commandId, images) {
         enqueue({

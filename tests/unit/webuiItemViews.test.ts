@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  agentIdsByToolUse,
   attachmentGutter,
   attachmentView,
   compactDividerText,
   progressView,
+  taskView,
   toolNamesByUseId,
 } from '../../src/webui/client/itemViews.js'
 import type { WireItem } from '../../src/session/wire.js'
@@ -168,5 +170,67 @@ describe('compactDividerText', () => {
     expect(
       compactDividerText(item({ kind: 'user', subtype: 'compact_boundary' })),
     ).toBeNull()
+  })
+})
+
+describe('agentIdsByToolUse', () => {
+  test('collects the agent id from tool_result items only', () => {
+    const map = agentIdsByToolUse([
+      item({
+        kind: 'tool_result',
+        toolUseId: 'tu_1',
+        agentId: 'agent-1',
+      }),
+      item({ kind: 'tool_result', toolUseId: 'tu_2' }),
+      item({ kind: 'user', agentId: 'agent-2' }),
+    ])
+    expect([...map.entries()]).toEqual([['tu_1', 'agent-1']])
+  })
+
+  test('an empty transcript has no affordances', () => {
+    expect(agentIdsByToolUse([]).size).toBe(0)
+  })
+})
+
+describe('taskView', () => {
+  const base = {
+    id: 'task-1',
+    kind: 'local_bash',
+    description: 'run the tests',
+    status: 'running',
+    startTime: 1_000,
+  }
+
+  test('shells carry command and tail; duration ticks against now', () => {
+    const view = taskView(
+      { ...base, command: 'bun test', outputTail: '1492 pass' },
+      62_000,
+    )
+    expect(view.marker).toBe('$')
+    expect(view.label).toBe('run the tests')
+    expect(view.statusCls).toBe('is-running')
+    expect(view.duration).toBe('1m 1s')
+    expect(view.command).toBe('bun test')
+    expect(view.outputTail).toBe('1492 pass')
+  })
+
+  test('finished tasks freeze the duration at endTime', () => {
+    const view = taskView(
+      { ...base, status: 'completed', endTime: 61_000 },
+      999_000,
+    )
+    expect(view.duration).toBe('1m')
+  })
+
+  test('a task with no timestamps gets no duration', () => {
+    const { startTime: _s, ...noStart } = base
+    const view = taskView(noStart, 62_000)
+    expect(view.duration).toBeUndefined()
+  })
+
+  test('agents get the agent marker and no command row', () => {
+    const view = taskView({ ...base, kind: 'local_agent' }, 62_000)
+    expect(view.marker).toBe('◈')
+    expect(view.command).toBeUndefined()
   })
 })

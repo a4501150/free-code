@@ -142,6 +142,39 @@ describe('toWire v2', () => {
     expect(rewound.order).toEqual(a.order)
   })
 
+  test('a tool_result carrying an agent receipt surfaces its agentId', () => {
+    const toolResult = (text: string, extra: object = {}): Message =>
+      userMessage({
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tu_1',
+              content: [{ type: 'text', text }],
+            },
+          ],
+        },
+        ...extra,
+      } as any)
+
+    const withReceipt = toWireItems([
+      toolResult('Async agent launched successfully.\nagentId: abcdef01-2345'),
+    ])
+    expect(withReceipt[0].kind).toBe('tool_result')
+    expect(withReceipt[0].agentId).toBe('abcdef01-2345')
+
+    // A plain result leaves the field absent, not clobbered.
+    const plain = toWireItems([toolResult('done')])
+    expect(plain[0].agentId).toBeUndefined()
+
+    // A sidechain's own tool_result keeps the agent id from the message.
+    const fromSidechain = toWireItems([
+      toolResult('internals', { agentId: 'feedface0123' }),
+    ])
+    expect(fromSidechain[0].agentId).toBe('feedface0123')
+  })
+
   test('rewriting a progress message in place keeps one item', () => {
     const uuid = randomUUID()
     const msg = (text: string): Message =>

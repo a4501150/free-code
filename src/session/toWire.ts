@@ -273,6 +273,11 @@ function userBlockItems(message: Message & { type: 'user' }): WireItem[] {
                   )
                   .join('\n')
               : ''
+        // An agent tool's receipt carries `agentId: <id>` in its text (launch
+        // receipt and completion trailer). Surfacing it on the item is what
+        // lets a remote client offer the sidechain drill-down for the call
+        // the receipt answers — the tool_use block itself never learns the id.
+        const agentReceipt = /agentId: ([A-Za-z0-9_-]{8,})/.exec(text)
         items.push(
           finish({
             ...base,
@@ -281,6 +286,10 @@ function userBlockItems(message: Message & { type: 'user' }): WireItem[] {
             text: clip(text),
             toolUseId: block.tool_use_id,
             isError: block.is_error === true ? true : undefined,
+            // Only when found: a sidechain's own tool_result already carries
+            // its agent's id via `base`, which an unconditional key would
+            // overwrite with undefined.
+            ...(agentReceipt ? { agentId: agentReceipt[1] } : {}),
           }),
         )
         break

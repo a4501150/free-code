@@ -62,11 +62,18 @@ export function ToolCard({
   result,
   inProgressToolUseIds,
   compact,
+  onOpenAgent,
 }: {
   item: WireItem
   result?: WireItem
   inProgressToolUseIds?: string[]
   compact?: boolean
+  /**
+   * Present when the session can serve sidechain transcripts. An agent
+   * tool whose receipt carries an agent id gets an affordance; the id is
+   * the receipt's, never a guess from the tool input.
+   */
+  onOpenAgent?: (agentId: string) => void
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
   const input = (item.toolInput ?? {}) as Record<string, unknown>
@@ -95,6 +102,21 @@ export function ToolCard({
           <span className="tool__badge tool__badge--running">running</span>
         ) : null}
         {result?.isError ? <span className="tool__badge">error</span> : null}
+        {onOpenAgent && result?.agentId ? (
+          <button
+            type="button"
+            className="tool__agent"
+            title="Open the agent transcript"
+            onClick={event => {
+              // The card head toggles the body; this button is a different
+              // action and must not also collapse or expand it.
+              event.stopPropagation()
+              onOpenAgent(result.agentId!)
+            }}
+          >
+            transcript
+          </button>
+        ) : null}
       </button>
 
       {open ? (

@@ -6,9 +6,11 @@ import type {
   WireRequest,
   WireRequestResponse,
 } from '../../../session/wire.js'
+import { fetchAgentTranscript } from '../api.js'
 import { useGateway } from '../hooks/useGateway.js'
 import { useSessions } from '../hooks/useSessions.js'
 import { createViewStore, useViewStore } from '../store.js'
+import { AgentPanel, type AgentPanelState } from './AgentPanel.js'
 import { Composer } from './Composer.js'
 import { InstrumentSheet } from './InstrumentSheet.js'
 import { Instruments } from './Instruments.js'
@@ -18,6 +20,7 @@ import { QuestionTray } from './QuestionTray.js'
 import { HookPromptTray } from './HookPromptTray.js'
 import { ElicitationTray } from './ElicitationTray.js'
 import { MenuDrawer } from './MenuDrawer.js'
+import { TaskPanel } from './TaskPanel.js'
 import { TopBar } from './TopBar.js'
 import { Transcript } from './Transcript.js'
 
@@ -112,6 +115,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
       if (processKey !== activeKey) return
       setActiveKey(null)
       store.reset()
+      setAgent(null)
       void sessions.refresh()
     },
     onRestartReady: info => {
@@ -120,9 +124,36 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     },
   })
 
+  // The sidechain drill-down: one agent transcript fetched on demand and
+  // rendered over the main view. One panel at a time; switching sessions
+  // closes it, because a sidechain belongs to the session it ran in.
+  const [agent, setAgent] = useState<AgentPanelState | null>(null)
+  const openAgent = useCallback(
+    async (agentId: string) => {
+      if (!activeKey) return
+      setAgent({ agentId, state: 'loading' })
+      const snapshot = await fetchAgentTranscript(activeKey, agentId)
+      setAgent(current => {
+        // A late answer for an agent the reader already closed (or swapped)
+        // must not resurrect the panel.
+        if (
+          !current ||
+          current.agentId !== agentId ||
+          current.state !== 'loading'
+        )
+          return current
+        return snapshot
+          ? { agentId, state: 'ready', snapshot }
+          : { agentId, state: 'failed', error: 'No transcript for that agent.' }
+      })
+    },
+    [activeKey],
+  )
+
   const attachTo = useCallback(
     (processKey: string, sessionId: string) => {
       store.reset()
+      setAgent(null)
       setActiveKey(processKey)
       setActiveSessionId(sessionId)
       gateway.attachSession(processKey)
@@ -406,6 +437,8 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         defaultCwd={defaultCwd}
         csrf={csrf}
         restartInfo={restartInfo}
+        search={sessions.query}
+        onSearch={sessions.setQuery}
         onSelect={select}
         onCreate={create}
         onResume={resume}
@@ -434,6 +467,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
             activity={view.meta?.activity}
             followSignal={followSignal}
             onFetchImage={fetchImage}
+            onOpenAgent={id => void openAgent(id)}
           />
         ) : (
           <div className="transcript transcript--empty">
@@ -442,6 +476,10 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
               : 'Pick a session to attach.'}
           </div>
         )}
+
+        {agent ? (
+          <AgentPanel panel={agent} onClose={() => setAgent(null)} />
+        ) : null}
 
         {view.requests.length > 0 ? (
           <div
@@ -465,17 +503,20 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
             open={sheetOpen}
             onToggle={setSheetOpen}
           >
-            <Instruments
-              meta={meta}
-              todos={view.todos}
-              catalog={view.catalog}
-              onSetMode={mode =>
-                void gateway.command('mode', { kind: 'mode_set', mode })
-              }
-              onSetModel={model =>
-                void gateway.command('model', { kind: 'model_set', model })
-              }
-            />
+            <>
+              <Instruments
+                meta={meta}
+                todos={view.todos}
+                catalog={view.catalog}
+                onSetMode={mode =>
+                  void gateway.command('mode', { kind: 'mode_set', mode })
+                }
+                onSetModel={model =>
+                  void gateway.command('model', { kind: 'model_set', model })
+                }
+              />
+              <TaskPanel tasks={view.tasks} />
+            </>
           </InstrumentSheet>
         ) : null}
 

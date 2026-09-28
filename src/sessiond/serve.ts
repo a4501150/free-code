@@ -541,7 +541,10 @@ export async function startSessiondServe(
     if (url.pathname === '/api/sessions' && method === 'GET') {
       const session = authenticate(request)
       if (!session) return json(res, 401, { error: 'unauthorized' })
-      const entries = await registry.list()
+      // `?q=` filters the history rows only (registry.list documents it);
+      // the response shape is unchanged either way.
+      const q = url.searchParams.get('q')?.trim()
+      const entries = await registry.list(q ? { q } : undefined)
       return json(res, 200, {
         sessions: entries.map(entry =>
           assistantSessionId && entry.sessionId === assistantSessionId

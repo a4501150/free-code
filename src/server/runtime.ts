@@ -41,8 +41,13 @@ export type SessionRuntime = {
   getPendingCommands(): WirePendingCommand[]
   getCatalog(): WireCatalog
   getInProgressToolUseIds(): ReadonlySet<string>
-  /** Sidechain drill-down; absent means this process serves none yet. */
-  getAgentTranscript?(agentId: string): WireTranscriptSnapshot | null
+  /**
+   * Sidechain drill-down; absent means this process serves none yet. May be
+   * async — the common case reads the sidechain JSONL — and the route waits.
+   */
+  getAgentTranscript?(
+    agentId: string,
+  ): WireTranscriptSnapshot | null | Promise<WireTranscriptSnapshot | null>
 
   /**
    * Queue a prompt. `interrupt` aborts the running turn and runs this next, as

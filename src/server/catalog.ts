@@ -1,3 +1,4 @@
+import { closeSync, fstatSync, openSync, readSync } from 'fs'
 import { getCommandName, type CommandBase } from '../types/command.js'
 import { getModelOptions } from '../utils/model/modelOptions.js'
 import type { TaskState } from '../tasks/types.js'
@@ -7,12 +8,39 @@ import {
   type WireTask,
 } from '../session/wire.js'
 
+/** The last bytes of a shell's output, read fresh so no stale tail exists. */
+function readOutputTail(path: string | undefined): string | undefined {
+  if (!path) return undefined
+  try {
+    const fd = openSync(path, 'r')
+    try {
+      const size = fstatSync(fd).size
+      if (size === 0) return undefined
+      const len = Math.min(size, 1024)
+      const buffer = Buffer.alloc(len)
+      readSync(fd, buffer, 0, len, size - len)
+      const text = buffer.toString('utf8')
+      // Start at a line boundary; a clipped first line reads as garbage.
+      const firstBreak = text.indexOf('\n')
+      return firstBreak === -1 || firstBreak === text.length - 1
+        ? text
+        : text.slice(firstBreak + 1)
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
+    // A task whose output file is gone has nothing to tail.
+    return undefined
+  }
+}
+
 /**
  * Background work (agents, shells) for the task panel.
  *
- * `outputTail` is left out: the panel tails the task's output file directly,
- * and reading every file on every publish would make the panel the most
- * expensive thing on the wire.
+ * `outputTail` is read only for shells, and only the last kilobyte: agents'
+ * output files are full JSONL transcripts (tailing one puts a wall of raw
+ * records in a status row), and reading whole files on every publish would
+ * make the panel the most expensive thing on the wire.
  */
 export function tasksToWire(tasks: Record<string, TaskState>): WireTask[] {
   return Object.values(tasks).map(task => ({
@@ -20,6 +48,14 @@ export function tasksToWire(tasks: Record<string, TaskState>): WireTask[] {
     kind: task.type,
     description: task.description,
     status: task.status,
+    startTime: task.startTime,
+    endTime: task.endTime,
+    ...(task.type === 'local_bash'
+      ? {
+          command: (task as { command?: string }).command,
+          outputTail: readOutputTail(task.outputFile),
+        }
+      : {}),
   }))
 }
 

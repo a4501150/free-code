@@ -49,6 +49,7 @@ import type {
 import { createSessionChannel, type SessionChannel } from '../server/channel.js'
 import { buildSubmitValue, type SessionRuntime } from '../server/runtime.js'
 import { buildWireCatalog, tasksToWire } from '../server/catalog.js'
+import { loadAgentWireTranscript } from '../server/agentTranscript.js'
 import { createStore, type Store } from '../state/store.js'
 import { getDefaultAppState, type AppState } from '../state/AppStateStore.js'
 import { QueryGuard } from '../utils/QueryGuard.js'
@@ -363,6 +364,10 @@ export function createHostedSession(
 
   const runtime: SessionRuntime = {
     getMessages: () => core.getMessages(),
+    // Sidechain drill-down. The load runs inside this session's scope: the
+    // sidechain file lives under the session's own project directory.
+    getAgentTranscript: agentId =>
+      runInSessionScope(scope, () => loadAgentWireTranscript(agentId)),
     getState: (): WireSessionState =>
       runInSessionScope(scope, () =>
         broker.pending().length > 0
