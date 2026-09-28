@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionListEntry } from '../../../sessiond/sessionList.js'
 import type {
+  WireCommand,
   WirePermissionDecision,
   WireRequest,
   WireRequestResponse,
@@ -274,6 +275,11 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     return { kind: 'permission', decision }
   }
 
+  /** Lifecycle and queue rpcs; the bodies come from composerViews. */
+  function sendRpc(body: unknown): void {
+    void gateway.command('rpc', body as WireCommand)
+  }
+
   /**
    * Two request shapes cannot be answered yes or no. Both always ask, and the
    * terminal answers them by allowing with enriched input, so each needs a
@@ -390,6 +396,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         connected={gateway.connected}
         railOpen={railOpen}
         onToggleRail={() => setRailOpen(open => !open)}
+        onRpc={sendRpc}
       />
 
       <MenuDrawer
@@ -423,7 +430,6 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
           <Transcript
             items={view.items}
             order={view.order}
-            pendingCommands={view.queue}
             inProgressToolUseIds={view.meta?.inProgressToolUseIds}
             activity={view.meta?.activity}
             followSignal={followSignal}
@@ -478,6 +484,8 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
             busy={busy}
             knownPaths={knownPaths}
             commands={view.catalog.commands}
+            queued={view.queue}
+            onRpc={sendRpc}
             onSubmit={(text, delivery, images) => {
               void gateway.command('prompt', {
                 kind: 'prompt',

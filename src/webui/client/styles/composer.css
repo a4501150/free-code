@@ -136,6 +136,123 @@
   color: var(--signal);
 }
 
+/* The palette is three columns of one thought: the command, what it wants,
+   what it does. Name and hint share the line (hint in mono, faint); the
+   description rides below, dimmer — secondary everywhere, never competing
+   with what's typed. */
+.composer__suggestion-name {
+  font-weight: 600;
+}
+
+.composer__suggestion-hint {
+  margin-left: 0.4rem;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.composer__suggestion-detail {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer__suggestions button.is-selected .composer__suggestion-detail {
+  color: var(--signal);
+  opacity: 0.75;
+}
+
+/* ── the addressable queue ─────────────────────────────────────────
+   Queued prompts sit under the action row, inside the composer's
+   own frame: they are edits on what this input already said. Faint
+   gutter, dim body — the present tense belongs to the transcript. */
+.queued {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px dashed var(--rule);
+}
+
+.queued__row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px dashed var(--rule);
+}
+
+.queued__row:last-child {
+  border-bottom: 0;
+}
+
+.queued__gutter {
+  color: var(--text-faint);
+}
+
+.queued__text {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  text-align: left;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queued__text:hover {
+  color: var(--text);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.queued__edit {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule-bright);
+  padding: 0.1rem 0.3rem;
+  color: var(--text);
+  font: inherit;
+}
+
+.queued__edit:focus {
+  outline: 1px solid var(--signal);
+  outline-offset: -1px;
+}
+
+.queued__remove {
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  line-height: 1;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.queued__remove:hover {
+  border-color: var(--del);
+  color: var(--del);
+}
+
+/* steer: same thumb target as its neighbours, but sunk amber reads as
+   "this one cuts in" next to send's confidence. */
+.btn--steer {
+  border-color: var(--signal);
+  background: var(--signal-sunk);
+  color: var(--signal);
+}
+
 @media (min-width: 48rem) {
   .composer__suggestions button {
     padding: 0.2rem 0.6rem;

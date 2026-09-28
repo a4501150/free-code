@@ -87,6 +87,12 @@ export function SessionMeters({
             {shownModel && !models.some(m => m.value === shownModel) ? (
               <option value={shownModel}>{shownModel}</option>
             ) : null}
+            {/* `model_set` null is the account/config default; the catalog
+                may only name it implicitly, via a null-valued entry. Spell
+                it out, or "return to default" has no control. */}
+            {!models.some(m => m.value === null) ? (
+              <option value="">default</option>
+            ) : null}
             {models.map(option => (
               <option
                 key={option.value ?? '__default__'}

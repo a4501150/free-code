@@ -1,5 +1,14 @@
 import { useMemo, useRef, useState } from 'react'
-import type { WireCatalog } from '../../../session/wire.js'
+import type { WireCatalog, WirePendingCommand } from '../../../session/wire.js'
+import {
+  composerPlaceholder,
+  queueEditBody,
+  queueRemoveBody,
+  queueRows,
+  slashSuggestions,
+  submitIntent,
+  type PaletteItem,
+} from '../composerViews.js'
 import {
   imageFilesFrom,
   prepareImage,
@@ -8,8 +17,6 @@ import {
 
 /** Mirrors `MAX_PROMPT_IMAGES`, which the host enforces. */
 const MAX_IMAGES = 4
-
-type Suggestion = { value: string; hint?: string }
 
 /** Narrower than a plain string, so it satisfies `WireImage`'s media enum. */
 export type SubmitImage = {
@@ -20,22 +27,34 @@ export type SubmitImage = {
 /**
  * The prompt editor.
  *
- * Autocomplete for slash commands and `@` file mentions. The file list comes
- * from what the transcript has already touched: the browser has no filesystem
- * access, and asking the session to walk the tree on every keystroke would be a
- * poor trade for a phone on a tunnel.
+ * A slash palette over the session's command catalog (descriptions and arg
+ * hints included — the catalog carries them since v2) and `@` file mentions.
+ * The file list comes from what the transcript has already touched: the
+ * browser has no filesystem access, and asking the session to walk the tree
+ * on every keystroke would be a poor trade for a phone on a tunnel.
+ *
+ * While a turn runs, send keeps queueing and `steer` (or Shift+Enter)
+ * interrupts — two distinct affordances, because both must be safe to press
+ * by thumb. Below the field, the session queue is addressable: each queued
+ * prompt can be fixed or dropped, not just watched.
  */
 export function Composer({
   busy,
   knownPaths,
   commands,
+  queued,
+  onRpc,
   onSubmit,
   onInterrupt,
 }: {
   busy: boolean
   knownPaths: string[]
-  /** `catalog.commands`, which also carry hints the picker does not yet show. */
+  /** `catalog.commands`, descriptions and arg hints included. */
   commands: WireCatalog['commands']
+  /** `view.queue` — the session's pending prompts. */
+  queued: WirePendingCommand[]
+  /** Sends `{kind:'rpc', ...}`; the bodies come from composerViews. */
+  onRpc(body: unknown): void
   onSubmit(
     text: string,
     delivery: 'next' | 'interrupt',
@@ -55,16 +74,8 @@ export function Composer({
     return match ? (match[1] ?? match[2] ?? '') : ''
   }, [value])
 
-  const suggestions = useMemo<Suggestion[]>(() => {
-    if (token.startsWith('/')) {
-      const query = token.toLowerCase()
-      return commands
-        .map(entry =>
-          entry.name.startsWith('/') ? entry.name : `/${entry.name}`,
-        )
-        .filter(c => c.toLowerCase().startsWith(query))
-        .map(value => ({ value }))
-    }
+  const suggestions = useMemo<PaletteItem[]>(() => {
+    if (token.startsWith('/')) return slashSuggestions(commands, token)
     if (token.startsWith('@')) {
       const needle = token.slice(1).toLowerCase()
       return knownPaths
@@ -75,7 +86,10 @@ export function Composer({
     return []
   }, [token, knownPaths, commands])
 
-  function accept(suggestion: Suggestion): void {
+  function accept(suggestion: PaletteItem): void {
+    // A command with an arg hint lands with a trailing space and the caret
+    // after it, which is where the arguments go. Submission of the bare
+    // text is fine too: the core parses slash commands.
     setValue(
       value.slice(0, value.length - token.length) + suggestion.value + ' ',
     )
@@ -126,6 +140,7 @@ export function Composer({
   }
 
   const canSend = Boolean(value.trim()) || images.length > 0
+  const rows = queueRows(queued)
 
   return (
     <div className="composer">
@@ -141,7 +156,19 @@ export function Composer({
                   accept(suggestion)
                 }}
               >
-                {suggestion.value}
+                <span className="composer__suggestion-name">
+                  {suggestion.value}
+                </span>
+                {suggestion.hint ? (
+                  <span className="composer__suggestion-hint">
+                    {suggestion.hint}
+                  </span>
+                ) : null}
+                {suggestion.detail ? (
+                  <span className="composer__suggestion-detail">
+                    {suggestion.detail}
+                  </span>
+                ) : null}
               </button>
             </li>
           ))}
@@ -174,7 +201,7 @@ export function Composer({
           className="composer__input"
           value={value}
           rows={1}
-          placeholder="Message, or / for a command"
+          placeholder={composerPlaceholder(busy)}
           onChange={event => setValue(event.target.value)}
           onPaste={event => {
             const files = imageFilesFrom(event.clipboardData.items)
@@ -202,13 +229,17 @@ export function Composer({
                 return
               }
             }
-            if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
-              // Shift+Enter is a newline, as it is in every other chat input.
-              // Steering and stopping are the two buttons below.
-              if (event.altKey || event.shiftKey) return
-              event.preventDefault()
-              submit('next')
-            }
+            const intent = submitIntent({
+              key: event.key,
+              shiftKey: event.shiftKey,
+              altKey: event.altKey,
+              metaKey: event.metaKey,
+              ctrlKey: event.ctrlKey,
+              busy,
+            })
+            if (intent === 'none' || intent === 'newline') return
+            event.preventDefault()
+            submit(intent)
           }}
         />
       </div>
@@ -235,8 +266,10 @@ export function Composer({
           + image
         </button>
         <span className="composer__spacer" />
-        {/* Send always queues. Stop is the only thing that ends a running
-            turn, which is what makes both safe to press by thumb. */}
+        {/* Send always queues; steer interrupts the running turn and runs
+            this prompt next; stop ends the turn without a follow-up. The
+            three differ exactly when a turn is in flight, which is when the
+            wrong press is expensive — so they are three buttons. */}
         <button
           type="button"
           className="btn btn--send"
@@ -246,11 +279,96 @@ export function Composer({
           send
         </button>
         {busy ? (
+          <button
+            type="button"
+            className="btn btn--steer"
+            onClick={() => submit('interrupt')}
+            disabled={!canSend}
+          >
+            steer
+          </button>
+        ) : null}
+        {busy ? (
           <button type="button" className="btn btn--stop" onClick={onInterrupt}>
             stop
           </button>
         ) : null}
       </div>
+
+      {rows.length ? (
+        <ul className="queued" aria-label="Queued prompts">
+          {rows.map(row => (
+            <QueuedRow key={row.id} row={row} onRpc={onRpc} />
+          ))}
+        </ul>
+      ) : null}
     </div>
+  )
+}
+
+/**
+ * One queued prompt: text, and the two edits the session can apply to it.
+ * The draft is local; the row itself comes and goes with `queue` events, so
+ * an edit that lands simply re-renders with the new text.
+ */
+function QueuedRow({
+  row,
+  onRpc,
+}: {
+  row: WirePendingCommand
+  onRpc(body: unknown): void
+}): React.ReactElement {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(row.text)
+
+  function commit(): void {
+    setEditing(false)
+    const text = draft.trim()
+    if (text && text !== row.text) onRpc(queueEditBody(row.id, text))
+    else setDraft(row.text)
+  }
+
+  return (
+    <li className="queued__row">
+      <span className="queued__gutter">›</span>
+      {editing ? (
+        <input
+          className="queued__edit"
+          value={draft}
+          autoFocus
+          onChange={event => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={event => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              commit()
+            } else if (event.key === 'Escape') {
+              setEditing(false)
+              setDraft(row.text)
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className="queued__text"
+          title="Edit queued prompt"
+          onClick={() => {
+            setDraft(row.text)
+            setEditing(true)
+          }}
+        >
+          {row.text}
+        </button>
+      )}
+      <button
+        type="button"
+        className="queued__remove"
+        aria-label="Remove queued prompt"
+        onClick={() => onRpc(queueRemoveBody(row.id))}
+      >
+        ×
+      </button>
+    </li>
   )
 }

@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { WireItem, WirePendingCommand } from '../../../session/wire.js'
+import type { WireItem } from '../../../session/wire.js'
 import { renderMarkdown } from '../markdown.js'
 import {
   attachmentGutter,
@@ -256,7 +256,6 @@ type OpenImage = {
 export function Transcript({
   items,
   order,
-  pendingCommands,
   inProgressToolUseIds,
   activity,
   followSignal,
@@ -264,7 +263,6 @@ export function Transcript({
 }: {
   items: Map<string, WireItem>
   order: string[]
-  pendingCommands: WirePendingCommand[]
   inProgressToolUseIds?: string[]
   activity?: string
   /**
@@ -420,9 +418,7 @@ export function Transcript({
       }}
     >
       <div className="transcript__content" ref={contentRef}>
-        {entries.length ||
-        pendingCommands.length ||
-        activity === 'compacting' ? (
+        {entries.length || activity === 'compacting' ? (
           <>
             {entries.map(entry =>
               entry.kind === 'tool_group' ? (
@@ -442,12 +438,8 @@ export function Transcript({
                 />
               ),
             )}
-            {pendingCommands.map(cmd => (
-              <div key={cmd.id} className="row row--user is-pending">
-                <span className="row__gutter">›</span>
-                <div className="row__body">{cmd.text}</div>
-              </div>
-            ))}
+            {/* Queued prompts are edited from the composer's queued list,
+                not shown again here. */}
             {activity === 'compacting' ? (
               <div className="row row--system is-info">
                 <div className="row__body">Compacting…</div>

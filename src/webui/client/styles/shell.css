@@ -75,6 +75,38 @@
   color: var(--signal);
 }
 
+/* Lifecycle actions are the bar's second vocabulary: same uppercase ghost
+   treatment as the menu control, one step quieter — they change the session,
+   they don't navigate it. */
+.topbar__actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.topbar__action {
+  background: none;
+  border: 1px solid var(--rule);
+  padding: 0.2rem 0.5rem;
+  min-height: 1.6rem;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.topbar__action:hover:not(:disabled) {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.topbar__action:disabled {
+  color: var(--text-faint);
+  border-color: var(--rule);
+  cursor: default;
+}
+
 .topbar__title {
   letter-spacing: 0.22em;
   text-transform: uppercase;

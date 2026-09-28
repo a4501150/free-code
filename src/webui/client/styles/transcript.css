@@ -107,15 +107,8 @@
   color: var(--signal);
 }
 
-/* ── pending queued messages ──────────────────────────────────── */
-
-.row--user.is-pending {
-  opacity: 0.45;
-}
-
-.row--user.is-pending .row__gutter {
-  color: var(--text-faint);
-}
+/* Queued prompts left the transcript: they live in the composer's
+   addressable queued list now. */
 
 /* ── rendered markdown ─────────────────────────────────────────── */
 
