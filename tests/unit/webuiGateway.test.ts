@@ -38,7 +38,7 @@ import {
   PathError,
   validateSessionCwd,
 } from '../../src/webui/gateway/directories.js'
-import { applyEvent, emptyView } from '../../src/webui/client/store.js'
+import { applyEvent, emptyView } from '../../src/session/viewStore.js'
 import {
   diffWireSnapshots,
   toWireItems,
