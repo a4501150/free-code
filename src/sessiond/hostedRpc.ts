@@ -9,11 +9,15 @@
  * and the wire all follow from one announced write).
  */
 
+import type { UUID } from 'crypto'
+import type { SessionId } from '../types/ids.js'
 import {
   regenerateSessionId,
   runInSessionScope,
+  switchSession,
   type SessionState,
 } from '../bootstrap/state.js'
+import { fileHistoryRewind } from '../utils/fileHistory.js'
 import type { SessionCore } from '../session/SessionCore.js'
 import type { SessionChannel } from '../server/channel.js'
 import {
@@ -30,6 +34,10 @@ export type HostedRpcDeps = {
   scope: SessionState
   core: SessionCore
   channel: SessionChannel
+  store: {
+    getState: () => any
+    setState: (fn: (prev: any) => any) => void
+  }
   queryGuard: QueryGuard
   getToolUseContext: (
     messages: Message[],
@@ -39,6 +47,13 @@ export type HostedRpcDeps = {
   ) => ProcessUserInputContext
   /** The session's resolved model for the compact context assembly. */
   resolveModel: () => string
+  /**
+   * Load a historical session's main-conversation transcript by id, resolved
+   * against THIS session's project directory. Null means no transcript file.
+   */
+  loadTranscriptMessages: (
+    sessionId: string,
+  ) => Message[] | null | Promise<Message[] | null>
 }
 
 /**
@@ -50,8 +65,16 @@ export type HostedRpcDeps = {
 export function createHostedRpc(
   deps: HostedRpcDeps,
 ): (method: string, params?: Record<string, unknown>) => Promise<unknown> {
-  const { scope, core, channel, queryGuard, getToolUseContext, resolveModel } =
-    deps
+  const {
+    scope,
+    core,
+    channel,
+    store,
+    queryGuard,
+    getToolUseContext,
+    resolveModel,
+    loadTranscriptMessages,
+  } = deps
 
   async function compact(customInstructions?: string): Promise<unknown> {
     if (queryGuard.isActive) {
@@ -106,6 +129,99 @@ export function createHostedRpc(
     return { sessionId: next }
   }
 
+  /**
+   * `rewind` — the hosted counterpart of the message selector's restore:
+   * truncate the transcript to just before the target message (the same
+   * exclusive slice `rewindConversationTo` makes — the target is what the
+   * client resubmits, not what it keeps), reset the conversation, restore
+   * the permission mode the target was sent under, and optionally run the
+   * same file-history snapshot rewind the REPL performs.
+   */
+  async function rewind(
+    toMessageId: string,
+    restoreFiles: boolean,
+  ): Promise<unknown> {
+    if (queryGuard.isActive) {
+      throw new Error('a turn is running; cancel it before rewinding')
+    }
+    const messages = core.getMessages() as Message[]
+    const index = messages.findIndex(message => message.uuid === toMessageId)
+    if (index === -1) {
+      throw new Error(`no transcript message with id '${toMessageId}'`)
+    }
+    core.replaceMessages(messages.slice(0, index), 'rewind')
+    const target = messages[index] as { permissionMode?: string }
+    if (target.permissionMode) {
+      const mode = target.permissionMode
+      store.setState((prev: any) =>
+        prev.toolPermissionContext.mode === mode
+          ? prev
+          : {
+              ...prev,
+              toolPermissionContext: {
+                ...prev.toolPermissionContext,
+                mode,
+              },
+            },
+      )
+    }
+    if (restoreFiles) {
+      try {
+        await fileHistoryRewind(
+          updater =>
+            store.setState((prev: any) => ({
+              ...prev,
+              fileHistory: updater(prev.fileHistory),
+            })),
+          toMessageId as UUID,
+        )
+      } catch (err) {
+        throw new Error(
+          `file restore failed: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
+    return { rewound: true }
+  }
+
+  /**
+   * `resume` — load the target session's transcript INTO this session and
+   * move the identity onto it, exactly the way `clear` moves it onto a fresh
+   * id: one announced transcript replace, one identity rotation, one
+   * `session_changed` for every client. `forkSession` keeps the loaded
+   * transcript under a regenerated id (lineage recorded) instead of adopting
+   * the target's. The transcript is read from this session's project
+   * directory — hosted resume is same-project resume; a cross-project target
+   * arrives through the registry's own resume path, not this rpc. The
+   * SessionEnd/SessionStart hook deviation documented on `clear` applies
+   * here too: a hosted resume is a client action on a live session, not a
+   * terminal session cycling.
+   */
+  async function resume(
+    targetId: string,
+    forkSession: boolean,
+  ): Promise<unknown> {
+    if (queryGuard.isActive) {
+      throw new Error('a turn is running; cancel it before switching sessions')
+    }
+    const messages = await loadTranscriptMessages(targetId)
+    if (!messages || messages.length === 0) {
+      throw new Error(`session '${targetId}' has no transcript to resume`)
+    }
+    core.replaceMessages(messages, 'switch')
+    const next = runInSessionScope(scope, () => {
+      clearSessionMetadata()
+      if (forkSession) {
+        return regenerateSessionId({ setCurrentAsParent: true }) as string
+      }
+      switchSession(targetId as SessionId)
+      void resetSessionFilePointer()
+      return targetId
+    })
+    channel.setSessionId(next)
+    return { sessionId: next }
+  }
+
   return async (method, params) => {
     switch (method) {
       case 'compact':
@@ -137,9 +253,19 @@ export function createHostedRpc(
         channel.publishQueue()
         return { removed: removed.length > 0 }
       }
+      case 'rewind': {
+        const toMessageId = String(params?.toMessageId ?? '')
+        if (!toMessageId) throw new Error('rewind needs a toMessageId')
+        return rewind(toMessageId, params?.restoreFiles === true)
+      }
+      case 'resume': {
+        const targetId = String(params?.sessionId ?? '')
+        if (!targetId) throw new Error('resume needs a sessionId')
+        return resume(targetId, params?.forkSession === true)
+      }
       default:
         throw new Error(
-          `unsupported rpc method '${method}' (served: compact, clear, queue_edit, queue_remove)`,
+          `unsupported rpc method '${method}' (served: compact, clear, rewind, resume, queue_edit, queue_remove)`,
         )
     }
   }

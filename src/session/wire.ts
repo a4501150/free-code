@@ -158,6 +158,33 @@ export type WireTranscriptPatch =
     }
   | { type: 'replace'; snapshot: WireTranscriptSnapshot }
 
+/**
+ * Cumulative streaming draft for the running turn: the in-flight preview a
+ * client paints while the transcript is still silent. Every field is a whole
+ * snapshot (never a delta), so a dropped frame costs a stale preview until
+ * the next frame, never a corrupt one.
+ *
+ * Lifetime: the draft is transient, part of the running turn, not the
+ * transcript. A client CLEARS it on any `transcript` patch (the committed
+ * rows have landed), on `resync_required`, and on `session_changed`. The
+ * server flushes the final draft state before the turn's transcript patch,
+ * so a reader that shows the draft never loses the ending between frames.
+ */
+export type WireStreamDraft = {
+  /** Cumulative reasoning text for the running turn. */
+  thinking?: string
+  /** Cumulative visible assistant text for the running turn. */
+  text?: string
+  /** Tool-call inputs still streaming, in block order. */
+  tools: Array<{ toolName?: string; partialJson: string }>
+}
+
+/** A host-surfaced message (settings errors, rate limits, plugin status). */
+export type WireNotification = {
+  level: 'info' | 'warn' | 'error'
+  text: string
+}
+
 // ---------------------------------------------------------------------------
 // User requests (every surface where the session waits on a human)
 
@@ -360,6 +387,13 @@ export type WireEvent =
     }
   | { kind: 'transcript'; patch: WireTranscriptPatch }
   | { kind: 'meta'; meta: WireSessionMeta }
+  /**
+   * In-flight preview for the running turn; null draft means the preview
+   * ended without a committed row yet (e.g. an aborted turn). Cleared client
+   * side by the next `transcript` patch — see WireStreamDraft.
+   */
+  | { kind: 'stream'; draft: WireStreamDraft | null }
+  | { kind: 'notify'; notification: WireNotification }
   | { kind: 'request_opened'; request: WireRequest }
   | { kind: 'request_closed'; requestId: string; outcome: WireRequestOutcome }
   | { kind: 'todos'; todos: WireTodo[] }

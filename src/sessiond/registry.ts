@@ -32,6 +32,9 @@ import type { Message } from '../types/message.js'
 import type { Command } from '../commands.js'
 import type { Tool, ToolPermissionContext } from '../Tool.js'
 import type { WirePermissionMode } from '../session/wire.js'
+import type { ThinkingConfig } from '../utils/thinking.js'
+import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
+import type { MCPServerConnection } from '../services/mcp/types.js'
 import { assembleSessionDefaults } from './sessionDefaults.js'
 
 export type HostedEntry = {
@@ -60,11 +63,26 @@ export type SessionDefaults = {
   appendSystemPrompt?: string
   /**
    * Inherited `web start --allowed-tools` / `--disallowed-tools`, read by
-   * `assembleSessionDefaults` when the pool is assembled here. (The
-   * `settings`/`settingSources` flags have no hosted channel yet.)
+   * `assembleSessionDefaults` when the pool is assembled here.
    */
   allowedTools?: string[]
   disallowedTools?: string[]
+  /** Thinking policy; absent means adaptive. */
+  thinkingConfig?: ThinkingConfig
+  /** Main-thread agent definition (`--agent`); absent means the plain loop. */
+  mainThreadAgentDefinition?: AgentDefinition
+  /**
+   * MCP connections the caller already resolved and connected; a hosted
+   * session attaches them to its turns as initial clients (no per-session
+   * connect lifecycle yet).
+   */
+  mcpClients?: MCPServerConnection[]
+  /**
+   * The `--settings` overlay (file or JSON), passed through to the hosted
+   * session. Flag settings are process-scoped, so a hosted session records
+   * and forwards the value rather than re-parsing it per session.
+   */
+  settings?: string
 }
 
 export type SessionRegistry = {
@@ -147,6 +165,10 @@ export function createSessionRegistry(onChanged?: () => void): SessionRegistry {
       permissionMode: full.permissionMode,
       customSystemPrompt: full.customSystemPrompt,
       appendSystemPrompt: full.appendSystemPrompt,
+      thinkingConfig: full.thinkingConfig,
+      mainThreadAgentDefinition: full.mainThreadAgentDefinition,
+      mcpClients: full.mcpClients,
+      settings: full.settings,
     })
     const entry: HostedEntry = {
       processKey: `${process.pid}:${randomUUID()}`,

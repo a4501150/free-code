@@ -27,10 +27,13 @@ import {
   type WirePendingCommand,
   type WirePermissionMode,
   type WireRequest,
+  type WireNotification,
   type WireSessionContext,
   type WireSessionMeta,
+  type WireStreamDraft,
   type WireTranscriptSnapshot,
 } from '../session/wire.js'
+import type { SessionEvent } from '../session/events.js'
 import {
   diffWireSnapshots,
   toWireItems,
@@ -73,6 +76,8 @@ export type SessionChannel = {
   publishQueue(): void
   publishTasks(): void
   publishCatalog(): void
+  /** Push a host-surfaced message (toast). No-op with no subscribers. */
+  publishNotify(notification: WireNotification): void
   /** /resume and /clear move the identity on a live channel. */
   setSessionId(sessionId: string): void
   /** GET route halves: `events`, `image`, `meta`, `agent_transcript`. */
@@ -102,6 +107,11 @@ export type SessionChannelOptions = {
     linesAdded: number
     linesRemoved: number
   }
+  /**
+   * Minimum interval between `stream` draft frames while a turn streams.
+   * A test can widen or zero it; production leaves the default.
+   */
+  streamThrottleMs?: number
   /**
    * The session's request broker. Omitted by single-session processes,
    * which resolve the root scope's broker here themselves.
@@ -208,6 +218,108 @@ export function createSessionChannel(
   let lastMetaJson = ''
   let lastQueueJson = ''
 
+  // Streaming preview. The draft is a cumulative snapshot folded from the
+  // core's streaming events; frames are throttled (>= streamThrottleMs apart,
+  // last-one-wins with a trailing emit) and the pending frame is always
+  // flushed before a transcript patch, so the preview never goes backwards
+  // past the moment the committed rows landed.
+  const streamThrottleMs = options.streamThrottleMs ?? 50
+  let streamDraft: WireStreamDraft | null = null
+  let streamDirty = false
+  let streamTimer: ReturnType<typeof setTimeout> | null = null
+  let lastStreamEmit = 0
+  let unsubscribeCoreEvents: (() => void) | null = null
+
+  function discardStream(): void {
+    if (streamTimer) {
+      clearTimeout(streamTimer)
+      streamTimer = null
+    }
+    streamDraft = null
+    streamDirty = false
+  }
+
+  function flushStream(): void {
+    if (streamTimer) {
+      clearTimeout(streamTimer)
+      streamTimer = null
+    }
+    if (!streamDirty || !hasSubscribers()) {
+      streamDirty = false
+      return
+    }
+    streamDirty = false
+    lastStreamEmit = Date.now()
+    emit({ kind: 'stream', draft: streamDraft })
+  }
+
+  function updateStream(next: WireStreamDraft | null): void {
+    streamDraft = next
+    streamDirty = true
+    if (!hasSubscribers()) return
+    const wait = streamThrottleMs - (Date.now() - lastStreamEmit)
+    if (wait <= 0) {
+      flushStream()
+      return
+    }
+    // Last-one-wins: one trailing timer for the window, never one per event.
+    if (!streamTimer) {
+      streamTimer = setTimeout(() => {
+        streamTimer = null
+        flushStream()
+      }, wait)
+      streamTimer.unref?.()
+    }
+  }
+
+  function foldStreamEvent(event: SessionEvent): void {
+    switch (event.type) {
+      case 'streaming_text':
+        updateStream({
+          ...(streamDraft ?? { tools: [] }),
+          text: event.text ?? undefined,
+        })
+        return
+      case 'streaming_thinking':
+        updateStream({
+          ...(streamDraft ?? { tools: [] }),
+          thinking: event.thinking?.thinking,
+        })
+        return
+      case 'streaming_tool_uses':
+        updateStream({
+          ...(streamDraft ?? {}),
+          tools: event.toolUses.map(toolUse => ({
+            toolName: toolUse.contentBlock?.name,
+            partialJson: toolUse.unparsedToolInput,
+          })),
+        })
+        return
+      case 'turn_started':
+        discardStream()
+        return
+      case 'turn_finished': {
+        // The turn's last word: flush the final draft (before whatever
+        // transcript patch follows), then close the preview with an explicit
+        // null so a client that never saw a patch cannot strand the draft.
+        flushStream()
+        const hadDraft = streamDraft !== null
+        discardStream()
+        if (hadDraft && hasSubscribers()) {
+          emit({ kind: 'stream', draft: null })
+        }
+        return
+      }
+      default:
+        return
+    }
+  }
+
+  function publishNotify(notification: WireNotification): void {
+    if (!hasSubscribers()) return
+    emit({ kind: 'notify', notification })
+  }
+
   const broker = options.broker ?? currentSessionRequests()
   const unsubscribeBroker = broker.subscribe(event => {
     if (event.type === 'opened') {
@@ -276,6 +388,9 @@ export function createSessionChannel(
   }
 
   function publishTranscript(): void {
+    // The committed rows end the preview they stood in for: flush the last
+    // draft frame first so the stream order is stream-then-transcript.
+    flushStream()
     if (!hasSubscribers() || !runtime) return
     const next = wireSnapshot(toWireItems(runtime.getMessages()))
     const patch = diffWireSnapshots(lastTranscript, next)
@@ -611,6 +726,8 @@ export function createSessionChannel(
     if (stopped) return
     stopped = true
     unsubscribeBroker()
+    unsubscribeCoreEvents?.()
+    discardStream()
     for (const subscriber of subscribers) subscriber.close()
     subscribers.clear()
   }
@@ -627,6 +744,10 @@ export function createSessionChannel(
     },
     registerRuntime(next: SessionRuntime) {
       runtime = next
+      // Streaming drafts are folded live, not journaled: a late subscriber
+      // gets the snapshot (no preview) and the next frame.
+      unsubscribeCoreEvents?.()
+      unsubscribeCoreEvents = next.subscribeCore?.(foldStreamEvent) ?? null
       publishMeta()
     },
     publishTranscript,
@@ -635,6 +756,7 @@ export function createSessionChannel(
     publishQueue,
     publishTasks,
     publishCatalog,
+    publishNotify,
     setSessionId(next: string) {
       if (next === sessionId) return
       // The channel stays put. Only the identity on it moves, and the epoch
@@ -643,6 +765,7 @@ export function createSessionChannel(
       sessionId = next
       sessionEpoch += 1
       lastTranscript = { items: [], order: [] }
+      discardStream()
       options.onSessionIdChanged?.(next)
       emit({ kind: 'session_changed', sessionId: next, sessionEpoch })
       publishTranscript()

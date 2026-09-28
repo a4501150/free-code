@@ -7,8 +7,10 @@
  * hosted session needs the same assembly without the process: this is the
  * core-construction counterpart of those CLI flags.
  *
- * MCP servers, plugins and the `--settings` file are not assembled here
- * yet; hosted sessions run on built-ins plus project slash commands.
+ * MCP connections and the `--settings` overlay pass through untouched (the
+ * caller resolves them; SessionDefaults carries them to the session);
+ * plugins are not assembled here. Hosted sessions run on built-ins plus
+ * project slash commands plus whatever pool the caller handed in.
  */
 
 import { getCommands } from '../commands.js'

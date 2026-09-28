@@ -14,6 +14,7 @@
 
 import type { DomainUserContentBlock } from '../types/domain.js'
 import type { Message } from '../types/message.js'
+import type { SessionEvent } from '../session/events.js'
 import type {
   WireCatalog,
   WireImage,
@@ -29,6 +30,12 @@ import type {
 export type SessionRuntime = {
   /** The authoritative transcript. Called synchronously; must not copy lazily. */
   getMessages(): readonly Message[]
+  /**
+   * The session core's event bus, when the host has one. The channel folds
+   * the streaming events into `stream` draft frames through this handle; a
+   * host that omits it simply serves no preview.
+   */
+  subscribeCore?(onEvent: (event: SessionEvent) => void): () => void
   getState(): WireSessionState
   /** The phase of a streaming turn. Undefined when nothing is streaming. */
   getActivity(): WireSessionActivity | undefined

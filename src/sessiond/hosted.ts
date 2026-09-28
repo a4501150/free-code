@@ -25,6 +25,7 @@ import { randomUUID, type UUID } from 'crypto'
 import type { SessionId } from '../types/ids.js'
 import type { ToolPermissionContext } from '../Tool.js'
 import {
+  getCwdState,
   newSessionState,
   runInSessionScope,
   setMainLoopModelOverride,
@@ -60,7 +61,7 @@ import {
 } from '../utils/messageQueueManager.js'
 import { processQueueIfReady } from '../utils/queueProcessor.js'
 import { handlePromptSubmit } from '../utils/handlePromptSubmit.js'
-import { recordTranscript } from '../utils/sessionStorage.js'
+import { getProjectDir, recordTranscript } from '../utils/sessionStorage.js'
 import { hasPermissionsToUseTool } from '../utils/permissions/permissions.js'
 import { EXTERNAL_PERMISSION_MODES } from '../utils/permissions/PermissionMode.js'
 import { transitionPermissionMode } from '../utils/permissions/permissionSetup.js'
@@ -77,6 +78,15 @@ import type { Command } from '../commands.js'
 import type { Tool } from '../Tool.js'
 import type { Message } from '../types/message.js'
 import type { DomainUserContentBlock } from '../types/domain.js'
+import type { ThinkingConfig } from '../utils/thinking.js'
+import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
+import type { MCPServerConnection } from '../services/mcp/types.js'
+import {
+  loadMessagesFromJsonlPath,
+  deserializeMessages,
+} from '../utils/conversationRecovery.js'
+import { existsSync } from 'fs'
+import { join } from 'path'
 
 export type HostedSessionOptions = {
   /** Defaults to a fresh UUID; pass an existing id to adopt a resumed one. */
@@ -94,6 +104,14 @@ export type HostedSessionOptions = {
   permissionMode?: WirePermissionMode
   customSystemPrompt?: string
   appendSystemPrompt?: string
+  /** Thinking policy; absent means adaptive. */
+  thinkingConfig?: ThinkingConfig
+  /** Main-thread agent definition (`--agent`); absent means the plain loop. */
+  mainThreadAgentDefinition?: AgentDefinition
+  /** MCP connections the caller resolved; attached to turns as initial clients. */
+  mcpClients?: MCPServerConnection[]
+  /** The `--settings` overlay, recorded and forwarded (flag settings are process-scoped). */
+  settings?: string
 }
 
 export type HostedSession = {
@@ -104,6 +122,8 @@ export type HostedSession = {
   readonly runtime: SessionRuntime
   readonly queryGuard: QueryGuard
   readonly sessionId: string
+  /** The options this session was started with, for hosts that re-derive rows. */
+  readonly options: Readonly<HostedSessionOptions>
   /** Queue a prompt on this session; starts a turn when idle. */
   submit(
     content: string | DomainUserContentBlock[],
@@ -208,7 +228,7 @@ export function createHostedSession(
   const getToolUseContext = buildToolUseContext({
     commands: options.commands ?? [],
     combinedInitialTools: options.tools ?? [],
-    mainThreadAgentDefinition: undefined,
+    mainThreadAgentDefinition: options.mainThreadAgentDefinition,
     debug: false,
     ideInstallationStatus: undefined,
     theme: 'dark',
@@ -216,7 +236,29 @@ export function createHostedSession(
     store,
     setAppState,
     reverify: () => {},
-    addNotification: () => {},
+    // Host-surfaced messages reach every client as a `notify` event. The
+    // React shapes (color, priority, fold) are surface concerns; the wire
+    // carries level + text, and the level vocabulary is exactly the toast
+    // severities a client can render.
+    addNotification: (n: unknown) => {
+      const level =
+        n &&
+        typeof n === 'object' &&
+        'level' in n &&
+        (n as { level?: unknown }).level
+          ? (n as { level: string }).level === 'error' ||
+            (n as { level: string }).level === 'warn'
+            ? (n as { level: 'info' | 'warn' | 'error' }).level
+            : 'info'
+          : 'info'
+      const text =
+        typeof n === 'string'
+          ? n
+          : n && typeof n === 'object' && 'text' in n
+            ? String((n as { text: unknown }).text)
+            : ''
+      if (text) channel.publishNotify({ level, text })
+    },
     setMessages,
     onChangeDynamicMcpConfig: () => {},
     resume: undefined,
@@ -246,7 +288,7 @@ export function createHostedSession(
     contentReplacementStateRef,
     setIDEToInstallExtension: () => {},
     setIsMessageSelectorVisible: () => {},
-    thinkingConfig: { type: 'adaptive' },
+    thinkingConfig: options.thinkingConfig ?? { type: 'adaptive' },
   })
 
   const inputs: SessionCoreTurnInputs = {
@@ -256,6 +298,8 @@ export function createHostedSession(
     store,
     toolPermissionContext: store.getState().toolPermissionContext,
     setAppState,
+    initialMcpClients: options.mcpClients,
+    mainThreadAgentDefinition: options.mainThreadAgentDefinition,
     title: {
       disabled: true,
       current: undefined,
@@ -299,6 +343,12 @@ export function createHostedSession(
       })
     } finally {
       currentAbortController = null
+      // submitTurn's finally has released the guard by the time its promise
+      // settles here; the turn_finished subscription's pump ran while the
+      // guard was still held and skipped, so the drain is re-armed at the
+      // one point guaranteed to run after guard release. A steered
+      // ('now'-priority) command runs next.
+      pump()
     }
   }
 
@@ -364,6 +414,9 @@ export function createHostedSession(
 
   const runtime: SessionRuntime = {
     getMessages: () => core.getMessages(),
+    // The channel folds streaming drafts straight off the core bus; the
+    // throttle and the flush-before-patch ordering are the channel's.
+    subscribeCore: cb => core.subscribe(cb),
     // Sidechain drill-down. The load runs inside this session's scope: the
     // sidechain file lives under the session's own project directory.
     getAgentTranscript: agentId =>
@@ -451,9 +504,19 @@ export function createHostedSession(
       scope,
       core,
       channel,
+      store,
       queryGuard,
       getToolUseContext,
       resolveModel: () => resolveModel() ?? 'claude-sonnet-4-20250514',
+      loadTranscriptMessages: targetId =>
+        runInSessionScope(scope, async () => {
+          // Inside this session's scope: the transcript lives under the
+          // session's own project directory, not the serve process's cwd.
+          const path = join(getProjectDir(getCwdState()), `${targetId}.jsonl`)
+          if (!existsSync(path)) return null
+          const { messages } = await loadMessagesFromJsonlPath(path)
+          return deserializeMessages(messages as Message[])
+        }),
     }),
   }
   channel.registerRuntime(runtime)
@@ -558,8 +621,25 @@ export function createHostedSession(
 
   // The queue store is session-scoped: both the subscription registration
   // and the callback body must resolve against this session's scope.
+  // A 'now'-priority arrival interrupts: the running turn aborts so the
+  // drain runs the new command next — the hosted counterpart of the REPL's
+  // queue-watch effect. One abort per command id; the abort of an already
+  // aborted turn would be noise.
+  let lastInterruptedCommandId: string | undefined
   const onQueueChanged = (): void => {
     runInSessionScope(scope, () => {
+      if (queryGuard.isActive) {
+        const interrupter = getCommandQueueSnapshot().find(
+          cmd => cmd.priority === 'now' && cmd.uuid,
+        )
+        if (
+          interrupter?.uuid &&
+          interrupter.uuid !== lastInterruptedCommandId
+        ) {
+          lastInterruptedCommandId = interrupter.uuid
+          currentAbortController?.abort('interrupt')
+        }
+      }
       channel.publishQueue()
       pump()
     })
@@ -627,6 +707,7 @@ export function createHostedSession(
     runtime,
     queryGuard,
     sessionId,
+    options,
     submit,
     cancel,
     stop,

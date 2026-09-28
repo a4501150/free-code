@@ -14,9 +14,11 @@ import type {
   WireCatalog,
   WireEvent,
   WireItem,
+  WireNotification,
   WirePendingCommand,
   WireRequest,
   WireSessionMeta,
+  WireStreamDraft,
   WireTask,
   WireTodo,
 } from './wire.js'
@@ -30,6 +32,14 @@ export type SessionView = {
   queue: WirePendingCommand[]
   tasks: WireTask[]
   catalog: WireCatalog
+  /**
+   * In-flight preview for the running turn. Transient by contract: cleared
+   * by any `transcript` patch (the committed rows replace the preview), by
+   * `snapshot`/`session_changed`/`resync_required`.
+   */
+  streamDraft: WireStreamDraft | null
+  /** Last notify per level — a toast rail, not a queue. */
+  notifications: Partial<Record<WireNotification['level'], WireNotification>>
   lastSeq: number
 }
 
@@ -52,6 +62,8 @@ export function emptyView(): SessionView {
     queue: [],
     tasks: [],
     catalog: EMPTY_CATALOG,
+    streamDraft: null,
+    notifications: {},
     lastSeq: 0,
   }
 }
@@ -82,11 +94,14 @@ export function applyEvent(
       next.queue = event.pendingCommands
       next.tasks = event.tasks
       next.catalog = event.catalog
+      next.streamDraft = null
       next.lastSeq = seq
       return next
     }
 
     case 'transcript': {
+      // The committed rows land; the preview they stood in for is over.
+      next.streamDraft = null
       const patch = event.patch
       if (patch.type === 'replace') {
         next.items = new Map(patch.snapshot.items.map(i => [i.id, i]))
@@ -105,6 +120,17 @@ export function applyEvent(
 
     case 'meta':
       next.meta = event.meta
+      return next
+
+    case 'stream':
+      next.streamDraft = event.draft
+      return next
+
+    case 'notify':
+      next.notifications = {
+        ...view.notifications,
+        [event.notification.level]: event.notification,
+      }
       return next
 
     case 'request_opened':
@@ -140,6 +166,7 @@ export function applyEvent(
       next.items = new Map()
       next.order = []
       next.requests = []
+      next.streamDraft = null
       if (next.meta) {
         next.meta = {
           ...next.meta,
@@ -150,8 +177,9 @@ export function applyEvent(
       return next
 
     case 'resync_required':
-      // The journal expired. The snapshot that follows refills everything, so
-      // there is nothing to throw away here.
+      // The journal expired. The snapshot that follows refills the
+      // transcript, and the preview dies with the stream that held it.
+      next.streamDraft = null
       return next
   }
 
