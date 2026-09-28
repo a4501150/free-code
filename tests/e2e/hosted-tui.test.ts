@@ -139,26 +139,32 @@ describe('hosted TUI (default startup)', () => {
       },
     )
 
-    // Presentation parity: the model-facing context rows ride the pane as
-    // the classic collapsed disclosure row — label, real line count, and
-    // the ctrl+O hint — with the reminder body folded away. (Searched in
-    // history: these rows sit at the session's top, off a short screen.)
+    // Presentation parity with the classic pane, row for row: the
+    // user-context carriers render as the classic's rebuilt
+    // `Session context (n lines)` row — the snapshot attachments themselves
+    // must NOT print rows — while reminder-wrapped rows ride as collapsed
+    // disclosures with the real line count and the ctrl+O hint. (Searched
+    // in history: these rows sit at the session's top, off a short screen.)
     const history = await terminal.capturePaneWithHistory()
-    expect(history).toContain('System reminder · user_context_snapshot')
-    const reminderRow = history
+    expect(history).toContain('Session context (')
+    expect(history).not.toContain('user_context_snapshot')
+    expect(history).toContain('System reminder · session_guidance')
+    const guidanceRow = history
       .split('\n')
-      .find(line => line.includes('System reminder · user_context_snapshot'))!
-    // Real line count (pluralized like the classic row) and the expansion
-    // hint for a multi-line body — the classic collapsed disclosure.
-    expect(reminderRow).toMatch(/\(\d+ lines?\)/)
+      .find(line => line.includes('System reminder · session_guidance'))!
+    expect(guidanceRow).toMatch(/\(\d+ lines?\)/)
     const multiLineRow = history
       .split('\n')
       .find(line => /\(\d+ lines\) \(ctrl\+o to expand\)/.test(line))
     expect(multiLineRow).toBeDefined()
 
-    // …and the bottom line carries real session numbers: the running cost.
-    expect(/\$\d+\.\d{2}/.test(idlePane)).toBe(true)
+    // The classic bottom: mode label and hint on a plain line, the composer
+    // bracketed by full-width rules, and no bespoke metrics rail — the
+    // classic footer carries nothing on its right.
     expect(idlePane).toContain('manual mode on')
+    expect(/^─{40,}/m.test(idlePane)).toBe(true)
+    expect(idlePane).not.toMatch(/\$\d+\.\d{2} · ?$/)
+    expect(idlePane).not.toContain('% context')
 
     // And the hosted session id rotated nothing: the wire session is the
     // one the descriptor advertises.

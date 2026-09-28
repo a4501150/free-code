@@ -41,6 +41,8 @@ import {
 import { AttachedTrays } from './attached/AttachedTrays.js'
 import { Select } from '../components/CustomSelect/index.js'
 import { KeybindingSetup } from '../keybindings/KeybindingProviderSetup.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
+import { useTerminalSize } from '../hooks/useTerminalSize.js'
 
 type ConnectionState =
   | { status: 'connecting' }
@@ -259,7 +261,13 @@ export function AttachedSession({
   // cannot resolve for (MCP on a remote attach, newer host build) renders
   // the viewer-native fallback row inside AttachedTranscript.
   const tools = useMemo<Tools>(() => getAllBaseTools(), [])
-  const [showInjectedContext, setShowInjectedContext] = useState(false)
+  const { columns } = useTerminalSize()
+  // Classic's default, not a viewer-local one: the setting drives the
+  // classic pane and defaults to ON (`!== false`), and the pane here must
+  // show what it shows. ctrl+O toggles within the session.
+  const [showInjectedContext, setShowInjectedContext] = useState<boolean>(
+    () => getInitialSettings().showInjectedContext !== false,
+  )
 
   const isRunning = view.meta?.state === 'running'
   const isConnected = connection.status === 'connected'
@@ -457,31 +465,13 @@ export function AttachedSession({
             view={view}
             tools={tools}
             showInjectedContext={showInjectedContext}
+            // The classic `Session context` row is rebuilt from the local
+            // getUserContext() — honest only when this process is the host.
+            showSessionContextRow={pid === process.pid}
           />
 
           {/* Streaming preview at the transcript tail */}
           {draft && <StreamDraftRow draft={draft} />}
-
-          {/* The REPL's own spinner row, at the same place it sits in the
-              classic pane: bottom of the transcript, while the turn runs */}
-          {showSpinner && (
-            <SpinnerWithVerb
-              mode={spinnerMode}
-              loadingStartTimeRef={loadingStartTimeRef}
-              totalPausedMsRef={totalPausedMsRef}
-              pauseStartTimeRef={pauseStartTimeRef}
-              responseLengthRef={responseLengthRef}
-              verbose={false}
-              hasActiveTools={
-                (view.meta?.inProgressToolUseIds?.length ?? 0) > 0
-              }
-              compactingStartTime={
-                view.meta?.activity === 'compacting'
-                  ? (runningSince ?? Date.now())
-                  : null
-              }
-            />
-          )}
         </ScrollBox>
 
         <ScrollKeybindingHandler scrollRef={scrollRef} isActive />
@@ -569,22 +559,42 @@ export function AttachedSession({
             </Box>
           )}
 
-        {/* Composer */}
+        {/* Composer — the classic dock: spinner row, full-width rule, the
+            prompt line at column 0, full-width rule, footer. Same rows,
+            same order, same indent as the classic pane. */}
         {isConnected && (
-          <Box flexShrink={0} flexDirection="column">
+          <Box flexShrink={0} flexDirection="column" marginTop={1}>
+            {showSpinner && (
+              <SpinnerWithVerb
+                mode={spinnerMode}
+                loadingStartTimeRef={loadingStartTimeRef}
+                totalPausedMsRef={totalPausedMsRef}
+                pauseStartTimeRef={pauseStartTimeRef}
+                responseLengthRef={responseLengthRef}
+                verbose={false}
+                hasActiveTools={
+                  (view.meta?.inProgressToolUseIds?.length ?? 0) > 0
+                }
+                compactingStartTime={
+                  view.meta?.activity === 'compacting'
+                    ? (runningSince ?? Date.now())
+                    : null
+                }
+              />
+            )}
+            <Text color="promptBorder">{'─'.repeat(columns)}</Text>
             {pendingRequest ? (
-              <Box paddingX={2}>
-                <Text dimColor>
-                  Answer the pending prompt above to continue
-                </Text>
+              <Box marginLeft={2}>
+                <Text dimColor>Waiting for permission…</Text>
               </Box>
             ) : (
-              <Box paddingX={2}>
+              <Box flexDirection="row">
                 <Text color="claude">{editingQueueId ? '✎ ' : '❯ '}</Text>
                 <Text>{inputText}</Text>
                 <Text inverse> </Text>
               </Box>
             )}
+            <Text color="promptBorder">{'─'.repeat(columns)}</Text>
             {editingQueueId && (
               <Box paddingX={2}>
                 <Text dimColor>
@@ -695,7 +705,7 @@ function AttachedBottomBar({
   if (!meta) return null
 
   const mode = modeLabel(meta.permissionMode)
-  const bar = bottomBarParts(meta, { running, waitingForUser: hasTray })
+  const bar = bottomBarParts({ running, waitingForUser: hasTray })
 
   return (
     <Box paddingX={2}>
@@ -709,9 +719,6 @@ function AttachedBottomBar({
           <Text dimColor> · {bar.left}</Text>
         </>
       )}
-      <Box flexGrow={1} justifyContent="flex-end">
-        <Text dimColor>{bar.right.join(' · ')}</Text>
-      </Box>
     </Box>
   )
 }

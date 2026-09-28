@@ -131,26 +131,22 @@ export function modeLabel(mode: PermissionMode | undefined): {
 }
 
 /**
- * The classic-parity bottom bar: mode label + the hint the classic footer
- * shows for the state, and the session metrics the viewer earns from the
- * wire (model, context, cost) kept at the line's end.
+ * The classic-parity bottom bar: the mode label (see `modeLabel`) plus the
+ * hint the classic footer shows for the state. The classic footer carries
+ * nothing on its right — model and cost live in the banner and `/status`,
+ * and the optional StatusLine is off unless configured — so neither does
+ * this one.
  */
-export function bottomBarParts(
-  meta: WireSessionMeta,
-  opts: {
-    running: boolean
-    /** A blocking tray owns the keys; the hint says so. */
-    waitingForUser?: boolean
-  },
-): { left: string; right: string[] } {
-  const hint = opts.waitingForUser
-    ? 'answer above to continue'
-    : opts.running
-      ? 'esc to interrupt'
-      : '? for shortcuts'
-  const right: string[] = []
-  if (meta.model) right.push(meta.model)
-  if (meta.context) right.push(`${meta.context.usedPercent}% context`)
-  if (meta.costUsd !== undefined) right.push(`$${meta.costUsd.toFixed(2)}`)
-  return { left: hint, right }
+export function bottomBarParts(opts: {
+  running: boolean
+  /** A blocking tray owns the keys; the hint says so. */
+  waitingForUser?: boolean
+}): { left: string } {
+  return {
+    left: opts.waitingForUser
+      ? 'answer above to continue'
+      : opts.running
+        ? 'esc to interrupt'
+        : '? for shortcuts',
+  }
 }

@@ -260,16 +260,19 @@ export function bridgeTranscript(
       }
       case 'attachment': {
         flushAssistant()
-        // Injected-context rows ride like every other row: the classic
-        // pane shows them collapsed by default (`▸ System reminder · …`),
-        // and the transcript component decides reveal vs collapse from
-        // showInjectedContext. Dropping them here hid rows the classic
-        // pane shows, which reads as a different product.
-        units.push({
-          kind: 'attachment',
-          item,
-          injected: isInjectedContextItem(item),
-        })
+        // Classic's exact visibility rule, mirrored: a row shows only when
+        // the attachment is wrapped in a system reminder (the host derived
+        // `reminder` from the same function the REPL uses), and injected
+        // rows show only while showInjectedContext is on (the REPL's
+        // prefilter). user_context_snapshot/delta carry no reminder
+        // wrapper — the classic pane shows their content as the rebuilt
+        // `Session context` row instead, so they render nothing here.
+        if (isInjectedContextItem(item)) {
+          if (!showInjectedContext || !item.attachment?.reminder) continue
+          units.push({ kind: 'attachment', item, injected: true })
+          continue
+        }
+        units.push({ kind: 'attachment', item, injected: false })
         continue
       }
       default: {

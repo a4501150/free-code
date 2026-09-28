@@ -10,11 +10,18 @@
  * after the host's build) fall back to the viewer-native one-line row, so
  * nothing disappears when a card can't be built.
  */
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Box, Text } from '../../ink.js'
 import { Message } from '../../components/Message.js'
 import { findToolByName, type Tools } from '../../Tool.js'
-import { normalizeMessages } from '../../utils/messages.js'
+import {
+  createUserMessage,
+  normalizeMessages,
+} from '../../utils/messages.js'
+import { getUserContext } from '../../context.js'
+import { formatUserContextMessageContent } from '../../utils/contextInjection.js'
+import { USER_CONTEXT_ROW_UUID } from '../../constants/messages.js'
+import type { UUID } from 'crypto'
 import type { WireItem } from '../../session/wire.js'
 import type { SessionView } from '../../session/viewStore.js'
 import { bridgeTranscript, type BridgedTranscript } from './transcriptBridge.js'
@@ -27,12 +34,21 @@ type Props = {
   view: SessionView
   tools: Tools
   showInjectedContext: boolean
+  /**
+   * Render the classic's rebuilt `Session context (n lines)` row — the
+   * virtual first row the REPL's Messages list reconstructs from
+   * getUserContext() to stand in for the user-context attachments. Only the
+   * hosting terminal (and any viewer whose cwd is the session's cwd) can
+   * rebuild it honestly, so the launcher opts in.
+   */
+  showSessionContextRow?: boolean
 }
 
 export function AttachedTranscript({
   view,
   tools,
   showInjectedContext,
+  showSessionContextRow,
 }: Props): React.ReactNode {
   const snapshot = useMemo(
     () => ({
@@ -47,6 +63,24 @@ export function AttachedTranscript({
     () => bridgeTranscript(snapshot, showInjectedContext),
     [snapshot, showInjectedContext],
   )
+
+  // The classic pane's virtual first row: the user-context block is built
+  // per-request and never stored, so the REPL reconstructs it for display
+  // from getUserContext() — same bytes, same `Session context (n lines)`
+  // collapsed row. Rebuilt here the same way, in this process's cwd.
+  const [userContextText, setUserContextText] = useState<string | null>(null)
+  useEffect(() => {
+    if (!showSessionContextRow || !showInjectedContext) return
+    let cancelled = false
+    void getUserContext().then(context => {
+      if (!cancelled) {
+        setUserContextText(formatUserContextMessageContent(context))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [showSessionContextRow, showInjectedContext, view.meta?.sessionId])
 
   // For the fallback rows: which tool card each tool_use/tool_result would
   // have become, and whether this process can build it.
@@ -216,7 +250,7 @@ export function AttachedTranscript({
           key={unit.item.id}
           addMargin={!prevRenderedInjected}
           label={`System reminder · ${unit.item.attachment?.type ?? 'context'}`}
-          content={reminder || unit.item.attachment?.display || ''}
+          content={reminder}
           verbose={showInjectedContext}
         />,
       )
@@ -236,6 +270,43 @@ export function AttachedTranscript({
     prevRenderedInjected = false
   }
 
+  // The reconstructed `Session context` row leads the list, as the
+  // classic's displayCollapsed prepends it before every other row.
+  const sessionContextRow = useMemo(() => {
+    if (!showSessionContextRow || !showInjectedContext || !userContextText) {
+      return null
+    }
+    const msg = createUserMessage({ content: userContextText, isMeta: true })
+    msg.uuid = USER_CONTEXT_ROW_UUID as UUID
+    const row = normalizeMessages([msg as never])[0]
+    if (!row) return null
+    return (
+      <Box key="session-context-row">
+        <Message
+          message={row as never}
+          lookups={bridge.lookups}
+          addMargin
+          tools={tools}
+          commands={[]}
+          verbose={false}
+          inProgressToolUseIDs={new Set<string>()}
+          progressMessagesForMessage={[]}
+          shouldAnimate={false}
+          shouldShowDot={true}
+          isTranscriptMode={false}
+          isStatic={false}
+          width="100%"
+        />
+      </Box>
+    )
+  }, [
+    showSessionContextRow,
+    showInjectedContext,
+    userContextText,
+    bridge.lookups,
+    tools,
+  ])
+
   // The classic pane renders its rows inside the virtual message list,
   // which is what keeps the thinking/tool rows from printing a per-row
   // `(ctrl+o to expand)` hint (the reminder rows carry their own). The
@@ -243,6 +314,7 @@ export function AttachedTranscript({
   // it claims the context to get the same look.
   return (
     <InVirtualListContext.Provider value={true}>
+      {sessionContextRow}
       {body}
     </InVirtualListContext.Provider>
   )

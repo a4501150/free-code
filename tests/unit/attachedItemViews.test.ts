@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type {
-  WireItem,
-  WireSessionMeta,
-  WireStreamDraft,
-} from '../../src/session/wire.js'
+import type { WireItem, WireStreamDraft } from '../../src/session/wire.js'
 import { PAUSE_ICON } from '../../src/constants/figures.js'
 import {
   bottomBarParts,
@@ -169,38 +165,14 @@ describe('modeLabel', () => {
 })
 
 describe('bottomBarParts', () => {
-  const meta: WireSessionMeta = {
-    sessionId: 's',
-    sessionEpoch: 0,
-    cwd: '/',
-    startedAt: 0,
-    state: 'idle',
-    model: 'glm-5.3-flash-free',
-    permissionMode: 'plan',
-    context: { usedTokens: 30, maxTokens: 100, usedPercent: 30 },
-    costUsd: 1.234,
-  }
-
-  test('the idle hint is the classic one, metrics ride at the right', () => {
-    const bar = bottomBarParts(meta, { running: false })
-    expect(bar.left).toBe('? for shortcuts')
-    expect(bar.right).toEqual(['glm-5.3-flash-free', '30% context', '$1.23'])
+  test('the idle hint is the classic one', () => {
+    expect(bottomBarParts({ running: false }).left).toBe('? for shortcuts')
   })
 
   test('a running turn asks for esc, a tray asks for an answer', () => {
-    expect(bottomBarParts(meta, { running: true }).left).toBe(
-      'esc to interrupt',
+    expect(bottomBarParts({ running: true }).left).toBe('esc to interrupt')
+    expect(bottomBarParts({ running: true, waitingForUser: true }).left).toBe(
+      'answer above to continue',
     )
-    expect(
-      bottomBarParts(meta, { running: true, waitingForUser: true }).left,
-    ).toBe('answer above to continue')
-  })
-
-  test('absent metrics are simply missing', () => {
-    const bar = bottomBarParts(
-      { ...meta, model: undefined, context: undefined, costUsd: undefined },
-      { running: false },
-    )
-    expect(bar.right).toEqual([])
   })
 })

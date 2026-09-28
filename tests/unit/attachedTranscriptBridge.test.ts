@@ -90,21 +90,24 @@ describe('bridgeTranscript', () => {
     expect(bridged.lookups.erroredToolUseIDs.has('tu-9')).toBe(true)
   })
 
-  test('injected-context rows ride like every other row, flagged injected', () => {
+  test('reminder rows follow the classic rule: wrapped rows only, gated by the setting', () => {
     const snap = snapshot([
       item({
         id: 'x1',
         kind: 'attachment',
         attachment: {
-          type: 'user_context_snapshot',
-          display: 'context',
+          type: 'session_guidance',
+          display: 'guidance',
           reminder: 'ctx\nline two',
         },
       }),
+      // A carrier with no reminder wrapper (what user_context_snapshot
+      // really is): the classic pane renders nothing for it — its content
+      // reaches the pane as the rebuilt `Session context` row.
       item({
         id: 'x2',
         kind: 'attachment',
-        attachment: { type: 'session_guidance', display: 'guidance' },
+        attachment: { type: 'user_context_snapshot', display: 'snapshot' },
       }),
       item({
         id: 'x4',
@@ -123,20 +126,25 @@ describe('bridgeTranscript', () => {
         ),
       ).toBe(true)
     }
-    // The classic pane shows collapsed reminder rows by default, so the
-    // bridge never drops them: every attachment becomes a unit.
-    const bridged = bridgeTranscript(snap, false)
-    expect(bridged.units).toHaveLength(3)
+    // Classic's default (showInjectedContext on): the wrapped row rides,
+    // the unwrapped carrier drops, the summary-line attachment is untouched.
+    const bridged = bridgeTranscript(snap, true)
+    expect(bridged.units).toHaveLength(2)
     const attachments = bridged.units.filter(
       u => u.kind === 'attachment' && 'item' in u,
     ) as Extract<(typeof bridged.units)[number], { kind: 'attachment' }>[]
     const byId = new Map(attachments.map(u => [u.item.id, u]))
     expect(byId.get('x1')!.injected).toBe(true)
-    expect(byId.get('x2')!.injected).toBe(true)
+    expect(byId.has('x2')).toBe(false)
     expect(byId.get('x4')!.injected).toBe(false)
-    // The reminder body rides the unit: the transcript component needs it
-    // for the real line count, and the bridge passes items through as is.
     expect(byId.get('x1')!.item.attachment?.reminder).toBe('ctx\nline two')
+    // The classic prefilter: with the setting off, injected rows are gone
+    // entirely — not collapsed, absent.
+    const off = bridgeTranscript(snap, false)
+    expect(off.units).toHaveLength(1)
+    expect(off.units[0]!.kind === 'attachment' && off.units[0]!.item.id).toBe(
+      'x4',
+    )
   })
 
   test('a user item carries its text into a user message; isMeta is preserved', () => {
