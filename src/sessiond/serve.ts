@@ -631,8 +631,11 @@ export async function startSessiondServe(
         if (method !== 'GET')
           return json(res, 405, { error: 'method_not_allowed' })
         const lastEventId = request.headers['last-event-id']
+        // The tear-down signal is the RESPONSE closing: an incoming GET
+        // request is 'close'd as soon as its (empty) body is read, which is
+        // not when the browser tab goes away.
         const abort = new AbortController()
-        request.on('close', () => abort.abort())
+        res.on('close', () => abort.abort())
         const upstream = await fetch(
           `${surfaceBase}/v1/sessions/${d.sessionId}/events`,
           {
@@ -659,7 +662,10 @@ export async function startSessiondServe(
         )
         node.on('error', () => res.end())
         node.pipe(res)
-        request.on('close', () => node.destroy())
+        res.on('close', () => {
+          abort.abort()
+          node.destroy()
+        })
         return
       }
 

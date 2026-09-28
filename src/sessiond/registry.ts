@@ -25,7 +25,9 @@ import {
   loadMessagesFromJsonlPath,
   deserializeMessages,
 } from '../utils/conversationRecovery.js'
-import { getTranscriptPathForSession } from '../utils/sessionStorage.js'
+import { join } from 'path'
+import { getProjectDir } from '../utils/sessionStorage.js'
+import { canonicalizePath } from '../utils/sessionStoragePortable.js'
 import type { Message } from '../types/message.js'
 import type { Command } from '../commands.js'
 import type { Tool } from '../Tool.js'
@@ -89,6 +91,11 @@ export function createSessionRegistry(): SessionRegistry {
     // Before anything: a bare ENOENT from the session core is not advice a
     // browser can act on, and every caller gets the check this way.
     await validateSessionCwd(cwd)
+    // Realpath the way a spawned child's process.cwd() would have: the
+    // transcript, the history row and a terminal --resume all derive the
+    // project directory from this string, and a symlinked path (/var vs
+    // /private/var) would split the session across two project dirs.
+    cwd = await canonicalizePath(cwd)
     const session = createHostedSession({
       sessionId,
       cwd,
@@ -122,8 +129,13 @@ export function createSessionRegistry(): SessionRegistry {
       // The pure chain-walk load: main-conversation messages only. Titles,
       // sidechain files and file-history snapshots ride the transcript for a
       // later resume surface; the model only needs the chain.
+      //
+      // The path comes from the ROW's cwd, resolved here rather than through
+      // getTranscriptPathForSession: the request context has no session
+      // scope, so that helper would guess from the serve process's own cwd
+      // and miss a hosted session that was recorded under its own directory.
       const { messages } = await loadMessagesFromJsonlPath(
-        getTranscriptPathForSession(sessionId),
+        join(getProjectDir(cwd), `${sessionId}.jsonl`),
       )
       return start(
         cwd,
@@ -204,7 +216,11 @@ export function createSessionRegistry(): SessionRegistry {
           }
         },
       )
+      // Chronological, like the old hub: hosted rows first unsorted would
+      // shadow an earlier-started terminal row when a client picks "the
+      // first live row".
       const rows = [...hostedEntries, ...groupLiveHolders(externalHolders)]
+      rows.sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
 
       // History, skipping anything already live (hosted or external).
       const liveIds = new Set<string>([
