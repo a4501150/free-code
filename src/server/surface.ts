@@ -69,9 +69,16 @@ export type StartSurfaceOptions = {
   }
 }
 
-const GET_ROUTES = new Set(['events', 'image', 'meta', 'agent_transcript'])
+// Exported so sessiond's tokened `/v1` mount routes identically: hosted
+// sessions are reachable exactly like an external process's surface.
+export const SURFACE_GET_ROUTES = new Set([
+  'events',
+  'image',
+  'meta',
+  'agent_transcript',
+])
 
-const POST_ROUTES = new Set([
+export const SURFACE_POST_ROUTES = new Set([
   'prompt',
   'cancel',
   'request_respond',
@@ -80,7 +87,7 @@ const POST_ROUTES = new Set([
   'rpc',
 ])
 
-const POST_KIND_MAP: Record<string, string> = {
+export const SURFACE_POST_KIND_MAP: Record<string, string> = {
   model: 'model_set',
   mode: 'mode_set',
 }
@@ -180,7 +187,7 @@ export function startWireSurface(
 
     try {
       if (request.method === 'GET') {
-        if (!GET_ROUTES.has(route.kind)) {
+        if (!SURFACE_GET_ROUTES.has(route.kind)) {
           fail(res, 404, 'unknown_route', 'not a GET route')
           return
         }
@@ -188,14 +195,14 @@ export function startWireSurface(
         return
       }
 
-      if (!POST_ROUTES.has(route.kind)) {
+      if (!SURFACE_POST_ROUTES.has(route.kind)) {
         fail(res, 404, 'unknown_route', 'not a POST route')
         return
       }
       void channel.handlePost(
         request,
         res,
-        POST_KIND_MAP[route.kind] ?? route.kind,
+        SURFACE_POST_KIND_MAP[route.kind] ?? route.kind,
       )
     } catch {
       // A route that threw after writing its head cannot also fail cleanly.

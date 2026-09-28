@@ -23,7 +23,7 @@ import {
 } from 'node:http'
 import { Readable } from 'node:stream'
 import { WebSocketServer, type WebSocket } from 'ws'
-import { randomUUID } from 'crypto'
+import { randomBytes, randomUUID } from 'crypto'
 import { WIRE_VERSION, WireCommandSchema } from '../session/wire.js'
 import {
   WEBUI_CSS,
@@ -47,10 +47,18 @@ import {
   type AuthFile,
 } from '../webui/gateway/auth.js'
 import {
+  ensureAttachDir,
   readAttachDescriptor,
+  removeAttachDescriptor,
+  writeAttachDescriptor,
   type AttachDescriptor,
 } from '../server/descriptor.js'
-import { SURFACE_TOKEN_HEADER } from '../server/surface.js'
+import {
+  SURFACE_GET_ROUTES,
+  SURFACE_POST_KIND_MAP,
+  SURFACE_POST_ROUTES,
+  SURFACE_TOKEN_HEADER,
+} from '../server/surface.js'
 import {
   listDirectories,
   PathError,
@@ -219,6 +227,16 @@ function json(
   )
 }
 
+/** The wire-surface error envelope (same shape every surface answers with). */
+function surfaceFail(
+  res: ServerResponse,
+  status: number,
+  code: string,
+  message: string,
+): void {
+  json(res, status, { ok: false, error: { code, message } })
+}
+
 async function readJsonBody(
   request: IncomingMessage,
   limit: number,
@@ -264,7 +282,37 @@ function bodyAsStream(
 export async function startSessiondServe(
   options: StartServeOptions = {},
 ): Promise<SessiondServe> {
-  const registry = createSessionRegistry()
+  // The tokened wire surface (`/v1/sessions/...`), the same posture an
+  // external session's surface runs on: loopback, one bearer token, no
+  // cookies. A local CLI client reads it from this process's own attach
+  // descriptor below, so `claude attach` reaches a hosted session exactly
+  // like a terminal one. Hosted `MODES_DENIED_TO_REMOTE` policing lives in
+  // the channel, so it applies here too.
+  const surfaceToken = randomBytes(32).toString('base64url')
+  const surfaceDescriptor: AttachDescriptor = {
+    wireVersion: WIRE_VERSION,
+    pid: process.pid,
+    processNonce: randomUUID(),
+    token: surfaceToken,
+    // Filled after listen; the descriptor is written once the port is real.
+    port: 0,
+    sessionId: 'sessiond',
+    sessionIds: [],
+    cwd: process.cwd(),
+    entrypoint: 'sessiond',
+    startedAt: Date.now(),
+  }
+  const publishDescriptor = (): void => {
+    surfaceDescriptor.sessionIds = registry.hostedSessionIds()
+    surfaceDescriptor.sessionId = surfaceDescriptor.sessionIds[0] ?? 'sessiond'
+    try {
+      writeAttachDescriptor(surfaceDescriptor)
+    } catch {
+      // A failed rewrite costs local discovery, not correctness: the
+      // tokened routes answer live ids regardless of what is on disk.
+    }
+  }
+  const registry = createSessionRegistry(publishDescriptor)
   const throttle = createLoginThrottle({
     perAddress: 5,
     global: 60,
@@ -372,6 +420,71 @@ export async function startSessiondServe(
   ): Promise<void> {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
     const method = request.method ?? 'GET'
+
+    // The tokened wire surface. Same route grammar and error envelope as an
+    // external process's surface (`server/surface.ts`), answered straight
+    // from the hosted channel — so a local client cannot tell a hosted
+    // session from a terminal one by anything but the sessions it lists.
+    if (url.pathname === '/v1/sessions' && method === 'GET') {
+      if (request.headers[SURFACE_TOKEN_HEADER] !== surfaceToken) {
+        return surfaceFail(
+          res,
+          401,
+          'unauthorized',
+          'missing or bad surface token',
+        )
+      }
+      return json(res, 200, {
+        sessions: [...registry.hostedEntries()].map(entry => ({
+          sessionId: entry.hosted.channel.sessionId,
+          processKey: entry.processKey,
+          cwd: entry.cwd,
+        })),
+      })
+    }
+    if (url.pathname.startsWith('/v1/sessions/')) {
+      const parts = url.pathname.split('/').filter(Boolean)
+      // ['v1', 'sessions', sessionId, ...rest]
+      const rest = parts.slice(3)
+      const kind =
+        rest[0] === 'agents' && rest[1] && rest[2] === 'transcript'
+          ? 'agent_transcript'
+          : rest[0]
+      const params = kind === 'agent_transcript' ? [rest[1]!] : rest.slice(1)
+      const allowed =
+        method === 'GET' ? SURFACE_GET_ROUTES : SURFACE_POST_ROUTES
+      if (!kind || !allowed.has(kind)) {
+        return surfaceFail(res, 404, 'unknown_route', 'not a session route')
+      }
+      if (request.headers[SURFACE_TOKEN_HEADER] !== surfaceToken) {
+        return surfaceFail(
+          res,
+          401,
+          'unauthorized',
+          'missing or bad surface token',
+        )
+      }
+      const entry = registry.bySessionId(parts[2]!)
+      if (!entry) {
+        return surfaceFail(
+          res,
+          404,
+          'unknown_session',
+          'no hosted session has that id',
+        )
+      }
+      const channel = entry.hosted.channel
+      if (method === 'GET') {
+        channel.handleGet(request, res, kind, params, url)
+        return
+      }
+      void channel.handlePost(
+        request,
+        res,
+        SURFACE_POST_KIND_MAP[kind!] ?? kind!,
+      )
+      return
+    }
 
     if (url.pathname === '/api/login' && method === 'POST') {
       if (!originOk(request, port))
@@ -767,6 +880,12 @@ export async function startSessiondServe(
   const address = server.address()
   const port = address && typeof address !== 'string' ? address.port : 0
 
+  // The descriptor is what a local `claude attach` reads: port, token, and
+  // the hosted ids. Rewritten whenever the hosted set changes.
+  ensureAttachDir()
+  surfaceDescriptor.port = port
+  publishDescriptor()
+
   return {
     url: `http://127.0.0.1:${port}`,
     port,
@@ -800,6 +919,7 @@ export async function startSessiondServe(
     async stop() {
       for (const ws of browsers) ws.close()
       registry.stopAll()
+      removeAttachDescriptor(surfaceDescriptor.pid)
       await new Promise<void>(resolve => server.close(() => resolve()))
     },
   }

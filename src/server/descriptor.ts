@@ -52,7 +52,23 @@ export const AttachDescriptorSchema = z.object({
   token: z.string().min(16),
   /** The loopback port the surface listens on. */
   port: z.number().int().positive().max(65535),
+  /**
+   * The session this process serves. For a single-session process this is
+   * the whole story. For a multi-session host (sessiond) it stays the
+   * primary — the first hosted session id at write time, or a `sessiond`
+   * marker while none is hosted — and the full list rides `sessionIds`.
+   * Consumers that route by id must use `sessionIds` when present; the
+   * primary alone can be a marker.
+   */
   sessionId: z.string().min(1),
+  /**
+   * Every session id this process serves at write time (sessiond rewrites
+   * the descriptor when the hosted set changes). Advisory for discovery:
+   * a `/clear` rotates an id in place without a rewrite, and the routes
+   * answer the rotated id, so consumers must fall back to the live route
+   * rather than trust staleness.
+   */
+  sessionIds: z.array(z.string().min(1)).optional(),
   cwd: z.string().min(1),
   entrypoint: z.string().optional(),
   startedAt: z.number().int().positive(),

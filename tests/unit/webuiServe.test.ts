@@ -391,3 +391,117 @@ test('serve: ?q filters the history only; live rows always show', async () => {
     rmSync(fixtureCwd, { recursive: true, force: true })
   }
 }, 30_000)
+
+test('serve: the tokened /v1 surface serves hosted sessions to local clients', async () => {
+  const { serve, base, cookie, csrf } = await bootServe()
+  const cwd = mkdtempSync(join(tmpdir(), 'webui-serve-v1-'))
+  try {
+    // sessiond publishes its own attach descriptor: the file a local
+    // `claude attach` reads for the port, the token and the session ids.
+    const { readAttachDescriptor } =
+      await import('../../src/server/descriptor.js')
+    const read = readAttachDescriptor(process.pid)
+    expect(read.ok).toBe(true)
+    if (!read.ok) return
+    expect(read.descriptor.port).toBe(serve.port)
+    expect(read.descriptor.sessionIds).toEqual([])
+
+    const surface = { 'x-freecode-surface': read.descriptor.token }
+
+    const created = await fetch(`${base}/api/sessions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: base,
+        cookie,
+        'x-freecode-csrf': csrf,
+      },
+      body: JSON.stringify({ cwd }),
+    })
+    const { session } = (await created.json()) as {
+      session: { sessionId: string }
+    }
+
+    // The descriptor follows the hosted set.
+    const reread = readAttachDescriptor(process.pid)
+    expect(reread.ok && reread.descriptor.sessionIds).toEqual([
+      session.sessionId,
+    ])
+
+    // The tokened listing names the hosted session.
+    const listed = await fetch(`${base}/v1/sessions`, { headers: surface })
+    expect(listed.status).toBe(200)
+    const body = (await listed.json()) as {
+      sessions: Array<{ sessionId: string; processKey: string }>
+    }
+    expect(body.sessions.map(s => s.sessionId)).toContain(session.sessionId)
+
+    // No token is a 401; a tokened route to an unknown id a 404.
+    const anon = await fetch(`${base}/v1/sessions`)
+    expect(anon.status).toBe(401)
+    const ghost = await fetch(`${base}/v1/sessions/${randomUUID()}/meta`, {
+      headers: surface,
+    })
+    expect(ghost.status).toBe(404)
+    expect(
+      ((await ghost.json()) as { error: { code: string } }).error.code,
+    ).toBe('unknown_session')
+
+    // The stream answers the snapshot over the mount, and a prompt rides
+    // it: the same posture an external surface offers.
+    const stream = await fetch(
+      `${base}/v1/sessions/${session.sessionId}/events`,
+      { headers: surface },
+    )
+    expect(stream.status).toBe(200)
+    const reader = stream.body!.pipeThrough(new TextDecoderStream()).getReader()
+    let buffer = ''
+    let sawSnapshot = false
+    const deadline = Date.now() + 3000
+    while (!sawSnapshot && Date.now() < deadline) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += value
+      let boundary: number
+      while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+        const frame = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        const dataLine = frame.split('\n').find(l => l.startsWith('data: '))
+        if (
+          dataLine &&
+          JSON.parse(dataLine.slice(6)).event?.kind === 'snapshot'
+        )
+          sawSnapshot = true
+      }
+    }
+    expect(sawSnapshot).toBe(true)
+    reader.cancel().catch(() => {})
+
+    const prompt = await fetch(
+      `${base}/v1/sessions/${session.sessionId}/prompt`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...surface },
+        body: JSON.stringify({
+          kind: 'prompt',
+          commandId: randomUUID(),
+          content: `/nonexistent-${randomUUID()}`,
+          delivery: 'next',
+          sessionEpoch: 0,
+        }),
+      },
+    )
+    expect(prompt.status).toBe(200)
+
+    // bypassPermissions stays terminal-only even over the local token.
+    const mode = await fetch(`${base}/v1/sessions/${session.sessionId}/mode`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...surface },
+      body: JSON.stringify({ kind: 'mode_set', mode: 'bypassPermissions' }),
+    })
+    expect(mode.status).toBe(403)
+  } finally {
+    await cleanup(serve)
+    rmSync(cwd, { recursive: true, force: true })
+  }
+}, 30_000)

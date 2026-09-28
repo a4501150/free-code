@@ -90,6 +90,14 @@ export type SessionRegistry = {
   get(processKey: string): HostedEntry | undefined
   bySessionId(sessionId: string): HostedEntry | undefined
   /**
+   * The session ids currently hosted, read from the live channels so a
+   * `/clear` rotation shows up immediately. Feeds the serve descriptor's
+   * `sessionIds` and the tokened `/v1/sessions` listing.
+   */
+  hostedSessionIds(): string[]
+  /** The hosted rows themselves; external rows have none. */
+  hostedEntries(): readonly HostedEntry[]
+  /**
    * The merged session list: hosted rows + external live rows + history.
    * `q` filters the HISTORY rows by title/cwd substring; live rows always
    * come through — a search must never hide the session you are in.
@@ -100,7 +108,11 @@ export type SessionRegistry = {
 /** What a `q` search answers with; deep enough to scroll, light enough to poll. */
 const SEARCH_HISTORY_LIMIT = 50
 
-export function createSessionRegistry(): SessionRegistry {
+/**
+ * `onChanged` fires after the hosted set changes (create, resume, stop),
+ * which is what makes serve re-publish its descriptor's `sessionIds`.
+ */
+export function createSessionRegistry(onChanged?: () => void): SessionRegistry {
   const hosted = new Map<string, HostedEntry>()
 
   async function start(
@@ -147,6 +159,7 @@ export function createSessionRegistry(): SessionRegistry {
     }
     entry.nonce = entry.processKey.split(':')[1]!
     hosted.set(entry.processKey, entry)
+    onChanged?.()
     return entry
   }
 
@@ -201,6 +214,14 @@ export function createSessionRegistry(): SessionRegistry {
           return entry
       }
       return undefined
+    },
+
+    hostedSessionIds() {
+      return [...hosted.values()].map(entry => entry.hosted.channel.sessionId)
+    },
+
+    hostedEntries() {
+      return [...hosted.values()]
     },
 
     async list(options?: { q?: string }) {
