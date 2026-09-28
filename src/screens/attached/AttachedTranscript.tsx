@@ -10,12 +10,13 @@
  * after the host's build) fall back to the viewer-native one-line row, so
  * nothing disappears when a card can't be built.
  */
-import React, { useEffect, useMemo, useState } from 'react'
-import { Box, Text } from '../../ink.js'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Box, Text, type ClickEvent } from '../../ink.js'
 import { Message } from '../../components/Message.js'
 import { findToolByName, type Tools } from '../../Tool.js'
 import {
   createUserMessage,
+  isInjectedContextText,
   normalizeMessages,
 } from '../../utils/messages.js'
 import { getUserContext } from '../../context.js'
@@ -81,6 +82,32 @@ export function AttachedTranscript({
       cancelled = true
     }
   }, [showSessionContextRow, showInjectedContext, view.meta?.sessionId])
+
+  // Classic's per-row click-to-expand (the Messages.tsx expandedKeys fold):
+  // rows render collapsed and a click on a clickable row toggles its own
+  // verbose rendering. Visibility of injected rows is the separate
+  // showInjectedContext switch — conflating the two expanded every row at
+  // startup while leaving nothing clickable, the opposite of the classic pane.
+  const [expandedKeys, setExpandedKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  )
+  const toggleExpanded = useCallback((key: string): void => {
+    setExpandedKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+  // The row-level click handler, gated like VirtualMessageList: a click that
+  // lands on a blank cell is ignored, so only the row's own text toggles it.
+  const rowClickHandler = useCallback(
+    (key: string) =>
+      (event: ClickEvent): void => {
+        if (!event.cellIsBlank) toggleExpanded(key)
+      },
+    [toggleExpanded],
+  )
 
   // For the fallback rows: which tool card each tool_use/tool_result would
   // have become, and whether this process can build it.
@@ -169,9 +196,39 @@ export function AttachedTranscript({
       }
       const rows = normalizeMessages([unit.message as never])
       for (const row of rows) {
+        const rowBlock = (
+          row as {
+            message: {
+              content: Array<{
+                type: string
+                id?: string
+                tool_use_id?: string
+                text?: string
+              }>
+            }
+          }
+        ).message.content[0]
+        // Mirrors Messages.expandKey: a tool card and the result riding
+        // under it share the tool_use_id so they expand together; every
+        // other row keys on its uuid.
+        const rowKey =
+          (rowBlock?.type === 'tool_use'
+            ? rowBlock.id
+            : rowBlock?.type === 'tool_result'
+              ? rowBlock.tool_use_id
+              : undefined) ?? (row as { uuid: string }).uuid
+        // The classic pane's isItemClickable set, as far as these rows
+        // reach: injected-context rows while the setting shows them, and
+        // thinking rows with a body.
+        const clickable =
+          showInjectedContext &&
+          (rowBlock?.type === 'text'
+            ? isInjectedContextText(row as never)
+            : rowBlock?.type === 'reasoning' && Boolean(rowBlock.text))
         body.push(
           <Box
             key={`${(row as { uuid: string }).uuid}:${(row as { message?: { content?: unknown[] } }).message?.content?.length ?? 0}`}
+            onClick={clickable ? rowClickHandler(rowKey) : undefined}
           >
             <Message
               message={row}
@@ -193,10 +250,10 @@ export function AttachedTranscript({
               }
               tools={tools}
               commands={[]}
-              // The viewer's ctrl+O is the classic's expansion switch for
-              // this pane: the same prop that reveals reminder bodies
-              // reveals thinking bodies and verbose tool rows.
-              verbose={showInjectedContext}
+              // Per-row expansion, like the classic's expandedKeys fold:
+              // rows start collapsed and a click reveals this row's body —
+              // the default pane stays byte-identical to the classic.
+              verbose={expandedKeys.has(rowKey)}
               inProgressToolUseIDs={inProgress}
               progressMessagesForMessage={[]}
               shouldAnimate={false}
@@ -241,19 +298,27 @@ export function AttachedTranscript({
     // attachment
     if (unit.injected) {
       // The classic collapsed row: `▸ System reminder · type (n lines)`,
-      // expanded under showInjectedContext. The reminder body rides the
-      // wire for exactly this; without one (host older than the field,
-      // or a type that injects no reminder) the type name alone still
-      // matches what the classic pane would say for an empty body.
+      // expanded on click like the classic's reminder disclosures. The
+      // reminder body rides the wire for exactly this; without one (host
+      // older than the field, or a type that injects no reminder) the type
+      // name alone still matches what the classic pane would say for an
+      // empty body. These rows are always clickable while shown — they
+      // carry a reminder, the classic's own click gate for attachments.
       const reminder = unit.item.attachment?.reminder ?? ''
+      const attKey = `att:${unit.item.id}`
       body.push(
-        <InjectedContextMessage
+        <Box
           key={unit.item.id}
-          addMargin={!prevRenderedInjected}
-          label={`System reminder · ${unit.item.attachment?.type ?? 'context'}`}
-          content={reminder}
-          verbose={showInjectedContext}
-        />,
+          flexDirection="column"
+          onClick={rowClickHandler(attKey)}
+        >
+          <InjectedContextMessage
+            addMargin={!prevRenderedInjected}
+            label={`System reminder · ${unit.item.attachment?.type ?? 'context'}`}
+            content={reminder}
+            verbose={expandedKeys.has(attKey)}
+          />
+        </Box>,
       )
       prevRenderedInjected = true
       continue
@@ -282,7 +347,11 @@ export function AttachedTranscript({
     const row = normalizeMessages([msg as never])[0]
     if (!row) return null
     return (
-      <Box key="session-context-row">
+      <Box
+        key="session-context-row"
+        flexDirection="column"
+        onClick={rowClickHandler(`ctx:${USER_CONTEXT_ROW_UUID}`)}
+      >
         <Message
           message={row as never}
           lookups={bridge.lookups}
@@ -293,7 +362,9 @@ export function AttachedTranscript({
           addMargin
           tools={tools}
           commands={[]}
-          verbose={false}
+          // Collapsed until clicked — the classic's own behaviour for the
+          // rebuilt context row.
+          verbose={expandedKeys.has(`ctx:${USER_CONTEXT_ROW_UUID}`)}
           inProgressToolUseIDs={new Set<string>()}
           progressMessagesForMessage={[]}
           shouldAnimate={false}
@@ -308,8 +379,10 @@ export function AttachedTranscript({
     showSessionContextRow,
     showInjectedContext,
     userContextText,
+    expandedKeys,
     bridge.lookups,
     tools,
+    rowClickHandler,
   ])
 
   // The classic pane renders its rows inside the virtual message list,

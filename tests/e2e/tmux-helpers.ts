@@ -115,8 +115,7 @@ export class TmuxSession {
     // alone — hosted/classic is a REPL-path fork, not a subcommand flag.
     // E2E_MODE=hosted flips the default for every file unchanged — the
     // dual-mode matrix runs the same scenarios against the hosted viewer.
-    this._hostedTui =
-      options.hostedTui ?? process.env.E2E_MODE === 'hosted'
+    this._hostedTui = options.hostedTui ?? process.env.E2E_MODE === 'hosted'
     const extraArgs = options.additionalArgs ?? []
     this._additionalArgs =
       !this._hostedTui && (extraArgs[0]?.startsWith('-') ?? true)

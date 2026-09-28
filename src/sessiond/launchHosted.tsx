@@ -18,6 +18,8 @@
  */
 import React from 'react'
 import { App } from '../components/App.js'
+import { AlternateScreen } from '../ink/components/AlternateScreen.js'
+import { isMouseTrackingEnabled } from '../utils/fullscreen.js'
 import type { StatsStore } from '../context/stats.js'
 import type { Root } from '../ink.js'
 import { AttachedSession } from '../screens/AttachedSession.js'
@@ -68,15 +70,21 @@ export async function launchHosted(
     })
     await renderAndRun(
       root,
+      // The viewer must live in the alternate screen like the REPL it
+      // replaces: Ink's click dispatch is gated on alt-screen being active
+      // (fixed viewport, 1:1 cell mapping), so without this wrapper the
+      // transcript's click-to-expand disclosures silently go nowhere.
       <App {...appProps}>
-        <AttachedSession
-          pid={process.pid}
-          sessionId={entry.hosted.channel.sessionId}
-          initialPrompt={launch.initialPrompt}
-          // The pane this process shows at boot replaces the REPL's:
-          // the classic banner, not the remote attach's one-liner.
-          showWelcomeBanner
-        />
+        <AlternateScreen mouseTracking={isMouseTrackingEnabled()}>
+          <AttachedSession
+            pid={process.pid}
+            sessionId={entry.hosted.channel.sessionId}
+            initialPrompt={launch.initialPrompt}
+            // The pane this process shows at boot replaces the REPL's:
+            // the classic banner, not the remote attach's one-liner.
+            showWelcomeBanner
+          />
+        </AlternateScreen>
       </App>,
     )
   } catch (error) {
