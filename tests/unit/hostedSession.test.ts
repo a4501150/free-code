@@ -18,6 +18,9 @@ import {
 } from '../../src/bootstrap/state.js'
 import type { WireEventEnvelope } from '../../src/session/wire.js'
 import type { SessionChannel } from '../../src/server/channel.js'
+import { enqueue } from '../../src/utils/messageQueueManager.js'
+import type { UUID } from 'crypto'
+import { encodeSuccessSSE } from '../helpers/sse-encoder'
 
 let configDir: string
 let previousConfigDir: string | undefined
@@ -130,6 +133,85 @@ async function waitFor(cond: () => boolean, ms = 5000): Promise<boolean> {
     await new Promise(resolve => setTimeout(resolve, 20))
   }
   return cond()
+}
+
+/**
+ * Persistent frame reader: a background pump buffers every frame, so waits
+ * never race an orphaned read against the shared stream reader.
+ */
+function frameRecorder(response: Response): {
+  count: () => number
+  read: () => WireEventEnvelope[]
+  untilQuiet: (ms?: number) => Promise<WireEventEnvelope[]>
+} {
+  const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader()
+  const frames: WireEventEnvelope[] = []
+  let consumed = 0
+  let notify: (() => void) | null = null
+  void (async () => {
+    let buffer = ''
+    for (;;) {
+      const next = await reader.read()
+      if (next.done) break
+      buffer += next.value
+      let boundary: number
+      while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+        const frame = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        const dataLine = frame.split('\n').find(l => l.startsWith('data: '))
+        if (dataLine) frames.push(JSON.parse(dataLine.slice(6)))
+        notify?.()
+      }
+    }
+    notify?.()
+  })()
+  const waitForMore = async (ms: number): Promise<void> =>
+    new Promise<void>(resolve => {
+      const timer = setTimeout(() => {
+        notify = null
+        resolve()
+      }, ms)
+      notify = () => {
+        clearTimeout(timer)
+        notify = null
+        resolve()
+      }
+    })
+  return {
+    count: () => frames.length,
+    read: () => frames.slice(),
+    // Returns every frame not yet consumed by a previous call, so frames
+    // that land while the caller awaits a POST are never missed.
+    untilQuiet: async (ms = 150) => {
+      const start = consumed
+      let cursor = frames.length
+      for (let round = 0; round < 4; round++) {
+        await waitForMore(ms)
+        if (frames.length === cursor) break
+        cursor = frames.length
+      }
+      consumed = frames.length
+      return frames.slice(start)
+    },
+  }
+}
+
+async function postRpc(
+  url: string,
+  token: string,
+  sessionId: string,
+  method: string,
+  params?: Record<string, unknown>,
+): Promise<{ status: number; body: any }> {
+  const res = await fetch(`${url}/v1/sessions/${sessionId}/rpc`, {
+    method: 'POST',
+    headers: {
+      [SURFACE_TOKEN_HEADER]: token,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ kind: 'rpc', method, ...(params && { params }) }),
+  })
+  return { status: res.status, body: await res.json() }
 }
 
 describe('hosted session', () => {
@@ -246,4 +328,253 @@ describe('hosted session', () => {
     // The turn finished without starting a provider loop.
     expect(a.queryGuard.isActive).toBe(false)
   })
+
+  test('queue rpc edits and removes the session’s own queue over the wire', async () => {
+    const a = makeSession(join(configDir, 'a'))
+    const token = 't'
+    const mounted = await mount([a.channel], token)
+    const headers = { [SURFACE_TOKEN_HEADER]: token }
+    const stream = await fetch(
+      `${mounted.url}/v1/sessions/${a.sessionId}/events`,
+      { headers },
+    )
+    const recorder = frameRecorder(stream)
+    const opened = await recorder.untilQuiet()
+    expect(opened[0]?.event.kind).toBe('snapshot')
+
+    // Hold the guard as if a turn were running: the pump stands down and the
+    // queued items stay put — queue rpc must still work while busy.
+    const generation = a.queryGuard.tryStart()
+    expect(generation).not.toBeNull()
+    const id1 = randomUUID()
+    const id2 = randomUUID()
+    runInSessionScope(a.scope, () => {
+      enqueue({ mode: 'prompt', value: 'first text', uuid: id1 as UUID })
+      enqueue({ mode: 'prompt', value: 'second text', uuid: id2 as UUID })
+    })
+    const queueFrames = await recorder.untilQuiet()
+    const lastQueue = [...queueFrames]
+      .reverse()
+      .find(f => f.event.kind === 'queue')
+    expect(lastQueue).toBeDefined()
+    const texts = (
+      lastQueue!.event as { commands: { text: string }[] }
+    ).commands.map(c => c.text)
+    expect(texts).toEqual(['first text', 'second text'])
+
+    // A turn in flight blocks the transcript-rewriting rpcs...
+    const busyCompact = await postRpc(
+      mounted.url,
+      token,
+      a.sessionId,
+      'compact',
+    )
+    expect(busyCompact.status).toBe(500)
+    expect(busyCompact.body.error.code).toBe('rpc_failed')
+
+    const edited = await postRpc(
+      mounted.url,
+      token,
+      a.sessionId,
+      'queue_edit',
+      { commandId: id1, text: 'fixed text' },
+    )
+    expect(edited.body).toEqual({ ok: true, result: { edited: true } })
+    const afterEdit = await recorder.untilQuiet()
+    const editQueue = [...afterEdit]
+      .reverse()
+      .find(f => f.event.kind === 'queue')
+    expect(editQueue).toBeDefined()
+    expect(
+      (editQueue!.event as { commands: { text: string }[] }).commands.map(
+        c => c.text,
+      ),
+    ).toEqual(['fixed text', 'second text'])
+
+    const removed = await postRpc(
+      mounted.url,
+      token,
+      a.sessionId,
+      'queue_remove',
+      { commandId: id1 },
+    )
+    expect(removed.body).toEqual({ ok: true, result: { removed: true } })
+    const afterRemove = await recorder.untilQuiet()
+    const removeQueue = [...afterRemove]
+      .reverse()
+      .find(f => f.event.kind === 'queue')
+    expect(removeQueue).toBeDefined()
+    expect(
+      (removeQueue!.event as { commands: { text: string }[] }).commands.map(
+        c => c.text,
+      ),
+    ).toEqual(['second text'])
+
+    // Unknown ids answer false; unknown methods answer rpc_failed.
+    const gone = await postRpc(
+      mounted.url,
+      token,
+      a.sessionId,
+      'queue_remove',
+      {
+        commandId: randomUUID(),
+      },
+    )
+    expect(gone.body).toEqual({ ok: true, result: { removed: false } })
+    const unsupported = await postRpc(mounted.url, token, a.sessionId, 'resume')
+    expect(unsupported.status).toBe(500)
+    expect(unsupported.body.error.code).toBe('rpc_failed')
+
+    a.queryGuard.end(generation!)
+    mounted.close()
+  })
+
+  test('clear empties the transcript and rotates the session identity', async () => {
+    const a = makeSession(join(configDir, 'a'))
+    const oldId = a.sessionId
+    const token = 't'
+    const mounted = await mount([a.channel], token)
+    const headers = { [SURFACE_TOKEN_HEADER]: token }
+
+    const stream = await fetch(`${mounted.url}/v1/sessions/${oldId}/events`, {
+      headers,
+    })
+    const recorder = frameRecorder(stream)
+    const opened = await recorder.untilQuiet()
+    const snapshot = opened[0]!
+    expect(snapshot.event.kind).toBe('snapshot')
+
+    a.submit(`/nonexistent-${randomUUID()}`)
+    expect(
+      await waitFor(
+        () => a.core.getMessages().length > 0 && !a.queryGuard.isActive,
+      ),
+    ).toBe(true)
+
+    const cleared = await postRpc(mounted.url, token, oldId, 'clear')
+    expect(cleared.status).toBe(200)
+    const newId = cleared.body.result.sessionId as string
+    expect(newId).toBeTruthy()
+    expect(newId).not.toBe(oldId)
+    expect(a.channel.sessionId).toBe(newId)
+    expect(a.core.getMessages().length).toBe(0)
+
+    // The stream carries the identity move (session_changed with a bumped
+    // epoch) so a client holding the old id resynchronizes.
+    const frames = await recorder.untilQuiet()
+    const changed = frames.find(f => f.event.kind === 'session_changed')
+    expect(changed).toBeDefined()
+    expect((changed!.event as { sessionId: string }).sessionId).toBe(newId)
+    expect(changed!.seq).toBeGreaterThan(snapshot.seq)
+
+    // The row still resolves — now under the new id.
+    const meta = await (
+      await fetch(`${mounted.url}/v1/sessions/${newId}/meta`, { headers })
+    ).json()
+    expect(meta.sessionId).toBe(newId)
+    mounted.close()
+  })
+
+  test('compact summarizes through the provider and replaces the transcript', async () => {
+    // Provider boundary: a fetch stub answering the chat-completions /
+    // messages endpoint with an encoded summary stream. Which wire shape
+    // the registry picks follows the host's provider config, so the stub
+    // speaks both. The compact pipeline (command body,
+    // compactConversation, forked-agent query) runs for real above it.
+    const previousFetch = globalThis.fetch
+    const messageRequests: Array<{ url: string; body: string }> = []
+    const summaryText = 'Summary: nothing happened.'
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : String(input?.url ?? input)
+      if (url.includes('count_tokens')) {
+        return new Response(JSON.stringify({ input_tokens: 1200 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      const body =
+        typeof init?.body === 'string'
+          ? init.body
+          : JSON.stringify(init?.body ?? {})
+      if (url.includes('/v1/messages')) {
+        messageRequests.push({ url, body })
+        return new Response(
+          encodeSuccessSSE({
+            content: [{ type: 'text', text: summaryText }],
+            stop_reason: 'end_turn',
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' },
+          },
+        )
+      }
+      if (url.includes('/chat/completions')) {
+        messageRequests.push({ url, body })
+        const chunk = (delta: unknown, finish: unknown) =>
+          `data: ${JSON.stringify({
+            id: 'chatcmpl-test-1',
+            object: 'chat.completion.chunk',
+            created: 1,
+            model: 'mock',
+            choices: [{ index: 0, delta, finish_reason: finish }],
+          })}\n\n`
+        const sse =
+          chunk({ role: 'assistant' }, null) +
+          chunk({ content: summaryText }, null) +
+          chunk({}, 'stop') +
+          'data: [DONE]\n\n'
+        return new Response(sse, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        })
+      }
+      return previousFetch(input as never, init)
+    }) as typeof globalThis.fetch
+    try {
+      const a = makeSession(join(configDir, 'a'))
+      const marker = `/nonexistent-${randomUUID()}`
+      a.submit(marker)
+      expect(
+        await waitFor(
+          () => a.core.getMessages().length > 0 && !a.queryGuard.isActive,
+        ),
+      ).toBe(true)
+
+      const replacedReasons: string[] = []
+      a.core.subscribe(e => {
+        if (e.type === 'transcript_replaced') replacedReasons.push(e.reason)
+      })
+
+      // Direct rpc (same handler the wire rides) to keep the test on the
+      // provider boundary, not the surface plumbing covered above.
+      const result = await a.runtime.rpc!('compact', {
+        customInstructions: 'summarize briefly',
+      })
+      expect(result).toEqual({ compacted: true })
+      // The summary request really left the process: one provider call,
+      // streaming, carrying the custom instruction. (Which endpoint —
+      // anthropic messages or openai chat completions — follows the
+      // host's provider config; the stub answers both shapes.)
+      expect(messageRequests.length).toBe(1)
+      expect(messageRequests[0]!.body).toContain('"stream":true')
+      expect(messageRequests[0]!.body).toContain('summarize briefly')
+      expect(replacedReasons).toContain('compact')
+      const transcriptText = JSON.stringify(a.core.getMessages())
+      expect(transcriptText).not.toContain(marker)
+      expect(transcriptText).toContain('Summary: nothing happened.')
+      expect(a.queryGuard.isActive).toBe(false)
+      expect(a.core.isCompacting).toBe(false)
+    } finally {
+      globalThis.fetch = previousFetch
+    }
+  }, 30_000)
 })

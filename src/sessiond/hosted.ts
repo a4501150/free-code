@@ -70,6 +70,7 @@ import { getStreamActivity } from '../utils/streamActivity.js'
 import { getMainTaskListId, listTasks, onTasksUpdated } from '../utils/tasks.js'
 import { getDefaultMainLoopModel } from '../utils/model/modelResolution.js'
 import { buildToolUseContext } from './toolUseContext.js'
+import { createHostedRpc } from './hostedRpc.js'
 import type { QueuedCommand } from '../types/textInputTypes.js'
 import type { Command } from '../commands.js'
 import type { Tool } from '../Tool.js'
@@ -440,6 +441,15 @@ export function createHostedSession(
       })
       channel.publishMeta()
     },
+
+    rpc: createHostedRpc({
+      scope,
+      core,
+      channel,
+      queryGuard,
+      getToolUseContext,
+      resolveModel: () => resolveModel() ?? 'claude-sonnet-4-20250514',
+    }),
   }
   channel.registerRuntime(runtime)
 

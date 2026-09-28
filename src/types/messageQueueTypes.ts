@@ -5,7 +5,12 @@
  * and src/utils/sessionStorage.ts.
  */
 
-export type QueueOperation = 'enqueue' | 'dequeue' | 'remove' | 'popAll'
+export type QueueOperation =
+  | 'enqueue'
+  | 'dequeue'
+  | 'remove'
+  | 'popAll'
+  | 'edit'
 
 export type QueueOperationMessage = {
   type: 'queue-operation'
