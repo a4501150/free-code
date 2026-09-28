@@ -338,12 +338,21 @@ export const getProjectDir = memoize((projectDir: string): string => {
   return join(getProjectsDir(), sanitizePath(projectDir))
 })
 
-let project: Project | null = null
+// One Project per session id, resolved through the session scope. A single
+// process may host several sessions at once (sessiond), and every piece of
+// Project state — the materialized sessionFile pointer, the pending-entry
+// buffer, the cached title/tag/mode fields — is per-session, so the map key
+// is the scope's getSessionId(). A one-session process behaves exactly as
+// the old module singleton did: all calls resolve the same entry.
+const projects = new Map<string, Project>()
 let cleanupRegistered = false
 
 function getProject(): Project {
+  const key = getSessionId()
+  let project = projects.get(key)
   if (!project) {
     project = new Project()
+    projects.set(key, project)
 
     // Register flush as a cleanup handler (only once)
     if (!cleanupRegistered) {
@@ -354,11 +363,15 @@ function getProject(): Project {
         // fields — if enough messages are appended after a /rename, the
         // custom-title entry gets pushed outside the window and --resume
         // shows the auto-generated firstPrompt instead.
-        await project?.flush()
-        try {
-          project?.reAppendSessionMetadata()
-        } catch {
-          // Best-effort — don't let metadata re-append crash the cleanup
+        for (const p of projects.values()) {
+          await p.flush()
+        }
+        for (const p of projects.values()) {
+          try {
+            p.reAppendSessionMetadata()
+          } catch {
+            // Best-effort — don't let metadata re-append crash the cleanup
+          }
         }
       })
       cleanupRegistered = true

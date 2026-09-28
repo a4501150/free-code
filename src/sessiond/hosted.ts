@@ -57,6 +57,7 @@ import {
 } from '../utils/messageQueueManager.js'
 import { processQueueIfReady } from '../utils/queueProcessor.js'
 import { handlePromptSubmit } from '../utils/handlePromptSubmit.js'
+import { recordTranscript } from '../utils/sessionStorage.js'
 import { hasPermissionsToUseTool } from '../utils/permissions/permissions.js'
 import { EXTERNAL_PERMISSION_MODES } from '../utils/permissions/PermissionMode.js'
 import { transitionPermissionMode } from '../utils/permissions/permissionSetup.js'
@@ -431,6 +432,44 @@ export function createHostedSession(
   }
   channel.registerRuntime(runtime)
 
+  // Transcript persistence, the same incremental discipline as the TUI's
+  // useLogMessages: new tail + parent hint while the chain head is stable,
+  // full array (recordTranscript dedups against what is on disk) after a
+  // compaction or same-head shrink. Serialized so two writes never race a
+  // half-committed chain, and a failure leaves the watermark untouched so
+  // the next write retries the same slice.
+  let lastRecordedLength = 0
+  let lastRecordedParent: UUID | undefined
+  let firstRecordedUuid: UUID | undefined
+  let persistence: Promise<void> = Promise.resolve()
+
+  function persistTranscript(): void {
+    persistence = persistence
+      .then(async () => {
+        const messages = core.getMessages() as Message[]
+        const first = messages[0]?.uuid as UUID | undefined
+        const isIncremental =
+          first !== undefined &&
+          firstRecordedUuid === first &&
+          lastRecordedLength <= messages.length
+        const startIndex = isIncremental ? lastRecordedLength : 0
+        if (startIndex === messages.length) return
+        const slice = startIndex === 0 ? messages : messages.slice(startIndex)
+        const lastRecorded = await runInSessionScope(scope, () =>
+          recordTranscript(
+            slice,
+            isIncremental ? lastRecordedParent : undefined,
+          ),
+        )
+        if (lastRecorded) lastRecordedParent = lastRecorded
+        firstRecordedUuid = first
+        lastRecordedLength = messages.length
+      })
+      .catch(err => {
+        logError(err)
+      })
+  }
+
   // Core events drive the wire: every transcript write republishes the
   // diff, every lifecycle beat refreshes meta, and turn end re-arms the
   // queue drain.
@@ -441,6 +480,7 @@ export function createHostedSession(
       case 'transcript_progress_replaced':
       case 'transcript_removed':
         channel.publishTranscript()
+        persistTranscript()
         return
       case 'turn_finished':
         channel.publishMeta()
