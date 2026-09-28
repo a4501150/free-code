@@ -15,13 +15,12 @@ import {
   connectSurfaceClient,
   type SurfaceClient,
 } from '../webui/gateway/surfaceClient.js'
-import type {
-  WireEvent,
-  WireItem,
-  WireRequest,
-  WireSessionMeta,
-  WireTranscriptPatch,
-} from '../session/wire.js'
+import type { WireItem, WireRequest, WireSessionMeta } from '../session/wire.js'
+import {
+  createViewStore,
+  type SessionView,
+  type ViewStore,
+} from '../session/viewStore.js'
 import { PermissionDialog } from '../components/permissions/PermissionDialog.js'
 import { Select } from '../components/CustomSelect/index.js'
 
@@ -32,157 +31,26 @@ type ConnectionState =
   | { status: 'error'; message: string }
 
 export type AttachedSessionProps = {
+  /** The process whose attach descriptor carries the port and token. */
   pid: number
+  /**
+   * Attach a session other than the descriptor's primary (a hosted session
+   * on a multi-session host). Also shown in the header.
+   */
+  sessionId?: string
+  /** Reach the surface at this origin instead of the descriptor's port. */
+  url?: string
+  /** Header label; defaults to the PID. */
+  label?: string
   onExit?: () => void
 }
 
-// ---------------------------------------------------------------------------
-// Joined-session view state
-//
-// Self-contained on purpose: the browser store (`src/webui/client/store.ts`)
-// is ported on its own schedule and this screen must not race its edits.
-// ---------------------------------------------------------------------------
+// The transcript projection is the shared view store
+// (`src/session/viewStore.ts`) — the same reducer the browser client runs,
+// so one projection serves both UIs. `useSyncExternalStore` adapts it to
+// this tree; transcript churn re-renders only what subscribes.
 
-type SessionView = {
-  meta: WireSessionMeta | null
-  items: Map<string, WireItem>
-  order: string[]
-  requests: WireRequest[]
-  lastSeq: number
-}
-
-function emptyView(): SessionView {
-  return {
-    meta: null,
-    items: new Map(),
-    order: [],
-    requests: [],
-    lastSeq: 0,
-  }
-}
-
-/**
- * Applies one wire event.
- *
- * Every operation is idempotent by sequence, item id and revision, so a replay
- * after a reconnect cannot duplicate or reorder anything. The snapshot is the
- * exception to the seq gate: it carries the journal watermark rather than a
- * new seq, and it always rebuilds the view wholesale.
- */
-function applyEvent(
-  view: SessionView,
-  seq: number,
-  event: WireEvent,
-): SessionView {
-  if (seq <= view.lastSeq && event.kind !== 'snapshot') return view
-  const next: SessionView = { ...view, lastSeq: Math.max(view.lastSeq, seq) }
-
-  switch (event.kind) {
-    case 'snapshot': {
-      next.meta = event.meta
-      next.items = new Map(event.transcript.items.map(item => [item.id, item]))
-      next.order = [...event.transcript.order]
-      next.requests = event.requests
-      next.lastSeq = seq
-      return next
-    }
-
-    case 'transcript': {
-      return applyPatch(view, next, event.patch)
-    }
-
-    case 'meta':
-      next.meta = event.meta
-      return next
-
-    case 'request_opened':
-      next.requests = [
-        ...view.requests.filter(r => r.requestId !== event.request.requestId),
-        event.request,
-      ]
-      return next
-
-    case 'request_closed':
-      next.requests = view.requests.filter(r => r.requestId !== event.requestId)
-      return next
-
-    case 'session_changed':
-      // The process moved to another session. Everything below is stale; the
-      // replace patch the surface publishes after this event rebuilds the
-      // transcript under the new identity.
-      next.items = new Map()
-      next.order = []
-      next.requests = []
-      if (next.meta) {
-        next.meta = {
-          ...next.meta,
-          sessionId: event.sessionId,
-          sessionEpoch: event.sessionEpoch,
-        }
-      }
-      return next
-
-    case 'todos':
-    case 'queue':
-    case 'tasks':
-    case 'catalog':
-      // This screen does not render them yet; the seq bump above still counts.
-      return next
-
-    case 'resync_required':
-      // The server follows it with a fresh snapshot on this same stream.
-      return next
-
-    default:
-      // Additive kinds within a release are forward-safe: ignore, never fail.
-      return next
-  }
-}
-
-function applyPatch(
-  view: SessionView,
-  next: SessionView,
-  patch: WireTranscriptPatch,
-): SessionView {
-  if (patch.type === 'replace') {
-    next.items = new Map(patch.snapshot.items.map(i => [i.id, i]))
-    next.order = [...patch.snapshot.order]
-    return next
-  }
-  const items = new Map(view.items)
-  for (const id of patch.remove) items.delete(id)
-  for (const item of patch.upsert) items.set(item.id, item)
-  next.items = items
-  if (patch.order) next.order = [...patch.order]
-  else if (patch.orderAppend) next.order = [...view.order, ...patch.orderAppend]
-  return next
-}
-
-/** A tiny external store, so transcript churn does not re-render the shell. */
-function createWireStore() {
-  let view = emptyView()
-  const listeners = new Set<() => void>()
-
-  return {
-    subscribe(listener: () => void): () => void {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-    snapshot(): SessionView {
-      return view
-    },
-    apply(seq: number, event: WireEvent): void {
-      const next = applyEvent(view, seq, event)
-      if (next === view) return
-      view = next
-      for (const listener of listeners) listener()
-    },
-  }
-}
-
-type WireStore = ReturnType<typeof createWireStore>
-
-function useWireStore(store: WireStore): SessionView {
+function useWireStore(store: ViewStore): SessionView {
   return useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot)
 }
 
@@ -192,9 +60,12 @@ function useWireStore(store: WireStore): SessionView {
 
 export function AttachedSession({
   pid,
+  sessionId,
+  url,
+  label,
   onExit,
 }: AttachedSessionProps): React.ReactNode {
-  const store = useMemo(() => createWireStore(), [])
+  const store = useMemo(() => createViewStore(), [])
   const view = useWireStore(store)
   const [connection, setConnection] = useState<ConnectionState>({
     status: 'connecting',
@@ -232,17 +103,21 @@ export function AttachedSession({
         // connectSurfaceClient reads and verifies the descriptor and the
         // surface delivers a full snapshot as the stream's first event, so
         // there is nothing to send after the handshake resolves.
-        client = await connectSurfaceClient(pid, {
-          onEvent(seq, event) {
-            store.apply(seq, event)
+        client = await connectSurfaceClient(
+          pid,
+          {
+            onEvent(seq, event) {
+              store.apply(seq, event)
+            },
+            onClose(reason) {
+              if (!cancelled) {
+                clientRef.current = null
+                setConnection({ status: 'disconnected', reason })
+              }
+            },
           },
-          onClose(reason) {
-            if (!cancelled) {
-              clientRef.current = null
-              setConnection({ status: 'disconnected', reason })
-            }
-          },
-        })
+          { sessionId, url },
+        )
 
         if (cancelled) {
           client.close()
@@ -268,7 +143,7 @@ export function AttachedSession({
       client?.close()
       clientRef.current = null
     }
-  }, [pid, store])
+  }, [pid, sessionId, url, store])
 
   const handleSubmit = useCallback(
     async (text: string) => {
@@ -367,7 +242,7 @@ export function AttachedSession({
         {/* Session header */}
         <Box paddingX={2} paddingY={1}>
           <Text dimColor>
-            ── Attached to PID {pid}
+            ── Attached to {label ?? `PID ${pid}`}
             {view.meta ? ` · ${view.meta.cwd}` : ''} ──
           </Text>
         </Box>

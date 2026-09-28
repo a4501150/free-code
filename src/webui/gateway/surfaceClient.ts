@@ -52,15 +52,29 @@ export async function connectSurfaceClient(
   pid: number,
   handlers: SurfaceClientEvents,
   /** Resume a known stream position instead of taking a fresh snapshot. */
-  options?: { lastEventId?: number },
+  options?: {
+    lastEventId?: number
+    /**
+     * Attach a session other than the descriptor's primary by id. Multi-session
+     * hosts (sessiond) serve every hosted id on one port and token; the
+     * descriptor's `sessionIds` is how a caller learns the candidates.
+     */
+    sessionId?: string
+    /**
+     * Reach the surface at this origin instead of the descriptor's loopback
+     * port (a port-forward). The token still comes from the descriptor; a
+     * caller passing `url` trusts the channel it opens over the loopback one.
+     */
+    url?: string
+  },
 ): Promise<SurfaceClient> {
   const descriptor = readAttachDescriptor(pid)
   if (!descriptor.ok) {
     throw new Error(`surface descriptor for pid ${pid}: ${descriptor.reason}`)
   }
   const { port, token, processNonce, sessionId } = descriptor.descriptor
-  const base = `http://127.0.0.1:${port}`
-  let currentSessionId = sessionId
+  const base = options?.url ?? `http://127.0.0.1:${port}`
+  let currentSessionId = options?.sessionId ?? sessionId
 
   const controller = new AbortController()
   let closed = false
@@ -98,10 +112,13 @@ export async function connectSurfaceClient(
 
   // Handshake: the meta route proves the surface is live and carries the
   // identity the caller compares against the session list.
-  const meta = (await requestJson(`${base}/v1/sessions/${sessionId}/meta`, {
-    method: 'GET',
-    headers: headers(),
-  })) as WireSessionMeta
+  const meta = (await requestJson(
+    `${base}/v1/sessions/${currentSessionId}/meta`,
+    {
+      method: 'GET',
+      headers: headers(),
+    },
+  )) as WireSessionMeta
 
   // The event stream. Frames are `id: <seq>\ndata: <json>\n\n`; anything
   // unparseable is skipped, same posture as the v1 ndjson reader.
