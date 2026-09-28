@@ -74,16 +74,28 @@ function providerFor(options: WebStartOptions): TunnelProvider | null {
 
 /**
  * What each hosted session starts with, from the operator's `web start`
- * flags. `allowedTools`/`disallowedTools`/`settings`/`settingSources` ride
- * the schema for CLI compatibility; the hosted-core permission chain reads
- * the on-disk settings for the session's own directory, so only the mode
- * needs a channel today.
+ * flags. The mode and the tool allow/deny lists transfer into the
+ * per-session permission context the registry assembles; `settings` and
+ * `settingSources` have no hosted channel yet.
  */
 function sessionDefaultsFor(
   options: WebStartOptions,
 ): SessionDefaults | undefined {
-  if (!options.permissionMode) return undefined
-  return { permissionMode: options.permissionMode }
+  if (
+    !options.permissionMode &&
+    !options.allowedTools &&
+    !options.disallowedTools
+  )
+    return undefined
+  return {
+    ...(options.permissionMode
+      ? { permissionMode: options.permissionMode }
+      : {}),
+    ...(options.allowedTools ? { allowedTools: options.allowedTools } : {}),
+    ...(options.disallowedTools
+      ? { disallowedTools: options.disallowedTools }
+      : {}),
+  }
 }
 
 /**

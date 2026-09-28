@@ -23,6 +23,7 @@
 
 import { randomUUID, type UUID } from 'crypto'
 import type { SessionId } from '../types/ids.js'
+import type { ToolPermissionContext } from '../Tool.js'
 import {
   newSessionState,
   runInSessionScope,
@@ -43,6 +44,7 @@ import type {
   WirePermissionMode,
   WireSessionActivity,
   WireSessionState,
+  WireTodo,
 } from '../session/wire.js'
 import { createSessionChannel, type SessionChannel } from '../server/channel.js'
 import { buildSubmitValue, type SessionRuntime } from '../server/runtime.js'
@@ -65,6 +67,7 @@ import { wrapCanUseToolWithWebUI } from '../server/headlessBridge.js'
 import { logError } from '../utils/log.js'
 import { provisionContentReplacementState } from '../utils/toolResultStorage.js'
 import { getStreamActivity } from '../utils/streamActivity.js'
+import { getMainTaskListId, listTasks, onTasksUpdated } from '../utils/tasks.js'
 import { getDefaultMainLoopModel } from '../utils/model/modelResolution.js'
 import { buildToolUseContext } from './toolUseContext.js'
 import type { QueuedCommand } from '../types/textInputTypes.js'
@@ -84,6 +87,8 @@ export type HostedSessionOptions = {
   tools?: Tool[]
   /** null / undefined: the account/config default. */
   model?: string | null
+  /** Seeded whole into the store when present (rules + mode together). */
+  toolPermissionContext?: ToolPermissionContext
   permissionMode?: WirePermissionMode
   customSystemPrompt?: string
   appendSystemPrompt?: string
@@ -123,7 +128,13 @@ export function createHostedSession(
     projectRoot: options.cwd,
   })
   const store = createStore<AppState>(getDefaultAppState())
-  if (options.permissionMode) {
+  if (options.toolPermissionContext) {
+    const context = options.toolPermissionContext
+    store.setState(prev => ({
+      ...prev,
+      toolPermissionContext: context,
+    }))
+  } else if (options.permissionMode) {
     const mode = options.permissionMode
     store.setState(prev => ({
       ...prev,
@@ -371,7 +382,7 @@ export function createHostedSession(
         ? (mode as WirePermissionMode)
         : undefined
     },
-    getTodos: () => [],
+    getTodos: () => todosCache,
     getTasks: () => tasksToWire(store.getState().tasks ?? {}),
     getCatalog: () => buildWireCatalog(options.commands ?? []),
     getPendingCommands: () =>
@@ -431,6 +442,39 @@ export function createHostedSession(
     },
   }
   channel.registerRuntime(runtime)
+
+  // Todos are the file-backed task store the TUI reads, keyed by the
+  // session id (getMainTaskListId's scope-resolved fallback). The task
+  // tools inside a turn fire onTasksUpdated; a refresh re-reads this
+  // session's list and republishes when the mapped view actually changed.
+  let todosCache: WireTodo[] = []
+  let todosFetchSeq = 0
+  function refreshTodos(): void {
+    const listId = runInSessionScope(scope, () => getMainTaskListId())
+    const seq = ++todosFetchSeq
+    void listTasks(listId)
+      .then(tasks => {
+        if (seq !== todosFetchSeq) return
+        const next = tasks
+          .slice()
+          .sort((a, b) =>
+            a.id.localeCompare(b.id, undefined, { numeric: true }),
+          )
+          .map(t => ({
+            content: t.subject,
+            status: t.status,
+            activeForm: t.activeForm,
+          }))
+        if (JSON.stringify(next) === JSON.stringify(todosCache)) return
+        todosCache = next
+        channel.publishTodos()
+      })
+      .catch(err => {
+        logError(err)
+      })
+  }
+  const unsubscribeTasks = onTasksUpdated(() => refreshTodos())
+  refreshTodos()
 
   // Transcript persistence, the same incremental discipline as the TUI's
   // useLogMessages: new tail + parent hint while the chain head is stable,
@@ -556,6 +600,7 @@ export function createHostedSession(
     runInSessionScope(scope, () => broker.cancelAll())
     unsubscribeQueue()
     unsubscribeCore()
+    unsubscribeTasks()
     channel.stop()
   }
 

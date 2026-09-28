@@ -30,8 +30,9 @@ import { getProjectDir } from '../utils/sessionStorage.js'
 import { canonicalizePath } from '../utils/sessionStoragePortable.js'
 import type { Message } from '../types/message.js'
 import type { Command } from '../commands.js'
-import type { Tool } from '../Tool.js'
+import type { Tool, ToolPermissionContext } from '../Tool.js'
 import type { WirePermissionMode } from '../session/wire.js'
+import { assembleSessionDefaults } from './sessionDefaults.js'
 
 export type HostedEntry = {
   /** `<serve pid>:<nonce>` — the browser's handle for this session. */
@@ -46,10 +47,24 @@ export type HostedEntry = {
 
 export type SessionDefaults = {
   permissionMode?: WirePermissionMode
+  /**
+   * The full context assembled by `assembleSessionDefaults` (rules from
+   * disk + inherited CLI flags). Seeded into the session's store, so the
+   * session's permission decisions see the same rules the spawned child
+   * would have loaded.
+   */
+  toolPermissionContext?: ToolPermissionContext
   commands?: Command[]
   tools?: Tool[]
   customSystemPrompt?: string
   appendSystemPrompt?: string
+  /**
+   * Inherited `web start --allowed-tools` / `--disallowed-tools`, read by
+   * `assembleSessionDefaults` when the pool is assembled here. (The
+   * `settings`/`settingSources` flags have no hosted channel yet.)
+   */
+  allowedTools?: string[]
+  disallowedTools?: string[]
 }
 
 export type SessionRegistry = {
@@ -96,15 +111,23 @@ export function createSessionRegistry(): SessionRegistry {
     // project directory from this string, and a symlinked path (/var vs
     // /private/var) would split the session across two project dirs.
     cwd = await canonicalizePath(cwd)
+    // A caller that assembled its own pool (a test, a bespoke host) wins;
+    // everyone else gets the core-construction counterpart of the CLI
+    // flags the old gateway passed to its spawned child.
+    const full =
+      defaults?.commands && defaults.tools
+        ? defaults
+        : await assembleSessionDefaults(cwd, defaults)
     const session = createHostedSession({
       sessionId,
       cwd,
       initialTranscript,
-      commands: defaults?.commands,
-      tools: defaults?.tools,
-      permissionMode: defaults?.permissionMode,
-      customSystemPrompt: defaults?.customSystemPrompt,
-      appendSystemPrompt: defaults?.appendSystemPrompt,
+      commands: full.commands,
+      tools: full.tools,
+      toolPermissionContext: full.toolPermissionContext,
+      permissionMode: full.permissionMode,
+      customSystemPrompt: full.customSystemPrompt,
+      appendSystemPrompt: full.appendSystemPrompt,
     })
     const entry: HostedEntry = {
       processKey: `${process.pid}:${randomUUID()}`,

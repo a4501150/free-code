@@ -3,7 +3,7 @@
  * session CRUD, SSE snapshot) against a hosted session in the same process.
  */
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdtempSync, realpathSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
@@ -153,7 +153,9 @@ test('serve: create, stream snapshot, prompt lands on the hosted core, delete', 
       session: { processKey: string; sessionId: string; cwd: string }
     }
     expect(session.processKey).toContain(':')
-    expect(session.cwd).toBe(cwd)
+    // The serve realpathes the cwd the way a spawned child's process.cwd()
+    // would have (/var vs /private/var on macOS).
+    expect(session.cwd).toBe(realpathSync(cwd))
 
     // The list shows the hosted row as live and attachable, owned here.
     const list = await fetch(`${base}/api/sessions`, { headers: { cookie } })
