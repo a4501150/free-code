@@ -16,31 +16,19 @@ import {
   type SurfaceClient,
   type SurfaceCommandPath,
 } from '../webui/gateway/surfaceClient.js'
-import type { WireItem, WireRequest, WireSessionMeta } from '../session/wire.js'
+import type { WireSessionMeta } from '../session/wire.js'
 import {
   createViewStore,
   type SessionView,
   type ViewStore,
 } from '../session/viewStore.js'
-import {
-  attachmentGutter,
-  compactDividerText,
-  foldText,
-} from './attached/itemViews.js'
-import {
-  activityLabel,
-  draftView,
-  formatDuration,
-  toolRowView,
-  userRowView,
-} from './attached/itemViews.js'
-import {
-  agentIdsByToolUse,
-  attachmentView,
-  progressView,
-  taskView,
-  toolNamesByUseId,
-} from '../webui/client/itemViews.js'
+import { draftView, statusLineParts } from './attached/itemViews.js'
+import { taskView } from '../webui/client/itemViews.js'
+import { AttachedTranscript } from './attached/AttachedTranscript.js'
+import { AssistantThinkingMessage } from '../components/messages/AssistantThinkingMessage.js'
+import { AssistantTextMessage } from '../components/messages/AssistantTextMessage.js'
+import { getAllBaseTools } from '../tools.js'
+import type { Tools } from '../Tool.js'
 import {
   queueRows,
   queueEditBody,
@@ -258,24 +246,11 @@ export function AttachedSession({
     [send, editingQueueId, view.meta],
   )
 
-  const items = useMemo(
-    () =>
-      view.order
-        .map(id => view.items.get(id))
-        .filter((item): item is WireItem => Boolean(item)),
-    [view.items, view.order],
-  )
-  const toolNames = useMemo(() => toolNamesByUseId(items), [items])
-  const resultsByToolUse = useMemo(() => {
-    const map = new Map<string, WireItem>()
-    for (const item of items) {
-      if (item.kind === 'tool_result' && item.toolUseId) {
-        map.set(item.toolUseId, item)
-      }
-    }
-    return map
-  }, [items])
-  const agentIds = useMemo(() => agentIdsByToolUse(items), [items])
+  // The classic tool registry: feeds the real tool cards. A tool the card
+  // cannot resolve for (MCP on a remote attach, newer host build) renders
+  // the viewer-native fallback row inside AttachedTranscript.
+  const tools = useMemo<Tools>(() => getAllBaseTools(), [])
+  const [showInjectedContext, setShowInjectedContext] = useState(false)
 
   const isRunning = view.meta?.state === 'running'
   const isConnected = connection.status === 'connected'
@@ -387,6 +362,14 @@ export function AttachedSession({
         }
       }
 
+      if (key.ctrl && input === 't') {
+        // Reveal/hide the model-facing context rows (user_context_snapshot,
+        // mcp_tools_delta, …) — the viewer's twin of the classic
+        // showInjectedContext setting, defaulted off.
+        setShowInjectedContext(value => !value)
+        return
+      }
+
       if (key.ctrl || key.meta) return
       if (key.leftArrow || key.rightArrow) return
       if (key.pageUp || key.pageDown) return
@@ -434,25 +417,12 @@ export function AttachedSession({
             </Box>
           )}
 
-          {/* Transcript items */}
-          {items.map(item => (
-            <TranscriptItemRow
-              key={`${item.id}:${item.rev}`}
-              item={item}
-              result={
-                item.kind === 'tool_use' && item.toolUseId
-                  ? resultsByToolUse.get(item.toolUseId)
-                  : undefined
-              }
-              agentId={
-                item.kind === 'tool_use' && item.toolUseId
-                  ? agentIds.get(item.toolUseId)
-                  : undefined
-              }
-              inProgress={new Set(view.meta?.inProgressToolUseIds ?? [])}
-              toolNames={toolNames}
-            />
-          ))}
+          {/* Transcript: the classic message components, fed from the wire */}
+          <AttachedTranscript
+            view={view}
+            tools={tools}
+            showInjectedContext={showInjectedContext}
+          />
 
           {/* Streaming preview at the transcript tail */}
           {draft && <StreamDraftRow draft={draft} />}
@@ -597,7 +567,7 @@ export function AttachedSession({
                   ? `Press ${exitState.keyName} again to exit`
                   : isRunning
                     ? 'Esc to interrupt · Enter to queue'
-                    : 'Enter to send'}
+                    : 'Enter to send · ^T context lines'}
               </Text>
             </Box>
           </Box>
@@ -616,141 +586,6 @@ export function AttachedSession({
   )
 }
 
-// ---------------------------------------------------------------------------
-// Transcript item rendering
-// ---------------------------------------------------------------------------
-
-function TranscriptItemRow({
-  item,
-  result,
-  agentId,
-  inProgress,
-  toolNames,
-}: {
-  item: WireItem
-  result?: WireItem
-  agentId?: string
-  inProgress: ReadonlySet<string>
-  toolNames: Map<string, string>
-}): React.ReactNode {
-  switch (item.kind) {
-    case 'user': {
-      const row = userRowView(item)
-      if (!row.visible) return null
-      return (
-        <Box paddingX={2} paddingTop={1}>
-          <Text color="claude" bold>
-            ❯{' '}
-          </Text>
-          <Text bold>{row.text}</Text>
-          {row.imageLabel ? <Text dimColor> {row.imageLabel}</Text> : null}
-        </Box>
-      )
-    }
-
-    case 'assistant': {
-      if (!item.text) return null
-      return (
-        <Box paddingX={2} paddingTop={1}>
-          <Text>{item.text}</Text>
-          {item.messageId ? null : null}
-        </Box>
-      )
-    }
-
-    case 'reasoning': {
-      if (!item.text) return null
-      return (
-        <Box paddingX={2}>
-          <Text dimColor italic>
-            {foldText(item.text, 6).text}
-            {foldText(item.text, 6).hidden > 0
-              ? `\n… +${foldText(item.text, 6).hidden} lines of thinking`
-              : ''}
-          </Text>
-        </Box>
-      )
-    }
-
-    case 'tool_use': {
-      const row = toolRowView(item, result, inProgress)
-      const failed = result?.isError === true
-      return (
-        <Box flexDirection="column" paddingX={4}>
-          <Text dimColor>
-            {row.running ? '⚡' : failed ? '✗' : '⚡'}{' '}
-            <Text bold>{row.name}</Text>
-            {row.summary ? ` ${row.summary}` : ''}
-            {agentId ? ` → agent ${agentId.slice(0, 8)}` : ''}
-          </Text>
-          {result?.text ? <ToolResultFold item={result} /> : null}
-        </Box>
-      )
-    }
-
-    case 'tool_result': {
-      // Results under a tool_use render inside that row; an orphan result
-      // (its call scrolled out of the wire's window) still prints.
-      if (item.toolUseId) return null
-      return <ToolResultFold item={item} />
-    }
-
-    case 'progress': {
-      const progress = progressView(item, toolNames)
-      if (!progress) return null
-      return (
-        <Box paddingX={6}>
-          <Text dimColor>
-            └ {progress.label}
-            {progress.detail ? `: ${progress.detail}` : ''}
-          </Text>
-        </Box>
-      )
-    }
-
-    case 'system': {
-      if (item.isMeta) return null
-      const divider = compactDividerText(item)
-      return (
-        <Box paddingX={2}>
-          <Text dimColor>── {divider ?? item.text} ──</Text>
-        </Box>
-      )
-    }
-
-    case 'attachment': {
-      const view0 = attachmentView(item)
-      if (!view0) return null
-      return (
-        <Box paddingX={4}>
-          <Text dimColor>
-            {attachmentGutter(item.attachment?.type ?? '')} {view0.label}
-            {view0.detail ? ` (${view0.detail.slice(0, 100)})` : ''}
-          </Text>
-        </Box>
-      )
-    }
-
-    default:
-      // Any kind this screen does not render yet.
-      return null
-  }
-}
-
-function ToolResultFold({ item }: { item: WireItem }): React.ReactNode {
-  const fold = foldText(item.text, 4)
-  if (!fold.text) return null
-  return (
-    <Box paddingX={6}>
-      <Text dimColor color={item.isError ? 'error' : undefined}>
-        {item.isError ? '✗ ' : '└ '}
-        {fold.text}
-        {fold.hidden > 0 ? `\n… +${fold.hidden} more lines` : ''}
-      </Text>
-    </Box>
-  )
-}
-
 /**
  * The in-flight preview: what the model is writing NOW, before any of it
  * is a committed transcript row. Cumulative by contract, so this render is
@@ -764,16 +599,21 @@ function StreamDraftRow({
   return (
     <Box flexDirection="column" paddingX={2} paddingTop={1}>
       {draft.thinking ? (
-        <Box>
-          <Text dimColor italic>
-            {draft.thinking}
-          </Text>
-        </Box>
+        <AssistantThinkingMessage
+          param={{ type: 'thinking', thinking: draft.thinking }}
+          addMargin={false}
+          isTranscriptMode={false}
+          verbose={false}
+          isStreaming
+        />
       ) : null}
       {draft.text ? (
-        <Box>
-          <Text>{draft.text}</Text>
-        </Box>
+        <AssistantTextMessage
+          param={{ type: 'text', text: draft.text }}
+          addMargin={false}
+          shouldShowDot={false}
+          verbose={false}
+        />
       ) : null}
       {draft.tools.map((tool, at) => (
         <Box key={at}>
@@ -801,21 +641,19 @@ function AttachedStatusBar({
 }): React.ReactNode {
   if (!meta) return null
 
-  const parts: string[] = []
-  const activity = hasTray
-    ? 'waiting for you'
-    : activityLabel(meta.activity, meta.state)
-  if (activity) parts.push(activity)
-  if (runningSince !== null)
-    parts.push(formatDuration(Date.now() - runningSince))
-  if (meta.model) parts.push(meta.model)
-  if (meta.context) parts.push(`${meta.context.usedPercent}% context`)
-  if (meta.costUsd !== undefined) parts.push(`$${meta.costUsd.toFixed(2)}`)
+  const parts = statusLineParts(meta, {
+    elapsedMs:
+      runningSince !== null
+        ? Math.max(0, Date.now() - runningSince)
+        : undefined,
+    waitingForUser: hasTray,
+  })
 
   return (
+    // No height cap: a border box's height includes its border row, so a
+    // height of 1 clips the text line entirely.
     <Box
       paddingX={2}
-      height={1}
       borderStyle="single"
       borderLeft={false}
       borderRight={false}

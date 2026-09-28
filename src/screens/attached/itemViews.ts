@@ -9,7 +9,11 @@
  * DOM-free by construction.
  */
 
-import type { WireItem, WireStreamDraft } from '../../session/wire.js'
+import type {
+  WireItem,
+  WireSessionMeta,
+  WireStreamDraft,
+} from '../../session/wire.js'
 import { summarizeToolInput } from '../../webui/client/itemViews.js'
 
 export {
@@ -120,6 +124,38 @@ export function activityLabel(
     default:
       return 'working…'
   }
+}
+
+/**
+ * The status line, left to right: what the turn is doing, how long, then
+ * session identity — model, permission mode, context, cost. Derived here
+ * rather than in the component so the wording is unit-tested once.
+ */
+export function statusLineParts(
+  meta: WireSessionMeta,
+  opts: {
+    /** Present while meta.state is running. */
+    elapsedMs?: number
+    /** Overrides the activity wording while a tray holds the keys. */
+    waitingForUser?: boolean
+    now?: number
+  } = {},
+): string[] {
+  const parts: string[] = []
+  const activity = opts.waitingForUser
+    ? 'waiting for you'
+    : activityLabel(meta.activity, meta.state)
+  if (activity) parts.push(activity)
+  if (opts.elapsedMs !== undefined) {
+    parts.push(formatDuration(opts.elapsedMs))
+  }
+  if (meta.model) parts.push(meta.model)
+  if (meta.permissionMode && meta.permissionMode !== 'default') {
+    parts.push(meta.permissionMode)
+  }
+  if (meta.context) parts.push(`${meta.context.usedPercent}% context`)
+  if (meta.costUsd !== undefined) parts.push(`$${meta.costUsd.toFixed(2)}`)
+  return parts
 }
 
 /** Elapsed time label for the status line. */

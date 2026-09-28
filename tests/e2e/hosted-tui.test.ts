@@ -114,6 +114,15 @@ describe('hosted TUI (default startup)', () => {
     await terminal.waitForText('MARKER-WRITTEN-OK', 30_000)
     expect(existsSync(join(terminal.cwd, 'hosted-e2e-marker'))).toBe(true)
 
+    // Presentation parity: the model-facing context rows stay out of the
+    // pane by default (the classic REPL collapses them behind
+    // showInjectedContext; the viewer hides them behind ^T)…
+    const pane = await terminal.capturePaneWithHistory()
+    expect(pane).not.toContain('user_context_snapshot')
+    // …and the status line carries real session numbers: the running cost.
+    const statusPane = await terminal.capturePane()
+    expect(/\$\d+\.\d{2}/.test(statusPane)).toBe(true)
+
     // And the hosted session id rotated nothing: the wire session is the
     // one the descriptor advertises.
     const fresh = await hostedDescriptor()
