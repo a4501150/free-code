@@ -54,6 +54,10 @@ import { buildWireCatalog, tasksToWire } from '../server/catalog.js'
 import { loadAgentWireTranscript } from '../server/agentTranscript.js'
 import { createStore, type Store } from '../state/store.js'
 import { getDefaultAppState, type AppState } from '../state/AppStateStore.js'
+import {
+  createLocalDialogStore,
+  type LocalDialogStore,
+} from '../session/localDialogs.js'
 import { QueryGuard } from '../utils/QueryGuard.js'
 import {
   enqueue,
@@ -82,6 +86,7 @@ import { getMainTaskListId, listTasks, onTasksUpdated } from '../utils/tasks.js'
 import { getDefaultMainLoopModel } from '../utils/model/modelResolution.js'
 import { buildToolUseContext } from './toolUseContext.js'
 import { createHostedRpc } from './hostedRpc.js'
+import { startHostedStatusLine } from './hostedStatusLine.js'
 import type { QueuedCommand } from '../types/textInputTypes.js'
 import type { Command } from '../commands.js'
 import type { Tool } from '../Tool.js'
@@ -131,6 +136,12 @@ export type HostedSession = {
   readonly runtime: SessionRuntime
   readonly queryGuard: QueryGuard
   readonly sessionId: string
+  /**
+   * The handoff for local-jsx slash-command dialogs: the session's
+   * `setToolJSX` writes here, and a viewer in this process (the hosted
+   * launcher) mounts the JSX in its modal slot. See session/localDialogs.ts.
+   */
+  readonly dialogs: LocalDialogStore
   /** The options this session was started with, for hosts that re-derive rows. */
   readonly options: Readonly<HostedSessionOptions>
   /** Queue a prompt on this session; starts a turn when idle. */
@@ -179,6 +190,9 @@ export function createHostedSession(
     store.setState(updater)
   }
   const queryGuard = new QueryGuard()
+  // The setToolJSX sink for local-jsx slash commands: the session builds
+  // the dialog, the hosting terminal's viewer mounts it (see localDialogs).
+  const dialogs = createLocalDialogStore()
 
   const broker = runInSessionScope(scope, () => currentSessionRequests())
 
@@ -278,7 +292,7 @@ export function createHostedSession(
     setConversationId: () => {},
     terminal: undefined,
     readFileState: readFileStateRef,
-    setToolJSX: () => {},
+    setToolJSX: dialogs.set,
     loadedNestedMemoryPathsRef,
     setResponseLength: () => {},
     setStreamMode: () => {
@@ -381,7 +395,7 @@ export function createHostedSession(
       commands: options.commands ?? [],
       onInputChange: () => {},
       setPastedContents: () => {},
-      setToolJSX: () => {},
+      setToolJSX: dialogs.set,
       getToolUseContext,
       messages: core.getMessages() as Message[],
       mainLoopModel: resolveModel() ?? 'claude-sonnet-4-20250514',
@@ -715,6 +729,12 @@ export function createHostedSession(
     }
   })
 
+  // The statusline driver: the hosted mirror of the REPL footer's
+  // <StatusLine> — runs the configured (or embedded default) command in this
+  // session's scope and publishes the text to the shared store's
+  // statusLineText for the hosting terminal's viewer to render.
+  const stopStatusLine = startHostedStatusLine({ scope, core, store })
+
   // The queue store is session-scoped: both the subscription registration
   // and the callback body must resolve against this session's scope.
   // A 'now'-priority arrival interrupts: the running turn aborts so the
@@ -793,6 +813,8 @@ export function createHostedSession(
     unsubscribeCore()
     unsubscribeTasks()
     unsubscribeInitialMessage()
+    stopStatusLine()
+    dialogs.set(null)
     channel.stop()
   }
 
@@ -805,6 +827,7 @@ export function createHostedSession(
     queryGuard,
     sessionId,
     options,
+    dialogs,
     submit,
     cancel,
     stop,

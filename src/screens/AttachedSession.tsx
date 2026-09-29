@@ -23,6 +23,8 @@ import {
   type ViewStore,
 } from '../session/viewStore.js'
 import { bottomBarParts, draftView, modeLabel } from './attached/itemViews.js'
+import { useStatusLine } from './attached/StatusLineRow.js'
+import type { LocalDialog, LocalDialogStore } from '../session/localDialogs.js'
 import { SpinnerWithVerb, type SpinnerMode } from '../components/Spinner.js'
 import { LogoV2 } from '../components/LogoV2/LogoV2.js'
 import { taskView } from '../webui/client/itemViews.js'
@@ -84,8 +86,22 @@ export type AttachedSessionProps = {
    * describes it; a remote attach shows the header instead.
    */
   showWelcomeBanner?: boolean
+  /**
+   * In-process handoff for local-jsx slash-command dialogs (/help, /model):
+   * the session's input pipeline writes the dialog JSX here and this viewer
+   * mounts it in its modal slot, exactly where the REPL's tool-JSX slot
+   * lives. Only the hosting process has the session to hand; a remote
+   * attach passes nothing and its dialog commands stay with the host (like
+   * the /tasks mirror).
+   */
+  localDialogs?: LocalDialogStore
   onExit?: () => void
 }
+
+const NO_DIALOG_SUBSCRIBE =
+  (_listener: () => void): (() => void) =>
+  () => {}
+const NO_DIALOG_SNAPSHOT = (): LocalDialog | null => null
 
 // The transcript projection is the shared view store
 // (`src/session/viewStore.ts`) — the same reducer the browser client runs,
@@ -107,6 +123,7 @@ export function AttachedSession({
   label,
   initialPrompt,
   showWelcomeBanner,
+  localDialogs,
   onExit,
 }: AttachedSessionProps): React.ReactNode {
   const store = useMemo(() => createViewStore(), [])
@@ -141,9 +158,18 @@ export function AttachedSession({
     [],
   )
   const [tasksDialog, setTasksDialog] = useState(false)
+  // A local-jsx dialog the session's input pipeline just built (/help,
+  // /model, …): the same slot the REPL's tool-JSX modal holds for them.
+  const localDialog = useSyncExternalStore(
+    localDialogs ? localDialogs.subscribe : NO_DIALOG_SUBSCRIBE,
+    localDialogs ? localDialogs.snapshot : NO_DIALOG_SNAPSHOT,
+    localDialogs ? localDialogs.snapshot : NO_DIALOG_SNAPSHOT,
+  )
   // A remote attach cannot mount the session's local dialogs — only the
   // process that hosts the session can.
   const isLocalHost = pid === process.pid
+  const showLocalDialog =
+    isLocalHost && localDialog !== null && localDialog.jsx !== null
 
   const cancel = useCallback(() => {
     void clientRef.current?.command('cancel', { kind: 'cancel' })
@@ -314,7 +340,8 @@ export function AttachedSession({
   // The composer stands down while a tray awaits an answer or a local
   // dialog holds the keys — keystrokes belong to the dialog, not the
   // prompt buffer.
-  const composerActive = isConnected && !pendingRequest && !tasksDialog
+  const composerActive =
+    isConnected && !pendingRequest && !tasksDialog && !showLocalDialog
 
   // A running-turn clock: starts on the transition into running, and a 1s
   // tick keeps the elapsed time and task durations fresh. The refs back the
@@ -350,6 +377,8 @@ export function AttachedSession({
   }, [view.streamDraft, isRunning])
 
   const verbose = useAppState(s => s.verbose)
+  // The classic footer's statusline half (see attached/StatusLineRow.tsx).
+  const statusLine = useStatusLine()
 
   // ── The task board, mirrored from the wire ───────────────────────────
   // The stream's todo rows ARE the session's task board (subject, status,
@@ -662,6 +691,7 @@ export function AttachedSession({
             dialog owns the bottom of the screen. */}
         {isConnected &&
           !tasksDialog &&
+          !showLocalDialog &&
           (queued.length > 0 || view.tasks.length > 0) && (
             <Box flexShrink={0} flexDirection="column" paddingX={2}>
               {queued.length > 0 && (
@@ -701,7 +731,7 @@ export function AttachedSession({
             as the classic pane. Hidden while a local dialog owns the
             bottom of the screen, like PromptInput returning null behind
             the REPL's modal. */}
-        {isConnected && !tasksDialog && (
+        {isConnected && !tasksDialog && !showLocalDialog && (
           <Box flexShrink={0} flexDirection="column" marginTop={1}>
             <Text color="promptBorder">{'─'.repeat(columns)}</Text>
             {pendingRequest ? (
@@ -746,13 +776,19 @@ export function AttachedSession({
                 </Text>
               </Box>
             )}
+            {/* The statusline row above the mode line, like the classic
+                footer mounts it — only when this process owns the session,
+                since only then does the session's driver write the text. */}
+            {isLocalHost && statusLine.node}
             {/* One bottom line, like the classic pane: the permission-mode
                 label and the hint for the state, with the wire-derived
-                metrics kept at the line's right end. */}
+                metrics kept at the line's right end. The hint yields to a
+                displayed statusline, as PromptInputFooter suppresses it. */}
             <AttachedBottomBar
               meta={view.meta}
               running={isRunning}
               hasTray={pendingRequest !== null}
+              suppressHint={isLocalHost && statusLine.suppressHint}
               exitPending={
                 exitState.pending
                   ? `Press ${exitState.keyName} again to exit`
@@ -798,6 +834,44 @@ export function AttachedSession({
                   onDone={() => setTasksDialog(false)}
                   toolUseContext={undefined as unknown as ToolUseContext}
                 />
+              </Box>
+            </Box>
+          </ModalContext>
+        )}
+
+        {/* A local-jsx dialog the session built (/help, /model, …), in the
+            same modal slot. The JSX arrived whole through the in-process
+            handoff — its own components carry their keybindings, and the
+            closing onDone runs inside the session's input pipeline, which
+            appends the command's transcript rows from there. */}
+        {showLocalDialog && localDialog && (
+          <ModalContext
+            value={{
+              rows: rows - MODAL_TRANSCRIPT_PEEK - 1,
+              columns: columns - 4,
+              scrollRef: modalScrollRef,
+            }}
+          >
+            <Box
+              position="absolute"
+              bottom={0}
+              left={0}
+              right={0}
+              maxHeight={rows - MODAL_TRANSCRIPT_PEEK}
+              flexDirection="column"
+              overflow="hidden"
+              opaque
+            >
+              <Box flexShrink={0}>
+                <Text color="permission">{'▔'.repeat(columns)}</Text>
+              </Box>
+              <Box
+                flexDirection="column"
+                paddingX={2}
+                flexShrink={0}
+                overflow="hidden"
+              >
+                {localDialog.jsx}
               </Box>
             </Box>
           </ModalContext>
@@ -853,11 +927,15 @@ function AttachedBottomBar({
   meta,
   running,
   hasTray,
+  suppressHint,
   exitPending,
 }: {
   meta: WireSessionMeta | null
   running: boolean
   hasTray: boolean
+  /** True when a displayed statusline owns the footer — classic footer
+   *  behavior: the `? for shortcuts` hint yields to the user's line. */
+  suppressHint?: boolean
   exitPending?: string
 }): React.ReactNode {
   if (!meta) return null
@@ -874,7 +952,7 @@ function AttachedBottomBar({
           <Text color={mode.color ?? undefined} dimColor={!mode.color}>
             {mode.text}
           </Text>
-          <Text dimColor> · {bar.left}</Text>
+          {!suppressHint && <Text dimColor> · {bar.left}</Text>}
         </>
       )}
     </Box>

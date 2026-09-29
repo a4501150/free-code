@@ -83,6 +83,9 @@ export async function launchHosted(
             pid={process.pid}
             sessionId={entry.hosted.channel.sessionId}
             initialPrompt={launch.initialPrompt}
+            // The session's local-jsx dialogs (/help, /model) hand off
+            // their JSX here — this process is the session's.
+            localDialogs={entry.hosted.dialogs}
             // The pane this process shows at boot replaces the REPL's:
             // the classic banner, not the remote attach's one-liner.
             showWelcomeBanner
