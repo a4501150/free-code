@@ -97,7 +97,10 @@ import type { Tool } from '../Tool.js'
 import type { Message } from '../types/message.js'
 import type { DomainUserContentBlock } from '../types/domain.js'
 import type { ThinkingConfig } from '../utils/thinking.js'
-import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
+import type {
+  AgentDefinition,
+  AgentDefinitionsResult,
+} from '../tools/AgentTool/loadAgentsDir.js'
 import type { MCPServerConnection } from '../services/mcp/types.js'
 import {
   loadMessagesFromJsonlPath,
@@ -126,6 +129,12 @@ export type HostedSessionOptions = {
   thinkingConfig?: ThinkingConfig
   /** Main-thread agent definition (`--agent`); absent means the plain loop. */
   mainThreadAgentDefinition?: AgentDefinition
+  /**
+   * The session's agent catalog (built-ins + dirs + CLI agents). Seeded into
+   * the store — AgentTool reads it from there, and the default is an empty
+   * list, which silently strands every subagent call as "type not found".
+   */
+  agentDefinitions?: AgentDefinitionsResult
   /** MCP connections the caller resolved; attached to turns as initial clients. */
   mcpClients?: MCPServerConnection[]
   /** The `--settings` overlay, recorded and forwarded (flag settings are process-scoped). */
@@ -189,6 +198,10 @@ export function createHostedSession(
         mode,
       },
     }))
+  }
+  if (options.agentDefinitions) {
+    const agentDefinitions = options.agentDefinitions
+    store.setState(prev => ({ ...prev, agentDefinitions }))
   }
   const setAppState = (updater: (prev: any) => any): void => {
     store.setState(updater)

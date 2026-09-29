@@ -3075,6 +3075,10 @@ async function run(): Promise<CommanderCommand> {
               appendSystemPrompt,
               thinkingConfig,
               mainThreadAgentDefinition,
+              // The full catalog this process computed (built-ins, dirs,
+              // --agents). Seeding the session's store with it is what
+              // keeps `Agent(general-purpose)` from failing "not found".
+              agentDefinitions,
               mcpClients,
               model: resolvedInitialModel,
             },

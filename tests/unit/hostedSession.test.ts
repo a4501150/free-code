@@ -17,6 +17,10 @@ import {
   setCwdState,
 } from '../../src/bootstrap/state.js'
 import type { WireEventEnvelope } from '../../src/session/wire.js'
+import type {
+  AgentDefinition,
+  AgentDefinitionsResult,
+} from '../../src/tools/AgentTool/loadAgentsDir.js'
 import type { SessionChannel } from '../../src/server/channel.js'
 import { enqueue } from '../../src/utils/messageQueueManager.js'
 import type { UUID } from 'crypto'
@@ -226,6 +230,33 @@ describe('hosted session', () => {
   afterEach(() => {
     for (const s of sessions) s.stop()
     sessions = []
+  })
+
+  test('agentDefinitions seed the store — AgentTool reads the catalog there', () => {
+    // Regression: the hosted store defaults agentDefinitions to an empty
+    // list; without seeding, every Agent(general-purpose) call in a hosted
+    // session failed "type not found. Available agents:" (empty).
+    const s = makeSession(join(configDir, 'agents'))
+    expect(s.store.getState().agentDefinitions.activeAgents).toEqual([])
+    const def = {
+      agentType: 'general-purpose',
+      whenToUse: 'test',
+      getSystemPrompt: () => 'x',
+    } as unknown as AgentDefinition
+    const agentDefinitions = {
+      activeAgents: [def],
+      allAgents: [def],
+    } as unknown as AgentDefinitionsResult
+    const seeded = createHostedSession({
+      cwd: join(configDir, 'agents'),
+      agentDefinitions,
+    })
+    sessions.push(seeded)
+    expect(
+      seeded.store
+        .getState()
+        .agentDefinitions.activeAgents.map(a => a.agentType),
+    ).toEqual(['general-purpose'])
   })
 
   test('each session addresses its own scope on the wire', async () => {

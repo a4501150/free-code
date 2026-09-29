@@ -15,6 +15,7 @@
 
 import { getCommands } from '../commands.js'
 import { getTools } from '../tools.js'
+import { getAgentDefinitionsWithOverrides } from '../tools/AgentTool/loadAgentsDir.js'
 import { applyCoordinatorToolFilter } from '../utils/toolPool.js'
 import { isCoordinatorMode } from '../coordinator/coordinatorModeGate.js'
 import { initializeToolPermissionContext } from '../utils/permissions/permissionSetup.js'
@@ -40,8 +41,14 @@ export async function assembleSessionDefaults(
   const commands = await getCommands(cwd)
   let tools = getTools(toolPermissionContext)
   if (isCoordinatorMode()) tools = applyCoordinatorToolFilter(tools)
+  // Same assembly the REPL path does at startup: built-ins plus the
+  // project/user agent dirs for this cwd. A caller that computed its own
+  // (the CLI launcher merges --agents in) short-circuits this.
+  const agentDefinitions =
+    request?.agentDefinitions ?? (await getAgentDefinitionsWithOverrides(cwd))
   return {
     ...request,
+    agentDefinitions,
     // The store's context type is the DeepImmutable sibling of the one
     // permissionSetup returns; structurally identical.
     toolPermissionContext:

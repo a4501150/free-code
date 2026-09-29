@@ -33,7 +33,10 @@ import type { Command } from '../commands.js'
 import type { Tool, ToolPermissionContext } from '../Tool.js'
 import type { WirePermissionMode } from '../session/wire.js'
 import type { ThinkingConfig } from '../utils/thinking.js'
-import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
+import type {
+  AgentDefinition,
+  AgentDefinitionsResult,
+} from '../tools/AgentTool/loadAgentsDir.js'
 import type { MCPServerConnection } from '../services/mcp/types.js'
 import { assembleSessionDefaults } from './sessionDefaults.js'
 
@@ -73,6 +76,13 @@ export type SessionDefaults = {
   model?: string | null
   /** Main-thread agent definition (`--agent`); absent means the plain loop. */
   mainThreadAgentDefinition?: AgentDefinition
+  /**
+   * The agent catalog (built-ins + project/user dirs + CLI agents) seeded
+   * into the session's store. Absent, `assembleSessionDefaults` loads it
+   * from cwd; a caller that computed its own (the CLI launcher, with
+   * `--agents` merged) passes it here.
+   */
+  agentDefinitions?: AgentDefinitionsResult
   /**
    * MCP connections the caller already resolved and connected; a hosted
    * session attaches them to its turns as initial clients (no per-session
@@ -183,6 +193,7 @@ export function createSessionRegistry(onChanged?: () => void): SessionRegistry {
       appendSystemPrompt: full.appendSystemPrompt,
       thinkingConfig: full.thinkingConfig,
       mainThreadAgentDefinition: full.mainThreadAgentDefinition,
+      agentDefinitions: full.agentDefinitions,
       mcpClients: full.mcpClients,
       settings: full.settings,
     })

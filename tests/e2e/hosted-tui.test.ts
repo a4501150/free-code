@@ -171,4 +171,39 @@ describe('hosted TUI (default startup)', () => {
     const fresh = await hostedDescriptor()
     expect(fresh?.sessionIds).toEqual(descriptor.sessionIds)
   })
+
+  test('the Agent tool resolves built-in types in a hosted session', async () => {
+    // Regression: the hosted store shipped an empty agent catalog, so
+    // Agent(subagent_type: general-purpose) failed "type not found" with
+    // an empty available list.
+    server.reset([
+      toolUseResponse([
+        {
+          name: 'Agent',
+          input: {
+            description: 'sanity',
+            prompt: 'Say exactly SUBAGENT-OK and nothing else.',
+            subagent_type: 'general-purpose',
+          },
+        },
+      ]),
+      // The subagent's own turn.
+      textResponse('SUBAGENT-OK'),
+      textResponse('AGENT-CATALOG-OK'),
+    ])
+    terminal = new TmuxSession({ serverUrl: server.url, hostedTui: true })
+    await terminal.start()
+    await terminal.sendLine('run the sanity subagent')
+
+    await waitForRequestCount(server, 2, {
+      description: 'the subagent request riding the mock API',
+    })
+    const finalLog = await waitForRequestCount(server, 3, {
+      description: 'the post-tool follow-up',
+    })
+    const toolResult = JSON.stringify(finalLog[2]!.body.messages)
+    expect(toolResult).not.toContain('not found')
+    expect(toolResult).toContain('SUBAGENT-OK')
+    await terminal.waitForText('AGENT-CATALOG-OK', 30_000)
+  })
 })
