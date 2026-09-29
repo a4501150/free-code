@@ -68,6 +68,14 @@ export async function launchHosted(
       initialTranscript: launch.initialTranscript,
       defaults: launch.defaults,
     })
+    // The CLI resolved the view flags (the --verbose switch, the verbose
+    // setting) before hosting; the viewer reads them from the session's
+    // store, so carry them over. Everything else in the store stays the
+    // session's — its permission context and rules are seeded by adoption.
+    entry.hosted.store.setState(prev => ({
+      ...prev,
+      verbose: appProps.initialState.verbose,
+    }))
     await renderAndRun(
       root,
       // The viewer must live in the alternate screen like the REPL it

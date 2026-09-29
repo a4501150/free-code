@@ -153,13 +153,22 @@ describe('modeLabel', () => {
     expect(modeLabel(undefined).text).toBe(`${PAUSE_ICON} manual mode on`)
   })
   test('a mode with its own symbol and title says what the classic footer says', () => {
+    // The classic footer tails every non-default mode with the dim cycle
+    // hint — the viewer renders the same tail.
     expect(modeLabel('plan')).toEqual({
       text: `${PAUSE_ICON} plan mode on`,
       color: 'planMode',
+      hint: ' (shift+tab to cycle)',
     })
     expect(modeLabel('acceptEdits')).toEqual({
       text: '⏵⏵ accept edits on',
       color: 'autoAccept',
+      hint: ' (shift+tab to cycle)',
+    })
+    expect(modeLabel('auto')).toEqual({
+      text: '⏵⏵ auto mode on',
+      color: 'warning',
+      hint: ' (shift+tab to cycle)',
     })
   })
 })

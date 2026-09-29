@@ -3053,6 +3053,7 @@ async function run(): Promise<CommanderCommand> {
           'plan',
           'bypassPermissions',
           'dontAsk',
+          'auto',
         ]
         await launchHosted(
           root,
@@ -3063,8 +3064,8 @@ async function run(): Promise<CommanderCommand> {
             initialTranscript: args.initialTranscript,
             initialPrompt: inputPrompt ? String(inputPrompt) : undefined,
             defaults: {
-              // 'auto' has no wire-mode equivalent yet: an auto-mode CLI
-              // hosts under 'default' and the seeded rules decide.
+              // Internal-only modes (auto rides the wire as itself; the
+              // classifier runs session-side) still fall back to 'default'.
               permissionMode: (wireModes.includes(permissionMode)
                 ? permissionMode
                 : 'default') as WirePermissionMode,

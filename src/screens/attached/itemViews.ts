@@ -120,6 +120,10 @@ export function modeLabel(mode: PermissionMode | undefined): {
   text: string
   /** The mode's own color, or undefined to render dim. */
   color?: ReturnType<typeof getModeColor>
+  /** The classic's dim `(shift+tab to cycle)` tail — shown for every
+   *  non-default mode, hidden by the footer's two-primary-items rule the
+   *  same way the classic footer hides it. */
+  hint?: string
 } {
   if (!mode || mode === 'default') {
     return { text: `${PAUSE_ICON} manual mode on` }
@@ -127,6 +131,7 @@ export function modeLabel(mode: PermissionMode | undefined): {
   return {
     text: `${permissionModeSymbol(mode)} ${permissionModeTitle(mode).toLowerCase()} on`,
     color: getModeColor(mode),
+    hint: ' (shift+tab to cycle)',
   }
 }
 

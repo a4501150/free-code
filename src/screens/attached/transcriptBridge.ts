@@ -145,6 +145,10 @@ export function bridgeTranscript(
   showInjectedContext: boolean,
   tools: Tools = [],
   draftTools: DraftToolInput[] = [],
+  /** The session's `--verbose`: like the classic pipeline, grouping is
+   *  skipped and collapsed-notification rows expand, so every tool_result
+   *  (a classifier deny included) renders inline at its own position. */
+  verbose = false,
 ): BridgedTranscript {
   const units: TranscriptUnit[] = []
   const messages: (UserMessage | AssistantMessage)[] = []
@@ -401,10 +405,10 @@ export function bridgeTranscript(
   // (wire order puts them in runs, not pairs), then streaming partials are
   // appended at the tail like the REPL's synthetic messages.
   const visible = reorderMessagesInUI(rows, syntheticRows)
-  const { messages: grouped } = applyGrouping(visible, tools)
+  const { messages: grouped } = applyGrouping(visible, tools, verbose)
   const uiRows: RenderableMessage[] = collapseBackgroundBashNotifications(
     collapseHookSummaries(collapseReadSearchGroups(grouped, tools)),
-    false,
+    verbose,
   )
 
   // Map every row uuid back to the wire item it came from. Replicates
@@ -465,11 +469,46 @@ export function bridgeTranscript(
       for (const id of unit.itemIds) unitByItemId.set(id, unit)
   }
   const draftRows: RenderableMessage[] = []
+  // Items a row covers, keyed by the item that OWNS the row (its anchor).
+  // The classic pane renders the flat pipeline list, so a message absorbed
+  // into a group simply has no row of its own; here an absorbed unit must
+  // render nothing — not the raw fallback row, which would duplicate the
+  // group's content (the classifier-denied pill riding outside its
+  // `Ran N bash commands` group, visible through the collapsed view).
+  const coveredBy = new Map<string, string>()
   for (const row of uiRows) {
     const anchor = coveredAnchor(row)
     const target = anchor ? unitByItemId.get(anchor.itemId) : undefined
     if (target) (target.rows ??= []).push(row)
     else draftRows.push(row)
+    if (!anchor) continue
+    const nested = (row as { messages?: { uuid: string }[] }).messages
+    const uuids = nested ? nested.map(m => String(m.uuid)) : [String(row.uuid)]
+    for (const uuid of uuids) {
+      const itemId = uuidToItem.get(uuid)
+      if (!itemId || itemId === anchor.itemId) continue
+      if (!coveredBy.has(itemId)) coveredBy.set(itemId, anchor.itemId)
+    }
+  }
+  // An item absorbed into a row owned by another unit marks its whole unit
+  // absorbed only when every item of that unit shares the absorption (or
+  // owns a row of the pipeline): a multi-block unit keeps rendering what
+  // it still owns.
+  const absorbed = new Map<
+    Extract<TranscriptUnit, { kind: 'message' }>,
+    boolean
+  >()
+  for (const [itemId, owner] of coveredBy) {
+    const unit = unitByItemId.get(itemId)
+    if (!unit) continue
+    const selfOwned = unit.itemIds.some(
+      id => !coveredBy.has(id) || coveredBy.get(id) === id,
+    )
+    const prev = absorbed.get(unit)
+    absorbed.set(unit, prev === false ? false : !selfOwned)
+  }
+  for (const [unit, isAbsorbed] of absorbed) {
+    if (isAbsorbed) unit.rows = []
   }
 
   return { units, lookups, rows, draftRows }

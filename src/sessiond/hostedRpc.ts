@@ -201,7 +201,11 @@ export function createHostedRpc(
     targetId: string,
     forkSession: boolean,
   ): Promise<unknown> {
-    if (queryGuard.isActive) {
+    // `isRunning`, not `isActive`: the in-session /resume command reaches
+    // this through its own dispatch (the guard is reserved, no turn is
+    // executing), and refusing there would dead-lock the command against
+    // itself. A genuine turn in flight still blocks the switch.
+    if (queryGuard.isRunning) {
       throw new Error('a turn is running; cancel it before switching sessions')
     }
     const messages = await loadTranscriptMessages(targetId)

@@ -66,6 +66,10 @@ export const WirePermissionModeSchema = z.enum([
   'plan',
   'bypassPermissions',
   'dontAsk',
+  // Auto mode rides the wire as itself: the classifier runs session-side
+  // (inside `hasPermissionsToUseTool`), so a viewer only needs to render
+  // the mode banner and let the tool cards speak for the decisions.
+  'auto',
 ])
 export type WirePermissionMode = z.infer<typeof WirePermissionModeSchema>
 

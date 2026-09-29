@@ -81,6 +81,10 @@ import { getPlanSlug, setPlanSlug } from '../utils/plans.js'
 import { wrapCanUseToolWithWebUI } from '../server/headlessBridge.js'
 import { logError } from '../utils/log.js'
 import { provisionContentReplacementState } from '../utils/toolResultStorage.js'
+import {
+  createFileStateCacheWithSizeLimit,
+  READ_FILE_STATE_CACHE_SIZE,
+} from '../utils/fileStateCache.js'
 import { getStreamActivity } from '../utils/streamActivity.js'
 import { getMainTaskListId, listTasks, onTasksUpdated } from '../utils/tasks.js'
 import { getDefaultMainLoopModel } from '../utils/model/modelResolution.js'
@@ -217,7 +221,12 @@ export function createHostedSession(
       )),
   )
 
-  const readFileStateRef = { current: new Map<string, any>() }
+  // The real cache class, not a Map stand-in: the suggestion/speculation
+  // forks clone this state through `cache.dump()`, and a plain Map has no
+  // dump — the fork died before its first request with the Map in place.
+  const readFileStateRef = {
+    current: createFileStateCacheWithSizeLimit(READ_FILE_STATE_CACHE_SIZE),
+  }
   const loadedNestedMemoryPathsRef = { current: new Set<string>() }
   const hasInterruptibleToolInProgressRef = { current: false }
   const contentReplacementStateRef = {
@@ -284,7 +293,28 @@ export function createHostedSession(
     },
     setMessages,
     onChangeDynamicMcpConfig: () => {},
-    resume: undefined,
+    // In-session /resume: the classic path adopts/forks inside the REPL's
+    // own state; here the same moves run through the `resume` rpc — one
+    // announced transcript replace, one identity rotation. A target held
+    // by another live process opens the classic conflict dialog through
+    // the local-jsx handoff (see hostedResume.tsx); cancel/join leave this
+    // session exactly where it was.
+    resume: async (sessionId: string, _log: unknown, entrypoint: string) => {
+      let fork = entrypoint === 'fork' || entrypoint === 'ownership_fork'
+      if (!fork) {
+        // Lazy: the conflict dialog drags the render runtime, and this
+        // module stays render-free (see the header note).
+        const { resolveResumeConflictForHost } =
+          await import('./hostedResume.js')
+        const choice = await resolveResumeConflictForHost(dialogs, sessionId)
+        if (choice === 'cancel' || choice === 'join') return
+        if (choice === 'fork') fork = true
+      }
+      await runtime.rpc?.('resume', {
+        sessionId,
+        forkSession: fork,
+      })
+    },
     requestPrompt: undefined,
     disabled: false,
     customSystemPrompt: options.customSystemPrompt,
@@ -469,7 +499,10 @@ export function createHostedSession(
     getModel: () => resolveModel(),
     getPermissionMode: () => {
       const mode = store.getState().toolPermissionContext.mode as string
-      return (EXTERNAL_PERMISSION_MODES as readonly string[]).includes(mode)
+      return (EXTERNAL_PERMISSION_MODES as readonly string[]).includes(mode) ||
+        // Auto rides the wire as itself: the classifier lives inside this
+        // session's permission path; the surface just renders the banner.
+        mode === 'auto'
         ? (mode as WirePermissionMode)
         : undefined
     },

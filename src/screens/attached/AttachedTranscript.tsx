@@ -44,6 +44,9 @@ type Props = {
    * rebuild it honestly, so the launcher opts in.
    */
   showSessionContextRow?: boolean
+  /** The session's `--verbose`, mirrored from the REPL's Messages list:
+   *  the pipeline skips grouping and every row renders expanded. */
+  verbose?: boolean
 }
 
 export function AttachedTranscript({
@@ -51,6 +54,7 @@ export function AttachedTranscript({
   tools,
   showInjectedContext,
   showSessionContextRow,
+  verbose = false,
 }: Props): React.ReactNode {
   const snapshot = useMemo(
     () => ({
@@ -68,8 +72,15 @@ export function AttachedTranscript({
     [view.streamDraft],
   )
   const bridge = useMemo<BridgedTranscript>(
-    () => bridgeTranscript(snapshot, showInjectedContext, tools, draftTools),
-    [snapshot, showInjectedContext, tools, draftTools],
+    () =>
+      bridgeTranscript(
+        snapshot,
+        showInjectedContext,
+        tools,
+        draftTools,
+        verbose,
+      ),
+    [snapshot, showInjectedContext, tools, draftTools, verbose],
   )
 
   // The classic pane's virtual first row: the user-context block is built
@@ -269,8 +280,10 @@ export function AttachedTranscript({
               commands={[]}
               // Per-row expansion, like the classic's expandedKeys fold:
               // rows start collapsed and a click reveals this row's body —
-              // the default pane stays byte-identical to the classic.
-              verbose={expandedKeys.has(rowKey)}
+              // the default pane stays byte-identical to the classic. The
+              // session's verbose expands every row (the classic's
+              // `verbose || isItemExpanded` dispatch).
+              verbose={verbose || expandedKeys.has(rowKey)}
               inProgressToolUseIDs={inProgress}
               progressMessagesForMessage={[]}
               shouldAnimate={false}
@@ -353,7 +366,7 @@ export function AttachedTranscript({
             addMargin={!prevRenderedInjected}
             label={`System reminder · ${unit.item.attachment?.type ?? 'context'}`}
             content={reminder}
-            verbose={expandedKeys.has(attKey)}
+            verbose={verbose || expandedKeys.has(attKey)}
           />
         </Box>,
       )
@@ -395,7 +408,7 @@ export function AttachedTranscript({
           addMargin
           tools={tools}
           commands={[]}
-          verbose={expandedKeys.has(String(row.uuid))}
+          verbose={verbose || expandedKeys.has(String(row.uuid))}
           inProgressToolUseIDs={inProgress}
           progressMessagesForMessage={[]}
           shouldAnimate={false}
@@ -435,8 +448,8 @@ export function AttachedTranscript({
           tools={tools}
           commands={[]}
           // Collapsed until clicked — the classic's own behaviour for the
-          // rebuilt context row.
-          verbose={expandedKeys.has(`ctx:${USER_CONTEXT_ROW_UUID}`)}
+          // rebuilt context row (verbose expands it like every other row).
+          verbose={verbose || expandedKeys.has(`ctx:${USER_CONTEXT_ROW_UUID}`)}
           inProgressToolUseIDs={new Set<string>()}
           progressMessagesForMessage={[]}
           shouldAnimate={false}
@@ -452,6 +465,7 @@ export function AttachedTranscript({
     showInjectedContext,
     userContextText,
     expandedKeys,
+    verbose,
     bridge.lookups,
     tools,
     rowClickHandler,

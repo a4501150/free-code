@@ -518,7 +518,7 @@ export function FullscreenLayout({
 // (absoluteRectsPrev third-pass in render-node-to-output.ts, #23939). Shows
 // "Jump to bottom" when count is 0 (scrolled away but no new messages yet —
 // the dead zone where users previously thought chat stalled).
-function NewMessagesPill({
+export function NewMessagesPill({
   count,
   onClick,
 }: {

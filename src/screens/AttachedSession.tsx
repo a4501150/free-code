@@ -25,6 +25,10 @@ import {
 import { bottomBarParts, draftView, modeLabel } from './attached/itemViews.js'
 import { useStatusLine } from './attached/StatusLineRow.js'
 import type { LocalDialog, LocalDialogStore } from '../session/localDialogs.js'
+import {
+  NewMessagesPill,
+  isJumpToBottomVisible,
+} from '../components/FullscreenLayout.js'
 import { SpinnerWithVerb, type SpinnerMode } from '../components/Spinner.js'
 import { LogoV2 } from '../components/LogoV2/LogoV2.js'
 import { taskView } from '../webui/client/itemViews.js'
@@ -32,7 +36,7 @@ import { AttachedTranscript } from './attached/AttachedTranscript.js'
 import { TaskPanelRows } from '../components/TaskLivePanel.js'
 import { TaskListV2 } from '../components/TaskListV2.js'
 import type { Task, TaskStatus } from '../utils/taskSchemas.js'
-import { useAppState } from '../state/AppState.js'
+import { useAppState, useSetAppState } from '../state/AppState.js'
 import { AssistantThinkingMessage } from '../components/messages/AssistantThinkingMessage.js'
 import { AssistantTextMessage } from '../components/messages/AssistantTextMessage.js'
 import { getAllBaseTools } from '../tools.js'
@@ -158,6 +162,74 @@ export function AttachedSession({
     [],
   )
   const [tasksDialog, setTasksDialog] = useState(false)
+  // The scroll-away divider snapshot the pill tests against — the viewer's
+  // mirror of FullscreenLayout's `dividerYRef`/`useUnseenDivider` chrome:
+  // scrollHeight at the first scroll-away, null once following resumes.
+  const dividerYRef = useRef<number | null>(null)
+  const onTranscriptScroll = useCallback(
+    (sticky: boolean, handle: ScrollBoxHandle) => {
+      // Only transcript scrolls drive the pill — a mounted modal publishes
+      // scroll events against its OWN handle (the merged-ref target), and
+      // snapshotting those would strand the pill on dialog close.
+      if (handle !== scrollRef.current) return
+      if (sticky) {
+        dividerYRef.current = null
+        return
+      }
+      const max = Math.max(
+        0,
+        handle.getScrollHeight() - handle.getViewportHeight(),
+      )
+      if (handle.getScrollTop() + handle.getPendingDelta() >= max) return
+      if (dividerYRef.current === null) {
+        dividerYRef.current = handle.getScrollHeight()
+      }
+    },
+    [],
+  )
+  const subscribeScrollChrome = useCallback(
+    (listener: () => void) =>
+      scrollRef.current?.subscribe(listener) ?? (() => {}),
+    [],
+  )
+  const pillVisible = useSyncExternalStore(subscribeScrollChrome, () =>
+    isJumpToBottomVisible(scrollRef.current, dividerYRef.current),
+  )
+  // Optimistic in-flight marker: classic flips its footer to the running
+  // hint in the same keystroke commit that submits the prompt; a hosted
+  // submit round-trips through the wire, and without this flip the pane
+  // keeps showing the idle hint (and `waitForPrompt`-style idle checks
+  // keep matching it) for the whole command-latency window.
+  const [turnStarting, setTurnStarting] = useState(false)
+  const turnStartingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
+  const markTurnStarting = useCallback(() => {
+    setTurnStarting(true)
+    if (turnStartingTimerRef.current) clearTimeout(turnStartingTimerRef.current)
+    // A command that never starts a turn (a local-jsx slash dialog, a
+    // rejected prompt) must not strand the hint — the real running state
+    // takes over from the meta stream the moment it does start.
+    turnStartingTimerRef.current = setTimeout(
+      () => setTurnStarting(false),
+      5000,
+    )
+    turnStartingTimerRef.current.unref?.()
+  }, [])
+  useEffect(() => {
+    if (turnStarting && view.meta && view.meta.state !== 'idle') {
+      if (turnStartingTimerRef.current)
+        clearTimeout(turnStartingTimerRef.current)
+      setTurnStarting(false)
+    }
+  }, [turnStarting, view.meta?.state])
+  useEffect(
+    () => () => {
+      if (turnStartingTimerRef.current)
+        clearTimeout(turnStartingTimerRef.current)
+    },
+    [],
+  )
   // A local-jsx dialog the session's input pipeline just built (/help,
   // /model, …): the same slot the REPL's tool-JSX modal holds for them.
   const localDialog = useSyncExternalStore(
@@ -270,6 +342,9 @@ export function AttachedSession({
     )
       return
     initialPromptSentRef.current = true
+    scrollRef.current?.scrollToBottom()
+    dividerYRef.current = null
+    markTurnStarting()
     void send({
       kind: 'prompt',
       content: initialPrompt,
@@ -277,7 +352,7 @@ export function AttachedSession({
       commandId: randomUUID(),
       sessionEpoch: view.meta.sessionEpoch ?? 0,
     } as Record<string, unknown>)
-  }, [initialPrompt, connection.status, view.meta, send])
+  }, [initialPrompt, connection.status, view.meta, send, markTurnStarting])
 
   const handleSubmit = useCallback(
     async (text: string) => {
@@ -311,6 +386,11 @@ export function AttachedSession({
         )
         return
       }
+      // The human-message backstop the classic REPL runs on submit:
+      // re-pin the transcript and clear the unseen-divider snapshot.
+      scrollRef.current?.scrollToBottom()
+      dividerYRef.current = null
+      markTurnStarting()
       await send({
         kind: 'prompt',
         content: text,
@@ -319,7 +399,7 @@ export function AttachedSession({
         sessionEpoch: view.meta?.sessionEpoch ?? 0,
       } as Record<string, unknown>)
     },
-    [send, editingQueueId, view.meta, isLocalHost],
+    [send, editingQueueId, view.meta, isLocalHost, markTurnStarting],
   )
 
   // The classic tool registry: feeds the real tool cards. A tool the card
@@ -342,6 +422,46 @@ export function AttachedSession({
   // prompt buffer.
   const composerActive =
     isConnected && !pendingRequest && !tasksDialog && !showLocalDialog
+
+  // The prompt-suggestion ghost: the session's stop-hook fork writes
+  // AppState.promptSuggestion.text into the shared store (the query loop
+  // runs session-side), and this composer paints it where the classic
+  // input paints its placeholder. Hidden while responding or typing, like
+  // usePromptSuggestion gates it in the REPL.
+  const setAppState = useSetAppState()
+  const suggestionText = useAppState(s => s.promptSuggestion.text)
+  const ghostText =
+    suggestionText && inputText === '' && !isRunning && !turnStarting
+      ? suggestionText
+      : null
+  useEffect(() => {
+    if (!ghostText) return
+    // The mirror of the hook's markShown — telemetry and accept tracking
+    // both gate on shownAt.
+    setAppState(prev =>
+      prev.promptSuggestion.shownAt !== 0 || !prev.promptSuggestion.text
+        ? prev
+        : {
+            ...prev,
+            promptSuggestion: {
+              ...prev.promptSuggestion,
+              shownAt: Date.now(),
+            },
+          },
+    )
+  }, [ghostText, setAppState])
+  const acceptSuggestion = useCallback(() => {
+    setAppState(prev => ({
+      ...prev,
+      promptSuggestion: {
+        text: null,
+        promptId: null,
+        shownAt: 0,
+        acceptedAt: 0,
+        generationRequestId: null,
+      },
+    }))
+  }, [setAppState])
 
   // A running-turn clock: starts on the transition into running, and a 1s
   // tick keeps the elapsed time and task durations fresh. The refs back the
@@ -454,11 +574,15 @@ export function AttachedSession({
           cancel()
           return
         }
-        if (trimmed) {
-          historyRef.current.push(trimmed)
+        // An empty Enter accepts a visible suggestion — the mirror of the
+        // REPL's input-matches-suggestion submit.
+        const submitText = trimmed ? inputText : (ghostText ?? '')
+        if (ghostText && !trimmed) acceptSuggestion()
+        if (submitText.trim()) {
+          historyRef.current.push(submitText.trim())
           if (historyRef.current.length > 50) historyRef.current.shift()
           historyAtRef.current = -1
-          void handleSubmit(inputText)
+          void handleSubmit(submitText)
           setInputText('')
         }
         return
@@ -551,61 +675,68 @@ export function AttachedSession({
   return (
     <KeybindingSetup>
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
-        <ScrollBox
-          ref={scrollRef}
-          flexGrow={1}
-          flexDirection="column"
-          stickyScroll
-        >
-          {/* Hosted launches mount the classic welcome banner — the
+        {/* The scroll-wrap FullscreenLayout gives the pill: the absolute
+            bottom row of THIS box, floating over the ScrollBox's last
+            content row (not the dock). */}
+        <Box flexGrow={1} flexDirection="column" overflow="hidden">
+          <ScrollBox
+            ref={scrollRef}
+            flexGrow={1}
+            flexDirection="column"
+            stickyScroll
+          >
+            {/* Hosted launches mount the classic welcome banner — the
               process owns the session, so the banner's model/cwd lines
               describe what the classic REPL would show. A remote attach
               gets the one-line header instead. */}
-          {showWelcomeBanner ? (
-            <LogoV2 />
-          ) : (
-            <Box paddingX={2} paddingY={1}>
-              <Text dimColor>
-                ── Attached to {label ?? `PID ${pid}`}
-                {view.meta ? ` · ${view.meta.cwd}` : ''} ──
-              </Text>
-            </Box>
-          )}
+            {showWelcomeBanner ? (
+              <LogoV2 />
+            ) : (
+              <Box paddingX={2} paddingY={1}>
+                <Text dimColor>
+                  ── Attached to {label ?? `PID ${pid}`}
+                  {view.meta ? ` · ${view.meta.cwd}` : ''} ──
+                </Text>
+              </Box>
+            )}
 
-          {connection.status === 'connecting' && (
-            <Box paddingX={2}>
-              <Text dimColor>Connecting to session...</Text>
-            </Box>
-          )}
+            {connection.status === 'connecting' && (
+              <Box paddingX={2}>
+                <Text dimColor>Connecting to session...</Text>
+              </Box>
+            )}
 
-          {connection.status === 'error' && (
-            <Box paddingX={2}>
-              <Text color="error">Connection failed: {connection.message}</Text>
-            </Box>
-          )}
+            {connection.status === 'error' && (
+              <Box paddingX={2}>
+                <Text color="error">
+                  Connection failed: {connection.message}
+                </Text>
+              </Box>
+            )}
 
-          {/* Transcript: the classic message components, fed from the wire */}
-          <AttachedTranscript
-            view={view}
-            tools={tools}
-            showInjectedContext={showInjectedContext}
-            // The classic `Session context` row is rebuilt from the local
-            // getUserContext() — honest only when this process is the host.
-            showSessionContextRow={pid === process.pid}
-          />
+            {/* Transcript: the classic message components, fed from the wire */}
+            <AttachedTranscript
+              view={view}
+              tools={tools}
+              showInjectedContext={showInjectedContext}
+              verbose={verbose}
+              // The classic `Session context` row is rebuilt from the local
+              // getUserContext() — honest only when this process is the host.
+              showSessionContextRow={pid === process.pid}
+            />
 
-          {/* Streaming preview at the transcript tail. A tool-only draft
+            {/* Streaming preview at the transcript tail. A tool-only draft
               renders NOTHING here — the in-flight cards are painted by
               the transcript bridge at the transcript tail, and mounting
               this row's separator for a body it does not have would add
               and drop a blank row on every draft/commit boundary (the
               classic streaming preview grows from the same rows it will
               commit into, so no separator churn exists there). */}
-          {draft && (draft.thinking || draft.text) ? (
-            <StreamDraftRow draft={draft} />
-          ) : null}
+            {draft && (draft.thinking || draft.text) ? (
+              <StreamDraftRow draft={draft} />
+            ) : null}
 
-          {/* The classic spinner block lives INSIDE the scroll content,
+            {/* The classic spinner block lives INSIDE the scroll content,
               after a growing spacer: mounting it at a turn start appends
               at the block's bottom edge — the top edge never moves until
               the content outgrows the viewport, and then the log-update
@@ -613,40 +744,54 @@ export function AttachedSession({
               (what tests/e2e/edit-inflight-panel-repaint guards). A dock
               copy of the spinner would resize the scroll viewport and
               rewrite every visible row at each turn boundary. */}
-          <Box flexGrow={1} />
-          {showSpinner ? (
-            <SpinnerWithVerb
-              mode={spinnerMode}
-              loadingStartTimeRef={loadingStartTimeRef}
-              totalPausedMsRef={totalPausedMsRef}
-              pauseStartTimeRef={pauseStartTimeRef}
-              responseLengthRef={responseLengthRef}
-              verbose={verbose}
-              hasActiveTools={
-                (view.meta?.inProgressToolUseIds?.length ?? 0) > 0
-              }
-              compactingStartTime={
-                view.meta?.activity === 'compacting'
-                  ? (runningSince ?? Date.now())
-                  : null
-              }
+            <Box flexGrow={1} />
+            {showSpinner ? (
+              <SpinnerWithVerb
+                mode={spinnerMode}
+                loadingStartTimeRef={loadingStartTimeRef}
+                totalPausedMsRef={totalPausedMsRef}
+                pauseStartTimeRef={pauseStartTimeRef}
+                responseLengthRef={responseLengthRef}
+                verbose={verbose}
+                hasActiveTools={
+                  (view.meta?.inProgressToolUseIds?.length ?? 0) > 0
+                }
+                compactingStartTime={
+                  view.meta?.activity === 'compacting'
+                    ? (runningSince ?? Date.now())
+                    : null
+                }
+              />
+            ) : (
+              panelVisible && (
+                // The classic's idle swap: the standalone headered panel
+                // takes the spinner's bottom-anchored slot, so the panel
+                // visibly replaces the spinner when the turn settles.
+                <TaskListV2 tasks={boardTasks} isStandalone />
+              )
+            )}
+            {showSpinner && panelVisible && (
+              // Busy-time panel: FLUSH under the spinner row, no header —
+              // the same TaskPanelRows the classic spinner hosts.
+              <TaskPanelRows tasks={boardTasks} />
+            )}
+          </ScrollBox>
+          {!tasksDialog && !showLocalDialog && pillVisible && (
+            <NewMessagesPill
+              count={0}
+              // jumpToNew's behavior: scrollToBottom re-arms sticky, the
+              // pill's own at-bottom check hides it, and the divider
+              // snapshot stays alive so the unseen position is remembered.
+              onClick={() => scrollRef.current?.scrollToBottom()}
             />
-          ) : (
-            panelVisible && (
-              // The classic's idle swap: the standalone headered panel
-              // takes the spinner's bottom-anchored slot, so the panel
-              // visibly replaces the spinner when the turn settles.
-              <TaskListV2 tasks={boardTasks} isStandalone />
-            )
           )}
-          {showSpinner && panelVisible && (
-            // Busy-time panel: FLUSH under the spinner row, no header —
-            // the same TaskPanelRows the classic spinner hosts.
-            <TaskPanelRows tasks={boardTasks} />
-          )}
-        </ScrollBox>
+        </Box>
 
-        <ScrollKeybindingHandler scrollRef={scrollKeyTargetRef} isActive />
+        <ScrollKeybindingHandler
+          scrollRef={scrollKeyTargetRef}
+          isActive
+          onScroll={onTranscriptScroll}
+        />
 
         {/* Disconnected banner */}
         {connection.status === 'disconnected' && (
@@ -741,8 +886,23 @@ export function AttachedSession({
             ) : (
               <Box flexDirection="row">
                 <Text color="claude">{editingQueueId ? '✎ ' : '❯ '}</Text>
-                <Text>{inputText}</Text>
-                <Text inverse> </Text>
+                {inputText ? (
+                  <>
+                    <Text>{inputText}</Text>
+                    <Text inverse> </Text>
+                  </>
+                ) : ghostText ? (
+                  // The suggestion ghost: cursor first, dim suggestion
+                  // after it — the classic input row with a placeholder.
+                  <>
+                    <Text inverse> </Text>
+                    <Text dimColor>
+                      {ghostText.slice(0, Math.max(0, columns - 4))}
+                    </Text>
+                  </>
+                ) : (
+                  <Text inverse> </Text>
+                )}
               </Box>
             )}
             <Text color="promptBorder">{'─'.repeat(columns)}</Text>
@@ -786,7 +946,7 @@ export function AttachedSession({
                 displayed statusline, as PromptInputFooter suppresses it. */}
             <AttachedBottomBar
               meta={view.meta}
-              running={isRunning}
+              running={isRunning || turnStarting}
               hasTray={pendingRequest !== null}
               suppressHint={isLocalHost && statusLine.suppressHint}
               exitPending={
@@ -952,6 +1112,7 @@ function AttachedBottomBar({
           <Text color={mode.color ?? undefined} dimColor={!mode.color}>
             {mode.text}
           </Text>
+          {mode.hint ? <Text dimColor>{mode.hint}</Text> : null}
           {!suppressHint && <Text dimColor> · {bar.left}</Text>}
         </>
       )}
