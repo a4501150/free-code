@@ -33,6 +33,7 @@ import type {
 import {
   buildMessageLookups,
   deriveUUID,
+  formatCommandInputTags,
   normalizeMessages,
   reorderMessagesInUI,
   type MessageLookups,
@@ -99,7 +100,11 @@ export type TranscriptUnit =
    * showInjectedContext); everything else keeps the viewer-native row.
    */
   | { kind: 'attachment'; item: WireItem; injected: boolean }
-  /** A system/compact-seam row the viewer renders natively. */
+  /**
+   * A system row. Compact seams render as the viewer's native divider;
+   * local-command output (subtype local_command) renders through the
+   * classic component, mirroring Message.tsx's dispatch for it.
+   */
   | { kind: 'system'; item: WireItem }
   /** A live-progress row, hung under the tool it belongs to. */
   | { kind: 'progress'; item: WireItem; progress: ProgressMessage }
@@ -222,9 +227,18 @@ export function bridgeTranscript(
       case 'user': {
         flushAssistant()
         if (!item.text && !item.image) continue
+        // A slash-command invocation row: rebuild the synthetic tag form
+        // the session stripped for transport, so the classic dispatcher
+        // routes it to UserCommandMessage — the REPL's `❯ /name args` row.
+        const text = item.commandInput
+          ? formatCommandInputTags(
+              item.commandInput.name,
+              item.commandInput.args ?? '',
+            )
+          : (item.text ?? '')
         const message = userMessage(item, {
           type: 'text',
-          text: item.text ?? '',
+          text,
         })
         units.push({ kind: 'message', message, itemIds: [item.id] })
         messages.push(message)

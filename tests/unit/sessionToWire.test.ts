@@ -125,6 +125,30 @@ describe('toWire v2', () => {
     expect(items[0].text).toBe('total: $1')
   })
 
+  test('slash-command input rows ride as commandInput, not a stripped blank', () => {
+    const format = (name: string, args: string): string =>
+      `<command-name>/${name}</command-name>\n<command-message>${name}</command-message>\n<command-args>${args}</command-args>`
+    const items = toWireItems([
+      userMessage({
+        message: { role: 'user', content: format('version', '') },
+      } as any),
+      userMessage({
+        message: { role: 'user', content: format('model', 'opus') },
+      } as any),
+    ])
+    // Both rows survive the tag strip that would otherwise erase them.
+    expect(items.map(i => i.kind)).toEqual(['user', 'user'])
+    expect(items[0]!.commandInput).toEqual({ name: 'version' })
+    expect(items[0]!.text).toBe('/version')
+    expect(items[1]!.commandInput).toEqual({ name: 'model', args: 'opus' })
+    expect(items[1]!.text).toBe('/model opus')
+
+    // A plain prompt carries no commandInput.
+    const plain = toWireItems([userMessage()])
+    expect(plain[0]!.commandInput).toBeUndefined()
+    expect(plain[0]!.text).toBe('hello world')
+  })
+
   test('diff expresses appends compactly and reorders fully', () => {
     const first = userMessage()
     const second = userMessage()

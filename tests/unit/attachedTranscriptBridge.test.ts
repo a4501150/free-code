@@ -176,4 +176,58 @@ describe('bridgeTranscript', () => {
       { kind: 'system', item: expect.objectContaining({ id: 's1' }) },
     ])
   })
+
+  test('a commandInput user item rebuilds the synthetic tag form', () => {
+    // The classic dispatcher routes the tag form to UserCommandMessage —
+    // the REPL's `❯ /name args` row. The bridge must rebuild the tags,
+    // not show the tagless transport text.
+    const bridged = bridgeTranscript(
+      snapshot([
+        item({
+          id: 'c1',
+          kind: 'user',
+          text: '/model opus',
+          commandInput: { name: 'model', args: 'opus' },
+        }),
+      ]),
+      false,
+    )
+    const unit = bridged.units[0]
+    expect(unit!.kind).toBe('message')
+    if (unit!.kind !== 'message') return
+    const text = (
+      unit!.message as {
+        message: { content: Array<{ type: string; text?: string }> }
+      }
+    ).message.content[0]!.text!
+    expect(text.startsWith('<command-name>/model</command-name>')).toBe(true)
+    expect(text).toContain('<command-args>opus</command-args>')
+  })
+
+  test('a local_command system row rides through with its raw tags', () => {
+    // The viewer renders these through the classic UserTextMessage, whose
+    // branch predicate is a raw `<local-command-stdout` prefix — the
+    // bridge must not rewrite the text.
+    const bridged = bridgeTranscript(
+      snapshot([
+        item({
+          id: 's2',
+          kind: 'system',
+          text: '<local-command-stdout>3.0.0 (built now)</local-command-stdout>',
+          subtype: 'local_command',
+        }),
+      ]),
+      false,
+    )
+    expect(bridged.units).toEqual([
+      { kind: 'system', item: expect.objectContaining({ id: 's2' }) },
+    ])
+    const unit = bridged.units[0] as Extract<
+      (typeof bridged.units)[number],
+      { kind: 'system' }
+    >
+    expect(unit.item.text).toBe(
+      '<local-command-stdout>3.0.0 (built now)</local-command-stdout>',
+    )
+  })
 })

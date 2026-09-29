@@ -29,6 +29,7 @@ import { bridgeTranscript, type BridgedTranscript } from './transcriptBridge.js'
 import { attachmentGutter, compactDividerText, foldText } from './itemViews.js'
 import { attachmentView, progressView } from '../../webui/client/itemViews.js'
 import { InjectedContextMessage } from '../../components/messages/InjectedContextMessage.js'
+import { UserTextMessage } from '../../components/messages/UserTextMessage.js'
 import { InVirtualListContext } from '../../components/messageActions.js'
 
 type Props = {
@@ -286,6 +287,26 @@ export function AttachedTranscript({
     }
 
     if (unit.kind === 'system') {
+      // Command output rides the wire as a system/local_command row whose
+      // text is the synthetic `<local-command-stdout>` message. The classic
+      // dispatcher (Message.tsx) renders exactly this subtype through
+      // UserTextMessage — the `⎿` output block; mount the same component
+      // with the same dispatch, not the divider row the compact seam gets.
+      if (unit.item.subtype === 'local_command') {
+        body.push(
+          <Box key={unit.item.id}>
+            <UserTextMessage
+              addMargin={false}
+              param={{ type: 'text', text: unit.item.text ?? '' }}
+              verbose={false}
+              isTranscriptMode={false}
+              showInjectedContext={showInjectedContext}
+            />
+          </Box>,
+        )
+        prevRenderedInjected = false
+        continue
+      }
       const divider = compactDividerText(unit.item)
       body.push(
         <Box key={unit.item.id} marginTop={1}>

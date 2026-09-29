@@ -18,7 +18,15 @@ import type {
   DomainUserContentBlock,
 } from '../types/domain.js'
 import type { Attachment } from '../utils/attachments.js'
-import { getAttachmentSystemReminderBodies } from '../utils/messages.js'
+import {
+  extractTag,
+  getAttachmentSystemReminderBodies,
+} from '../utils/messages.js'
+import {
+  COMMAND_ARGS_TAG,
+  COMMAND_MESSAGE_TAG,
+  COMMAND_NAME_TAG,
+} from '../constants/xml.js'
 import type { WireAttachmentPayload, WireItem } from './wire.js'
 
 const MAX_TEXT_BYTES = 64 * 1024
@@ -82,6 +90,56 @@ function stripSyntheticTags(text: string): string {
     )
   }
   return result.trim()
+}
+
+/**
+ * Recognize the synthetic slash-command input message (formatCommandInputTags
+ * in messages.ts, and the skill-loading variants, all of which the classic
+ * UserTextMessage dispatches to its command row). Stripping the tags would
+ * erase the row entirely — the command never reaches the model, so the only
+ * content was the tags — so it is carried as a `commandInput` item with a
+ * tagless `/name args` text instead. The predicate mirrors the REPL's: the
+ * text starts with one of the name/message tags and the command-message tag
+ * is present.
+ */
+function commandInputFromText(
+  text: string,
+): { name: string; args?: string } | undefined {
+  const trimmed = text.trimStart()
+  if (
+    !(
+      trimmed.startsWith(`<${COMMAND_NAME_TAG}>`) ||
+      trimmed.startsWith(`<${COMMAND_MESSAGE_TAG}>`)
+    ) ||
+    !trimmed.includes(`<${COMMAND_MESSAGE_TAG}>`)
+  )
+    return undefined
+  const raw =
+    extractTag(text, COMMAND_NAME_TAG) ?? extractTag(text, COMMAND_MESSAGE_TAG)
+  const name = raw?.replace(/^\//, '').trim()
+  if (!name) return undefined
+  const args = extractTag(text, COMMAND_ARGS_TAG)?.trim()
+  return { name, ...(args ? { args } : {}) }
+}
+
+type WireItemBase = Omit<Partial<WireItem>, 'id' | 'kind' | 'text' | 'rev'>
+
+function commandInputItem(
+  base: WireItemBase,
+  id: string,
+  commandInput: { name: string; args?: string },
+): WireItem {
+  return finish({
+    ...base,
+    id,
+    kind: 'user',
+    text: clip(
+      commandInput.args
+        ? `/${commandInput.name} ${commandInput.args}`
+        : `/${commandInput.name}`,
+    ),
+    commandInput,
+  } as Omit<WireItem, 'rev'>)
 }
 
 /**
@@ -266,6 +324,10 @@ function userBlockItems(message: Message & { type: 'user' }): WireItem[] {
   }
 
   if (typeof content === 'string') {
+    const commandInput = commandInputFromText(content)
+    if (commandInput) {
+      return [commandInputItem(base, `${message.uuid}:0`, commandInput)]
+    }
     const cleaned = stripSyntheticTags(content)
     if (!cleaned) return []
     return [
@@ -284,6 +346,11 @@ function userBlockItems(message: Message & { type: 'user' }): WireItem[] {
     const id = `${message.uuid}:${index}`
     switch (block.type) {
       case 'text': {
+        const commandInput = commandInputFromText(block.text)
+        if (commandInput) {
+          items.push(commandInputItem(base, id, commandInput))
+          break
+        }
         const cleaned = stripSyntheticTags(block.text)
         if (!cleaned) break
         items.push(finish({ ...base, id, kind: 'user', text: clip(cleaned) }))

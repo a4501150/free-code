@@ -131,6 +131,15 @@ export type WireItem = {
    * and travel over `GET /image` when the reader asks for them.
    */
   image?: { mediaType: string; bytes: number }
+  /**
+   * user — set when the row is a slash-command invocation (the synthetic
+   * `<command-name>` message). `text` carries the tagless form
+   * (`/name args`) for plain renderers; a client that owns the classic
+   * transcript components rebuilds the synthetic message from name/args
+   * and paints the REPL's own `❯ /name args` row instead. Absent for
+   * ordinary prompts; readers that do not render command rows ignore it.
+   */
+  commandInput?: { name: string; args?: string }
   /** assistant */
   model?: string
   /** Provider message ID, shared by sibling tool calls from one response. */
