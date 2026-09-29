@@ -27,6 +27,10 @@ import { SpinnerWithVerb, type SpinnerMode } from '../components/Spinner.js'
 import { LogoV2 } from '../components/LogoV2/LogoV2.js'
 import { taskView } from '../webui/client/itemViews.js'
 import { AttachedTranscript } from './attached/AttachedTranscript.js'
+import { TaskPanelRows } from '../components/TaskLivePanel.js'
+import { TaskListV2 } from '../components/TaskListV2.js'
+import type { Task, TaskStatus } from '../utils/taskSchemas.js'
+import { useAppState } from '../state/AppState.js'
 import { AssistantThinkingMessage } from '../components/messages/AssistantThinkingMessage.js'
 import { AssistantTextMessage } from '../components/messages/AssistantTextMessage.js'
 import { getAllBaseTools } from '../tools.js'
@@ -296,6 +300,59 @@ export function AttachedSession({
     return () => clearInterval(timer)
   }, [])
 
+  // The classic spinner's token counter tracks the streamed response
+  // length; the wire draft is this viewer's copy of that stream.
+  useEffect(() => {
+    const draft = view.streamDraft
+    if (!draft || !isRunning) return
+    responseLengthRef.current =
+      (draft.text?.length ?? 0) +
+      (draft.thinking?.length ?? 0) +
+      draft.tools.reduce((n, t) => n + t.partialJson.length, 0)
+  }, [view.streamDraft, isRunning])
+
+  const verbose = useAppState(s => s.verbose)
+
+  // ── The task board, mirrored from the wire ───────────────────────────
+  // The stream's todo rows ARE the session's task board (subject, status,
+  // activeForm). The classic pane mounts the same TaskLivePanel machinery
+  // from this data: while the turn runs the panel rides FLUSH under the
+  // spinner without its header, and when the turn settles the standalone
+  // headered panel takes the spinner's slot. The classic store auto-
+  // expands on any board write and hides a board whose tasks are all
+  // completed after a five-second window — mirrored here over wire state,
+  // where the session's own store is not this tree's context.
+  const boardTasks = useMemo<Task[]>(
+    () =>
+      view.todos.map((todo, at) => ({
+        id: String(at + 1),
+        subject: todo.content,
+        description: '',
+        ...(todo.activeForm ? { activeForm: todo.activeForm } : {}),
+        status: todo.status as TaskStatus,
+        blocks: [],
+        blockedBy: [],
+      })),
+    [view.todos],
+  )
+  const [boardExpanded, setBoardExpanded] = useState(false)
+  const boardSignatureRef = useRef<string | null>(null)
+  useEffect(() => {
+    const signature = JSON.stringify(view.todos)
+    const first = boardSignatureRef.current === null
+    boardSignatureRef.current = signature
+    // A board write seen while watching expands the panel, like the task
+    // tools do in the classic store; the attach-time snapshot alone does
+    // not — the classic pane opens collapsed for a board it did not
+    // watch grow.
+    if (!first && view.todos.length > 0) setBoardExpanded(true)
+    if (!view.todos.every(todo => todo.status === 'completed')) return
+    const timer = setTimeout(() => setBoardExpanded(false), 5000)
+    timer.unref?.()
+    return () => clearTimeout(timer)
+  }, [view.todos])
+  const panelVisible = boardExpanded && boardTasks.length > 0
+
   // The newest host toast (settings errors, rate limits): shown briefly.
   const notification =
     view.notifications.error ??
@@ -470,8 +527,56 @@ export function AttachedSession({
             showSessionContextRow={pid === process.pid}
           />
 
-          {/* Streaming preview at the transcript tail */}
-          {draft && <StreamDraftRow draft={draft} />}
+          {/* Streaming preview at the transcript tail. A tool-only draft
+              renders NOTHING here — the in-flight cards are painted by
+              the transcript bridge at the transcript tail, and mounting
+              this row's separator for a body it does not have would add
+              and drop a blank row on every draft/commit boundary (the
+              classic streaming preview grows from the same rows it will
+              commit into, so no separator churn exists there). */}
+          {draft && (draft.thinking || draft.text) ? (
+            <StreamDraftRow draft={draft} />
+          ) : null}
+
+          {/* The classic spinner block lives INSIDE the scroll content,
+              after a growing spacer: mounting it at a turn start appends
+              at the block's bottom edge — the top edge never moves until
+              the content outgrows the viewport, and then the log-update
+              shift fast path scrolls instead of repainting the screen
+              (what tests/e2e/edit-inflight-panel-repaint guards). A dock
+              copy of the spinner would resize the scroll viewport and
+              rewrite every visible row at each turn boundary. */}
+          <Box flexGrow={1} />
+          {showSpinner ? (
+            <SpinnerWithVerb
+              mode={spinnerMode}
+              loadingStartTimeRef={loadingStartTimeRef}
+              totalPausedMsRef={totalPausedMsRef}
+              pauseStartTimeRef={pauseStartTimeRef}
+              responseLengthRef={responseLengthRef}
+              verbose={verbose}
+              hasActiveTools={
+                (view.meta?.inProgressToolUseIds?.length ?? 0) > 0
+              }
+              compactingStartTime={
+                view.meta?.activity === 'compacting'
+                  ? (runningSince ?? Date.now())
+                  : null
+              }
+            />
+          ) : (
+            panelVisible && (
+              // The classic's idle swap: the standalone headered panel
+              // takes the spinner's bottom-anchored slot, so the panel
+              // visibly replaces the spinner when the turn settles.
+              <TaskListV2 tasks={boardTasks} isStandalone />
+            )
+          )}
+          {showSpinner && panelVisible && (
+            // Busy-time panel: FLUSH under the spinner row, no header —
+            // the same TaskPanelRows the classic spinner hosts.
+            <TaskPanelRows tasks={boardTasks} />
+          )}
         </ScrollBox>
 
         <ScrollKeybindingHandler scrollRef={scrollRef} isActive />
@@ -508,80 +613,48 @@ export function AttachedSession({
           </Box>
         )}
 
-        {/* Queued prompts, todos, and background tasks */}
-        {isConnected &&
-          (queued.length > 0 ||
-            view.todos.length > 0 ||
-            view.tasks.length > 0) && (
-            <Box flexShrink={0} flexDirection="column" paddingX={2}>
-              {queued.length > 0 && (
-                <Box>
-                  <Text dimColor>
-                    queued:{' '}
-                    {queued
-                      .map(row => row.text)
-                      .join(' · ')
-                      .slice(0, 120)}
-                    {inputText === '' ? '  (^e edit · ^x drop)' : ''}
-                  </Text>
-                </Box>
-              )}
-              {view.todos.length > 0 && (
-                <Box>
-                  <Text dimColor>
-                    todos:{' '}
-                    {view.todos
-                      .map(
-                        todo =>
-                          `${todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '▶' : '·'} ${todo.content}`,
-                      )
-                      .slice(0, 4)
-                      .join(' · ')
-                      .slice(0, 160)}
-                  </Text>
-                </Box>
-              )}
-              {view.tasks.length > 0 && (
-                <Box>
-                  <Text dimColor>
-                    tasks:{' '}
-                    {view.tasks
-                      .map(task => {
-                        const view0 = taskView(task, Date.now())
-                        return `${view0.marker} ${view0.label}${view0.duration ? ` ${view0.duration}` : ''}`
-                      })
-                      .slice(0, 4)
-                      .join(' · ')
-                      .slice(0, 160)}
-                  </Text>
-                </Box>
-              )}
-            </Box>
-          )}
+        {/* Queued prompts and background tasks. The task board does not
+            live here — it renders as the classic task panel, spinner-slot
+            busy-time and standalone at idle, above. */}
+        {isConnected && (queued.length > 0 || view.tasks.length > 0) && (
+          <Box flexShrink={0} flexDirection="column" paddingX={2}>
+            {queued.length > 0 && (
+              <Box>
+                <Text dimColor>
+                  queued:{' '}
+                  {queued
+                    .map(row => row.text)
+                    .join(' · ')
+                    .slice(0, 120)}
+                  {inputText === '' ? '  (^e edit · ^x drop)' : ''}
+                </Text>
+              </Box>
+            )}
+            {view.tasks.length > 0 && (
+              <Box>
+                <Text dimColor>
+                  tasks:{' '}
+                  {view.tasks
+                    .map(task => {
+                      const view0 = taskView(task, Date.now())
+                      return `${view0.marker} ${view0.label}${view0.duration ? ` ${view0.duration}` : ''}`
+                    })
+                    .slice(0, 4)
+                    .join(' · ')
+                    .slice(0, 160)}
+                </Text>
+              </Box>
+            )}
+          </Box>
+        )}
 
-        {/* Composer — the classic dock: spinner row, full-width rule, the
-            prompt line at column 0, full-width rule, footer. Same rows,
-            same order, same indent as the classic pane. */}
+        {/* Composer — the classic dock: full-width rule, the prompt line
+            at column 0, full-width rule, footer. The spinner and the task
+            panel live in the scroll content above, exactly where the
+            classic REPL mounts them. Same rows, same order, same indent
+            as the classic pane. */}
         {isConnected && (
           <Box flexShrink={0} flexDirection="column" marginTop={1}>
-            {showSpinner && (
-              <SpinnerWithVerb
-                mode={spinnerMode}
-                loadingStartTimeRef={loadingStartTimeRef}
-                totalPausedMsRef={totalPausedMsRef}
-                pauseStartTimeRef={pauseStartTimeRef}
-                responseLengthRef={responseLengthRef}
-                verbose={false}
-                hasActiveTools={
-                  (view.meta?.inProgressToolUseIds?.length ?? 0) > 0
-                }
-                compactingStartTime={
-                  view.meta?.activity === 'compacting'
-                    ? (runningSince ?? Date.now())
-                    : null
-                }
-              />
-            )}
             <Text color="promptBorder">{'─'.repeat(columns)}</Text>
             {pendingRequest ? (
               <Box marginLeft={2}>
@@ -668,7 +741,10 @@ function StreamDraftRow({
       ) : null}
       {draft.text ? (
         // The dot rides the preview too: the classic streaming row shows
-        // the same ⏺ gutter as the committed row will.
+        // the same ⏺ gutter as the committed row will. In-flight tool
+        // blocks do NOT render here — the transcript bridge paints them
+        // as the real tool cards the classic streaming partials become,
+        // at the transcript's tail.
         <AssistantTextMessage
           param={{ type: 'text', text: draft.text }}
           addMargin={false}
@@ -676,13 +752,6 @@ function StreamDraftRow({
           verbose={false}
         />
       ) : null}
-      {draft.tools.map((tool, at) => (
-        <Box key={at}>
-          <Text dimColor>
-            ⚡ {tool.toolName ?? 'tool'} {tool.partialJson}…
-          </Text>
-        </Box>
-      ))}
     </Box>
   )
 }

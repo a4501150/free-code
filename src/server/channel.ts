@@ -291,6 +291,10 @@ export function createSessionChannel(
           ...(streamDraft ?? {}),
           tools: event.toolUses.map(toolUse => ({
             toolName: toolUse.contentBlock?.name,
+            // Lets a reader retire a card the moment its block commits,
+            // instead of dropping the whole draft at every patch (which
+            // blanks cards for blocks that are still streaming).
+            toolUseId: toolUse.contentBlock?.id,
             partialJson: toolUse.unparsedToolInput,
           })),
         })

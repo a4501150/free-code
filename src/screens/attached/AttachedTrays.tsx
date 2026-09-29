@@ -238,6 +238,9 @@ function PermissionTray({
         <Box maxHeight={8} overflow="hidden">
           <Text dimColor>{JSON.stringify(request.input, null, 1)}</Text>
         </Box>
+        {/* The classic dialogs all ask the same question above their
+            options ("Do you want to proceed?"); the tray asks it too. */}
+        <Text>Do you want to proceed?</Text>
         <Text dimColor>
           persist {persist ? '✓' : '·'} · mode {setMode ?? 'unchanged'}
           {error ? ` · ${error}` : ''}

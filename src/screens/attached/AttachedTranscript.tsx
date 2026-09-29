@@ -60,9 +60,15 @@ export function AttachedTranscript({
     }),
     [view.items, view.order],
   )
+  // The in-flight tool partials, keyed stably by block position so the
+  // streaming cards' React keys never churn while the JSON trickles in.
+  const draftTools = useMemo(
+    () => (view.streamDraft?.tools ?? []).map(tool => ({ ...tool })),
+    [view.streamDraft],
+  )
   const bridge = useMemo<BridgedTranscript>(
-    () => bridgeTranscript(snapshot, showInjectedContext),
-    [snapshot, showInjectedContext],
+    () => bridgeTranscript(snapshot, showInjectedContext, tools, draftTools),
+    [snapshot, showInjectedContext, tools, draftTools],
   )
 
   // The classic pane's virtual first row: the user-context block is built
@@ -194,11 +200,15 @@ export function AttachedTranscript({
         }
         continue
       }
-      const rows = normalizeMessages([unit.message as never])
+      // The pipeline's rows for this unit — grouped/collapsed exactly as
+      // the classic pane folds them. Absorbed units have none; a unit
+      // rendered before any pipeline ran (no tools) falls back to its own
+      // normalized message.
+      const rows = unit.rows ?? normalizeMessages([unit.message as never])
       for (const row of rows) {
         const rowBlock = (
           row as {
-            message: {
+            message?: {
               content: Array<{
                 type: string
                 id?: string
@@ -207,10 +217,14 @@ export function AttachedTranscript({
               }>
             }
           }
-        ).message.content[0]
+        ).message?.content?.[0]
+        const isFold =
+          row.type === 'collapsed_read_search' ||
+          row.type === 'grouped_tool_use'
         // Mirrors Messages.expandKey: a tool card and the result riding
-        // under it share the tool_use_id so they expand together; every
-        // other row keys on its uuid.
+        // under it share the tool_use_id so they expand together; a
+        // collapsed group keys on its uuid; every other row keys on its
+        // uuid.
         const rowKey =
           (rowBlock?.type === 'tool_use'
             ? rowBlock.id
@@ -218,13 +232,15 @@ export function AttachedTranscript({
               ? rowBlock.tool_use_id
               : undefined) ?? (row as { uuid: string }).uuid
         // The classic pane's isItemClickable set, as far as these rows
-        // reach: injected-context rows while the setting shows them, and
-        // thinking rows with a body.
+        // reach: a collapsed read/search/bash group is always clickable
+        // (it exists to be opened), injected-context rows while the
+        // setting shows them, and thinking rows with a body.
         const clickable =
-          showInjectedContext &&
-          (rowBlock?.type === 'text'
-            ? isInjectedContextText(row as never)
-            : rowBlock?.type === 'reasoning' && Boolean(rowBlock.text))
+          isFold ||
+          (showInjectedContext &&
+            (rowBlock?.type === 'text'
+              ? isInjectedContextText(row as never)
+              : rowBlock?.type === 'reasoning' && Boolean(rowBlock.text)))
         body.push(
           <Box
             key={`${(row as { uuid: string }).uuid}:${(row as { message?: { content?: unknown[] } }).message?.content?.length ?? 0}`}
@@ -334,6 +350,41 @@ export function AttachedTranscript({
       </Box>,
     )
     prevRenderedInjected = false
+  }
+
+  // The streaming tool cards, hung at the transcript's tail — the
+  // viewer's twin of the REPL's synthetic streaming tool-use messages.
+  // The partial JSON has already been mined for complete fields, so the
+  // card shows what has landed and grows as the block closes.
+  for (const row of bridge.draftRows) {
+    body.push(
+      <Box
+        key={String(row.uuid)}
+        onClick={
+          row.type === 'collapsed_read_search' ||
+          row.type === 'grouped_tool_use'
+            ? rowClickHandler(String(row.uuid))
+            : undefined
+        }
+      >
+        <Message
+          message={row as never}
+          lookups={bridge.lookups}
+          showInjectedContext={showInjectedContext}
+          addMargin
+          tools={tools}
+          commands={[]}
+          verbose={expandedKeys.has(String(row.uuid))}
+          inProgressToolUseIDs={inProgress}
+          progressMessagesForMessage={[]}
+          shouldAnimate={false}
+          shouldShowDot={true}
+          isTranscriptMode={false}
+          isStatic={false}
+          width="100%"
+        />
+      </Box>,
+    )
   }
 
   // The reconstructed `Session context` row leads the list, as the

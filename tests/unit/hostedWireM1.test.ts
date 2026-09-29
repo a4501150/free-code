@@ -280,7 +280,7 @@ describe('stream draft over the channel', () => {
 })
 
 describe('view store stream/notify semantics', () => {
-  test('draft set by stream, cleared by transcript/snapshot/resync/session_changed', () => {
+  test('draft text cleared by transcript, tools survive; null/snapshot/resync/session_changed clear all', () => {
     const draft = { text: 'partial', tools: [] }
     let view = applyEvent(emptyView(), 1, { kind: 'stream', draft })
     expect(view.streamDraft).toEqual(draft)
@@ -288,22 +288,35 @@ describe('view store stream/notify semantics', () => {
       kind: 'transcript',
       patch: { type: 'delta', upsert: [], remove: [] },
     })
-    expect(view.streamDraft).toBeNull()
+    // The committed text row landed; a still-streaming tool partial must
+    // NOT be dropped by a patch that committed a different block (its card
+    // retires only when the committed item carries its toolUseId).
+    expect(view.streamDraft).toEqual({ tools: [] })
 
-    view = applyEvent(view, 3, { kind: 'stream', draft })
-    view = applyEvent(view, 4, { kind: 'resync_required' })
-    expect(view.streamDraft).toBeNull()
+    const withTool = {
+      tools: [{ toolName: 'Edit', toolUseId: 'tu_1', partialJson: '{"a":' }],
+    }
+    view = applyEvent(view, 3, { kind: 'stream', draft: withTool })
+    view = applyEvent(view, 4, {
+      kind: 'transcript',
+      patch: { type: 'delta', upsert: [], remove: [] },
+    })
+    expect(view.streamDraft).toEqual(withTool)
 
     view = applyEvent(view, 5, { kind: 'stream', draft })
-    view = applyEvent(view, 6, {
+    view = applyEvent(view, 6, { kind: 'resync_required' })
+    expect(view.streamDraft).toBeNull()
+
+    view = applyEvent(view, 7, { kind: 'stream', draft })
+    view = applyEvent(view, 8, {
       kind: 'session_changed',
       sessionId: 'x',
       sessionEpoch: 1,
     })
     expect(view.streamDraft).toBeNull()
 
-    view = applyEvent(view, 7, { kind: 'stream', draft })
-    view = applyEvent(view, 8, {
+    view = applyEvent(view, 9, { kind: 'stream', draft })
+    view = applyEvent(view, 10, {
       kind: 'snapshot',
       meta: {
         sessionId: 'x',

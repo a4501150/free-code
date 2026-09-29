@@ -33,9 +33,10 @@ export type SessionView = {
   tasks: WireTask[]
   catalog: WireCatalog
   /**
-   * In-flight preview for the running turn. Transient by contract: cleared
-   * by any `transcript` patch (the committed rows replace the preview), by
-   * `snapshot`/`session_changed`/`resync_required`.
+   * In-flight preview for the running turn. Transient by contract: the text
+   * preview is cleared by any `transcript` patch (those rows have landed);
+   * a tool card retires when its `toolUseId` commits; everything goes on
+   * `stream` null, `snapshot`/`session_changed`/`resync_required`.
    */
   streamDraft: WireStreamDraft | null
   /** Last notify per level — a toast rail, not a queue. */
@@ -100,8 +101,17 @@ export function applyEvent(
     }
 
     case 'transcript': {
-      // The committed rows land; the preview they stood in for is over.
-      next.streamDraft = null
+      // The committed text rows land; that preview is over. Tool partials
+      // SURVIVE the patch: the draft lists every block the turn has
+      // streamed, and a patch commits only some of them — dropping the
+      // whole draft here would unmount cards for blocks still streaming,
+      // a bottom-edge shrink that clamps a pinned-to-bottom transcript up
+      // and repaints the entire viewport (classic replaces only the
+      // streaming row that committed). A card retires when its
+      // `toolUseId` appears as a committed item (see transcriptBridge).
+      next.streamDraft = view.streamDraft
+        ? { ...view.streamDraft, text: undefined, thinking: undefined }
+        : null
       const patch = event.patch
       if (patch.type === 'replace') {
         next.items = new Map(patch.snapshot.items.map(i => [i.id, i]))

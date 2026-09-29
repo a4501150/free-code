@@ -314,6 +314,13 @@ function userBlockItems(message: Message & { type: 'user' }): WireItem[] {
             text: clip(text),
             toolUseId: block.tool_use_id,
             isError: block.is_error === true ? true : undefined,
+            // The structured result rides with its block: the classic
+            // result bodies (Bash output, Edit diffs, …) render from this
+            // value, not from the model-facing text. It is JSON-safe by
+            // contract — the transcript file round-trips it on resume.
+            ...(message.toolUseResult === undefined
+              ? {}
+              : { toolUseResult: message.toolUseResult }),
             // Only when found: a sidechain's own tool_result already carries
             // its agent's id via `base`, which an unconditional key would
             // overwrite with undefined.

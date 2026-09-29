@@ -142,6 +142,13 @@ export type WireItem = {
   /** tool_result */
   isError?: boolean
   /**
+   * tool_result — the tool's structured result, the same JSON-safe value
+   * the internal message carries (it round-trips through the transcript
+   * file on resume). Tools render their result bodies from this; clients
+   * that do not render bodies ignore it.
+   */
+  toolUseResult?: unknown
+  /**
    * reasoning — thinking time measured host-side (recorded at
    * content_block_stop), which lets a remote row say `thought for Xs`
    * like the REPL's. Absent when the host never measured one.
@@ -180,10 +187,14 @@ export type WireTranscriptPatch =
  * the next frame, never a corrupt one.
  *
  * Lifetime: the draft is transient, part of the running turn, not the
- * transcript. A client CLEARS it on any `transcript` patch (the committed
- * rows have landed), on `resync_required`, and on `session_changed`. The
- * server flushes the final draft state before the turn's transcript patch,
- * so a reader that shows the draft never loses the ending between frames.
+ * transcript. A client CLEARS the text preview on any `transcript` patch
+ * (those rows have landed), keeps tool-call partials until `toolUseId`
+ * shows up as a committed `tool_use` item (the card the partial stood in
+ * for has arrived; blocks still streaming must not vanish for blocks that
+ * committed beside them), and clears everything on `stream` null, on
+ * `resync_required` and on `session_changed`. The server flushes the final
+ * draft state before the turn's transcript patch, so a reader that shows
+ * the draft never loses the ending between frames.
  */
 export type WireStreamDraft = {
   /** Cumulative reasoning text for the running turn. */
@@ -191,7 +202,7 @@ export type WireStreamDraft = {
   /** Cumulative visible assistant text for the running turn. */
   text?: string
   /** Tool-call inputs still streaming, in block order. */
-  tools: Array<{ toolName?: string; partialJson: string }>
+  tools: Array<{ toolName?: string; toolUseId?: string; partialJson: string }>
 }
 
 /** A host-surfaced message (settings errors, rate limits, plugin status). */

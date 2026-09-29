@@ -15,6 +15,7 @@
  * Pure: no JSX, no Ink — the unit test runs it like any reducer.
  */
 import type { UUID } from 'crypto'
+import type { Tools } from '../../Tool.js'
 import type {
   DomainToolResultBlockParam,
   DomainToolUseBlock,
@@ -23,15 +24,23 @@ import type {
 import type {
   AssistantMessage,
   Message,
+  NormalizedAssistantMessage,
   NormalizedMessage,
   ProgressMessage,
+  RenderableMessage,
   UserMessage,
 } from '../../types/message.js'
 import {
   buildMessageLookups,
+  deriveUUID,
   normalizeMessages,
+  reorderMessagesInUI,
   type MessageLookups,
 } from '../../utils/messages.js'
+import { applyGrouping } from '../../utils/groupToolUses.js'
+import { collapseReadSearchGroups } from '../../utils/collapseReadSearch.js'
+import { collapseHookSummaries } from '../../utils/collapseHookSummaries.js'
+import { collapseBackgroundBashNotifications } from '../../utils/collapseBackgroundBashNotifications.js'
 import type { WireItem, WireTranscriptSnapshot } from '../../session/wire.js'
 
 /**
@@ -76,6 +85,13 @@ export type TranscriptUnit =
       kind: 'message'
       message: UserMessage | AssistantMessage
       itemIds: string[]
+      /**
+       * The classic pipeline's output rows this unit renders — the unit's
+       * own message after grouping/collapsing, possibly merged into a
+       * sibling group that starts at this unit. Absent only when the
+       * caller passed no tools (nothing to group against).
+       */
+      rows?: RenderableMessage[]
     }
   /**
    * An attachment row. Injected-context rows render as the classic
@@ -97,6 +113,21 @@ export type BridgedTranscript = {
   lookups: MessageLookups
   /** Normalized single-block rows, in stream order — what to render. */
   rows: NormalizedMessage[]
+  /**
+   * The in-flight tool cards from the stream draft, rendered through the
+   * same grouping/collapsing pipeline the committed rows take — the
+   * classic pane appends streaming tool-use partials to the message list,
+   * so this is that tail, already collapsed where the classic would
+   * collapse it.
+   */
+  draftRows: RenderableMessage[]
+}
+
+/** A streaming tool-use partial from the wire's `stream` draft. */
+export type DraftToolInput = {
+  toolName?: string
+  toolUseId?: string
+  partialJson: string
 }
 
 type AssistantDraft = {
@@ -107,9 +138,13 @@ type AssistantDraft = {
 export function bridgeTranscript(
   snapshot: WireTranscriptSnapshot,
   showInjectedContext: boolean,
+  tools: Tools = [],
+  draftTools: DraftToolInput[] = [],
 ): BridgedTranscript {
   const units: TranscriptUnit[] = []
   const messages: (UserMessage | AssistantMessage)[] = []
+  /** Parallel to `messages`: the wire items each synthetic message was built from. */
+  const messageItemIds: string[][] = []
   // Tool results arrive after their call; hold the block until the unit is
   // emitted so the row order matches the stream.
   let openAssistant: AssistantDraft | null = null
@@ -122,6 +157,7 @@ export function bridgeTranscript(
       itemIds: openAssistant.itemIds,
     })
     messages.push(openAssistant.message)
+    messageItemIds.push(openAssistant.itemIds)
     openAssistant = null
   }
 
@@ -171,6 +207,10 @@ export function bridgeTranscript(
     timestamp: item.timestamp,
     isMeta: item.isMeta,
     isSidechain: item.isSidechain,
+    // The structured result must ride to the renderer: the classic result
+    // bodies (Bash output lines, Edit diffs) render from toolUseResult,
+    // and UserToolSuccessMessage renders nothing without it.
+    toolUseResult: item.toolUseResult,
     message: { role: 'user', content: [content] },
   })
 
@@ -188,6 +228,7 @@ export function bridgeTranscript(
         })
         units.push({ kind: 'message', message, itemIds: [item.id] })
         messages.push(message)
+        messageItemIds.push([item.id])
         continue
       }
       case 'assistant': {
@@ -235,6 +276,7 @@ export function bridgeTranscript(
         const message = userMessage(item, block)
         units.push({ kind: 'message', message, itemIds: [item.id] })
         messages.push(message)
+        messageItemIds.push([item.id])
         continue
       }
       case 'progress': {
@@ -286,5 +328,164 @@ export function bridgeTranscript(
 
   const rows = normalizeMessages(messages as (UserMessage | AssistantMessage)[])
   const lookups = buildMessageLookups(rows, messages)
-  return { units, lookups, rows }
+
+  // ── The classic display pipeline ─────────────────────────────────────
+  // Reorder (results ride their calls), group, collapse read/search/bash
+  // runs — the same passes Messages runs, so a tool run the classic pane
+  // folds into one `Ran N bash commands` row folds here too, and a
+  // streaming draft tool block rides the list like the REPL's synthetic
+  // streaming messages. Without this the viewer shows raw per-call rows
+  // the classic pane never paints.
+
+  // Streaming partials become single-block assistant messages, normalized
+  // on their own (fresh chain) — the classic normalizeMessages([msg])
+  // shape for streaming tool uses. The partial JSON is mined for complete
+  // scalar fields; the card header summarizes from what has landed.
+  // A block whose call has COMMITTED to the transcript renders as its
+  // committed card, not the draft card it streamed through: the wire's
+  // draft lists every block the turn streamed, and patches retire only the
+  // committed ones. Retiring here (not by dropping the whole draft at each
+  // patch) is what keeps the tail free of a bottom-edge shrink — and its
+  // viewport clamp — every time a tool call lands.
+  const committedToolUseIds = new Set<string>()
+  for (const item of snapshot.items) {
+    if (item.kind === 'tool_use') {
+      committedToolUseIds.add(item.toolUseId ?? item.id)
+    }
+  }
+  const syntheticRows: NormalizedAssistantMessage[] = draftTools.flatMap(
+    (tool, at) => {
+      if (tool.toolUseId && committedToolUseIds.has(tool.toolUseId)) return []
+      const id = tool.toolUseId ?? `draft-tool-${at}`
+      const block: DomainToolUseBlock = {
+        type: 'tool_use',
+        id,
+        name: tool.toolName ?? 'tool',
+        input: parsePartialToolInput(tool.partialJson),
+      }
+      const msg: AssistantMessage = {
+        type: 'assistant',
+        uuid: id as string as UUID,
+        timestamp: new Date(0).toISOString(),
+        message: {
+          id,
+          type: 'message',
+          role: 'assistant',
+          content: [block],
+          model: '',
+          stop_reason: null,
+          stop_sequence: null,
+          usage: {} as AssistantMessage['message']['usage'],
+        },
+      }
+      return normalizeMessages([msg])
+    },
+  )
+
+  // The bridge builds no progress/attachment rows, so every normalized row
+  // is already groupable. The reorder pairs each result row with its call
+  // (wire order puts them in runs, not pairs), then streaming partials are
+  // appended at the tail like the REPL's synthetic messages.
+  const visible = reorderMessagesInUI(rows, syntheticRows)
+  const { messages: grouped } = applyGrouping(visible, tools)
+  const uiRows: RenderableMessage[] = collapseBackgroundBashNotifications(
+    collapseHookSummaries(collapseReadSearchGroups(grouped, tools)),
+    false,
+  )
+
+  // Map every row uuid back to the wire item it came from. Replicates
+  // normalizeMessages' deterministic uuid derivation: a multi-block
+  // message switches the chain to deriveUUID(parent, blockIndex).
+  const uuidToItem = new Map<string, string>()
+  let isNewChain = false
+  messages.forEach((message, index) => {
+    const itemIds = messageItemIds[index] ?? []
+    if (message.type === 'assistant') {
+      isNewChain = isNewChain || message.message.content.length > 1
+      message.message.content.forEach((_block, blockIndex) => {
+        const uuid = isNewChain
+          ? deriveUUID(message.uuid, blockIndex)
+          : message.uuid
+        uuidToItem.set(String(uuid), itemIds[blockIndex] ?? itemIds[0] ?? '')
+      })
+      return
+    }
+    const content = Array.isArray(message.message.content)
+      ? message.message.content
+      : [{}]
+    isNewChain = isNewChain || content.length > 1
+    content.forEach((_block, blockIndex) => {
+      const uuid = isNewChain
+        ? deriveUUID(message.uuid, blockIndex)
+        : message.uuid
+      uuidToItem.set(String(uuid), itemIds[0] ?? '')
+    })
+  })
+  for (const row of syntheticRows) uuidToItem.set(String(row.uuid), '')
+
+  // Attribute each output row to the unit that starts it: the earliest
+  // wire item the row covers (draft rows have no unit — they render
+  // after the transcript, where the classic appends streaming blocks).
+  const orderPos = new Map<string, number>()
+  snapshot.order.forEach((id, index) => orderPos.set(id, index))
+  const coveredAnchor = (
+    row: RenderableMessage,
+  ): { itemId: string; pos: number } | undefined => {
+    const nested = (row as { messages?: { uuid: string }[] }).messages
+    const uuids = nested ? nested.map(m => String(m.uuid)) : [String(row.uuid)]
+    let best: { itemId: string; pos: number } | undefined
+    for (const uuid of uuids) {
+      const itemId = uuidToItem.get(uuid)
+      if (itemId === undefined || itemId === '') continue
+      const pos = orderPos.get(itemId) ?? Number.MAX_SAFE_INTEGER
+      if (!best || pos < best.pos) best = { itemId, pos }
+    }
+    return best
+  }
+  const unitByItemId = new Map<
+    string,
+    Extract<TranscriptUnit, { kind: 'message' }>
+  >()
+  for (const unit of units) {
+    if (unit.kind === 'message')
+      for (const id of unit.itemIds) unitByItemId.set(id, unit)
+  }
+  const draftRows: RenderableMessage[] = []
+  for (const row of uiRows) {
+    const anchor = coveredAnchor(row)
+    const target = anchor ? unitByItemId.get(anchor.itemId) : undefined
+    if (target) (target.rows ??= []).push(row)
+    else draftRows.push(row)
+  }
+
+  return { units, lookups, rows, draftRows }
+}
+
+/**
+ * Mine a still-streaming tool input JSON for complete scalar fields — the
+ * summary a streaming card can honestly show before the block closes.
+ * A complete document parses whole; mid-stream fragments yield every
+ * `"key": "string" | number | true | false | null` pair already closed.
+ */
+function parsePartialToolInput(json: string): Record<string, unknown> {
+  try {
+    const whole = JSON.parse(json) as unknown
+    if (whole && typeof whole === 'object' && !Array.isArray(whole)) {
+      return whole as Record<string, unknown>
+    }
+  } catch {
+    // Fall through to the pair scan below.
+  }
+  const input: Record<string, unknown> = {}
+  const pair =
+    /"([^"\\]*(?:\\.[^"\\]*)*)"\s*:\s*("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)/g
+  let match: RegExpExecArray | null
+  while ((match = pair.exec(json)) !== null) {
+    try {
+      input[match[1]!] = JSON.parse(match[2]!) as unknown
+    } catch {
+      // A malformed scalar pair just isn't shown.
+    }
+  }
+  return input
 }
