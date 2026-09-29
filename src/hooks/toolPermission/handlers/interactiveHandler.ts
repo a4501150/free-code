@@ -20,6 +20,7 @@ import { hasPermissionsToUseTool } from '../../../utils/permissions/permissions.
 import type { PermissionContext } from '../PermissionContext.js'
 import { createResolveOnce } from '../PermissionContext.js'
 import { currentSessionRequests } from '../../../session/requests.js'
+import { buildRequestUi } from '../../../session/requestUi.js'
 
 type InteractivePermissionParams = {
   ctx: PermissionContext
@@ -263,6 +264,10 @@ function handleInteractivePermission(
         blockedPath: result.blockedPath,
         agentId: ctx.assistantMessage.agentId,
         openedAt: permissionPromptStartTimeMs,
+        ui: buildRequestUi(
+          ctx.tool.name,
+          displayInput as Record<string, unknown>,
+        ),
       },
       async response => {
         if (response.kind !== 'permission') return
@@ -288,7 +293,21 @@ function handleInteractivePermission(
               await ctx.handleUserAllow(
                 updated,
                 [createSessionToolAllowUpdate(ctx.tool.name)],
-                undefined,
+                decision.feedback,
+                permissionPromptStartTimeMs,
+              ),
+            )
+            return
+          }
+
+          if (decision.feedback) {
+            // An approval with feedback (plan approval's "approve with this
+            // feedback") rides the same path the terminal dialog uses.
+            resolveOnce(
+              await ctx.handleUserAllow(
+                updated,
+                [],
+                decision.feedback,
                 permissionPromptStartTimeMs,
               ),
             )

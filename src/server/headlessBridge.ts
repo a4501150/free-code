@@ -24,6 +24,7 @@ import {
   setStreamActivityListener,
 } from '../utils/streamActivity.js'
 import { currentSessionRequests } from '../session/requests.js'
+import { buildRequestUi } from '../session/requestUi.js'
 import type {
   WirePendingCommand,
   WirePermissionMode,
@@ -226,6 +227,13 @@ export function wrapCanUseToolWithWebUI(inner: CanUseToolFn): CanUseToolFn {
           input: displayInput as Record<string, unknown>,
           blockedPath: decision.blockedPath,
           openedAt: Date.now(),
+          // The question/plan enrichments, so a surface with the classic
+          // dialog components can mount the tool's own dialog (same tag
+          // the REPL's interactive handler applies).
+          ui: buildRequestUi(
+            tool.name,
+            displayInput as Record<string, unknown>,
+          ),
         },
         response => {
           if (response.kind !== 'permission') return
@@ -248,7 +256,16 @@ export function wrapCanUseToolWithWebUI(inner: CanUseToolFn): CanUseToolFn {
                 ),
               }))
             }
-            finish({ behavior: 'allow', updatedInput: updated })
+            // An approval carrying feedback (plan approval's "approve
+            // with this feedback") rides the same acceptFeedback field
+            // the terminal dialog's path produces.
+            finish({
+              behavior: 'allow',
+              updatedInput: updated,
+              ...(browserDecision.feedback?.trim()
+                ? { acceptFeedback: browserDecision.feedback.trim() }
+                : {}),
+            })
           } else {
             finish({
               behavior: 'deny',

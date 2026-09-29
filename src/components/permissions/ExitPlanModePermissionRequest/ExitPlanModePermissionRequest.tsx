@@ -147,7 +147,16 @@ export function ExitPlanModePermissionRequest({
   onDone,
   onReject,
   setStickyFooter,
-}: PermissionRequestProps): React.ReactNode {
+  wirePlan,
+}: PermissionRequestProps & {
+  /**
+   * Plan text supplied by the caller instead of the local disk read. Set by
+   * the wire viewer's plan tray, where the request's `ui` payload carries the
+   * plan the session wrote (a viewer without the session's filesystem — or
+   * without its plan-slug session scope — cannot re-derive it).
+   */
+  wirePlan?: { filePath: string; content: string }
+}): React.ReactNode {
   const toolPermissionContext = useAppState(s => s.toolPermissionContext)
   const setAppState = useSetAppState()
   const { addNotification } = useNotifications()
@@ -219,14 +228,15 @@ export function ExitPlanModePermissionRequest({
   )
   const hasImages = imageAttachments.length > 0
 
-  const planFilePath = getPlanFilePath()
+  const planFilePath = wirePlan?.filePath ?? getPlanFilePath()
 
-  // Get the raw plan to check if it's empty
-  const rawPlan = getPlan()
+  // Get the raw plan to check if it's empty (caller-supplied when the wire
+  // tray carries it; local disk otherwise)
+  const rawPlan = wirePlan ? wirePlan.content : getPlan()
   const isEmpty = !rawPlan || rawPlan.trim() === ''
 
   const [currentPlan, setCurrentPlan] = useState(() => {
-    const plan = getPlan()
+    const plan = wirePlan ? wirePlan.content : getPlan()
     return (
       plan ?? 'No plan found. Please write your plan to the plan file first.'
     )

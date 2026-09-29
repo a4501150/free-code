@@ -28,6 +28,7 @@ import {
   getCwdState,
   newSessionState,
   runInSessionScope,
+  getSessionId,
   setMainLoopModelOverride,
   getTotalCostUSD,
   getTotalLinesAdded,
@@ -63,8 +64,16 @@ import { processQueueIfReady } from '../utils/queueProcessor.js'
 import { handlePromptSubmit } from '../utils/handlePromptSubmit.js'
 import { getProjectDir, recordTranscript } from '../utils/sessionStorage.js'
 import { hasPermissionsToUseTool } from '../utils/permissions/permissions.js'
-import { EXTERNAL_PERMISSION_MODES } from '../utils/permissions/PermissionMode.js'
-import { transitionPermissionMode } from '../utils/permissions/permissionSetup.js'
+import { applyPermissionUpdates } from '../utils/permissions/PermissionUpdate.js'
+import {
+  EXTERNAL_PERMISSION_MODES,
+  toExternalPermissionMode,
+} from '../utils/permissions/PermissionMode.js'
+import {
+  stripDangerousPermissionsForAutoMode,
+  transitionPermissionMode,
+} from '../utils/permissions/permissionSetup.js'
+import { getPlanSlug, setPlanSlug } from '../utils/plans.js'
 import { wrapCanUseToolWithWebUI } from '../server/headlessBridge.js'
 import { logError } from '../utils/log.js'
 import { provisionContentReplacementState } from '../utils/toolResultStorage.js'
@@ -348,6 +357,10 @@ export function createHostedSession(
       // guard was still held and skipped, so the drain is re-armed at the
       // one point guaranteed to run after guard release. A steered
       // ('now'-priority) command runs next.
+      // A clear-context plan approval wrote an initialMessage while this
+      // turn unwound; the REPL's effect would consume it at exactly this
+      // point (loop idle, message pending), so the drain waits behind it.
+      maybeProcessInitialMessage()
       pump()
       // Same reason for meta: the turn_finished publish measured the state
       // while the guard was still held, so it said `running`. Without this
@@ -526,6 +539,84 @@ export function createHostedSession(
   }
   channel.registerRuntime(runtime)
 
+  // ── initialMessage: the hosted mirror of the REPL's processInitialMessage ──
+  // The plan-approval dialog with "clear context" (ExitPlanModePermissionRequest,
+  // mounted by this session's wire viewer over the shared store) writes an
+  // initialMessage and rejects the tool call to unblock the loop. The REPL
+  // consumes that by clearing the conversation, adopting the approval's mode,
+  // and running the message as a fresh query; this is that consumption, run
+  // once the loop that unblocked it has ended (same `!isLoading` gate the
+  // REPL effect waits on).
+  let initialMessageInFlight = false
+  function maybeProcessInitialMessage(): void {
+    if (initialMessageInFlight || queryGuard.isActive) return
+    const pending = store.getState().initialMessage
+    if (!pending) return
+    initialMessageInFlight = true
+    void (async () => {
+      try {
+        await runInSessionScope(scope, async () => {
+          if (pending.clearContext) {
+            // The plan slug belongs to the conversation about to be abandoned;
+            // re-pin it to the fresh id so a next plan cycle reuses it (the
+            // same carry the REPL's clear path performs).
+            const oldSlug = pending.message.planContent
+              ? getPlanSlug()
+              : undefined
+            await runtime.rpc?.('clear', undefined)
+            if (oldSlug) setPlanSlug(getSessionId(), oldSlug)
+          }
+          const mode = pending.mode
+          store.setState((prev: any) => {
+            let context = prev.toolPermissionContext
+            if (mode) {
+              context = applyPermissionUpdates(context, [
+                {
+                  type: 'setMode',
+                  mode: toExternalPermissionMode(mode),
+                  destination: 'session',
+                },
+              ])
+              if (mode === 'auto') {
+                context = stripDangerousPermissionsForAutoMode({
+                  ...context,
+                  mode: 'auto',
+                  prePlanMode: undefined,
+                })
+              }
+            }
+            return {
+              ...prev,
+              initialMessage: null,
+              toolPermissionContext: context,
+            }
+          })
+          const abortController = new AbortController()
+          currentAbortController = abortController
+          inputs.toolPermissionContext = store.getState().toolPermissionContext
+          await core.submitTurn({
+            newMessages: [pending.message],
+            abortController,
+            shouldQuery: true,
+            additionalAllowedTools: [],
+            mainLoopModel: resolveModel() ?? 'claude-sonnet-4-20250514',
+          })
+        })
+      } catch (err) {
+        logError(err)
+      } finally {
+        initialMessageInFlight = false
+        currentAbortController = null
+        pump()
+        channel.publishMeta()
+      }
+    })()
+  }
+  // A write while the session is idle needs no turn boundary to wake on.
+  const unsubscribeInitialMessage = store.subscribe(() => {
+    if (store.getState().initialMessage) maybeProcessInitialMessage()
+  })
+
   // Todos are the file-backed task store the TUI reads, keyed by the
   // session id (getMainTaskListId's scope-resolved fallback). The task
   // tools inside a turn fire onTasksUpdated; a refresh re-reads this
@@ -701,6 +792,7 @@ export function createHostedSession(
     unsubscribeQueue()
     unsubscribeCore()
     unsubscribeTasks()
+    unsubscribeInitialMessage()
     channel.stop()
   }
 

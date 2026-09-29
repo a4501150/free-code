@@ -6,16 +6,20 @@
  * form a server schema implies, the decision an edited input builds — is
  * the browser's own `webui/client/trayViews.ts`, imported whole.
  */
-import React, { useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { Box, Text } from '../../ink.js'
 import { PermissionDialog } from '../../components/permissions/PermissionDialog.js'
 import { Select } from '../../components/CustomSelect/index.js'
-import { SelectMulti } from '../../components/CustomSelect/SelectMulti.js'
-import { Markdown } from '../../components/Markdown.js'
+import { AskUserQuestionPermissionRequest } from '../../components/permissions/AskUserQuestionPermissionRequest/AskUserQuestionPermissionRequest.js'
+import { ExitPlanModePermissionRequest } from '../../components/permissions/ExitPlanModePermissionRequest/ExitPlanModePermissionRequest.js'
+import type { ToolUseConfirm } from '../../components/permissions/PermissionRequest.js'
+import { AskUserQuestionTool } from '../../tools/AskUserQuestionTool/AskUserQuestionTool.js'
+import { ExitPlanModeTool } from '../../tools/ExitPlanModeTool/ExitPlanModeTool.js'
+import type { ToolUseContext } from '../../Tool.js'
+import type { PermissionUpdate } from '../../utils/permissions/PermissionUpdateSchema.js'
 import type {
   WirePermissionDecision,
   WirePermissionMode,
-  WireQuestion,
   WireRequest,
   WireRequestResponse,
 } from '../../session/wire.js'
@@ -39,113 +43,128 @@ type DecisionProps = {
   submit: TraySubmit
 }
 
-/** The free-text row the browser's question tray always appends. */
-const OTHER = '__other__'
+// ---------------------------------------------------------------------------
+// Classic dialog mirrors
+//
+// Two requests are more than allow/deny: AskUserQuestion renders the full
+// option/preview dialog and ExitPlanMode the plan approval with its
+// clear-context flow. The viewer mounts the REPL's OWN components for these,
+// backed by a synthesized ToolUseConfirm whose callbacks answer the wire
+// request. The classic tree reads its contexts (settings, theme, keybindings,
+// app state) from the viewer's providers — identical panes, one answer
+// channel. The tool callbacks are wired to the request's `input` and
+// decision plumbing only; everything the body renders comes from the wire.
+// ---------------------------------------------------------------------------
 
-function serializeAnswer(
-  question: WireQuestion,
-  labels: string[],
-  other: string,
-): string {
-  if (labels.includes(OTHER)) return other.trim()
-  return question.multiSelect ? labels.join(', ') : (labels[0] ?? '')
+/** The wire decision a classic dialog's onAllow/onReject map onto. */
+function useClassicDecision(
+  request: Extract<WireRequest, { kind: 'permission' }>,
+  submit: TraySubmit,
+): {
+  respond: (decision: WirePermissionDecision) => void
+  confirm: ToolUseConfirm
+} {
+  const settledRef = useRef(false)
+  const respond = useCallback(
+    (decision: WirePermissionDecision) => {
+      // The classic dialogs call onDone/onReject/onAllow in sequence and a
+      // stray second call must not answer an already-answered request.
+      if (settledRef.current) return
+      settledRef.current = true
+      submit(request.requestId, { kind: 'permission', decision })
+    },
+    [request.requestId, submit],
+  )
+
+  const confirm = useMemo(
+    () =>
+      ({
+        // The dialog bodies consume `input`, `onAllow`, `onReject` and
+        // `permissionResult`; the rest of the ToolUseConfirm shape exists
+        // for the REPL's queue bookkeeping, which the wire request replaced.
+        assistantMessage: { message: { usage: undefined } },
+        description: request.description,
+        input: request.input,
+        toolUseID: request.toolUseId,
+        permissionResult: { behavior: 'ask' },
+        permissionPromptStartTimeMs: request.openedAt,
+        onUserInteraction: () => {},
+        onAbort: () => respond({ behavior: 'deny' }),
+        recheckPermission: async () => {},
+        onAllow: (
+          updatedInput: Record<string, unknown>,
+          permissionUpdates: PermissionUpdate[],
+          feedback?: string,
+        ) => {
+          const modeUpdate = permissionUpdates?.find(
+            update => update.type === 'setMode',
+          )
+          const merged = { ...request.input, ...(updatedInput ?? {}) }
+          respond({
+            behavior: 'allow',
+            updatedInput: merged,
+            setMode:
+              (modeUpdate as { mode?: WirePermissionMode } | undefined)?.mode ??
+              undefined,
+            feedback,
+          })
+        },
+        onReject: (feedback?: string) =>
+          respond({ behavior: 'deny', message: feedback ?? 'cancelled' }),
+      }) as unknown as ToolUseConfirm,
+    [
+      request.input,
+      request.description,
+      request.toolUseId,
+      request.openedAt,
+      respond,
+    ],
+  )
+
+  return { respond, confirm }
 }
 
-function QuestionFlow({
+function ClassicQuestionDialog({
   request,
-  questions,
   submit,
 }: {
   request: Extract<WireRequest, { kind: 'permission' }>
-  questions: WireQuestion[]
   submit: TraySubmit
 }): React.ReactNode {
-  const [index, setIndex] = useState(0)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
-  const [other, setOther] = useState('')
-  const question = questions[index]!
-
-  function answer(labels: string[], otherText: string): void {
-    const text = serializeAnswer(question, labels, otherText)
-    if (!text) return
-    const next = { ...answers, [question.question]: text }
-    if (index + 1 < questions.length) {
-      setAnswers(next)
-      setIndex(index + 1)
-      setOther('')
-      return
-    }
-    const annotations: Record<string, { preview?: string }> = {}
-    const chosen = question.options.find(option => option.label === text)
-    if (chosen?.preview)
-      annotations[question.question] = { preview: chosen.preview }
-    submit(request.requestId, {
-      kind: 'permission',
-      decision: {
-        behavior: 'allow',
-        updatedInput: {
-          ...request.input,
-          answers: next,
-          ...(Object.keys(annotations).length ? { annotations } : {}),
-        },
-      },
-    })
-  }
-
-  const suffix =
-    questions.length > 1 ? ` (${index + 1}/${questions.length})` : ''
+  const { confirm } = useClassicDecision(request, submit)
   return (
-    <PermissionDialog title={`Question${suffix}`} color="permission">
-      <Box flexDirection="column" paddingTop={1}>
-        <Text bold>{question.header}</Text>
-        <Text>{question.question}</Text>
-        <Box paddingTop={1}>
-          {question.multiSelect ? (
-            <SelectMulti
-              options={question.options.map(option => ({
-                label: option.label,
-                value: option.label,
-                description: option.description,
-              }))}
-              submitButtonText="Submit"
-              onSubmit={(values: string[]) => answer(values, other)}
-              onCancel={() => answer([], other)}
-            />
-          ) : (
-            <Select
-              options={[
-                ...question.options.map(option => ({
-                  label: option.label,
-                  value: option.label,
-                  description: option.description,
-                })),
-                { label: 'Other…', value: OTHER },
-              ]}
-              onChange={(value: string) => {
-                if (value !== OTHER) answer([value], '')
-                else setOther('__typing__')
-              }}
-              onCancel={() =>
-                submit(request.requestId, {
-                  kind: 'permission',
-                  decision: { behavior: 'deny', message: 'cancelled' },
-                })
-              }
-            />
-          )}
-        </Box>
-        {other !== '' && !question.multiSelect && (
-          <Box paddingTop={1}>
-            <LineInput
-              value={other === '__typing__' ? '' : other}
-              onChange={setOther}
-              onSubmit={text => answer([OTHER], text)}
-              placeholder="Type an answer"
-            />
-          </Box>
-        )}
-      </Box>
-    </PermissionDialog>
+    <AskUserQuestionPermissionRequest
+      toolUseConfirm={confirm}
+      toolUseContext={undefined as unknown as ToolUseContext}
+      onDone={() => {}}
+      onReject={() => {}}
+      verbose={false}
+    />
+  )
+}
+
+function ClassicPlanDialog({
+  request,
+  submit,
+}: {
+  request: Extract<WireRequest, { kind: 'permission' }>
+  submit: TraySubmit
+}): React.ReactNode {
+  const { confirm } = useClassicDecision(request, submit)
+  const ui = request.ui
+  return (
+    <ExitPlanModePermissionRequest
+      toolUseConfirm={confirm}
+      toolUseContext={undefined as unknown as ToolUseContext}
+      onDone={() => {}}
+      onReject={() => {}}
+      verbose={false}
+      wirePlan={
+        ui?.kind === 'plan'
+          ? { filePath: ui.planFilePath, content: ui.planContent }
+          : undefined
+      }
+    />
   )
 }
 
@@ -162,13 +181,10 @@ function PermissionTray({
 
   const ui = request.ui
   if (ui?.kind === 'question') {
-    return (
-      <QuestionFlow
-        request={request}
-        questions={ui.questions}
-        submit={submit}
-      />
-    )
+    return <ClassicQuestionDialog request={request} submit={submit} />
+  }
+  if (ui?.kind === 'plan') {
+    return <ClassicPlanDialog request={request} submit={submit} />
   }
 
   function allow(decision: WirePermissionDecision): void {
@@ -190,39 +206,6 @@ function PermissionTray({
   }
 
   const queuedNote = queued > 1 ? ` (+${queued - 1} waiting)` : ''
-
-  if (ui?.kind === 'plan') {
-    return (
-      <PermissionDialog title={`Plan${queuedNote}`} color="permission">
-        <Box flexDirection="column" paddingTop={1} maxHeight={18}>
-          <Markdown>{ui.planContent}</Markdown>
-          <Box paddingTop={1}>
-            <Select
-              options={[
-                {
-                  label: 'Implement the plan — auto-accept edits',
-                  value: 'acceptEdits',
-                },
-                { label: 'Keep planning', value: 'default' },
-                { label: 'Deny', value: 'deny' },
-              ]}
-              onChange={(value: string) => {
-                if (value === 'deny') {
-                  allow({ behavior: 'deny', message: 'plan not approved' })
-                  return
-                }
-                allow({
-                  behavior: 'allow',
-                  setMode: value as WirePermissionMode,
-                })
-              }}
-              onCancel={() => allow({ behavior: 'deny', message: 'cancelled' })}
-            />
-          </Box>
-        </Box>
-      </PermissionDialog>
-    )
-  }
 
   return (
     <PermissionDialog title={`Permission${queuedNote}`} color="permission">

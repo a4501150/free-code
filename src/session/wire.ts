@@ -240,6 +240,12 @@ export type WirePermissionDecision =
        * "allow the ExitPlanMode call AND leave plan mode" — one round trip).
        */
       setMode?: WirePermissionMode
+      /**
+       * User feedback threaded through an approval (plan approval's
+       * "approve with this feedback"). The tool receives it alongside the
+       * allow, the same way the terminal dialog passes it.
+       */
+      feedback?: string
     }
   | {
       behavior: 'deny'
@@ -448,6 +454,7 @@ export const WirePermissionDecisionSchema = z.discriminatedUnion('behavior', [
     updatedInput: z.record(z.string(), z.unknown()).optional(),
     persist: z.boolean().optional(),
     setMode: WirePermissionModeSchema.optional(),
+    feedback: z.string().max(4000).optional(),
   }),
   z.object({
     behavior: z.literal('deny'),

@@ -74,7 +74,10 @@ export async function launchHosted(
       // replaces: Ink's click dispatch is gated on alt-screen being active
       // (fixed viewport, 1:1 cell mapping), so without this wrapper the
       // transcript's click-to-expand disclosures silently go nowhere.
-      <App {...appProps}>
+      // The hosted session's own AppState store backs the viewer's context:
+      // the classic dialogs this viewer mirrors (task dialogs, plan approval)
+      // read the session's live state, not a UI-local copy.
+      <App {...appProps} store={entry.hosted.store}>
         <AlternateScreen mouseTracking={isMouseTrackingEnabled()}>
           <AttachedSession
             pid={process.pid}

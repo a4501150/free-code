@@ -597,9 +597,14 @@ export function AttachedSession({
           </Box>
         )}
 
-        {/* Blocking request trays take the keys while anything is pending */}
+        {/* Blocking request trays take the keys while anything is pending.
+            No horizontal padding: the classic REPL mounts its permission
+            dialogs directly in the scroll column with no wrapper inset, and
+            the mirrored dialogs size themselves against the terminal — a
+            paddingX here would steal columns they already budgeted for and
+            wrap the pane. */}
         {pendingRequest && isConnected && (
-          <Box flexShrink={0} paddingX={2} paddingTop={1}>
+          <Box flexShrink={0} paddingTop={1}>
             <AttachedTrays
               requests={view.requests}
               submit={(requestId, response) => {
