@@ -2,6 +2,11 @@
 // Extracted so runAgent.ts can kill agent-scoped bash tasks without pulling
 // React/Ink into its module graph (same rationale as guards.ts).
 
+import {
+  currentSessionState,
+  runInSessionScope,
+  type SessionState,
+} from '../../bootstrap/state.js'
 import type { AppState } from '../../state/AppStateStore.js'
 import type { AgentId } from '../../types/ids.js'
 import { logForDebugging } from '../../utils/debug.js'
@@ -16,6 +21,24 @@ import { getMonitorManager } from '../../utils/monitors.js'
 
 type SetAppStateFn = (updater: (prev: AppState) => AppState) => void
 
+// The session scope each shell task was spawned in. A kill can arrive from
+// outside that scope — the hosted TUI mounts the classic task dialogs in the
+// viewer's root scope, and the command queue is session-scoped — so the
+// killed <task-notification> must land in the OWNING session's queue, not
+// the killer's. In a single-scope process the recorded state is the root
+// scope and the wrap is identity.
+const taskOwnerScope = new Map<string, SessionState>()
+
+/** Record the session scope a task was spawned in (call at spawn time). */
+export function recordTaskOwnerScope(taskId: string): void {
+  taskOwnerScope.set(taskId, currentSessionState())
+}
+
+/** Drop a recorded scope once the task reached a terminal, notified state. */
+export function forgetTaskOwnerScope(taskId: string): void {
+  taskOwnerScope.delete(taskId)
+}
+
 export function killTask(taskId: string, setAppState: SetAppStateFn): void {
   // Capture the fields needed for the post-kill notification before the state
   // update transitions the task to 'killed' (and clears `shellCommand` etc.).
@@ -26,6 +49,11 @@ export function killTask(taskId: string, setAppState: SetAppStateFn): void {
     agentId?: AgentId
   } | null = null
   let isMonitor = false
+
+  // Resolved before the state update: a concurrent completion may forget
+  // the entry as part of its terminal transition.
+  const owner = taskOwnerScope.get(taskId) ?? currentSessionState()
+  taskOwnerScope.delete(taskId)
 
   updateTaskState(taskId, setAppState, task => {
     if (task.status !== 'running' || !isLocalShellTask(task)) {
@@ -102,16 +130,21 @@ export function killTask(taskId: string, setAppState: SetAppStateFn): void {
       kind: BashTaskKind | undefined
       agentId?: AgentId
     } = notificationArgs
-    enqueueShellNotification(
-      taskId,
-      args.description,
-      'killed',
-      undefined,
-      setAppState,
-      args.toolUseId,
-      args.kind,
-      args.agentId,
-    )
+    // Enqueue against the task's own session scope (see taskOwnerScope):
+    // a viewer-originated kill runs unscoped, but the notification must
+    // sit in the queue the owning session's drain loop reads.
+    runInSessionScope(owner, () => {
+      enqueueShellNotification(
+        taskId,
+        args.description,
+        'killed',
+        undefined,
+        setAppState,
+        args.toolUseId,
+        args.kind,
+        args.agentId,
+      )
+    })
   }
 
   void evictTaskOutput(taskId)

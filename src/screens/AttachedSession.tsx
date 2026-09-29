@@ -34,7 +34,9 @@ import { useAppState } from '../state/AppState.js'
 import { AssistantThinkingMessage } from '../components/messages/AssistantThinkingMessage.js'
 import { AssistantTextMessage } from '../components/messages/AssistantTextMessage.js'
 import { getAllBaseTools } from '../tools.js'
-import type { Tools } from '../Tool.js'
+import type { Tools, ToolUseContext } from '../Tool.js'
+import { BackgroundTasksDialog } from '../components/tasks/BackgroundTasksDialog.js'
+import { ModalContext } from '../context/modalContext.js'
 import {
   queueRows,
   queueEditBody,
@@ -47,6 +49,10 @@ import { Select } from '../components/CustomSelect/index.js'
 import { KeybindingSetup } from '../keybindings/KeybindingProviderSetup.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
+
+/** Rows of transcript kept visible above a local dialog's ▔ divider —
+ *  mirrors FullscreenLayout's MODAL_TRANSCRIPT_PEEK. */
+const MODAL_TRANSCRIPT_PEEK = 2
 
 type ConnectionState =
   | { status: 'connecting' }
@@ -119,6 +125,25 @@ export function AttachedSession({
   const [runningSince, setRunningSince] = useState<number | null>(null)
   const [, setTick] = useState(0)
   const { exit } = useApp()
+
+  // The in-process host mounts classic local dialogs (the /tasks pane) in a
+  // modal slot mirroring FullscreenLayout's: the dialog publishes its focused
+  // ScrollBox on modalScrollRef and the viewer's pager keys drive it instead
+  // of the transcript — the same merged-ref trick the REPL's
+  // useReplTranscript uses for its own modal slot.
+  const modalScrollRef = useRef<ScrollBoxHandle>(null)
+  const scrollKeyTargetRef = useMemo(
+    () => ({
+      get current(): ScrollBoxHandle | null {
+        return modalScrollRef.current ?? scrollRef.current
+      },
+    }),
+    [],
+  )
+  const [tasksDialog, setTasksDialog] = useState(false)
+  // A remote attach cannot mount the session's local dialogs — only the
+  // process that hosts the session can.
+  const isLocalHost = pid === process.pid
 
   const cancel = useCallback(() => {
     void clientRef.current?.command('cancel', { kind: 'cancel' })
@@ -230,6 +255,16 @@ export function AttachedSession({
 
   const handleSubmit = useCallback(
     async (text: string) => {
+      // /tasks is a local dialog, not a turn: when this process IS the
+      // session's, the viewer mounts the classic BackgroundTasksDialog
+      // itself — the session's task state and output files are right here,
+      // no wire round-trip (and no dropped JSX) needed. A remote attach
+      // falls through to the session, which replies as before.
+      if (isLocalHost && text.trim() === '/tasks') {
+        setEditingQueueId(null)
+        setTasksDialog(true)
+        return
+      }
       // /compact and /clear render nothing when the host runs them, so the
       // viewer sends those two as rpc — the same buttons the browser has.
       const word = text.trim().split(/\s/)[0] ?? ''
@@ -258,14 +293,14 @@ export function AttachedSession({
         sessionEpoch: view.meta?.sessionEpoch ?? 0,
       } as Record<string, unknown>)
     },
-    [send, editingQueueId, view.meta],
+    [send, editingQueueId, view.meta, isLocalHost],
   )
 
   // The classic tool registry: feeds the real tool cards. A tool the card
   // cannot resolve for (MCP on a remote attach, newer host build) renders
   // the viewer-native fallback row inside AttachedTranscript.
   const tools = useMemo<Tools>(() => getAllBaseTools(), [])
-  const { columns } = useTerminalSize()
+  const { columns, rows } = useTerminalSize()
   // Classic's default, not a viewer-local one: the setting drives the
   // classic pane and defaults to ON (`!== false`), and the pane here must
   // show what it shows. ctrl+O toggles within the session.
@@ -276,7 +311,10 @@ export function AttachedSession({
   const isRunning = view.meta?.state === 'running'
   const isConnected = connection.status === 'connected'
   const pendingRequest = view.requests[0] ?? null
-  const composerActive = isConnected && !pendingRequest
+  // The composer stands down while a tray awaits an answer or a local
+  // dialog holds the keys — keystrokes belong to the dialog, not the
+  // prompt buffer.
+  const composerActive = isConnected && !pendingRequest && !tasksDialog
 
   // A running-turn clock: starts on the transition into running, and a 1s
   // tick keeps the elapsed time and task durations fresh. The refs back the
@@ -579,7 +617,7 @@ export function AttachedSession({
           )}
         </ScrollBox>
 
-        <ScrollKeybindingHandler scrollRef={scrollRef} isActive />
+        <ScrollKeybindingHandler scrollRef={scrollKeyTargetRef} isActive />
 
         {/* Disconnected banner */}
         {connection.status === 'disconnected' && (
@@ -620,45 +658,50 @@ export function AttachedSession({
 
         {/* Queued prompts and background tasks. The task board does not
             live here — it renders as the classic task panel, spinner-slot
-            busy-time and standalone at idle, above. */}
-        {isConnected && (queued.length > 0 || view.tasks.length > 0) && (
-          <Box flexShrink={0} flexDirection="column" paddingX={2}>
-            {queued.length > 0 && (
-              <Box>
-                <Text dimColor>
-                  queued:{' '}
-                  {queued
-                    .map(row => row.text)
-                    .join(' · ')
-                    .slice(0, 120)}
-                  {inputText === '' ? '  (^e edit · ^x drop)' : ''}
-                </Text>
-              </Box>
-            )}
-            {view.tasks.length > 0 && (
-              <Box>
-                <Text dimColor>
-                  tasks:{' '}
-                  {view.tasks
-                    .map(task => {
-                      const view0 = taskView(task, Date.now())
-                      return `${view0.marker} ${view0.label}${view0.duration ? ` ${view0.duration}` : ''}`
-                    })
-                    .slice(0, 4)
-                    .join(' · ')
-                    .slice(0, 160)}
-                </Text>
-              </Box>
-            )}
-          </Box>
-        )}
+            busy-time and standalone at idle, above. Hidden while a local
+            dialog owns the bottom of the screen. */}
+        {isConnected &&
+          !tasksDialog &&
+          (queued.length > 0 || view.tasks.length > 0) && (
+            <Box flexShrink={0} flexDirection="column" paddingX={2}>
+              {queued.length > 0 && (
+                <Box>
+                  <Text dimColor>
+                    queued:{' '}
+                    {queued
+                      .map(row => row.text)
+                      .join(' · ')
+                      .slice(0, 120)}
+                    {inputText === '' ? '  (^e edit · ^x drop)' : ''}
+                  </Text>
+                </Box>
+              )}
+              {view.tasks.length > 0 && (
+                <Box>
+                  <Text dimColor>
+                    tasks:{' '}
+                    {view.tasks
+                      .map(task => {
+                        const view0 = taskView(task, Date.now())
+                        return `${view0.marker} ${view0.label}${view0.duration ? ` ${view0.duration}` : ''}`
+                      })
+                      .slice(0, 4)
+                      .join(' · ')
+                      .slice(0, 160)}
+                  </Text>
+                </Box>
+              )}
+            </Box>
+          )}
 
         {/* Composer — the classic dock: full-width rule, the prompt line
             at column 0, full-width rule, footer. The spinner and the task
             panel live in the scroll content above, exactly where the
             classic REPL mounts them. Same rows, same order, same indent
-            as the classic pane. */}
-        {isConnected && (
+            as the classic pane. Hidden while a local dialog owns the
+            bottom of the screen, like PromptInput returning null behind
+            the REPL's modal. */}
+        {isConnected && !tasksDialog && (
           <Box flexShrink={0} flexDirection="column" marginTop={1}>
             <Text color="promptBorder">{'─'.repeat(columns)}</Text>
             {pendingRequest ? (
@@ -717,6 +760,47 @@ export function AttachedSession({
               }
             />
           </Box>
+        )}
+
+        {/* The local /tasks dialog, in the modal slot FullscreenLayout gives
+            the classic dialogs in the REPL: bottom-anchored, ▔ divider,
+            ModalContext so the dialog budgets its scroll viewports against
+            the pane and publishes its focused panel on modalScrollRef.
+            Last sibling so it paints over everything it covers. */}
+        {isLocalHost && tasksDialog && (
+          <ModalContext
+            value={{
+              rows: rows - MODAL_TRANSCRIPT_PEEK - 1,
+              columns: columns - 4,
+              scrollRef: modalScrollRef,
+            }}
+          >
+            <Box
+              position="absolute"
+              bottom={0}
+              left={0}
+              right={0}
+              maxHeight={rows - MODAL_TRANSCRIPT_PEEK}
+              flexDirection="column"
+              overflow="hidden"
+              opaque
+            >
+              <Box flexShrink={0}>
+                <Text color="permission">{'▔'.repeat(columns)}</Text>
+              </Box>
+              <Box
+                flexDirection="column"
+                paddingX={2}
+                flexShrink={0}
+                overflow="hidden"
+              >
+                <BackgroundTasksDialog
+                  onDone={() => setTasksDialog(false)}
+                  toolUseContext={undefined as unknown as ToolUseContext}
+                />
+              </Box>
+            </Box>
+          </ModalContext>
         )}
       </Box>
     </KeybindingSetup>

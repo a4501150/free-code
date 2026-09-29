@@ -38,7 +38,11 @@ import {
   isLocalShellTask,
   type LocalShellTaskState,
 } from './guards.js'
-import { killTask } from './killShellTasks.js'
+import {
+  forgetTaskOwnerScope,
+  killTask,
+  recordTaskOwnerScope,
+} from './killShellTasks.js'
 import {
   BACKGROUND_BASH_SUMMARY_PREFIX,
   enqueueShellNotification,
@@ -184,6 +188,10 @@ export async function spawnShellTask(
   }
 
   registerTask(taskState, setAppState)
+  // Remember the session scope this task belongs to: a kill arriving from
+  // outside it (the hosted viewer's task dialog) must still enqueue the
+  // killed notification into this session's queue.
+  recordTaskOwnerScope(taskId)
 
   // Data flows through TaskOutput automatically — no stream listeners needed.
   // Just transition to backgrounded state so the process keeps running.
@@ -228,6 +236,7 @@ export async function spawnShellTask(
       kind,
       agentId,
     )
+    forgetTaskOwnerScope(taskId)
 
     void evictTaskOutput(taskId)
   })
@@ -272,6 +281,7 @@ export function registerForeground(
   }
 
   registerTask(taskState, setAppState)
+  recordTaskOwnerScope(taskId)
   return taskId
 }
 
@@ -375,6 +385,7 @@ function backgroundTask(
         agentId,
       )
     }
+    forgetTaskOwnerScope(taskId)
 
     void evictTaskOutput(taskId)
   })
@@ -515,6 +526,7 @@ export function backgroundExistingForegroundTask(
       undefined,
       agentId,
     )
+    forgetTaskOwnerScope(taskId)
 
     void evictTaskOutput(taskId)
   })
