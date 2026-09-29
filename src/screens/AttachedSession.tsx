@@ -33,7 +33,7 @@ import { SpinnerWithVerb, type SpinnerMode } from '../components/Spinner.js'
 import { LogoV2 } from '../components/LogoV2/LogoV2.js'
 import { taskView } from '../webui/client/itemViews.js'
 import { AttachedTranscript } from './attached/AttachedTranscript.js'
-import { TaskPanelRows } from '../components/TaskLivePanel.js'
+import { TaskIdlePanel, TaskPanelRows } from '../components/TaskLivePanel.js'
 import { TaskListV2 } from '../components/TaskListV2.js'
 import type { Task, TaskStatus } from '../utils/taskSchemas.js'
 import { useAppState, useSetAppState } from '../state/AppState.js'
@@ -500,15 +500,23 @@ export function AttachedSession({
   // The classic footer's statusline half (see attached/StatusLineRow.tsx).
   const statusLine = useStatusLine()
 
-  // ── The task board, mirrored from the wire ───────────────────────────
+  // ── The task board, mirrored from the wire (remote attach only) ──────
   // The stream's todo rows ARE the session's task board (subject, status,
-  // activeForm). The classic pane mounts the same TaskLivePanel machinery
-  // from this data: while the turn runs the panel rides FLUSH under the
-  // spinner without its header, and when the turn settles the standalone
-  // headered panel takes the spinner's slot. The classic store auto-
-  // expands on any board write and hides a board whose tasks are all
-  // completed after a five-second window — mirrored here over wire state,
-  // where the session's own store is not this tree's context.
+  // activeForm), and this mirror is what feeds a panel for a REMOTE
+  // attach: that viewer has its own fresh AppState store, so the classic
+  // spinner-hosted panel (SpinnerWithVerb renders one from `tasks` +
+  // `expandedView`) sees an empty board and renders nothing. The host
+  // viewer must NOT mount this mirror as well — the launcher shares the
+  // session's store with it, so the spinner's internal store-driven panel
+  // is live, and a second wire-fed copy grows a second row per task write
+  // on its own schedule (store push vs wire todo event, ~40ms apart): the
+  // pinned block shifts twice per write and the spinner title gets
+  // rewritten twice per write — the blink this slot's classic single
+  // mount avoids (tests/e2e/task-update-title-repaint guards it). When
+  // this process hosts the session, the panel renders ONLY through the
+  // spinner (busy) and TaskIdlePanel (idle), exactly like the classic REPL.
+  // The mirror keeps its own auto-expand/all-completed-hide rules here
+  // because a remote store never receives the session's store writes.
   const boardTasks = useMemo<Task[]>(
     () =>
       view.todos.map((todo, at) => ({
@@ -762,17 +770,26 @@ export function AttachedSession({
                     : null
                 }
               />
+            ) : isLocalHost ? (
+              // The classic's idle swap, via the classic component: the
+              // standalone headered panel takes the spinner's
+              // bottom-anchored slot when the spinner unmounts, reading
+              // the session's (shared) store — same store, same frame the
+              // REPL's TaskIdlePanel decision happens on.
+              <TaskIdlePanel />
             ) : (
               panelVisible && (
-                // The classic's idle swap: the standalone headered panel
-                // takes the spinner's bottom-anchored slot, so the panel
-                // visibly replaces the spinner when the turn settles.
+                // Remote attach: the wire mirror stands in for the store
+                // the viewer does not share (see the board comment).
                 <TaskListV2 tasks={boardTasks} isStandalone />
               )
             )}
-            {showSpinner && panelVisible && (
-              // Busy-time panel: FLUSH under the spinner row, no header —
-              // the same TaskPanelRows the classic spinner hosts.
+            {!isLocalHost && showSpinner && panelVisible && (
+              // Remote attach busy-time panel: FLUSH under the spinner
+              // row, no header. The host's busy-time panel is mounted
+              // INSIDE SpinnerWithVerb from the shared store — the
+              // classic single mount; a second wire-fed copy here
+              // would grow the block twice per task write.
               <TaskPanelRows tasks={boardTasks} />
             )}
           </ScrollBox>
