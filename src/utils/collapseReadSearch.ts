@@ -1,6 +1,7 @@
 import type { UUID } from 'crypto'
 import { findToolByName, type Tools } from '../Tool.js'
 import { extractBashCommentLabel } from '../tools/BashTool/commentLabel.js'
+import { extractBashSearchPattern } from '../tools/BashTool/searchPatternExtraction.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../tools/FileWriteTool/prompt.js'
@@ -135,10 +136,12 @@ function commandAsHint(command: string): string {
 }
 
 /**
- * A searchable thing to show for a memory search: the quoted pattern or glob,
- * or the command for shell searches. Memory-search rows say only "Searched
- * memories" otherwise, so a misclassified or empty search shows nothing the
- * user can check.
+ * A searchable thing to show for a memory search: the quoted pattern or glob.
+ * Shell search commands (rg, grep, find) get their pattern extracted so they
+ * render like Grep-tool calls; commands whose pattern can't be read
+ * confidently fall back to the raw command line. Memory-search rows say only
+ * "Searched memories" otherwise, so a misclassified or empty search shows
+ * nothing the user can check.
  */
 function searchArgsAsHint(input: unknown): string | undefined {
   const i = input as
@@ -146,7 +149,11 @@ function searchArgsAsHint(input: unknown): string | undefined {
     | undefined
   if (i?.pattern) return `"${i.pattern}"`
   if (i?.glob) return `"${i.glob}"`
-  if (i?.command) return commandAsHint(i.command)
+  if (i?.command) {
+    const pattern = extractBashSearchPattern(i.command)
+    if (pattern !== undefined) return `"${pattern}"`
+    return commandAsHint(i.command)
+  }
   return undefined
 }
 
@@ -677,7 +684,8 @@ type GroupAccumulator = {
   nonMemSearchArgs: string[]
   /**
    * Formatted search targets for memory rows ("Searched memories for
-   * "pattern""): quoted pattern/glob, or the command for shell searches.
+   * "pattern""): quoted pattern/glob, the pattern extracted from a shell
+   * search command, or the raw command when no pattern reads confidently.
    */
   memorySearchArgs: string[]
   teamMemorySearchArgs: string[]
@@ -943,11 +951,21 @@ export function collapseReadSearchGroups(
             currentGroup.latestDisplayHint = hint
           }
         } else {
-          // Regular (non-memory) search — collect pattern for display
-          const input = toolInfo.input as { pattern?: string } | undefined
-          if (input?.pattern) {
-            currentGroup.nonMemSearchArgs.push(input.pattern)
-            currentGroup.latestDisplayHint = `"${input.pattern}"`
+          // Regular (non-memory) search — collect pattern for display.
+          // Bash searches carry the pattern inside `command`; only a
+          // confidently-extracted one is shown, so a bare "Searched for N
+          // patterns" row never mislabels the target.
+          const input = toolInfo.input as
+            | { pattern?: string; command?: string }
+            | undefined
+          const pattern =
+            input?.pattern ??
+            (input?.command !== undefined
+              ? extractBashSearchPattern(input.command)
+              : undefined)
+          if (pattern !== undefined) {
+            currentGroup.nonMemSearchArgs.push(pattern)
+            currentGroup.latestDisplayHint = `"${pattern}"`
           }
         }
       } else {
