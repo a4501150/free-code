@@ -18,6 +18,12 @@ export const SYSTEM_REMINDER_TAG = 'system-reminder'
 
 // XML tag names for task notifications (background task completions)
 export const TASK_NOTIFICATION_TAG = 'task-notification'
+
+// XML tag names for monitor notifications (background monitor output)
+export const MONITOR_NOTIFICATION_TAG = 'monitor-notification'
+export const MONITOR_ID_TAG = 'monitor-id'
+export const MONITOR_LABEL_TAG = 'monitor-label'
+export const MONITOR_OUTPUT_TAG = 'monitor-output'
 export const TASK_ID_TAG = 'task-id'
 export const TOOL_USE_ID_TAG = 'tool-use-id'
 export const TASK_TYPE_TAG = 'task-type'

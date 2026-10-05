@@ -32,6 +32,7 @@ export function getSimplePrompt(): string {
           '',
           "You don't have to do anything while waiting for a backgrounded command: once it completes, a system task notification is delivered automatically by the harness.",
           "A background command that monitors something (waiting on a job, poll, or deploy) must fail fast — validate its target and expected value at t=0 — and end by a hard deadline with an explicit verdict on every exit path, since a monitor that cannot fail or cannot end delivers no notification. Poll authoritative world state for an exact match instead of watching one object's lifetime or grepping a loose prefix, and capture `rc=$?` before any pipe, because `cmd | tail; echo $?` reports tail's status, not the command's.",
+          'For an open-ended watch that should react to output while it is still running — tailing a log, polling a CI job, waiting for a file to change — use the Monitor tool instead of a background command or a blocking foreground call: it surfaces new output as it arrives at the next turn boundary, and only when it changes.',
         ].join('\n')
       : 'The bash tool blocks and returns once the command finishes, with its output.',
     'Do not append `| tail`, `| head`, or `| grep` to a command to cap the output. The user watches bash tool results in the UI, and a pipe truncates what the user can see. Large output needs no cap from you: the output is saved to a file automatically and the path will be returned to you.',
