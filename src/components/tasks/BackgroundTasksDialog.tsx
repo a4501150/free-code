@@ -427,11 +427,9 @@ export function BackgroundTasksDialog({
           <Box flexDirection="column">
             {bashTasks.length > 0 && (
               <Box flexDirection="column">
-                {agentTasks.length > 0 && (
-                  <Text dimColor>
-                    <Text bold>{'  '}Shells</Text> ({bashTasks.length})
-                  </Text>
-                )}
+                <Text dimColor>
+                  <Text bold>{'  '}Shells</Text> ({bashTasks.length})
+                </Text>
                 <Box flexDirection="column">
                   {bashTasks.map(item => (
                     <Item
