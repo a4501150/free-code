@@ -18,7 +18,7 @@ import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from '../tools/SyntheticOutputTool/SyntheticOutputTool.js'
 import { ENTER_WORKTREE_TOOL_NAME } from '../tools/EnterWorktreeTool/constants.js'
 import { EXIT_WORKTREE_TOOL_NAME } from '../tools/ExitWorktreeTool/constants.js'
-import { INVOKE_TOOL_NAME } from '../services/toolCatalog/exposure.js'
+import { RUN_CODE_TOOL_NAME } from '../services/toolCatalog/exposure.js'
 
 export const ALL_AGENT_DISALLOWED_TOOLS = new Set([
   EXIT_PLAN_MODE_TOOL_NAME,
@@ -37,7 +37,7 @@ export const CUSTOM_AGENT_DISALLOWED_TOOLS = new Set([
  *
  * MCP tools need no entry here: the mcp__ prefix pass in filterToolsForAgent
  * admits them for every agent. But cataloged MCP tools are stripped from the
- * request's tools[] by the exposure filter, so the InvokeTool gateway must be
+ * request's tools[] by the exposure filter, so the RunCode gateway must be
  * allowlisted here too or async agents cannot reach them at all.
  */
 export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
@@ -46,7 +46,7 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
   TASK_GET_TOOL_NAME,
   TASK_LIST_TOOL_NAME,
   TASK_UPDATE_TOOL_NAME,
-  INVOKE_TOOL_NAME,
+  RUN_CODE_TOOL_NAME,
   // Async agents can message each other: siblings share the process's task
   // registry, so SendMessage routes worker→worker directly (address targets
   // via ListAgents). Worker→main-session is NOT routed — the coordinator's

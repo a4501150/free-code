@@ -36,6 +36,10 @@ commented IN the file that governs them.
 - Incremental sidechain writes must take their `startingParentUuid` from what actually persisted, not the in-memory message list: a hint pointing at an unpersisted message truncates the chain and silently blanks the drill-down.
 - Every hook path re-checks workspace trust; disabling all hooks must gate settings-, plugin- and session-derived hooks separately.
 
+- RunCode evaluates model-authored TS with `Bun.Transpiler` `transformSync` + `AsyncFunction` — disk-path `import()` does not exist in the compiled binary, and the `transpile`/`transpileAsync` method names do not exist in our Bun version. The catalog `.ts` files are documentation only: the loader builds runtime namespaces from the live pool with `catalogExportName` (writer). If docs and loader identifier rules drift, script imports fail with confusing "no export" errors.
+- RunCode's `outputSchema` and the bridge's segment builder are a lockstep pair — a schema narrower than what `call()` returns silently drops segments (same failure mode as MCP output schemas).
+- The tool-catalog state file (`<config-home>/tool-catalog.json`) is harness-owned and must never be named in prompts; the model-facing catalog is exactly `servers/*.ts` + `builtins.ts`.
+
 ## Bash security
 
 One parser, no fallback: `too-complex` must prompt. `shell-quote` is display/completion only; wrapper resolution (`src/utils/bash/wrappers.ts`) fails closed. `sourceText` excludes redirects — checking it alone misses `> /tmp/evil`. A false-positive `isReadOnly` executes unprompted (it feeds memory extraction and speculation auto-approval).

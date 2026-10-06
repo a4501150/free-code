@@ -1902,7 +1902,7 @@ const _settingsSchemaValue = z
       .array(z.string())
       .optional()
       .describe(
-        'Built-in tool names to remove from the API tools array and expose only through the tool catalog + InvokeTool. Applies at session start.',
+        'Built-in tool names to remove from the API tools array and expose only through the tool catalog + RunCode. Applies at session start.',
       ),
     disableMcpToolCatalog: z
       .boolean()

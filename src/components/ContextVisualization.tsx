@@ -285,7 +285,7 @@ export function ContextVisualization({ data }: Props): React.ReactNode {
               <Text bold>Deferred tools</Text>
               <Text dimColor>
                 {' '}
-                (cataloged via InvokeTool · not in context · est.{' '}
+                (cataloged for RunCode · not in context · est.{' '}
                 {formatTokens(deferredToolTokens)} tokens)
               </Text>
             </Box>

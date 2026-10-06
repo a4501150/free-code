@@ -92,8 +92,8 @@ export function AssistantToolUseMessage({
       tool.userFacingNameBackgroundColor?.(data)
     let displayInput: Record<string, unknown> | undefined
     let displayCompactParamKeys: readonly string[] | undefined
-    // Wrapper tools (InvokeTool) render the inner tool's card. A wrong
-    // inner name or unparseable args keeps the raw wrapper view.
+    // Wrapper tools that implement unwrapInnerCall render the inner tool's
+    // card. A wrong inner name or unparseable args keeps the raw wrapper view.
     const unwrapped = input.success ? tool.unwrapInnerCall?.(data, tools) : null
     if (unwrapped) {
       const innerName = unwrapped.tool.userFacingName(unwrapped.input as never)

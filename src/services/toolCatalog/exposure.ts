@@ -7,7 +7,8 @@
 import type { Tool } from '../../Tool.js'
 import { getSettings_DEPRECATED } from '../../utils/settings/settings.js'
 
-export const INVOKE_TOOL_NAME = 'InvokeTool'
+/** Always-exposed code-mode runner: the gateway to every cataloged tool. */
+export const RUN_CODE_TOOL_NAME = 'RunCode'
 
 export function mcpToolCatalogDisabled(): boolean {
   return getSettings_DEPRECATED()?.disableMcpToolCatalog === true
@@ -16,8 +17,8 @@ export function mcpToolCatalogDisabled(): boolean {
 // Per-server alwaysLoad opt-out (official parity): a server whose config sets
 // `alwaysLoad: true` skips deferral and rides the API tools[] array directly.
 // Only user-global mcpServers entries (freecode.json) are consulted; importing
-// the scoped MCP config loader here would form an import cycle through
-// InvokeToolTool. Project-scope servers ignore alwaysLoad.
+// the scoped MCP config loader here would form an import cycle through the
+// tool modules that consume exposure. Project-scope servers ignore alwaysLoad.
 function serverAlwaysLoad(serverName: string): boolean {
   const servers = getSettings_DEPRECATED()?.mcpServers as
     | Record<string, { alwaysLoad?: boolean }>
@@ -34,9 +35,9 @@ export function isToolExposedToModel(
     const server = tool.mcpInfo?.serverName
     return server !== undefined && serverAlwaysLoad(server)
   }
-  // The dispatcher itself must stay callable however the setting is set,
-  // or cataloged tools become unreachable.
-  if (tool.name === INVOKE_TOOL_NAME) return true
+  // The gateway itself must stay callable however the setting is set, or
+  // cataloged tools become unreachable.
+  if (tool.name === RUN_CODE_TOOL_NAME) return true
   const lazy = getSettings_DEPRECATED()?.lazyTools
   return !(Array.isArray(lazy) && lazy.includes(tool.name))
 }

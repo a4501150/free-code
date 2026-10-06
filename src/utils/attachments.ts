@@ -1499,7 +1499,7 @@ export type AnnouncedToolCatalog = {
 export async function getMcpToolsDeltaAttachment(
   toolUseContext: ToolUseContext,
   messages: Message[] | undefined,
-  opts?: { catalogDir?: string },
+  opts?: { catalogDir?: string; statePath?: string },
 ): Promise<Attachment[]> {
   // Kill switch: MCP schemas ride the request again; no catalog to announce.
   if (mcpToolCatalogDisabled()) return []
@@ -1526,6 +1526,7 @@ export async function getMcpToolsDeltaAttachment(
         lazyBuiltInTools,
         serverDescriptions,
         catalogDir: opts?.catalogDir,
+        statePath: opts?.statePath,
       })
     ).manifest
   } catch {

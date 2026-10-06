@@ -184,7 +184,7 @@ function formatContextAsMarkdownTable(data: ContextData): string {
 
   // Deferred tools — cataloged definitions not carried in the request.
   if (deferredTools.length > 0) {
-    output += `### Deferred Tools (cataloged via InvokeTool · est. ${formatTokens(
+    output += `### Deferred Tools (cataloged for RunCode · est. ${formatTokens(
       deferredToolTokens,
     )} tokens if sent)\n\n`
     const defGroups = new Map<string, typeof deferredTools>()

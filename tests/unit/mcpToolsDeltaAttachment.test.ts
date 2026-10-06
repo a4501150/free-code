@@ -7,6 +7,9 @@ import type { Attachment, Message } from '../../src/types/message.js'
 import { getMcpToolsDeltaAttachment } from '../../src/utils/attachments.js'
 
 let catalogDir: string
+// Harness state lives outside the model-facing catalog dir; keep tests off
+// the real ~/.freecode/tool-catalog.json.
+let statePath: string
 
 function mcpTool(
   name: string,
@@ -50,12 +53,14 @@ function attachMessage(attachment: Attachment): Message {
 async function announce(tools: Tool[], messages: Message[] = []) {
   return getMcpToolsDeltaAttachment(contextWithTools(tools), messages, {
     catalogDir,
+    statePath,
   })
 }
 
 describe('MCP tools delta attachment', () => {
   beforeEach(async () => {
     catalogDir = await mkdtemp(join(tmpdir(), 'mcp-delta-test-'))
+    statePath = `${catalogDir}-state.json`
   })
 
   test('initial announcement is the full catalog', async () => {
@@ -71,6 +76,8 @@ describe('MCP tools delta attachment', () => {
     expect(att.addedNames).toEqual(['server'])
     expect(att.changedNames).toEqual([])
     expect(att.removedNames).toEqual([])
+    const servers = att.servers as Array<{ file: string }>
+    expect(servers[0]!.file).toBe('servers/server.ts')
   })
 
   test('does not announce identical MCP tool refreshes', async () => {

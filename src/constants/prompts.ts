@@ -17,7 +17,7 @@ import { isEnvTruthy } from '../utils/envUtils.js'
 import { getFreecodeSettingsFilePath } from '../utils/settings/freecodeSettings.js'
 import { getModelSettingsFilePath } from '../utils/settings/modelSettings.js'
 import {
-  INVOKE_TOOL_NAME,
+  RUN_CODE_TOOL_NAME,
   mcpToolCatalogDisabled,
 } from '../services/toolCatalog/exposure.js'
 import { toolCatalogDir } from '../services/toolCatalog/writer.js'
@@ -54,8 +54,8 @@ export function prependBullets(items: Array<string | string[]>): string[] {
  */
 function buildStaticSystemPrompt(enabledTools: Set<string>): string {
   const catalogBullet =
-    enabledTools.has(INVOKE_TOOL_NAME) && !mcpToolCatalogDisabled()
-      ? `\n - Find their exact names and argument schemas in the tool catalog manifest from your environment context (then the referenced server files), then call them through ${INVOKE_TOOL_NAME}.`
+    enabledTools.has(RUN_CODE_TOOL_NAME) && !mcpToolCatalogDisabled()
+      ? `\n - Find their exact names and argument types in the generated TypeScript declarations under the tool catalog directory from your environment context, and orchestrate them from a ${RUN_CODE_TOOL_NAME} script.`
       : ''
 
   // eslint-disable-next-line custom-rules/prompt-spacing
@@ -166,7 +166,7 @@ export async function computeEnvInfo(
   // system blocks; see the catalog notes in CLAUDE.md.
   const catalogLine = mcpToolCatalogDisabled()
     ? ''
-    : `\nTool catalog manifest: ${toolCatalogDir()}/manifest.json`
+    : `\nTool catalog directory: ${toolCatalogDir()} (servers/<name>.ts, builtins.ts)`
   return `Here is useful information about the environment you are running in:
 <env>
 Working directory: ${getCwd()}
@@ -211,7 +211,7 @@ export async function computeSimpleEnvInfo(
     `Settings file: ${getFreecodeSettingsFilePath()}`,
     `Model settings file: ${getModelSettingsFilePath()}`,
     !mcpToolCatalogDisabled()
-      ? `Tool catalog manifest: ${toolCatalogDir()}/manifest.json`
+      ? `Tool catalog directory: ${toolCatalogDir()} (servers/<name>.ts, builtins.ts)`
       : null,
     // The memory prompt names these instead of interpolating them, so the
     // system prefix stays byte-identical across projects.

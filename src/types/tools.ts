@@ -77,6 +77,12 @@ export type MCPProgress =
       progressMessage?: string
     }
 
+export type RunCodeProgress = {
+  type: 'runcode_progress'
+  /** Child tool_use / tool_result message forwarded for nested rendering. */
+  message: NormalizedMessage
+}
+
 export type TaskOutputProgress = {
   type: 'waiting_for_task'
   taskId?: string
@@ -95,4 +101,5 @@ export type ToolProgressData =
   | SkillToolProgress
   | AgentToolProgress
   | MCPProgress
+  | RunCodeProgress
   | TaskOutputProgress

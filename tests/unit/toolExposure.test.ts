@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
-  INVOKE_TOOL_NAME,
+  RUN_CODE_TOOL_NAME,
   isToolExposedToModel,
 } from '../../src/services/toolCatalog/exposure.js'
 import { resetSettingsCache } from '../../src/utils/settings/settingsCache.js'
@@ -59,12 +59,12 @@ describe('tool exposure', () => {
   })
 
   test('lazyTools hides named built-ins but never the dispatcher', async () => {
-    await useSettings({ lazyTools: ['Bash', INVOKE_TOOL_NAME] })
+    await useSettings({ lazyTools: ['Bash', RUN_CODE_TOOL_NAME] })
     expect(isToolExposedToModel({ name: 'Bash', isMcp: false })).toBe(false)
     expect(isToolExposedToModel({ name: 'Read', isMcp: false })).toBe(true)
-    expect(isToolExposedToModel({ name: INVOKE_TOOL_NAME, isMcp: false })).toBe(
-      true,
-    )
+    expect(
+      isToolExposedToModel({ name: RUN_CODE_TOOL_NAME, isMcp: false }),
+    ).toBe(true)
   })
 
   test('disableMcpToolCatalog exposes everything again', async () => {

@@ -6,6 +6,7 @@ import type { AgentId } from 'src/types/ids.js'
 import { NO_CONTENT_MESSAGE } from '../constants/messages.js'
 import { companionIntroText } from '../buddy/prompt.js'
 import { toolCatalogDir } from '../services/toolCatalog/writer.js'
+import { RUN_CODE_TOOL_NAME } from '../services/toolCatalog/exposure.js'
 import { isAutoMemoryEnabled } from '../memdir/paths.js'
 import { getInitialSettings } from './settings/settings.js'
 import {
@@ -4009,19 +4010,19 @@ You have exited auto mode. The user may now want to interact more directly. You 
       if (attachment.addedNames.length > 0) {
         const lines = attachment.addedNames.map(name => {
           const s = byName.get(name)
-          return `- ${name}: ${s ? `${s.toolCount} tools (schema: ${catalog}/${s.file})` : 'no tools'}`
+          return `- ${name}: ${s ? `${s.toolCount} tools (declarations: ${catalog}/${s.file})` : 'no tools'}`
         })
         parts.push(
-          `New MCP servers are connected. Their tools are callable through InvokeTool; read the catalog files first for exact names and argument schemas:\n${lines.join('\n')}`,
+          `New MCP servers are connected. Their tools are callable as functions from a ${RUN_CODE_TOOL_NAME} script; read the catalog declarations first for exact names and argument types:\n${lines.join('\n')}`,
         )
       }
       if (attachment.changedNames.length > 0) {
         const lines = attachment.changedNames.map(name => {
           const s = byName.get(name)
-          return `- ${name}${s ? ` (schema: ${catalog}/${s.file})` : ''}`
+          return `- ${name}${s ? ` (declarations: ${catalog}/${s.file})` : ''}`
         })
         parts.push(
-          `The tool schemas for these MCP servers changed. Re-read their catalog files before calling them:\n${lines.join('\n')}`,
+          `The tool declarations for these MCP servers changed. Re-read their catalog files before calling them:\n${lines.join('\n')}`,
         )
       }
       if (attachment.removedNames.length > 0) {
@@ -4031,7 +4032,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
       }
       if (attachment.builtinsAdded.length > 0) {
         parts.push(
-          `These built-in tools moved out of your tool list; read ${catalog}/builtins.json for their schemas and call them through InvokeTool: ${attachment.builtinsAdded.join(', ')}.`,
+          `These built-in tools moved out of your tool list; read ${catalog}/builtins.ts for their declarations and call them from a ${RUN_CODE_TOOL_NAME} script: ${attachment.builtinsAdded.join(', ')}.`,
         )
       }
       if (attachment.builtinsRemoved.length > 0) {
