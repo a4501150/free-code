@@ -412,10 +412,19 @@ function isBeingDebugged() {
  * call sites here rather than one here + one in QueryEngine.
  */
 function logSessionTelemetry(): void {
-  const model = parseUserSpecifiedModel(
-    getInitialMainLoopModel() ?? getDefaultMainLoopModel(),
-  )
-  void logSkillsLoaded(getCwd(), getContextWindowForModel(model, getSdkBetas()))
+  // Telemetry must never break boot; this runs fire-and-forget, so an
+  // unresolvable model here would otherwise be a swallowed rejection.
+  try {
+    const model = parseUserSpecifiedModel(
+      getInitialMainLoopModel() ?? getDefaultMainLoopModel(),
+    )
+    void logSkillsLoaded(
+      getCwd(),
+      getContextWindowForModel(model, getSdkBetas()),
+    )
+  } catch (err) {
+    logError(err)
+  }
   void loadAllPluginsCacheOnly()
     .then(({ enabled, errors }) => {
       logPluginsEnabledForSession(enabled, getPluginSeedDirs())
@@ -1989,6 +1998,18 @@ async function run(): Promise<CommanderCommand> {
       // NOTE: Model resolution happens after setup() to ensure trust is established before AWS auth
       const userSpecifiedModel =
         options.model === 'default' ? getDefaultMainLoopModel() : options.model
+
+      // Validate --model here, before MCP/plugin boot: an unresolvable
+      // model must exit with a clear message, not die inside a
+      // fire-and-forget call and linger on open handles.
+      if (options.model && options.model !== 'default') {
+        try {
+          parseUserSpecifiedModel(options.model)
+        } catch (error) {
+          process.stderr.write(chalk.red(`Error: ${errorMessage(error)}\n`))
+          process.exit(1)
+        }
+      }
 
       // Reuse preSetupCwd unless setup() chdir'd (worktreeEnabled). Saves a
       // getCwd() syscall in the common path.

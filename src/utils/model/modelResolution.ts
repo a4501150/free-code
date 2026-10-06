@@ -92,18 +92,6 @@ export function getMainLoopModel(): ModelName {
 }
 
 /**
- * Helper to qualify a bare model ID with the default provider name.
- * If the model is already qualified, returns it as-is.
- */
-function qualifyWithDefault(bareModelId: string): ModelName {
-  const registry = getProviderRegistry()
-  const parsed = parseModelStringFromRegistry(bareModelId)
-  // Use the parsed provider if it was explicitly qualified, otherwise use default
-  const provider = parsed.provider || registry.getDefaultProviderName() || ''
-  return qualifyModel(provider, parsed.modelId)
-}
-
-/**
  * Get the model to use for runtime.
  */
 export function getRuntimeMainLoopModel(params: {
@@ -146,13 +134,32 @@ export function getDefaultMainLoopModel(): ModelName {
 
 /**
  * Returns a fully-qualified model name for use in this session.
- * Qualifies bare model IDs with the default provider prefix.
+ *
+ * Declared models qualify with the provider that serves them, whether the
+ * input was qualified or a bare ID resolved through the canonical index.
+ * No default-provider fallback: an explicit but unregistered prefix is
+ * preserved so request-time resolution fails loudly on exactly what was
+ * asked for, and a bare unresolvable ID throws here.
  */
 export function parseUserSpecifiedModel(modelInput: string): ModelName {
-  const parsed = parseModelStringFromRegistry(modelInput)
-  // Return the qualified string, preserving original case for custom model
-  // names (e.g., Azure Foundry deployment IDs)
-  return qualifyModel(parsed.provider, parsed.modelId)
+  const registry = getProviderRegistry()
+  const resolved = registry.getProviderForModel(modelInput)
+  if (resolved) {
+    return qualifyModel(resolved.providerName, resolved.model.id)
+  }
+  const colonIdx = modelInput.indexOf(':')
+  if (colonIdx > 0) {
+    // Keep the given prefix (lowercased) instead of assuming a default
+    // provider; resolveProviderForModel reports the mismatch at request time.
+    return qualifyModel(
+      modelInput.slice(0, colonIdx).toLowerCase(),
+      modelInput.slice(colonIdx + 1),
+    )
+  }
+  throw new Error(
+    `Model "${modelInput}" is not declared by any configured provider. ` +
+      `Use "provider:${modelInput}" or add it to a provider's "models" list in modelSettings.json.`,
+  )
 }
 
 export function normalizeModelStringForAPI(model: string): string {
