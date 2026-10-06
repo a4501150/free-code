@@ -24,6 +24,7 @@ import {
   TOKEN_COUNT_MAX_TOKENS,
   TOKEN_COUNT_THINKING_BUDGET,
   type ProviderAdapter,
+  type ResolvedProviderTarget,
   type TokenBreakdown,
   type TokenCountMessageParam,
   type TokenCountToolParam,
@@ -944,11 +945,12 @@ export const bedrockAdapter: ProviderAdapter = {
   },
 
   async createStream(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
+    const { config } = provider;
     const fetch = fetchOverride ?? globalThis.fetch
     const region = config.auth?.aws?.region || 'us-east-1'
     const baseUrl =
@@ -1008,11 +1010,12 @@ export const bedrockAdapter: ProviderAdapter = {
   },
 
   async createMessage(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
+    const { config } = provider;
     const fetch = fetchOverride ?? globalThis.fetch
     const region = config.auth?.aws?.region || 'us-east-1'
     const baseUrl =

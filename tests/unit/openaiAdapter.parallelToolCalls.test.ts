@@ -26,7 +26,7 @@ async function capturedBody(
 ): Promise<Record<string, unknown>> {
   let sent: Record<string, unknown> = {}
   await openaiChatCompletionsAdapter.createStream(
-    testConfig,
+    { providerName: 'test', config: testConfig },
     request,
     new AbortController().signal,
     (async (_input: unknown, init?: RequestInit) => {

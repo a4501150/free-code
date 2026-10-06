@@ -27,6 +27,7 @@ import {
   TOKEN_COUNT_MAX_TOKENS,
   TOKEN_COUNT_THINKING_BUDGET,
   type ProviderAdapter,
+  type ResolvedProviderTarget,
   type TokenBreakdown,
   type TokenCountMessageParam,
   type TokenCountToolParam,
@@ -90,11 +91,12 @@ export const foundryAdapter: ProviderAdapter = {
   },
 
   async createStream(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
+    const { config } = provider;
     const fetch = fetchOverride ?? globalThis.fetch
     const baseUrl = config.baseUrl || ''
     const { headerName, headerValue } = await getFoundryAuth(config)
@@ -140,11 +142,12 @@ export const foundryAdapter: ProviderAdapter = {
   },
 
   async createMessage(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
+    const { config } = provider;
     const fetch = fetchOverride ?? globalThis.fetch
     const baseUrl = config.baseUrl || ''
     const { headerName, headerValue } = await getFoundryAuth(config)

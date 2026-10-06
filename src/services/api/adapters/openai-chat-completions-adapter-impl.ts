@@ -17,6 +17,7 @@
  */
 import type {
   ProviderAdapter,
+  ResolvedProviderTarget,
   TokenBreakdown,
   TokenCountMessageParam,
   TokenCountToolParam,
@@ -742,11 +743,12 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
   providerType: 'openai-chat-completions',
 
   async createStream(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
+    const { config } = provider;
     const fetch = fetchOverride ?? globalThis.fetch
     const authHeaders = await resolveOpenAIChatCompletionsAuthHeaders(config)
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1'
@@ -796,11 +798,12 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
   },
 
   async createMessage(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
+    const { config } = provider;
     const fetch = fetchOverride ?? globalThis.fetch
     const authHeaders = await resolveOpenAIChatCompletionsAuthHeaders(config)
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1'

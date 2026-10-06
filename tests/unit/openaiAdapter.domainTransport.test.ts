@@ -71,7 +71,7 @@ describe('OpenAI CC adapter: createStream', () => {
       ])
 
     const result = await openaiChatCompletionsAdapter.createStream(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest(),
       new AbortController().signal,
     )
@@ -114,7 +114,7 @@ describe('OpenAI CC adapter: createStream', () => {
       ])
 
     const result = await openaiChatCompletionsAdapter.createStream(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest(),
       new AbortController().signal,
     )
@@ -158,7 +158,7 @@ describe('OpenAI CC adapter: createStream', () => {
       ])
 
     const result = await openaiChatCompletionsAdapter.createStream(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest(),
       new AbortController().signal,
     )
@@ -194,7 +194,7 @@ describe('OpenAI CC adapter: createStream', () => {
       ])
 
     const result = await openaiChatCompletionsAdapter.createStream(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest(),
       new AbortController().signal,
     )
@@ -220,7 +220,7 @@ describe('OpenAI CC adapter: createStream', () => {
 
     await expect(
       openaiChatCompletionsAdapter.createStream(
-        testConfig,
+        { providerName: 'test', config: testConfig },
         makeRequest(),
         new AbortController().signal,
       ),
@@ -236,7 +236,7 @@ describe('OpenAI CC adapter: createStream', () => {
       ])
 
     const result = await openaiChatCompletionsAdapter.createStream(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest(),
       new AbortController().signal,
     )
@@ -265,7 +265,7 @@ describe('OpenAI CC adapter: createMessage', () => {
       )
 
     const result = await openaiChatCompletionsAdapter.createMessage(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest(),
       new AbortController().signal,
     )
@@ -312,7 +312,7 @@ describe('OpenAI CC adapter: createMessage', () => {
       )
 
     const result = await openaiChatCompletionsAdapter.createMessage(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest(),
       new AbortController().signal,
     )
@@ -346,7 +346,7 @@ describe('OpenAI CC adapter: request translation', () => {
     }
 
     await openaiChatCompletionsAdapter.createMessage(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest({
         system: [
           { type: 'text', text: 'You are a helpful assistant.' },
@@ -383,7 +383,7 @@ describe('OpenAI CC adapter: request translation', () => {
     }
 
     await openaiChatCompletionsAdapter.createMessage(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest({
         tools: [
           {
@@ -426,7 +426,7 @@ describe('OpenAI CC adapter: request translation', () => {
     }
 
     await openaiChatCompletionsAdapter.createMessage(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest({
         messages: [
           {
@@ -483,7 +483,7 @@ describe('OpenAI CC adapter: request translation', () => {
     }
 
     await openaiChatCompletionsAdapter.createMessage(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest({
         messages: [
           {
@@ -529,7 +529,7 @@ describe('OpenAI CC adapter: request translation', () => {
     }
 
     await openaiChatCompletionsAdapter.createMessage(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest({ stopSequences: ['done'] }),
       new AbortController().signal,
     )
@@ -551,7 +551,7 @@ describe('OpenAI CC adapter: request translation', () => {
     }
 
     const result = await openaiChatCompletionsAdapter.createStream(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest({ outputConfig: { effort: 'high' } }),
       new AbortController().signal,
     )

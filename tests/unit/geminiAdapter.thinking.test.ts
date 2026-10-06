@@ -64,7 +64,7 @@ async function capturedBody(
   }) as unknown as typeof globalThis.fetch
 
   const streaming = await geminiAdapter.createStream(
-    testConfig,
+    { providerName: 'test', config: testConfig },
     request,
     new AbortController().signal,
     fetchOverride,
@@ -79,7 +79,7 @@ async function collectEvents(chunks: unknown[]): Promise<DomainStreamEvent[]> {
   const fetchOverride = (async () =>
     sseResponse(chunks)) as unknown as typeof globalThis.fetch
   const streaming = await geminiAdapter.createStream(
-    testConfig,
+    { providerName: 'test', config: testConfig },
     makeRequest(),
     new AbortController().signal,
     fetchOverride,
@@ -374,7 +374,7 @@ describe('gemini non-streaming: thought parts', () => {
       )) as unknown as typeof globalThis.fetch
 
     const result = await geminiAdapter.createMessage(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest(),
       new AbortController().signal,
       fetchOverride,

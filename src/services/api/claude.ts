@@ -15,10 +15,8 @@ import type {
   DomainToolChoice,
   DomainToolDefinition,
 } from './domain-transport.js'
-import {
-  getAdapterForModel,
-  getProviderConfigForModel,
-} from './adapters/index.js'
+import { getAdapterForModel } from './adapters/index.js'
+import { resolveProviderForModel } from './adapters/resolve.js'
 import { randomUUID } from 'crypto'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import { isToolExposedToModel } from '../toolCatalog/exposure.js'
@@ -387,13 +385,16 @@ export async function verifyApiKey(
       withRetry(
         async () => {
           const adapter = getAdapterForModel(model)
-          const baseConfig = getProviderConfigForModel(model)
-          const verifyConfig = {
-            ...baseConfig,
-            auth: {
-              ...baseConfig.auth,
-              active: 'apiKey' as const,
-              apiKey: { key: apiKey },
+          const baseProvider = resolveProviderForModel(model)
+          const verifyProvider = {
+            ...baseProvider,
+            config: {
+              ...baseProvider.config,
+              auth: {
+                ...baseProvider.config.auth,
+                active: 'apiKey' as const,
+                apiKey: { key: apiKey },
+              },
             },
           }
 
@@ -419,7 +420,7 @@ export async function verifyApiKey(
           })
 
           await adapter.createMessage(
-            verifyConfig,
+            verifyProvider,
             request,
             AbortSignal.timeout(30_000),
           )
@@ -780,7 +781,7 @@ export async function* executeNonStreamingRequest(
         MAX_NON_STREAMING_TOKENS,
       )
       const adapter = getAdapterForModel(clientOptions.model)
-      const providerConfig = getProviderConfigForModel(clientOptions.model)
+      const provider = resolveProviderForModel(clientOptions.model)
       const timeoutController = new AbortController()
       const timeoutId = setTimeout(
         () => timeoutController.abort(),
@@ -795,7 +796,7 @@ export async function* executeNonStreamingRequest(
 
       try {
         return await adapter.createMessage(
-          providerConfig,
+          provider,
           adjustedRequest,
           timeoutController.signal,
           fetchOverride,
@@ -1367,10 +1368,10 @@ async function* queryModel(
 
           // Route through the provider adapter's createStream
           const adapter = getAdapterForModel(options.model)
-          const providerConfig = getProviderConfigForModel(options.model)
+          const provider = resolveProviderForModel(options.model)
           // biome-ignore lint/plugin: main conversation loop handles attribution separately
           const adapterResponse = await adapter.createStream(
-            providerConfig,
+            provider,
             domainRequest,
             signal,
             options.fetchOverride,

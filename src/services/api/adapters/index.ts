@@ -11,11 +11,8 @@
  * errors when the Bun bundler flattens adapter cross-imports.
  */
 import type { ProviderAdapter } from '../adapter.js'
-import type {
-  ProviderConfig,
-  ProviderType,
-} from '../../../utils/settings/types.js'
-import { getProviderRegistry } from '../../../utils/model/providerRegistry.js'
+import type { ProviderType } from '../../../utils/settings/types.js'
+import { resolveProviderForModel } from './resolve.js'
 import { anthropicAdapter } from './anthropic-adapter-impl.js'
 import { vertexAnthropicAdapter } from './vertex-adapter-impl.js'
 import { foundryAdapter } from './foundry-adapter-impl.js'
@@ -24,13 +21,11 @@ import { openaiChatCompletionsAdapter } from './openai-chat-completions-adapter-
 import { codexAdapter } from './codex-adapter-impl.js'
 import { geminiAdapter } from './gemini-adapter-impl.js'
 
-const FALLBACK_PROVIDER_CONFIG: ProviderConfig = {
-  type: 'anthropic',
-  models: [],
-  auth: { active: 'apiKey' },
-}
+export { UnresolvedModelError, resolveProviderForModel } from './resolve.js'
 
-export function getAdapterForProviderType(type: ProviderType): ProviderAdapter {
+export function getAdapterForProviderType(
+  type: ProviderType,
+): ProviderAdapter | undefined {
   switch (type) {
     case 'anthropic':
       return anthropicAdapter
@@ -50,28 +45,15 @@ export function getAdapterForProviderType(type: ProviderType): ProviderAdapter {
 }
 
 /**
- * Resolve the adapter for a given model ID. Falls back to the Anthropic
- * adapter when the model is not in the provider registry (e.g. token-count
- * probes for unknown model names).
+ * Resolve the adapter for a given model ID via strict provider resolution.
+ * Throws {@link UnresolvedModelError} when no configured provider serves
+ * the model; callers that treat token counting as best-effort catch it.
  */
 export function getAdapterForModel(model: string): ProviderAdapter {
-  const resolved = getProviderRegistry().getProviderForModel(model)
-  if (resolved) {
-    return getAdapterForProviderType(resolved.config.type) ?? anthropicAdapter
+  const { config } = resolveProviderForModel(model)
+  const adapter = getAdapterForProviderType(config.type)
+  if (!adapter) {
+    throw new Error(`No adapter registered for provider type "${config.type}"`)
   }
-  return anthropicAdapter
-}
-
-/**
- * Resolve the provider config passed to an adapter for a given model ID.
- * Unknown models use the default provider so validation probes still reach the
- * configured backend; the final fallback only covers an empty registry.
- */
-export function getProviderConfigForModel(model: string): ProviderConfig {
-  const registry = getProviderRegistry()
-  return (
-    registry.getProviderForModel(model)?.config ??
-    registry.getDefaultProvider()?.config ??
-    FALLBACK_PROVIDER_CONFIG
-  )
+  return adapter
 }

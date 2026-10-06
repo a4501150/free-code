@@ -147,28 +147,34 @@ export function getGroupedModelOptions(_fastMode = false): ModelOptionGroup[] {
   const registry = getProviderRegistry()
   const allProviders = registry.getAllProviders()
   const groups: ModelOptionGroup[] = []
-  let isFirstGroup = true
+  const groupByProvider = new Map<string, ModelOptionGroup>()
 
   for (const [providerName, providerConfig] of allProviders) {
     const options: ModelOption[] = []
-
-    // Prepend "Default (recommended)" to the first group
-    if (isFirstGroup) {
-      options.push(getDefaultOptionForUser())
-      isFirstGroup = false
-    }
 
     for (const model of providerConfig.models) {
       options.push(buildModelOption(model, providerName))
     }
 
     if (options.length > 0) {
-      groups.push({
+      const group: ModelOptionGroup = {
         provider: providerName.charAt(0).toUpperCase() + providerName.slice(1),
         options,
-      })
+      }
+      groupByProvider.set(providerName.toLowerCase(), group)
+      groups.push(group)
     }
   }
+
+  // "Default (recommended)" belongs to the provider that actually serves
+  // the default model, so the tab header names the provider behind it.
+  // groups[0] only applies when the default model resolves to nothing.
+  const defaultGroup = groupByProvider.get(
+    registry
+      .getProviderForModel(getDefaultMainLoopModelSetting())
+      ?.providerName.toLowerCase() ?? '',
+  )
+  ;(defaultGroup ?? groups[0])?.options.unshift(getDefaultOptionForUser())
 
   // If no providers at all, create a minimal group with just the default
   if (groups.length === 0) {
@@ -177,8 +183,6 @@ export function getGroupedModelOptions(_fastMode = false): ModelOptionGroup[] {
       options: [getDefaultOptionForUser()],
     })
   }
-
-  const firstGroup = groups[0]!
 
   // --- handle custom model (from --model or settings) ---
   let customModel: ModelSetting = null
@@ -193,9 +197,14 @@ export function getGroupedModelOptions(_fastMode = false): ModelOptionGroup[] {
   if (customModel !== null) {
     const allOpts = groups.flatMap(g => g.options)
     if (!allOpts.some(o => o.value === customModel)) {
-      const knownOption = getKnownModelOption(customModel)
-      firstGroup.options.push(
-        knownOption ?? {
+      // Show the model under the tab of the provider that serves it;
+      // unresolvable models land in the first tab labeled "Custom model".
+      const owner = groupByProvider.get(
+        registry.getProviderForModel(customModel)?.providerName.toLowerCase() ??
+          '',
+      )
+      ;(owner ?? groups[0])?.options.push(
+        getKnownModelOption(customModel) ?? {
           value: customModel,
           label: customModel,
           description: 'Custom model',

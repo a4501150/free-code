@@ -46,7 +46,7 @@ async function collectEvents(
 ) {
   const events: any[] = []
   const res = await openaiChatCompletionsAdapter.createStream(
-    testConfig,
+    { providerName: 'test', config: testConfig },
     request,
     new AbortController().signal,
     (async () => response) as unknown as typeof globalThis.fetch,

@@ -11,6 +11,7 @@
  */
 import type {
   ProviderAdapter,
+  ResolvedProviderTarget,
   TokenBreakdown,
   TokenCountMessageParam,
   TokenCountToolParam,
@@ -1371,11 +1372,12 @@ export const codexAdapter: ProviderAdapter = {
   providerType: 'openai-responses',
 
   async createStream(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
+    const { config } = provider;
     const fetch = fetchOverride ?? globalThis.fetch
     const auth = await resolveCodexAuth(config)
     if (!auth) {
@@ -1449,11 +1451,12 @@ export const codexAdapter: ProviderAdapter = {
   },
 
   async createMessage(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
+    const { config } = provider;
     const fetch = fetchOverride ?? globalThis.fetch
     const auth = await resolveCodexAuth(config)
     if (!auth) {

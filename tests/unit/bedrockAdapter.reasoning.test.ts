@@ -108,7 +108,7 @@ async function capturedBody(
   }) as unknown as typeof globalThis.fetch
 
   const streaming = await bedrockAdapter.createStream(
-    testConfig,
+    { providerName: 'test', config: testConfig },
     request,
     new AbortController().signal,
     fetchOverride,
@@ -126,7 +126,7 @@ async function collectEvents(
     events,
   ) as unknown as typeof globalThis.fetch
   const streaming = await bedrockAdapter.createStream(
-    testConfig,
+    { providerName: 'test', config: testConfig },
     makeRequest(),
     new AbortController().signal,
     fetchOverride,
@@ -465,7 +465,7 @@ describe('bedrock non-streaming: reasoning capture', () => {
       )) as unknown as typeof globalThis.fetch
 
     const result = await bedrockAdapter.createMessage(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest(),
       new AbortController().signal,
       fetchOverride,

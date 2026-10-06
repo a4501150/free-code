@@ -50,7 +50,7 @@ async function collectEvents(chunks: unknown[]): Promise<DomainStreamEvent[]> {
   const fetchOverride = (async () =>
     sseResponse(chunks)) as unknown as typeof globalThis.fetch
   const streaming = await openaiChatCompletionsAdapter.createStream(
-    testConfig,
+    { providerName: 'test', config: testConfig },
     makeRequest(),
     new AbortController().signal,
     fetchOverride,
@@ -70,7 +70,7 @@ async function capturedMessages(
   }) as unknown as typeof globalThis.fetch
 
   const streaming = await openaiChatCompletionsAdapter.createStream(
-    testConfig,
+    { providerName: 'test', config: testConfig },
     makeRequest({
       messages: [
         { role: 'user', content: [{ type: 'text', text: 'go' }] },
@@ -273,7 +273,7 @@ describe('chat-completions non-streaming: reasoning field detection', () => {
       )) as unknown as typeof globalThis.fetch
 
     const result = await openaiChatCompletionsAdapter.createMessage(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest(),
       new AbortController().signal,
       fetchOverride,

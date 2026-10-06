@@ -1,4 +1,15 @@
 /**
+ * The provider a request resolves to: its configured name and config.
+ * Adapters receive this instead of a bare {@link ProviderConfig} so they
+ * never re-derive a provider from the (bare) wire model ID. Produced by
+ * `resolveProviderForModel`, which refuses to guess.
+ */
+export interface ResolvedProviderTarget {
+  providerName: string
+  config: ProviderConfig
+}
+
+/**
  * Provider adapter interface.
  *
  * Each adapter owns its provider's wire format end-to-end: request
@@ -127,7 +138,7 @@ export interface ProviderAdapter {
    * Errors during streaming throw {@link DomainTransportError}.
    */
   createStream(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
@@ -139,7 +150,7 @@ export interface ProviderAdapter {
    * Errors throw {@link DomainTransportError}.
    */
   createMessage(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,

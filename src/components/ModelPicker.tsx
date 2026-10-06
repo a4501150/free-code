@@ -102,6 +102,14 @@ export function ModelPicker({
 
   // Build per-group select options (with NO_PREFERENCE sentinel for null values)
   const groupSelectOptions = useMemo(() => {
+    // The initial value belongs under the tab of the provider that serves
+    // it; unresolvable models fall back to the first group.
+    const ownerProvider =
+      initial !== null
+        ? getProviderRegistry()
+            .getProviderForModel(initialValue)
+            ?.providerName.toLowerCase()
+        : undefined
     return groups.map(group => {
       let opts = group.options.map(opt => ({
         ...opt,
@@ -112,8 +120,9 @@ export function ModelPicker({
       if (
         initial !== null &&
         !opts.some(opt => opt.value === initialValue) &&
-        // Only add to the first group that might own it, or the first group as fallback
-        group === groups[0]
+        (ownerProvider
+          ? group.provider.toLowerCase() === ownerProvider
+          : group === groups[0])
       ) {
         const allOpts = groups.flatMap(g =>
           g.options.map(o => (o.value === null ? NO_PREFERENCE : o.value)),

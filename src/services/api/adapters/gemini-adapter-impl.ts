@@ -13,6 +13,7 @@
  */
 import type {
   ProviderAdapter,
+  ResolvedProviderTarget,
   TokenBreakdown,
   TokenCountMessageParam,
   TokenCountToolParam,
@@ -740,11 +741,12 @@ export const geminiAdapter: ProviderAdapter = {
   providerType: 'gemini',
 
   async createStream(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
+    const { config } = provider;
     const fetch = fetchOverride ?? globalThis.fetch
     const authResult = await getGcpAccessToken(config)
     if (!authResult) {
@@ -799,11 +801,12 @@ export const geminiAdapter: ProviderAdapter = {
   },
 
   async createMessage(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
+    const { config } = provider;
     const fetch = fetchOverride ?? globalThis.fetch
     const authResult = await getGcpAccessToken(config)
     if (!authResult) {

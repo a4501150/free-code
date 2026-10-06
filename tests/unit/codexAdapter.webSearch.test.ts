@@ -50,7 +50,7 @@ async function runStream(
     )
   }) as unknown as typeof globalThis.fetch
   const response = await codexAdapter.createStream(
-    config,
+    { providerName: 'test', config: config },
     request,
     new AbortController().signal,
     fetchOverride,

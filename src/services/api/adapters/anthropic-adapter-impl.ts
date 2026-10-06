@@ -49,10 +49,9 @@ import {
 import { isDebugToStdErr, logForDebugging } from '../../../utils/debug.js'
 import { isEnvTruthy } from '../../../utils/envUtils.js'
 import { getUserAgent } from '../../../utils/http.js'
-import {
-  getProviderRegistry,
-  type ResolvedProvider,
-} from '../../../utils/model/providerRegistry.js'
+import { getProviderRegistry } from '../../../utils/model/providerRegistry.js'
+import type { ResolvedProviderTarget } from '../adapter.js'
+import { resolveProviderForModel } from './resolve.js'
 import { normalizeModelStringForAPI } from '../../../utils/model/modelResolution.js'
 import {
   fromHttpStatus,
@@ -137,7 +136,7 @@ async function configureApiKeyHeaders(
 }
 
 function resolveAuthHeaders(
-  provider: ResolvedProvider,
+  provider: ResolvedProviderTarget,
 ): Record<string, string> {
   const auth = provider.config.auth
   if (!auth) return {}
@@ -213,18 +212,8 @@ function buildFetch(
   }
 }
 
-function resolveDefaultProvider(
-  registry: ReturnType<typeof getProviderRegistry>,
-): ResolvedProvider | null {
-  const defaultProvider = registry.getDefaultProvider()
-  if (!defaultProvider) return null
-  const firstModel = defaultProvider.config.models[0]
-  if (!firstModel) return null
-  return registry.getProviderForModel(firstModel.id)
-}
-
 async function createClientForProvider(
-  provider: ResolvedProvider,
+  provider: ResolvedProviderTarget,
   baseArgs: Record<string, unknown>,
   opts: { apiKey?: string } = {},
 ): Promise<Anthropic | null> {
@@ -267,20 +256,25 @@ async function getAnthropicClient({
   apiKey,
   maxRetries,
   model,
+  provider,
   fetchOverride,
   source,
 }: {
   apiKey?: string
   maxRetries: number
+  /** Wire model ID — used for capability lookups and logging. */
   model?: string
+  /**
+   * The provider this request resolved to. Callers on the request path
+   * always pass this; strict resolution from `model` is the fallback for
+   * auxiliary calls (e.g. token counting).
+   */
+  provider?: ResolvedProviderTarget
   fetchOverride?: ClientOptions['fetch']
   source?: string
 }): Promise<Anthropic> {
-  const earlyRegistry = getProviderRegistry()
-  const resolvedProviderType =
-    (model ? earlyRegistry.getProviderForModel(model)?.config.type : null) ??
-    earlyRegistry.getDefaultProvider()?.config.type
-  const isAnthropicProvider = resolvedProviderType === 'anthropic'
+  const resolved = provider ?? resolveProviderForModel(model)
+  const isAnthropicProvider = resolved.config.type === 'anthropic'
 
   const containerId = process.env.CLAUDE_CODE_CONTAINER_ID
   const clientApp = process.env.CLAUDE_AGENT_SDK_CLIENT_APP
@@ -311,9 +305,10 @@ async function getAnthropicClient({
   await checkAndRefreshOAuthTokenIfNeeded()
   logForDebugging('[API:auth] OAuth token check complete')
 
-  const defaultAuthActive =
-    getProviderRegistry().getDefaultProvider()?.config.auth?.active
-  if (defaultAuthActive !== 'oauth') {
+  // A provider with explicit auth carries its own headers (resolved from
+  // its config in createClientForProvider). Only a provider with no auth
+  // block — env-var mode — picks up ANTHROPIC_AUTH_TOKEN / apiKeyHelper.
+  if (!resolved.config.auth?.active) {
     await configureApiKeyHeaders(defaultHeaders, getIsNonInteractiveSession())
   }
 
@@ -332,26 +327,12 @@ async function getAnthropicClient({
     }),
   }
 
-  const registry = earlyRegistry
-
-  const resolved = model ? registry.getProviderForModel(model) : null
-
-  if (resolved) {
-    const client = await createClientForProvider(resolved, ARGS, { apiKey })
-    if (client) return client
-  }
-
-  const defaultResolved = resolveDefaultProvider(registry)
-  if (defaultResolved) {
-    const client = await createClientForProvider(defaultResolved, ARGS, {
-      apiKey,
-    })
-    if (client) return client
-  }
+  const client = await createClientForProvider(resolved, ARGS, { apiKey })
+  if (client) return client
 
   throw new Error(
-    'No Anthropic provider configured. Non-Anthropic models should be routed through their native adapters. ' +
-      'Set providers in freecode.json or configure ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL environment variables.',
+    `Provider "${resolved.providerName}" has type "${resolved.config.type}", which speaks a different wire format; ` +
+      'route this request through its own adapter.',
   )
 }
 
@@ -534,13 +515,14 @@ export const anthropicAdapter: ProviderAdapter = {
   },
 
   async createStream(
-    _config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
     const client = await getAnthropicClient({
       maxRetries: 0,
+      provider,
       model: request.model,
       source: 'adapter',
       fetchOverride,
@@ -574,14 +556,15 @@ export const anthropicAdapter: ProviderAdapter = {
   },
 
   async createMessage(
-    config: ProviderConfig,
+    provider: ResolvedProviderTarget,
     request: DomainMessageRequest,
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
-    const configApiKey = config.auth?.apiKey?.key
+    const configApiKey = provider.config.auth?.apiKey?.key
     const client = await getAnthropicClient({
       maxRetries: 0,
+      provider,
       model: request.model,
       source: 'adapter',
       fetchOverride,

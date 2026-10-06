@@ -322,7 +322,11 @@ export class ProviderRegistry {
       this.getDefaultProviderName() ?? '',
     )
     const key = `${parsed.provider.toLowerCase()}:${parsed.modelId}`
-    const entry = this.qualifiedIndex.get(key)
+    const entry =
+      this.qualifiedIndex.get(key) ??
+      // Bare wire IDs (no provider prefix) for non-default providers must still
+      // resolve to their configured provider, not the default one.
+      this.canonicalIdIndex.get(parsed.modelId.toLowerCase())
     if (!entry) return null
     return {
       providerName: entry.providerName,

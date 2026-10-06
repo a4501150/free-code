@@ -42,7 +42,7 @@ async function collectEvents(body: string): Promise<DomainStreamEvent[]> {
   const fetchOverride = (async () =>
     completedSse(body)) as unknown as typeof globalThis.fetch
   const response = await codexAdapter.createStream(
-    testConfig,
+    { providerName: 'test', config: testConfig },
     makeRequest(),
     new AbortController().signal,
     fetchOverride,
@@ -76,7 +76,7 @@ describe('Codex Responses reasoning request and replay', () => {
     }) as unknown as typeof globalThis.fetch
 
     const response = await codexAdapter.createStream(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest({
         outputConfig: { effort: 'high', reasoningSummary: 'auto' },
         messages: [
@@ -133,7 +133,7 @@ describe('Codex Responses reasoning request and replay', () => {
     }) as unknown as typeof globalThis.fetch
 
     const response = await codexAdapter.createStream(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest({ outputConfig: { effort: 'high' } }),
       new AbortController().signal,
       fetchOverride,
@@ -153,7 +153,7 @@ describe('Codex Responses reasoning request and replay', () => {
     }) as unknown as typeof globalThis.fetch
 
     const response = await codexAdapter.createStream(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest({
         messages: [
           {
@@ -301,7 +301,7 @@ describe('Codex Responses reasoning parsing', () => {
       )) as unknown as typeof globalThis.fetch
 
     const response = await codexAdapter.createMessage(
-      testConfig,
+      { providerName: 'test', config: testConfig },
       makeRequest(),
       new AbortController().signal,
       fetchOverride,

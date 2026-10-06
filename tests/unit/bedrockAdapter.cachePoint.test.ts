@@ -49,7 +49,7 @@ async function capturedBody(
   }) as unknown as typeof globalThis.fetch
 
   const streaming = await bedrockAdapter.createStream(
-    testConfig,
+    { providerName: 'test', config: testConfig },
     request,
     new AbortController().signal,
     fetchOverride,

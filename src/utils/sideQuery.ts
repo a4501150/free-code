@@ -14,10 +14,8 @@ import {
 } from '../constants/system.js'
 
 import { getAPIMetadata, prepareRetry } from '../services/api/claude.js'
-import {
-  getAdapterForModel,
-  getProviderConfigForModel,
-} from '../services/api/adapters/index.js'
+import { getAdapterForModel } from '../services/api/adapters/index.js'
+import { resolveProviderForModel } from '../services/api/adapters/resolve.js'
 import type { DomainMessageRequest } from '../services/api/domain-transport.js'
 import { withRetry } from '../services/api/withRetry.js'
 import { getModelBetas, modelSupportsStructuredOutputs } from './betas.js'
@@ -182,7 +180,7 @@ export async function sideQuery(
   }
 
   const adapter = getAdapterForModel(model)
-  const providerConfig = getProviderConfigForModel(model)
+  const provider = resolveProviderForModel(model)
   const request: DomainMessageRequest = {
     model: normalizeModelStringForAPI(model),
     maxTokens: max_tokens,
@@ -204,7 +202,7 @@ export async function sideQuery(
   const requestSignal = signal ?? new AbortController().signal
   const response = await returnValue(
     withRetry(
-      () => adapter.createMessage(providerConfig, request, requestSignal),
+      () => adapter.createMessage(provider, request, requestSignal),
       {
         maxRetries,
         model,
