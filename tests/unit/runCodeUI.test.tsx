@@ -79,12 +79,48 @@ describe('RunCode card display', () => {
 })
 
 describe('RunCode nested progress rows', () => {
-  test('child tool_use messages render as nested tool rows', async () => {
+  test('collapsed pending calls render one lightweight line per call', async () => {
     const progress = [
       progressFor('a', childToolUse('a', 'mcp__srv__echo', { msg: 'hi' })),
     ]
     const frame = await renderToString(
       wrap(renderToolUseProgressMessage(progress, { tools, verbose: false })),
+    )
+    expect(frame).toContain('calling echo…')
+    // Args stay out of the collapsed rows; verbose replay shows them.
+    expect(frame).not.toContain('msg:')
+  })
+
+  test('resolved calls show the name with a result mark', async () => {
+    const progress = [
+      progressFor('a', childToolUse('a', 'mcp__srv__echo', { msg: 'hi' })),
+      progressFor(
+        'a',
+        createUserMessage({
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'a',
+              content: 'echo:hi',
+            } as never,
+          ],
+        }),
+      ),
+    ]
+    const frame = await renderToString(
+      wrap(renderToolUseProgressMessage(progress, { tools, verbose: false })),
+    )
+    // The pending "calling…" line is replaced by the resolved row.
+    expect(frame).not.toContain('calling echo…')
+    expect(frame).toContain('echo')
+  })
+
+  test('verbose mode replays child tool_use messages as nested tool rows', async () => {
+    const progress = [
+      progressFor('a', childToolUse('a', 'mcp__srv__echo', { msg: 'hi' })),
+    ]
+    const frame = await renderToString(
+      wrap(renderToolUseProgressMessage(progress, { tools, verbose: true })),
     )
     // Condensed nested rows render like direct tool rows: bullet, name, args.
     expect(frame).toContain('echo(msg:')
@@ -159,25 +195,48 @@ describe('RunCode nested progress rows', () => {
 })
 
 describe('RunCode result and error lines', () => {
-  test('result byline summarizes calls and failures', async () => {
+  test('result lists each called method, failures with their headline', async () => {
     const node = renderToolResultMessage({
       segments: [
         { name: 'mcp__srv__echo', ok: true, output: 'echo:hi' },
-        { name: 'mcp__srv__echo', ok: false, error: 'inner exploded' },
+        { name: 'mcp__srv__boom', ok: false, error: 'inner exploded\n…' },
       ],
       logs: 'in-script\ngot echo:hi',
     })
     const frame = await renderToString(wrap(node))
-    expect(frame).toContain('2 calls')
-    expect(frame).toContain('1 failed')
+    // One line per call, bare names (no mcp__srv__ prefix), error headline.
+    expect(frame).toContain('echo')
+    expect(frame).toContain('boom')
+    expect(frame).toContain('inner exploded')
+    expect(frame).not.toContain('mcp__srv__')
     expect(frame).toContain('2 logged lines')
+  })
+
+  test('collapsed result trims to the tail; verbose keeps every call', async () => {
+    const segments = Array.from({ length: 7 }, (_, i) => ({
+      name: `mcp__srv__echo${i}`,
+      ok: true,
+      output: 'x',
+    }))
+    const collapsed = await renderToString(
+      wrap(renderToolResultMessage({ segments, logs: '' })),
+    )
+    expect(collapsed).not.toContain('echo0')
+    expect(collapsed).toContain('echo6')
+    expect(collapsed).toContain('+2 more calls')
+    const verbose = await renderToString(
+      wrap(
+        renderToolResultMessage({ segments, logs: '' }, [], { verbose: true }),
+      ),
+    )
+    expect(verbose).toContain('echo0')
   })
 
   test('logs-only script reports the logged lines, no calls reports none', async () => {
     const logsFrame = await renderToString(
       wrap(renderToolResultMessage({ segments: [], logs: 'console only' })),
     )
-    expect(logsFrame).toContain('1 logged lines')
+    expect(logsFrame).toContain('1 logged line')
     const emptyFrame = await renderToString(
       wrap(renderToolResultMessage({ segments: [], logs: '' })),
     )
