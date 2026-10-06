@@ -16,6 +16,7 @@ import {
 import {
   createAssistantMessage,
   createProgressMessage,
+  createUserMessage,
 } from '../../src/utils/messages.js'
 import type { ProgressMessage } from '../../src/types/message.js'
 import type { RunCodeProgress } from '../../src/types/tools.js'
@@ -108,6 +109,53 @@ describe('RunCode nested progress rows', () => {
     )
     expect(frame).toContain('Running script')
   })
+
+  test('running header counts calls and flags failures', async () => {
+    const progress = [
+      progressFor('a', childToolUse('a', 'mcp__srv__echo', { msg: 'hi' })),
+    ]
+    const frame = await renderToString(
+      wrap(renderToolUseProgressMessage(progress, { tools, verbose: false })),
+    )
+    expect(frame).toContain('Running script')
+    expect(frame).toContain('1 call')
+  })
+
+  test('a failed call row survives the tail trim', async () => {
+    const progress = [
+      progressFor(
+        'old',
+        childToolUse('old', 'mcp__srv__echo', { msg: 'first' }),
+      ),
+      progressFor(
+        'old',
+        createUserMessage({
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'old',
+              is_error: true,
+              content: 'inner exploded',
+            } as never,
+          ],
+        }),
+      ),
+      ...Array.from({ length: 7 }, (_, i) =>
+        progressFor(
+          `id${i}`,
+          childToolUse(`id${i}`, 'mcp__srv__echo', { msg: String(i) }),
+        ),
+      ),
+    ]
+    const frame = await renderToString(
+      wrap(renderToolUseProgressMessage(progress, { tools, verbose: false })),
+    )
+    // The errored row is first in history yet still rendered; only the
+    // remaining rows are trimmed to the tail.
+    expect(frame).toContain('inner exploded')
+    expect(frame).toContain('1 call failed')
+    expect(frame).toContain('+3 more tool uses')
+  })
 })
 
 describe('RunCode result and error lines', () => {
@@ -147,5 +195,45 @@ describe('RunCode result and error lines', () => {
     })
     const frame = await renderToString(wrap(node))
     expect(frame).toContain('echo')
+  })
+
+  test('collapsed error shows the headline, not the payload echo', async () => {
+    const mcpError = [
+      'Error: mcp__srv__browser_navigate: ### Error',
+      'No browser instance "### Result',
+      '{',
+      '  "instance_id": "inst_c07a6808",',
+      '  "profile": "default",',
+      '  "headless": true,',
+      '  "fingerprint": null,',
+      '  "tabs": 1,',
+      '"current_url": "about:blank",',
+      '"extra": 1,',
+      '"more": 2',
+      '}',
+    ].join('\n')
+    const collapsed = await renderToString(
+      wrap(
+        renderToolUseErrorMessage(mcpError, {
+          progressMessagesForMessage: [],
+          tools,
+          verbose: false,
+        }),
+      ),
+    )
+    expect(collapsed).toContain('browser_navigate')
+    expect(collapsed).toContain('No browser instance')
+    expect(collapsed).not.toContain('instance_id')
+    expect(collapsed).not.toContain('### Error')
+    const expanded = await renderToString(
+      wrap(
+        renderToolUseErrorMessage(mcpError, {
+          progressMessagesForMessage: [],
+          tools,
+          verbose: true,
+        }),
+      ),
+    )
+    expect(expanded).toContain('instance_id')
   })
 })

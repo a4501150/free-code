@@ -12,16 +12,26 @@ export const MAX_RENDERED_LINES = 10
 type Props = {
   result: DomainToolResultBlockParam['content']
   verbose: boolean
+  /** Collapsed line cap; defaults to MAX_RENDERED_LINES. */
+  maxLines?: number
 }
 
 export function FallbackToolUseErrorMessage({
   result,
   verbose,
+  maxLines = MAX_RENDERED_LINES,
 }: Props): React.ReactNode {
   const transcriptShortcut = useShortcutDisplay(
     'app:toggleTranscript',
     'Global',
   )
+  // MCP clients frame failures as "### Error\n<message>" and often echo a
+  // prior "### Result" blob; the markdown markers are wire framing, not
+  // something the reader needs. Stripping happens before the "Error: "
+  // frame so a collapsed message starts at its real content.
+  const stripMarkers = (text: string): string =>
+    text.replace(/#{2,3} (?:Error|Result)\b[ \t]*/g, '').trim()
+
   let error: string
 
   if (typeof result !== 'string') {
@@ -31,7 +41,7 @@ export function FallbackToolUseErrorMessage({
           .join('\n')
           .trim()
       : ''
-    error = text || 'Tool execution failed'
+    error = stripMarkers(text) || 'Tool execution failed'
   } else {
     const extractedError = extractTag(result, 'tool_use_error') ?? result
     // Strip <error> tags but keep their content (tags are for the model, not the UI)
@@ -39,7 +49,7 @@ export function FallbackToolUseErrorMessage({
     // The <tool_use_error> body is the source of truth shown to the model —
     // every variant names its remedy — so render it verbatim and only add the
     // "Error: " frame when the message does not carry one.
-    const trimmed = withoutErrorTags.trim()
+    const trimmed = stripMarkers(withoutErrorTags) || withoutErrorTags.trim()
     error =
       trimmed.startsWith('Error: ') ||
       trimmed.startsWith('Cancelled: ') ||
@@ -48,16 +58,14 @@ export function FallbackToolUseErrorMessage({
         : `Error: ${trimmed}`
   }
 
-  const plusLines = countCharInString(error, '\n') + 1 - MAX_RENDERED_LINES
+  const plusLines = countCharInString(error, '\n') + 1 - maxLines
 
   return (
     <MessageResponse>
       <Box flexDirection="column">
         <Text color="error">
           {stripUnderlineAnsi(
-            verbose
-              ? error
-              : error.split('\n').slice(0, MAX_RENDERED_LINES).join('\n'),
+            verbose ? error : error.split('\n').slice(0, maxLines).join('\n'),
           )}
         </Text>
         {!verbose && plusLines > 0 && (

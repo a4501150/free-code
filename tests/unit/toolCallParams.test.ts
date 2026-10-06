@@ -103,6 +103,18 @@ describe('renderToolCallParams', () => {
     expect(result).toContain('…')
   })
 
+  test('multiline values render on one line', () => {
+    // RunCode child calls often echo a previous result blob as an input
+    // value; escaped and real newlines must not break the tool row.
+    const blobby = { instance_id: '### Result\n{\n  "a": 1\n}' }
+    const compact = renderToolCallParams(blobby, 'compact')
+    expect(compact).not.toContain('\\n')
+    expect(compact).toContain('### Result {')
+    const full = renderToolCallParams({ tabbed: 'a\tb\nc' }, 'full')
+    expect(full).not.toContain('\\n')
+    expect(full).not.toContain('\\t')
+  })
+
   test('compact mode without compactParamKeys caps at 6 params', () => {
     const manyParams: Record<string, unknown> = {}
     for (let i = 0; i < 10; i++) {

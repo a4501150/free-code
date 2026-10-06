@@ -37,6 +37,13 @@ export function renderToolCallParams(
     // jsonStringify is typed as string but returns undefined for
     // functions and symbols.
     let rendered = jsonStringify(value) ?? String(value)
+    // Escaped newlines/tabs (JSON.stringify escapes them, so they are
+    // literal "\n" two-char sequences) make values like a pasted tool
+    // result unreadable inline; show them as spaces instead.
+    rendered = rendered.replace(/\\r\\n|\\[nrt]/g, ' ')
+    if (mode === 'compact') {
+      rendered = rendered.replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ')
+    }
     if (rendered.length > maxValueChars) {
       rendered = rendered.slice(0, maxValueChars).trimEnd() + '…'
     }
