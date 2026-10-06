@@ -1,5 +1,5 @@
 // Shared logic for stopping a running task.
-// Used by TaskStopTool (LLM-invoked) and SDK stop_task control request.
+// Used by BackgroundTaskStopTool (LLM-invoked) and SDK stop_task control request.
 
 import type { AppState } from '../state/AppStateStore.js'
 import type { TaskStateBase } from '../Task.js'

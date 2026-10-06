@@ -14,7 +14,7 @@ import { FILE_EDIT_TOOL_NAME } from 'src/tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from 'src/tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from 'src/tools/FileWriteTool/prompt.js'
 import { LIST_MCP_RESOURCES_TOOL_NAME } from 'src/tools/ListMcpResourcesTool/prompt.js'
-import { TASK_STOP_TOOL_NAME } from 'src/tools/TaskStopTool/prompt.js'
+import { BACKGROUND_TASK_STOP_TOOL_NAME } from 'src/tools/BackgroundTaskStopTool/prompt.js'
 import { extractTextContent } from 'src/utils/messages.js'
 import { SHELL_TOOL_NAMES } from 'src/utils/shell/shellToolUtils.js'
 import { capitalize } from 'src/utils/stringUtils.js'
@@ -43,7 +43,7 @@ const READ_TOOLS = [
   'mcp__agent-browser__web_extract',
 ]
 const WRITE_TOOLS = [FILE_WRITE_TOOL_NAME, FILE_EDIT_TOOL_NAME]
-const COMMAND_TOOLS = [...SHELL_TOOL_NAMES, TASK_STOP_TOOL_NAME]
+const COMMAND_TOOLS = [...SHELL_TOOL_NAMES, BACKGROUND_TASK_STOP_TOOL_NAME]
 
 function categorizeToolName(toolName: string): keyof ToolCounts {
   if (SEARCH_TOOLS.some(t => toolName.startsWith(t))) return 'searches'

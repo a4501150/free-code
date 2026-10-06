@@ -1009,7 +1009,7 @@ async function getMessagesForPromptSlashCommand(
   uuid?: string,
 ): Promise<SlashCommandResult> {
   // In coordinator mode (main thread only), skip loading the full skill content
-  // and permissions. The coordinator only has Agent + TaskStop tools, so the
+  // and permissions. The coordinator only has Agent + BackgroundTaskStop tools, so the
   // skill content and allowedTools are useless. Instead, send a brief summary
   // telling the coordinator how to delegate this skill to a worker.
   //

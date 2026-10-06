@@ -3,7 +3,7 @@ import { EXIT_PLAN_MODE_TOOL_NAME } from '../tools/ExitPlanModeTool/constants.js
 import { ENTER_PLAN_MODE_TOOL_NAME } from '../tools/EnterPlanModeTool/constants.js'
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt.js'
-import { TASK_STOP_TOOL_NAME } from '../tools/TaskStopTool/prompt.js'
+import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../tools/BackgroundTaskStopTool/prompt.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { SHELL_TOOL_NAMES } from '../utils/shell/shellToolUtils.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
@@ -25,7 +25,7 @@ export const ALL_AGENT_DISALLOWED_TOOLS = new Set([
   ENTER_PLAN_MODE_TOOL_NAME,
   AGENT_TOOL_NAME,
   ASK_USER_QUESTION_TOOL_NAME,
-  TASK_STOP_TOOL_NAME,
+  BACKGROUND_TASK_STOP_TOOL_NAME,
 ])
 
 export const CUSTOM_AGENT_DISALLOWED_TOOLS = new Set([
@@ -67,7 +67,7 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
  * BLOCKED FOR ASYNC AGENTS:
  * - AgentTool: Blocked to prevent recursion
  * - ExitPlanModeTool: Plan mode is a main thread abstraction.
- * - TaskStopTool: Requires access to main thread task state.
+ * - BackgroundTaskStopTool: Requires access to main thread task state.
  *
  * ENABLE LATER (NEED WORK):
  * - MCPTool: TBD
@@ -80,7 +80,7 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
  */
 export const COORDINATOR_MODE_ALLOWED_TOOLS = new Set([
   AGENT_TOOL_NAME,
-  TASK_STOP_TOOL_NAME,
+  BACKGROUND_TASK_STOP_TOOL_NAME,
   SEND_MESSAGE_TOOL_NAME,
   LIST_AGENTS_TOOL_NAME,
   SYNTHETIC_OUTPUT_TOOL_NAME,

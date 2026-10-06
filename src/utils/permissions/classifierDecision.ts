@@ -7,7 +7,7 @@ import { SEND_MESSAGE_TOOL_NAME } from '../../tools/SendMessageTool/constants.js
 import { TASK_CREATE_TOOL_NAME } from '../../tools/TaskCreateTool/constants.js'
 import { TASK_GET_TOOL_NAME } from '../../tools/TaskGetTool/constants.js'
 import { TASK_LIST_TOOL_NAME } from '../../tools/TaskListTool/constants.js'
-import { TASK_STOP_TOOL_NAME } from '../../tools/TaskStopTool/prompt.js'
+import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../../tools/BackgroundTaskStopTool/prompt.js'
 import { TASK_UPDATE_TOOL_NAME } from '../../tools/TaskUpdateTool/constants.js'
 const YOLO_CLASSIFIER_TOOL_NAME = 'classify_result'
 
@@ -28,7 +28,7 @@ const SAFE_YOLO_ALLOWLISTED_TOOLS = new Set([
   TASK_GET_TOOL_NAME,
   TASK_UPDATE_TOOL_NAME,
   TASK_LIST_TOOL_NAME,
-  TASK_STOP_TOOL_NAME,
+  BACKGROUND_TASK_STOP_TOOL_NAME,
   // Plan mode / UI
   ASK_USER_QUESTION_TOOL_NAME,
   ENTER_PLAN_MODE_TOOL_NAME,

@@ -8,7 +8,7 @@ import {
 import { isConcurrencySafeToolInput } from '../../src/services/tools/toolInput.js'
 import { AskUserQuestionTool } from '../../src/tools/AskUserQuestionTool/AskUserQuestionTool.js'
 import { inputSchema as fileEditInputSchema } from '../../src/tools/FileEditTool/types.js'
-import { TaskStopTool } from '../../src/tools/TaskStopTool/TaskStopTool.js'
+import { BackgroundTaskStopTool } from '../../src/tools/BackgroundTaskStopTool/BackgroundTaskStopTool.js'
 
 function makeTool(
   inputSchema: Tool['inputSchema'],
@@ -48,14 +48,14 @@ describe('model-facing and runtime tool schemas', () => {
     ).toBe(true)
   })
 
-  test('TaskStop exposes only task_id while retaining legacy shell_id runtime parsing', () => {
-    const schema = getMCPToolInputSchema(TaskStopTool) as {
+  test('BackgroundTaskStop exposes only task_id while retaining legacy shell_id runtime parsing', () => {
+    const schema = getMCPToolInputSchema(BackgroundTaskStopTool) as {
       properties: Record<string, unknown>
     }
 
     expect(Object.keys(schema.properties)).toEqual(['task_id'])
     expect(
-      TaskStopTool.inputSchema.safeParse({ shell_id: 'legacy-id' }).success,
+      BackgroundTaskStopTool.inputSchema.safeParse({ shell_id: 'legacy-id' }).success,
     ).toBe(true)
   })
 })

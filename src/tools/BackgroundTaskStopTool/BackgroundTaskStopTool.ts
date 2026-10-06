@@ -3,7 +3,7 @@ import type { TaskStateBase } from '../../Task.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { stopTask } from '../../tasks/stopTask.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
-import { DESCRIPTION, TASK_STOP_TOOL_NAME } from './prompt.js'
+import { DESCRIPTION, BACKGROUND_TASK_STOP_TOOL_NAME } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const inputSchema = z.strictObject({
@@ -35,8 +35,8 @@ type OutputSchema = typeof outputSchema
 
 export type Output = z.infer<OutputSchema>
 
-export const TaskStopTool = buildTool({
-  name: TASK_STOP_TOOL_NAME,
+export const BackgroundTaskStopTool = buildTool({
+  name: BACKGROUND_TASK_STOP_TOOL_NAME,
   // Deprecated aliases kept for backward compatibility with existing
   // transcripts and SDK users.
   aliases: ['TaskStop', 'KillShell'],

@@ -590,7 +590,7 @@ export async function runAsyncAgentLifecycle({
   } catch (error) {
     stopSummarization?.()
     if (error instanceof AbortError) {
-      // killAsyncAgent is a no-op if TaskStop already set status='killed' —
+      // killAsyncAgent is a no-op if BackgroundTaskStop already set status='killed' —
       // but only this catch handler has agentMessages, so the notification
       // must fire unconditionally. Transition status BEFORE worktree cleanup
       // so TaskOutput unblocks even if git hangs (gh-20236).

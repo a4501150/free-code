@@ -3,7 +3,7 @@ import { MessageResponse } from '../../components/MessageResponse.js'
 import { stringWidth } from '../../ink/stringWidth.js'
 import { Text } from '../../ink.js'
 import { truncateToWidthNoEllipsis } from '../../utils/format.js'
-import type { Output } from './TaskStopTool.js'
+import type { Output } from './BackgroundTaskStopTool.js'
 
 export function renderToolUseMessage(): React.ReactNode {
   return ''

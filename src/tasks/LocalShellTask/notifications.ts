@@ -34,7 +34,7 @@ export function enqueueShellNotification(
   agentId?: AgentId,
 ): void {
   // Atomically check and set notified flag to prevent duplicate notifications.
-  // If the task was already marked as notified (e.g., by TaskStopTool), skip
+  // If the task was already marked as notified (e.g., by BackgroundTaskStopTool), skip
   // enqueueing to avoid sending redundant messages to the model.
   let shouldEnqueue = false
   updateTaskState(taskId, setAppState, task => {

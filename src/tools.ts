@@ -8,7 +8,7 @@ import { BashTool } from './tools/BashTool/BashTool.js'
 import { FileEditTool } from './tools/FileEditTool/FileEditTool.js'
 import { FileReadTool } from './tools/FileReadTool/FileReadTool.js'
 import { FileWriteTool } from './tools/FileWriteTool/FileWriteTool.js'
-import { TaskStopTool } from './tools/TaskStopTool/TaskStopTool.js'
+import { BackgroundTaskStopTool } from './tools/BackgroundTaskStopTool/BackgroundTaskStopTool.js'
 import { BackgroundTaskListTool } from './tools/BackgroundTaskListTool/BackgroundTaskListTool.js'
 import { MonitorTool } from './tools/MonitorTool/MonitorTool.js'
 import { MonitorListTool } from './tools/MonitorTool/MonitorListTool.js'
@@ -94,7 +94,7 @@ export function getAllBaseTools(): Tools {
     FileReadTool,
     FileEditTool,
     FileWriteTool,
-    TaskStopTool,
+    BackgroundTaskStopTool,
     BackgroundTaskListTool,
     MonitorTool,
     MonitorListTool,
@@ -131,11 +131,11 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
   // Simple mode: only Bash, Read, and Edit tools
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
     const simpleTools: Tool[] = [BashTool, FileReadTool, FileEditTool]
-    // When coordinator mode is also active, include AgentTool and TaskStopTool
-    // so the coordinator gets Task+TaskStop (via useMergedTools filtering) and
+    // When coordinator mode is also active, include AgentTool and BackgroundTaskStopTool
+    // so the coordinator gets Agent+BackgroundTaskStop (via useMergedTools filtering) and
     // workers get Bash/Read/Edit (via filterToolsForAgent filtering).
     if (coordinatorModeMod.isCoordinatorMode()) {
-      simpleTools.push(AgentTool, TaskStopTool, SendMessageTool, ListAgentsTool)
+      simpleTools.push(AgentTool, BackgroundTaskStopTool, SendMessageTool, ListAgentsTool)
     }
     return filterToolsByDenyRules(simpleTools, permissionContext)
   }

@@ -5,7 +5,7 @@ import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../tools/SendMessageTool/constants.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from '../tools/SyntheticOutputTool/SyntheticOutputTool.js'
-import { TASK_STOP_TOOL_NAME } from '../tools/TaskStopTool/prompt.js'
+import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../tools/BackgroundTaskStopTool/prompt.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 import { AGENT_REPORT_CONTRACT } from './agentReportContract.js'
 import {
@@ -124,7 +124,7 @@ Every message you send is to the user. Worker results and system notifications a
 - **${AGENT_TOOL_NAME}** - Spawn a new worker
 - **${SEND_MESSAGE_TOOL_NAME}** - Continue an existing worker (send a follow-up to its \`to\` agent ID), or deliver a prompt turn to another live session (\`to\` = \`session:<id>\`)
 - **ListAgents** - Discover messaging targets: your spawned workers (by ID or name) and other live sessions on this machine
-- **${TASK_STOP_TOOL_NAME}** - Stop a running worker
+- **${BACKGROUND_TASK_STOP_TOOL_NAME}** - Stop a running worker
 - **subscribe_pr_activity / unsubscribe_pr_activity** (if available) - Subscribe to GitHub PR events (review comments, CI results). Events arrive as user messages. Merge conflict transitions do NOT arrive — GitHub does not send \`mergeable_state\` changes in webhooks, so poll \`gh pr view N --json mergeable\` if you track conflict status. Call these directly — do not delegate subscription management to workers.
 
 When calling ${AGENT_TOOL_NAME}:
@@ -230,7 +230,7 @@ When a worker reports failure (tests failed, build errors, file not found):
 
 ### Stopping Workers
 
-Use ${TASK_STOP_TOOL_NAME} to stop a worker you sent in the wrong direction — for example, when you realize while it runs that the approach is wrong, or the user changes requirements after you launched the worker. Pass the \`task_id\` from the ${AGENT_TOOL_NAME} tool's launch result. Stopped workers can be continued with ${SEND_MESSAGE_TOOL_NAME}.
+Use ${BACKGROUND_TASK_STOP_TOOL_NAME} to stop a worker you sent in the wrong direction — for example, when you realize while it runs that the approach is wrong, or the user changes requirements after you launched the worker. Pass the \`task_id\` from the ${AGENT_TOOL_NAME} tool's launch result. Stopped workers can be continued with ${SEND_MESSAGE_TOOL_NAME}.
 
 \`\`\`
 // Launched a worker to refactor auth to use JWT
@@ -238,7 +238,7 @@ ${AGENT_TOOL_NAME}({ description: "Refactor auth to JWT", subagent_type: "worker
 // ... returns task_id: "agent-x7q" ...
 
 // User clarifies: "Actually, keep sessions — just fix the null pointer"
-${TASK_STOP_TOOL_NAME}({ task_id: "agent-x7q" })
+${BACKGROUND_TASK_STOP_TOOL_NAME}({ task_id: "agent-x7q" })
 
 // Continue with corrected instructions
 ${SEND_MESSAGE_TOOL_NAME}({ to: "agent-x7q", message: "Stop the JWT refactor. Instead, fix the null pointer in src/auth/validate.ts:42..." })
