@@ -8,6 +8,7 @@ import { jsonStringify } from '../../utils/slowOperations.js'
 import { MONITOR_DESCRIPTION, MONITOR_TOOL_NAME } from './constants.js'
 import { MonitorPermissionRequest } from './MonitorPermissionRequest.js'
 import { wireMonitorNotifications } from './monitorNotifications.js'
+import { registerMonitorTaskState } from './monitorTaskState.js'
 
 const inputSchema = z.strictObject({
   command: z
@@ -112,9 +113,11 @@ export const MonitorTool = buildTool({
 
   async call(input, context) {
     const manager = getMonitorManager()
-    wireMonitorNotifications(manager)
+    const setAppState = context.setAppStateForTasks ?? context.setAppState
+    wireMonitorNotifications(manager, setAppState)
 
     const monitor = manager.start(input.command, input.label, context.agentId)
+    registerMonitorTaskState(monitor, setAppState, context.toolUseId)
 
     // Give the process a brief moment to produce initial output (e.g. an
     // immediate error from a bad command), but don't block the turn. Race

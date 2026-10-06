@@ -149,22 +149,35 @@ export function BackgroundTasksDialog({
         const bTime = 'task' in b ? b.task.startTime : 0
         return bTime - aTime
       })
-      const bash = sorted.filter(item => item.type === 'local_bash')
+      const shells = sorted.filter(
+        item => item.type === 'local_bash' && item.task.kind !== 'monitor',
+      )
+      // Monitor-kind shell tasks (Monitor tool) render in the Monitors
+      // section alongside the externally-unused monitor_mcp items.
+      const monitorItems = sorted.filter(
+        item =>
+          (item.type === 'local_bash' && item.task.kind === 'monitor') ||
+          item.type === 'monitor_mcp',
+      )
       // Exclude foregrounded task - it's being viewed in the main UI, not a background task
       const agent = sorted.filter(
         item => item.type === 'local_agent' && item.id !== foregroundedTaskId,
       )
-      const monitorMcp = sorted.filter(item => item.type === 'monitor_mcp')
       const dreamTasks = sorted.filter(item => item.type === 'dream')
       return {
-        bashTasks: bash,
+        bashTasks: shells,
         agentTasks: agent,
-        mcpMonitors: monitorMcp,
+        mcpMonitors: monitorItems,
         dreamTasks,
-        // Order MUST match JSX render order (bash \u2192 monitorMcp \u2192
-        // agent \u2192 dream) so \u2193/\u2191 navigation moves the cursor
+        // Order MUST match JSX render order (bash → monitorMcp →
+        // agent → dream) so ↓/↑ navigation moves the cursor
         // visually downward.
-        allSelectableItems: [...bash, ...monitorMcp, ...agent, ...dreamTasks],
+        allSelectableItems: [
+          ...shells,
+          ...monitorItems,
+          ...agent,
+          ...dreamTasks,
+        ],
       }
     }, [typedTasks, foregroundedTaskId])
 
@@ -331,6 +344,7 @@ export function BackgroundTasksDialog({
 
   const runningBashCount = count(bashTasks, _ => _.status === 'running')
   const runningAgentCount = count(agentTasks, _ => _.status === 'running')
+  const runningMonitorCount = count(mcpMonitors, _ => _.status === 'running')
   const subtitle = intersperse(
     [
       ...(runningBashCount > 0
@@ -338,6 +352,14 @@ export function BackgroundTasksDialog({
             <Text key="shells">
               {runningBashCount}{' '}
               {runningBashCount !== 1 ? 'active shells' : 'active shell'}
+            </Text>,
+          ]
+        : []),
+      ...(runningMonitorCount > 0
+        ? [
+            <Text key="monitors">
+              {runningMonitorCount}{' '}
+              {runningMonitorCount !== 1 ? 'active monitors' : 'active monitor'}
             </Text>,
           ]
         : []),

@@ -354,10 +354,72 @@ describe('MonitorManager', () => {
     expect(monitor.status).toBe('exited')
     expect(manager.hasUnnotifiedOutput()).toBe(true)
   })
+
+  test('onLine fires per stream line and for the synthetic stop line', async () => {
+    const child = fakeChild()
+    const manager = makeManager(child)
+    const lines: string[] = []
+    manager.onLine((_monitor, line) => lines.push(line))
+    const monitor = manager.start('cmd', 'e')
+    await emitStdout(child, 'hello')
+    expect(lines).toEqual(['hello'])
+    manager.stop(monitor.id)
+    expect(lines).toEqual(['hello', '[monitor stopped by model]'])
+  })
+
+  test('onStatusChange fires on exit and on stop', () => {
+    const child = fakeChild()
+    const manager = makeManager(child)
+    const statuses: string[] = []
+    manager.onStatusChange(m => statuses.push(m.status))
+    const monitor = manager.start('cmd', 'e')
+    child.emit('exit', 0)
+    expect(statuses).toEqual(['exited'])
+
+    const child2 = fakeChild()
+    const manager2 = makeManager(child2)
+    const statuses2: string[] = []
+    manager2.onStatusChange(m => statuses2.push(m.status))
+    const monitor2 = manager2.start('cmd', 'e')
+    manager2.stop(monitor2.id)
+    expect(statuses2).toEqual(['stopped'])
+  })
+
+  test('onStatusChange fires when a spawn throws', () => {
+    const spawnFn: SpawnFn = () => {
+      throw new Error('ENOENT')
+    }
+    const manager = new MonitorManager({
+      spawnFn,
+      killFn: noopKill,
+      attachExitHook: false,
+    })
+    const statuses: string[] = []
+    manager.onStatusChange(m => statuses.push(m.status))
+    manager.start('nonexistent', 'e')
+    expect(statuses).toEqual(['error'])
+  })
+
+  test('stopAll detaches onLine and onStatusChange', async () => {
+    const child = fakeChild()
+    const manager = makeManager(child)
+    let lines = 0
+    let statusChanges = 0
+    manager.onLine(() => lines++)
+    manager.onStatusChange(() => statusChanges++)
+    const monitor = manager.start('cmd', 'e')
+    manager.stopAll()
+    // stopAll kills and transitions without firing the hooks (cleared first).
+    expect(statusChanges).toBe(0)
+    expect(monitor.status).toBe('stopped')
+    child.stdout.write('late\n')
+    await new Promise(r => setTimeout(r, 20))
+    expect(lines).toBe(0)
+  })
 })
 
 describe('buildMonitorNoticeText', () => {
-  test('renders each monitor as a notification section', () => {
+  test('renders a running monitor as a statusless task-notification', () => {
     const manager = new MonitorManager({
       spawnFn: () => fakeChild() as unknown as ChildProcess,
       killFn: noopKill,
@@ -370,13 +432,20 @@ describe('buildMonitorNoticeText', () => {
     const text = buildMonitorNoticeText([
       { monitor: m, output: ['CI=failed', 'build 1234'] },
     ])
-    expect(text).toContain('<monitor-notification>')
-    expect(text).toContain('<monitor-id>mon_1_')
-    expect(text).toContain('<monitor-label>ci-poll</monitor-label>')
-    expect(text).toContain('<status>running</status>')
+    // Tag-first so the prefix-anchored synthetic routing in UserTextMessage
+    // classifies it.
+    expect(text.startsWith('<task-notification>')).toBe(true)
+    expect(text).toContain('<task-id>mon_1_')
+    expect(text).toContain('<task-type>monitor</task-type>')
+    expect(text).toContain('<output-file>')
+    expect(text).toContain(
+      '<summary>Background monitor "ci-poll" produced new output</summary>',
+    )
     expect(text).toContain('<monitor-output>')
     expect(text).toContain('CI=failed')
     expect(text).toContain('build 1234')
+    // Statusless while running — print.ts treats <status> as terminal.
+    expect(text).not.toContain('<status>')
   })
 
   test('renders (no output) for empty output', () => {
@@ -388,5 +457,22 @@ describe('buildMonitorNoticeText', () => {
     const m = manager.start('cmd', 'quiet')
     const text = buildMonitorNoticeText([{ monitor: m, output: [] }])
     expect(text).toContain('(no output)')
+  })
+
+  test('renders a terminal monitor with a mapped status and summary', () => {
+    const manager = new MonitorManager({
+      spawnFn: () => fakeChild() as unknown as ChildProcess,
+      killFn: noopKill,
+      attachExitHook: false,
+    })
+    const m = manager.start('cmd', 'ci-poll')
+    m.status = 'exited'
+    m.exitCode = 0
+
+    const text = buildMonitorNoticeText([{ monitor: m, output: [] }])
+    expect(text).toContain('<status>completed</status>')
+    expect(text).toContain(
+      '<summary>Background monitor "ci-poll" completed (exit code 0)</summary>',
+    )
   })
 })

@@ -96,6 +96,14 @@ export class MonitorManager {
   private _onOutput?: () => void
   private _debounceTimer: ReturnType<typeof setTimeout> | undefined
   private readonly _debounceMs: number
+  /** Per-line hook fired synchronously for every appended line (real stream
+   *  lines and synthetic status lines). Used to stream output to the task's
+   *  disk output file for the background-tasks dialog. */
+  private _onLine?: (monitor: Monitor, line: string) => void
+  /** Status-transition hook fired synchronously when a monitor leaves the
+   *  'running' state (exit, error, stop). Used to mirror terminal status
+   *  into AppState. Not fired by stopAll — teardown clears it first. */
+  private _onStatusChange?: (monitor: Monitor) => void
   /** Last line that triggered a notice, per monitor id. Suppresses identical
    *  consecutive output lines (e.g. a polling loop that prints the same
    *  "CI=pending" status every tick). */
@@ -145,6 +153,40 @@ export class MonitorManager {
   /** Set the callback fired (debounced) when monitor output arrives. */
   onOutput(cb: (() => void) | undefined): void {
     this._onOutput = cb
+  }
+
+  /** Set the per-line output hook. */
+  onLine(cb: ((monitor: Monitor, line: string) => void) | undefined): void {
+    this._onLine = cb
+  }
+
+  /** Set the status-transition hook. */
+  onStatusChange(cb: ((monitor: Monitor) => void) | undefined): void {
+    this._onStatusChange = cb
+  }
+
+  /** Append a real output line to the rolling buffers and fire the per-line
+   *  hook. Returns the stored (possibly truncated) line so notice-change
+   *  detection can compare against what the model will actually see. */
+  private _pushLine(monitor: Monitor, line: string): string {
+    const trimmed =
+      line.length > MAX_LINE_LENGTH
+        ? `${line.slice(0, MAX_LINE_LENGTH)}... [truncated]`
+        : line
+    monitor.output.push(trimmed)
+    monitor.newOutput.push(trimmed)
+    monitor.hasUnnotifiedOutput = true
+    if (monitor.output.length > MAX_OUTPUT_LINES) {
+      monitor.output.splice(0, monitor.output.length - MAX_OUTPUT_LINES)
+    }
+    if (monitor.newOutput.length > MAX_NEW_OUTPUT_LINES) {
+      monitor.newOutput.splice(
+        0,
+        monitor.newOutput.length - MAX_NEW_OUTPUT_LINES,
+      )
+    }
+    this._onLine?.(monitor, trimmed)
+    return trimmed
   }
 
   /** Debounced trigger — fires at most once per debounce window. */
@@ -197,22 +239,7 @@ export class MonitorManager {
       monitor.child = child
 
       const appendLine = (line: string) => {
-        const trimmed =
-          line.length > MAX_LINE_LENGTH
-            ? `${line.slice(0, MAX_LINE_LENGTH)}... [truncated]`
-            : line
-        monitor.output.push(trimmed)
-        monitor.newOutput.push(trimmed)
-        monitor.hasUnnotifiedOutput = true
-        if (monitor.output.length > MAX_OUTPUT_LINES) {
-          monitor.output.splice(0, monitor.output.length - MAX_OUTPUT_LINES)
-        }
-        if (monitor.newOutput.length > MAX_NEW_OUTPUT_LINES) {
-          monitor.newOutput.splice(
-            0,
-            monitor.newOutput.length - MAX_NEW_OUTPUT_LINES,
-          )
-        }
+        const trimmed = this._pushLine(monitor, line)
         // Only trigger a notice when the output changes or the monitor
         // exits. A polling loop that prints the same status line every tick
         // should not flood the conversation. _lastTriggeredLine is advanced
@@ -243,6 +270,7 @@ export class MonitorManager {
         // Exit/error is always a status change — always trigger, even for
         // a line identical to the last one seen.
         this._lastTriggeredLine.delete(id)
+        this._onStatusChange?.(monitor)
         this._triggerOutputCallback()
       }
 
@@ -252,7 +280,9 @@ export class MonitorManager {
           monitor.exitCode = code ?? -1
           monitor.endedAt = Date.now()
           if (monitor.newOutput.length === 0) {
-            monitor.newOutput.push(`[monitor exited with code ${code ?? -1}]`)
+            const line = `[monitor exited with code ${code ?? -1}]`
+            monitor.newOutput.push(line)
+            this._onLine?.(monitor, line)
           }
         })
       })
@@ -261,16 +291,19 @@ export class MonitorManager {
         finalize(() => {
           monitor.status = 'error'
           monitor.endedAt = Date.now()
-          monitor.newOutput.push(`[monitor error: ${err.message}]`)
+          const line = `[monitor error: ${err.message}]`
+          monitor.newOutput.push(line)
+          this._onLine?.(monitor, line)
         })
       })
     } catch (err) {
       monitor.status = 'error'
       monitor.endedAt = Date.now()
       monitor.hasUnnotifiedOutput = true
-      monitor.newOutput.push(
-        `[failed to start: ${err instanceof Error ? err.message : String(err)}]`,
-      )
+      const line = `[failed to start: ${err instanceof Error ? err.message : String(err)}]`
+      monitor.newOutput.push(line)
+      this._onLine?.(monitor, line)
+      this._onStatusChange?.(monitor)
     }
 
     return monitor
@@ -289,7 +322,10 @@ export class MonitorManager {
     monitor.status = 'stopped'
     monitor.endedAt = Date.now()
     monitor.hasUnnotifiedOutput = true
-    monitor.newOutput.push('[monitor stopped by model]')
+    const line = '[monitor stopped by model]'
+    monitor.newOutput.push(line)
+    this._onLine?.(monitor, line)
+    this._onStatusChange?.(monitor)
     // Late exit/error events are no-ops via the status check in finalize.
     this._lastTriggeredLine.delete(id)
     this._triggerOutputCallback()
@@ -347,6 +383,8 @@ export class MonitorManager {
   stopAll(): void {
     this._cancelDebounce()
     this._onOutput = undefined
+    this._onLine = undefined
+    this._onStatusChange = undefined
     for (const monitor of this._monitors.values()) {
       if (monitor.status !== 'running') continue
       const pid = monitor.child?.pid

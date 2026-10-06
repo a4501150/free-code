@@ -10,7 +10,9 @@ import { dequeueAllMatching } from '../../utils/messageQueueManager.js'
 import { evictTaskOutput } from '../../utils/task/diskOutput.js'
 import { updateTaskState } from '../../utils/task/framework.js'
 import { type BashTaskKind, isLocalShellTask } from './guards.js'
+import type { LocalShellTaskState } from './guards.js'
 import { enqueueShellNotification } from './notifications.js'
+import { getMonitorManager } from '../../utils/monitors.js'
 
 type SetAppStateFn = (updater: (prev: AppState) => AppState) => void
 
@@ -23,9 +25,17 @@ export function killTask(taskId: string, setAppState: SetAppStateFn): void {
     kind: BashTaskKind | undefined
     agentId?: AgentId
   } | null = null
+  let isMonitor = false
 
   updateTaskState(taskId, setAppState, task => {
     if (task.status !== 'running' || !isLocalShellTask(task)) {
+      return task
+    }
+    if (task.kind === 'monitor') {
+      // The MonitorManager owns the process; stopping it drives the mirror
+      // transition and the terminal monitor notice via its hooks. No shell
+      // <task-notification> here — it would duplicate the monitor notice.
+      isMonitor = true
       return task
     }
 
@@ -63,6 +73,27 @@ export function killTask(taskId: string, setAppState: SetAppStateFn): void {
       endTime: Date.now(),
     }
   })
+
+  if (isMonitor) {
+    // Side effects stay out of the state updater (same pattern as the
+    // cleanup call in backgroundTask). If the manager no longer knows the
+    // monitor — it shouldn't happen while the mirror is running — mark the
+    // mirror killed anyway so it can't ghost in the dialog.
+    if (!getMonitorManager().stop(taskId)) {
+      updateTaskState<LocalShellTaskState>(taskId, setAppState, task =>
+        task.status === 'running'
+          ? {
+              ...task,
+              status: 'killed',
+              endTime: Date.now(),
+              notified: true,
+              shellCommand: null,
+            }
+          : task,
+      )
+    }
+    return
+  }
 
   if (notificationArgs) {
     const args: {
