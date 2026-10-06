@@ -135,7 +135,12 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
     // so the coordinator gets Agent+BackgroundTaskStop (via useMergedTools filtering) and
     // workers get Bash/Read/Edit (via filterToolsForAgent filtering).
     if (coordinatorModeMod.isCoordinatorMode()) {
-      simpleTools.push(AgentTool, BackgroundTaskStopTool, SendMessageTool, ListAgentsTool)
+      simpleTools.push(
+        AgentTool,
+        BackgroundTaskStopTool,
+        SendMessageTool,
+        ListAgentsTool,
+      )
     }
     return filterToolsByDenyRules(simpleTools, permissionContext)
   }

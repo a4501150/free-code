@@ -158,19 +158,6 @@ const BASH_SEMANTIC_NEUTRAL_COMMANDS = new Set([
   ':', // bash no-op
 ])
 
-// Output-shaping pipeline stages (truncation, counting, ordering). They
-// format another stage's output without changing what the command *does*,
-// so `rg foo src | head` collapses as a search, not as a second bash action.
-const BASH_OUTPUT_FILTER_COMMANDS = new Set([
-  'head',
-  'tail',
-  'wc',
-  'sort',
-  'uniq',
-  'cut',
-  'tr',
-])
-
 // Commands that typically produce no stdout on success
 const BASH_SILENT_COMMANDS = new Set([
   'mv',

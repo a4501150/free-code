@@ -55,7 +55,8 @@ describe('model-facing and runtime tool schemas', () => {
 
     expect(Object.keys(schema.properties)).toEqual(['task_id'])
     expect(
-      BackgroundTaskStopTool.inputSchema.safeParse({ shell_id: 'legacy-id' }).success,
+      BackgroundTaskStopTool.inputSchema.safeParse({ shell_id: 'legacy-id' })
+        .success,
     ).toBe(true)
   })
 })
