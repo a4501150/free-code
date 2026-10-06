@@ -3,6 +3,7 @@ import ignore from 'ignore'
 import memoize from 'lodash-es/memoize.js'
 import { homedir, tmpdir } from 'os'
 import { join, normalize, posix, sep } from 'path'
+import * as autoModeStateNs from './autoModeState.js'
 import { hasAutoMemPathOverride, isAutoMemPath } from 'src/memdir/paths.js'
 import { isAgentMemoryPath } from 'src/tools/AgentTool/agentMemory.js'
 import {
@@ -1222,6 +1223,29 @@ export function checkWritePermissionForTool<Input extends AnyObject>(
   )
   if (internalEditResult.behavior !== 'passthrough') {
     return internalEditResult
+  }
+
+  // 1.55. Plan mode hard gate: no writes outside internal editable paths.
+  // The plan_mode prompt tells the model it MUST NOT edit — the permission
+  // layer has to agree, otherwise allow rules or an in-plan-mode 'ask'
+  // approval let an edit happen silently while planning. Deny here (before
+  // ask rules, allow rules, and the acceptEdits fast-path) so nothing
+  // overrides it. Exceptions are the documented plan-mode escape hatches:
+  // plan entered from bypass (step 2a in permissions.ts would allow anyway)
+  // and plan with auto active (the classifier gates edits instead).
+  if (
+    toolPermissionContext.mode === 'plan' &&
+    !toolPermissionContext.isBypassPermissionsModeAvailable &&
+    !autoModeStateNs.isAutoModeActive()
+  ) {
+    return {
+      behavior: 'deny',
+      message: `Permission to write to ${path} has been denied: file edits are not allowed in plan mode. Read the plan and call ExitPlanMode to start editing, or ask the user to switch permission modes.`,
+      decisionReason: {
+        type: 'mode',
+        mode: 'plan',
+      },
+    }
   }
 
   // 1.6. Check for project config dir allow rules BEFORE safety checks
