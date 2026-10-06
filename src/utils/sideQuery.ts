@@ -201,17 +201,14 @@ export async function sideQuery(
   }
   const requestSignal = signal ?? new AbortController().signal
   const response = await returnValue(
-    withRetry(
-      () => adapter.createMessage(provider, request, requestSignal),
-      {
-        maxRetries,
-        model,
-        thinkingConfig: thinkingConfig ?? { type: 'disabled' },
-        signal: requestSignal,
-        querySource: opts.querySource,
-        prepareRetry,
-      },
-    ),
+    withRetry(() => adapter.createMessage(provider, request, requestSignal), {
+      maxRetries,
+      model,
+      thinkingConfig: thinkingConfig ?? { type: 'disabled' },
+      signal: requestSignal,
+      querySource: opts.querySource,
+      prepareRetry,
+    }),
   )
 
   setLastApiCompletionTimestamp(Date.now())

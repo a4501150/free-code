@@ -748,7 +748,7 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
-    const { config } = provider;
+    const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
     const authHeaders = await resolveOpenAIChatCompletionsAuthHeaders(config)
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1'
@@ -803,7 +803,7 @@ export const openaiChatCompletionsAdapter: ProviderAdapter = {
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
-    const { config } = provider;
+    const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
     const authHeaders = await resolveOpenAIChatCompletionsAuthHeaders(config)
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1'

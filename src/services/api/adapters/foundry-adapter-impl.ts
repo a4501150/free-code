@@ -96,7 +96,7 @@ export const foundryAdapter: ProviderAdapter = {
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
-    const { config } = provider;
+    const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
     const baseUrl = config.baseUrl || ''
     const { headerName, headerValue } = await getFoundryAuth(config)
@@ -147,7 +147,7 @@ export const foundryAdapter: ProviderAdapter = {
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
-    const { config } = provider;
+    const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
     const baseUrl = config.baseUrl || ''
     const { headerName, headerValue } = await getFoundryAuth(config)

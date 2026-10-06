@@ -746,7 +746,7 @@ export const geminiAdapter: ProviderAdapter = {
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
-    const { config } = provider;
+    const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
     const authResult = await getGcpAccessToken(config)
     if (!authResult) {
@@ -806,7 +806,7 @@ export const geminiAdapter: ProviderAdapter = {
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
-    const { config } = provider;
+    const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
     const authResult = await getGcpAccessToken(config)
     if (!authResult) {

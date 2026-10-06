@@ -1377,7 +1377,7 @@ export const codexAdapter: ProviderAdapter = {
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
-    const { config } = provider;
+    const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
     const auth = await resolveCodexAuth(config)
     if (!auth) {
@@ -1456,7 +1456,7 @@ export const codexAdapter: ProviderAdapter = {
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
-    const { config } = provider;
+    const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
     const auth = await resolveCodexAuth(config)
     if (!auth) {

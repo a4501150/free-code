@@ -950,7 +950,7 @@ export const bedrockAdapter: ProviderAdapter = {
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainStreamingResponse> {
-    const { config } = provider;
+    const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
     const region = config.auth?.aws?.region || 'us-east-1'
     const baseUrl =
@@ -1015,7 +1015,7 @@ export const bedrockAdapter: ProviderAdapter = {
     signal: AbortSignal,
     fetchOverride?: typeof globalThis.fetch,
   ): Promise<DomainMessageResponse> {
-    const { config } = provider;
+    const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
     const region = config.auth?.aws?.region || 'us-east-1'
     const baseUrl =
