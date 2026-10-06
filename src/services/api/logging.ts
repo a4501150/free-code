@@ -1,6 +1,7 @@
 import type { DomainStopReason, DomainUsage } from '../../types/domain.js'
 import { DomainTransportError } from './domain-errors.js'
 import {
+  addToModelAPIDurationState,
   addToTotalDurationState,
   consumePostCompaction,
   getIsNonInteractiveSession,
@@ -418,6 +419,9 @@ export function logAPISuccessAndDuration({
   const durationMs = Date.now() - start
   const durationMsIncludingRetries = Date.now() - startIncludingRetries
   addToTotalDurationState(durationMsIncludingRetries, durationMs)
+  // Must be keyed with the same string addToTotalSessionCost uses for
+  // modelUsage, or per-model tok/s mispairs tokens against time.
+  addToModelAPIDurationState(preNormalizedModel, durationMs)
 
   logAPISuccess({
     model,

@@ -134,6 +134,10 @@ export function formatTokens(count: number): string {
   return formatNumber(count).replace('.0', '')
 }
 
+export function formatTokensPerSecond(tokensPerSecond: number): string {
+  return `${tokensPerSecond.toFixed(1)} tok/s`
+}
+
 type RelativeTimeStyle = 'long' | 'short' | 'narrow'
 
 type RelativeTimeOptions = {

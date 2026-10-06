@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { extraUsage as extraUsageCommand } from 'src/commands/extra-usage/index.js'
 import {
   formatCost,
+  formatAverageOutputSpeed,
+  getModelThroughputs,
   getTotalAPIDuration,
   getTotalCacheCreationInputTokens,
   getTotalCacheReadInputTokens,
@@ -28,6 +30,7 @@ import {
   formatDuration,
   formatNumber,
   formatResetText,
+  formatTokensPerSecond,
 } from '../../utils/format.js'
 import { logError } from '../../utils/log.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
@@ -133,6 +136,8 @@ function SessionRow({
 function SessionSection(): React.ReactNode {
   const linesAdded = getTotalLinesAdded()
   const linesRemoved = getTotalLinesRemoved()
+  const avgSpeed = formatAverageOutputSpeed()
+  const throughputs = getModelThroughputs()
   const costDisplay = (
     <>
       {formatCost(getTotalCost())}
@@ -171,6 +176,22 @@ function SessionSection(): React.ReactNode {
           getTotalCacheCreationInputTokens(),
         )} cache write`}
       />
+      {avgSpeed !== undefined && (
+        <SessionRow label="Output speed" value={avgSpeed} />
+      )}
+      {throughputs.map(throughput => (
+        <SessionRow
+          key={throughput.model}
+          label={throughput.model}
+          value={
+            <Text dimColor>
+              {`${formatTokensPerSecond(throughput.tokensPerSecond)} · ${formatNumber(
+                throughput.outputTokens,
+              )} out in ${formatDuration(throughput.apiDurationMs)}`}
+            </Text>
+          }
+        />
+      ))}
     </Box>
   )
 }

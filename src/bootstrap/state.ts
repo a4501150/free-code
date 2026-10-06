@@ -66,6 +66,8 @@ type State = {
   hasUnknownModelCost: boolean
   cwd: string
   modelUsage: { [modelName: string]: ModelUsage }
+  /** Per-model sum of successful API call durations (ms), for tok/s stats. */
+  modelAPIDurationMs: { [modelName: string]: number }
   mainLoopModelOverride: ModelSetting | undefined
   initialMainLoopModel: ModelSetting
   isInteractive: boolean
@@ -244,6 +246,7 @@ function getInitialState(): State {
     hasUnknownModelCost: false,
     cwd: resolvedCwd,
     modelUsage: {},
+    modelAPIDurationMs: {},
     mainLoopModelOverride: undefined,
     initialMainLoopModel: null,
     isInteractive: false,
@@ -463,6 +466,23 @@ export function addToTotalDurationState(
 ): void {
   STATE.totalAPIDuration += duration
   STATE.totalAPIDurationWithoutRetries += durationWithoutRetries
+}
+
+/**
+ * Record the duration of one successful API call against the model that
+ * served it. Keyed like modelUsage (provider-qualified session model), so
+ * output tokens and API time line up for per-model tok/s.
+ */
+export function addToModelAPIDurationState(
+  model: string,
+  durationMs: number,
+): void {
+  STATE.modelAPIDurationMs[model] =
+    (STATE.modelAPIDurationMs[model] ?? 0) + durationMs
+}
+
+export function getModelAPIDurationMs(): { [modelName: string]: number } {
+  return STATE.modelAPIDurationMs
 }
 
 export function resetTotalDurationStateAndCost_FOR_TESTS_ONLY(): void {
@@ -777,6 +797,7 @@ export function resetCostState(): void {
   STATE.totalLinesRemoved = 0
   STATE.hasUnknownModelCost = false
   STATE.modelUsage = {}
+  STATE.modelAPIDurationMs = {}
   STATE.promptId = null
 }
 
@@ -793,6 +814,7 @@ export function setCostStateForRestore({
   totalLinesRemoved,
   lastDuration,
   modelUsage,
+  modelAPIDurationMs,
 }: {
   totalCostUSD: number
   totalAPIDuration: number
@@ -802,6 +824,7 @@ export function setCostStateForRestore({
   totalLinesRemoved: number
   lastDuration: number | undefined
   modelUsage: { [modelName: string]: ModelUsage } | undefined
+  modelAPIDurationMs?: { [modelName: string]: number }
 }): void {
   STATE.totalCostUSD = totalCostUSD
   STATE.totalAPIDuration = totalAPIDuration
@@ -813,6 +836,9 @@ export function setCostStateForRestore({
   // Restore per-model usage breakdown
   if (modelUsage) {
     STATE.modelUsage = modelUsage
+  }
+  if (modelAPIDurationMs) {
+    STATE.modelAPIDurationMs = modelAPIDurationMs
   }
 
   // Adjust startTime to make wall duration accumulate

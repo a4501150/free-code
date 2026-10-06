@@ -67,6 +67,7 @@ export type ProjectConfig = {
   lastLinesAdded?: number
   lastLinesRemoved?: number
   lastSessionId?: string
+  lastModelAPIDurationMs?: Record<string, number>
   lastModelUsage?: Record<
     string,
     {
