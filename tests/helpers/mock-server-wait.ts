@@ -5,6 +5,35 @@ export type RequestLogServer<TRequest> = {
   getRequestCount(): number
 }
 
+/**
+ * Concatenate every text/tool-result block of every user-role message into a
+ * single string so tests can grep for embedded XML (e.g. <task-notification>)
+ * without worrying about which block index it landed in.
+ */
+export function userTextBlob(req: {
+  body: { messages?: Array<{ role: string; content: unknown }> }
+}): string {
+  const out: string[] = []
+  for (const m of req.body.messages ?? []) {
+    if (m.role !== 'user') continue
+    if (typeof m.content === 'string') {
+      out.push(m.content)
+      continue
+    }
+    if (!Array.isArray(m.content)) continue
+    for (const block of m.content as Array<Record<string, unknown>>) {
+      if (typeof block.text === 'string') out.push(block.text)
+      if (typeof block.content === 'string') out.push(block.content)
+      if (Array.isArray(block.content)) {
+        for (const inner of block.content as Array<Record<string, unknown>>) {
+          if (typeof inner.text === 'string') out.push(inner.text)
+        }
+      }
+    }
+  }
+  return out.join('\n\n')
+}
+
 export async function waitForRequestCount<TRequest>(
   server: RequestLogServer<TRequest>,
   minCount: number,

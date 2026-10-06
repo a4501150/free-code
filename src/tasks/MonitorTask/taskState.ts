@@ -17,7 +17,7 @@ import { type SetAppState, createTaskStateBase } from '../../Task.js'
 import type { Monitor } from '../../utils/monitors.js'
 import { DiskTaskOutput } from '../../utils/task/diskOutput.js'
 import { registerTask, updateTaskState } from '../../utils/task/framework.js'
-import type { LocalShellTaskState } from '../../tasks/LocalShellTask/guards.js'
+import type { LocalShellTaskState } from '../LocalShellTask/guards.js'
 
 /** Map a monitor's status to the TaskStatus vocabulary shared by the
  *  AppState mirror and the notice's <status> tag. */

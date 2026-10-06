@@ -5,8 +5,9 @@
  * Each monitor runs a shell command (e.g. `tail -f`, a polling script) in
  * the background. Output is buffered in a rolling window and surfaced to
  * the model either as a queued task-notification (next turn boundary) or
- * on demand via the MonitorList tool. Monitors are killed when the model
- * calls MonitorStop, when the process exits, or when the CLI exits.
+ * on demand via the BackgroundTaskList tool. Monitors are killed when the
+ * model stops the task (BackgroundTaskStop), when the process exits, or
+ * when the CLI exits.
  *
  * Ported from Snipe (vibes/Snipe src/core/monitors.ts), adapted to
  * free-code: notices ride the unified command queue instead of being
@@ -40,6 +41,10 @@ export interface Monitor {
   newOutput: string[]
   /** Whether the monitor has un-notified output for the next notice. */
   hasUnnotifiedOutput: boolean
+  /** Max notification cadence for this monitor in ms (per-monitor debounce
+   *  window). Undefined = manager default (DEBOUNCE_MS). Terminal
+   *  transitions bypass the window and flush immediately. */
+  notifyIntervalMs?: number
   /** Timestamp the monitor was started. */
   startedAt: number
   /** Timestamp the monitor stopped (exited or killed). */
@@ -92,9 +97,12 @@ export class MonitorManager {
 
   /** Optional callback fired when a monitor produces new output. Used to
    *  enqueue a notice so the model can react at the next turn boundary.
-   *  Debounced (DEBOUNCE_MS) to avoid flooding on high-output commands. */
+   *  Change-triggers are debounced per monitor (notifyIntervalMs or
+   *  DEBOUNCE_MS) to avoid flooding on high-output commands; terminal
+   *  transitions flush immediately. */
   private _onOutput?: () => void
-  private _debounceTimer: ReturnType<typeof setTimeout> | undefined
+  /** Per-monitor pending debounce timers, keyed by monitor id. */
+  private _debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly _debounceMs: number
   /** Per-line hook fired synchronously for every appended line (real stream
    *  lines and synthetic status lines). Used to stream output to the task's
@@ -189,33 +197,52 @@ export class MonitorManager {
     return trimmed
   }
 
-  /** Debounced trigger — fires at most once per debounce window. */
-  private _triggerOutputCallback(): void {
+  /** Debounced trigger for one monitor — fires at most once per the
+   *  monitor's notify window. */
+  private _triggerOutputCallback(monitor: Monitor): void {
     if (!this._onOutput) return
-    if (this._debounceTimer) return
-    this._debounceTimer = setTimeout(() => {
-      this._debounceTimer = undefined
-      this._onOutput?.()
-    }, this._debounceMs)
+    const id = monitor.id
+    if (this._debounceTimers.has(id)) return
+    const delay = monitor.notifyIntervalMs ?? this._debounceMs
+    this._debounceTimers.set(
+      id,
+      setTimeout(() => {
+        this._debounceTimers.delete(id)
+        this._onOutput?.()
+      }, delay),
+    )
   }
 
-  /** Cancel any pending debounce timer. */
-  private _cancelDebounce(): void {
-    if (this._debounceTimer) {
-      clearTimeout(this._debounceTimer)
-      this._debounceTimer = undefined
+  /** Cancel a monitor's pending debounce timer and flush the terminal
+   *  transition immediately: invoke the output callback synchronously so
+   *  exit/error/stop notices are never delayed by the notify interval. */
+  private _flushTerminal(monitor: Monitor): void {
+    const timer = this._debounceTimers.get(monitor.id)
+    if (timer) {
+      clearTimeout(timer)
+      this._debounceTimers.delete(monitor.id)
     }
+    this._onOutput?.()
   }
 
   /** Start a new monitor. Returns the monitor record. Never throws: a failed
    *  spawn is reported through the monitor's status/newOutput. */
-  start(command: string, label: string, agentId?: AgentId): Monitor {
+  start(
+    command: string,
+    label: string,
+    opts: {
+      agentId?: AgentId
+      notifyIntervalMs?: number
+    } = {},
+  ): Monitor {
+    const { agentId, notifyIntervalMs } = opts
     const id = `mon_${++this._counter}_${Date.now().toString(36)}`
     const monitor: Monitor = {
       id,
       label,
       command,
       ...(agentId !== undefined ? { agentId } : {}),
+      ...(notifyIntervalMs !== undefined ? { notifyIntervalMs } : {}),
       status: 'running',
       output: [],
       newOutput: [],
@@ -248,7 +275,7 @@ export class MonitorManager {
         // still triggers.
         const last = this._lastTriggeredLine.get(id)
         if (trimmed !== last) {
-          this._triggerOutputCallback()
+          this._triggerOutputCallback(monitor)
         }
       }
 
@@ -268,10 +295,11 @@ export class MonitorManager {
         fn()
         monitor.hasUnnotifiedOutput = true
         // Exit/error is always a status change — always trigger, even for
-        // a line identical to the last one seen.
+        // a line identical to the last one seen. Terminal transitions
+        // flush immediately (bypass the notify window).
         this._lastTriggeredLine.delete(id)
         this._onStatusChange?.(monitor)
-        this._triggerOutputCallback()
+        this._flushTerminal(monitor)
       }
 
       child.on('exit', (code: number | null) => {
@@ -328,7 +356,7 @@ export class MonitorManager {
     this._onStatusChange?.(monitor)
     // Late exit/error events are no-ops via the status check in finalize.
     this._lastTriggeredLine.delete(id)
-    this._triggerOutputCallback()
+    this._flushTerminal(monitor)
     return true
   }
 
@@ -381,7 +409,10 @@ export class MonitorManager {
    *  teardown to prevent ghost notices from readline events that fire after
    *  the manager is replaced. */
   stopAll(): void {
-    this._cancelDebounce()
+    for (const timer of this._debounceTimers.values()) {
+      clearTimeout(timer)
+    }
+    this._debounceTimers.clear()
     this._onOutput = undefined
     this._onLine = undefined
     this._onStatusChange = undefined

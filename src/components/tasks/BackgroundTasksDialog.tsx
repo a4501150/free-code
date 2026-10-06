@@ -152,7 +152,7 @@ export function BackgroundTasksDialog({
       const shells = sorted.filter(
         item => item.type === 'local_bash' && item.task.kind !== 'monitor',
       )
-      // Monitor-kind shell tasks (Monitor tool) render in the Monitors
+      // Monitor-kind shell tasks render in the Monitors
       // section alongside the externally-unused monitor_mcp items.
       const monitorItems = sorted.filter(
         item =>

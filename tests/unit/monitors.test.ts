@@ -8,7 +8,7 @@ import {
   type SpawnFn,
 } from '../../src/utils/monitors.js'
 import type { AgentId } from '../../src/types/ids.js'
-import { buildMonitorNoticeText } from '../../src/tools/MonitorTool/monitorNotifications.js'
+import { buildMonitorNoticeText } from '../../src/tasks/MonitorTask/notifications.js'
 
 // ---------------------------------------------------------------------------
 // Test doubles: injectable spawn/kill keep the suite hermetic (unit tests
@@ -201,7 +201,9 @@ describe('MonitorManager', () => {
       attachExitHook: false,
     })
     const main = manager.start('cmd', 'main-monitor')
-    const sub = manager.start('cmd', 'sub-monitor', 'agent-1' as AgentId)
+    const sub = manager.start('cmd', 'sub-monitor', {
+      agentId: 'agent-1' as AgentId,
+    })
     await emitStdout(children[0]!, 'from-main')
     await emitStdout(children[1]!, 'from-sub')
     const subEntries = manager.takeUnnotifiedOutput(
@@ -353,6 +355,77 @@ describe('MonitorManager', () => {
     expect(triggers).toBe(1)
     expect(monitor.status).toBe('exited')
     expect(manager.hasUnnotifiedOutput()).toBe(true)
+  })
+
+  test('per-monitor notifyIntervalMs gates the change trigger', async () => {
+    let triggers = 0
+    const child = fakeChild()
+    const manager = makeManager(child, {
+      debounceMs: 10,
+      onOutput: () => triggers++,
+    })
+    const monitor = manager.start('cmd', 'e', { notifyIntervalMs: 80 })
+    await emitStdout(child, 'line-1')
+    await new Promise(r => setTimeout(r, 30))
+    expect(triggers).toBe(0) // still inside the 80ms monitor window
+    await new Promise(r => setTimeout(r, 80))
+    expect(triggers).toBe(1)
+    void monitor
+  })
+
+  test('per-monitor interval still respects identical-line suppression', async () => {
+    let triggers = 0
+    const child = fakeChild()
+    const manager = makeManager(child, {
+      onOutput: () => triggers++,
+    })
+    const monitor = manager.start('poll', 'p', { notifyIntervalMs: 20 })
+    await emitStdout(child, 'CI=pending')
+    await new Promise(r => setTimeout(r, 40))
+    expect(triggers).toBe(1)
+    manager.takeUnnotifiedOutput() // advances the suppression marker
+
+    await emitStdout(child, 'CI=pending')
+    await new Promise(r => setTimeout(r, 60))
+    expect(triggers).toBe(1) // identical line: silent even after the window
+    void monitor
+  })
+
+  test('terminal transitions flush immediately, bypassing the notify interval', async () => {
+    let triggers = 0
+    const child = fakeChild()
+    const manager = makeManager(child, {
+      onOutput: () => triggers++,
+    })
+    const monitor = manager.start('cmd', 'e', { notifyIntervalMs: 60_000 })
+    child.emit('exit', 0)
+    await new Promise(r => setTimeout(r, 30))
+    expect(triggers).toBe(1) // exit notice not delayed by the 60s window
+    expect(monitor.status).toBe('exited')
+
+    // stop() flushes the same way.
+    let stopTriggers = 0
+    const child2 = fakeChild()
+    const manager2 = makeManager(child2, {
+      onOutput: () => stopTriggers++,
+    })
+    const monitor2 = manager2.start('cmd', 'e', { notifyIntervalMs: 60_000 })
+    manager2.stop(monitor2.id)
+    await new Promise(r => setTimeout(r, 30))
+    expect(stopTriggers).toBe(1)
+  })
+
+  test('stopAll clears pending per-monitor debounce timers', async () => {
+    let triggers = 0
+    const child = fakeChild()
+    const manager = makeManager(child, {
+      onOutput: () => triggers++,
+    })
+    manager.start('cmd', 'e', { notifyIntervalMs: 20 })
+    await emitStdout(child, 'line-1')
+    manager.stopAll()
+    await new Promise(r => setTimeout(r, 60))
+    expect(triggers).toBe(0) // the pending window died with the manager
   })
 
   test('onLine fires per stream line and for the synthetic stop line', async () => {

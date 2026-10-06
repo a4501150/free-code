@@ -17,7 +17,7 @@
  *
  * This module is also the wiring entry point: wireMonitorNotifications
  * attaches the queue bridge, the per-line disk-output hook and the
- * AppState status mirror (see monitorTaskState.ts) to a MonitorManager.
+ * AppState status mirror (see taskState.ts) to a MonitorManager.
  */
 import {
   MONITOR_OUTPUT_TAG,
@@ -39,7 +39,7 @@ import {
   appendMonitorOutputLine,
   mirrorMonitorStatus,
   monitorStatusToTaskStatus,
-} from './monitorTaskState.js'
+} from './taskState.js'
 
 type NoticeEntry = { monitor: Monitor; output: string[] }
 

@@ -9,7 +9,7 @@ import {
   mirrorMonitorStatus,
   monitorStatusToTaskStatus,
   registerMonitorTaskState,
-} from '../../src/tools/MonitorTool/monitorTaskState.js'
+} from '../../src/tasks/MonitorTask/taskState.js'
 
 // ---------------------------------------------------------------------------
 // Monitor mirror tests. registerTask/updateTaskState only touch
