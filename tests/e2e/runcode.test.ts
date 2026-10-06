@@ -124,8 +124,8 @@ describe('RunCode code-mode E2E', () => {
 
     // The catalog delta reminder reached the model (any turn's messages).
     const allText = JSON.stringify(log.map(e => e.body.messages))
-    expect(allText).toContain('New MCP servers are connected')
-    expect(allText).toContain('callable as functions from a RunCode script')
+    expect(allText).toContain('deferred to the catalog')
+    expect(allText).toContain('call them as functions from a RunCode script')
 
     const results = lastToolResults(log, 1)
     expect(results.length).toBe(1)

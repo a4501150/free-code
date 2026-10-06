@@ -1,5 +1,5 @@
 /**
- * Unit tests: tool catalog codegen (TypeScript modules) + mcp_tools_delta
+ * Unit tests: tool catalog codegen (TypeScript modules) + deferred_tools_delta
  * reminder. The harness state file lives outside the model-facing catalog
  * directory — tests keep it as a sibling of the temp catalogDir so root
  * cleanup (which removes stray .json/.ts) never touches it.
@@ -11,7 +11,7 @@ import { join } from 'path'
 import type { Tool } from '../../src/Tool.js'
 import type { Message } from '../../src/types/message.js'
 import {
-  getMcpToolsDeltaAttachment,
+  getDeferredToolsDeltaAttachment,
   type Attachment,
 } from '../../src/utils/attachments.js'
 import { writeToolCatalog } from '../../src/services/toolCatalog/writer.js'
@@ -196,16 +196,16 @@ describe('tool catalog writer', () => {
   })
 })
 
-describe('mcp_tools_delta reminder', () => {
+describe('deferred_tools_delta reminder', () => {
   test('first announce with no history is the full catalog', async () => {
     const dir = await freshDir()
     const ctx = makeContext([fakeMcpTool('mcp__srv__a', 'srv')])
-    const atts = await getMcpToolsDeltaAttachment(ctx, [], {
+    const atts = await getDeferredToolsDeltaAttachment(ctx, [], {
       catalogDir: dir,
       statePath: statePathFor(dir),
     })
     expect(atts.length).toBe(1)
-    const att = atts[0] as Extract<Attachment, { type: 'mcp_tools_delta' }>
+    const att = atts[0] as Extract<Attachment, { type: 'deferred_tools_delta' }>
     expect(att.addedNames).toEqual(['srv'])
     expect(att.changedNames).toEqual([])
     expect(att.removedNames).toEqual([])
@@ -217,14 +217,14 @@ describe('mcp_tools_delta reminder', () => {
   test('diff against the announced snapshot reports add/remove/change', async () => {
     const dir = await freshDir()
     const opts = { catalogDir: dir, statePath: statePathFor(dir) }
-    const announced = await getMcpToolsDeltaAttachment(
+    const announced = await getDeferredToolsDeltaAttachment(
       makeContext([fakeMcpTool('mcp__srv__a', 'srv')]),
       [],
       opts,
     )
     const messages = [attachMessage(announced[0] as Attachment)]
 
-    const noChange = await getMcpToolsDeltaAttachment(
+    const noChange = await getDeferredToolsDeltaAttachment(
       makeContext([fakeMcpTool('mcp__srv__a', 'srv')]),
       messages,
       opts,
@@ -233,7 +233,7 @@ describe('mcp_tools_delta reminder', () => {
 
     // New server added, previous server lost its only tool (stale snapshot
     // of another server counts as removed).
-    const changed = await getMcpToolsDeltaAttachment(
+    const changed = await getDeferredToolsDeltaAttachment(
       makeContext([
         fakeMcpTool('mcp__srv__a', 'srv'),
         fakeMcpTool('mcp__new__b', 'new'),
@@ -242,18 +242,24 @@ describe('mcp_tools_delta reminder', () => {
       opts,
     )
     expect(changed.length).toBe(1)
-    const att = changed[0] as Extract<Attachment, { type: 'mcp_tools_delta' }>
+    const att = changed[0] as Extract<
+      Attachment,
+      { type: 'deferred_tools_delta' }
+    >
     expect(att.addedNames).toEqual(['new'])
     expect(att.removedNames).toEqual([])
 
     // Server gone from the pool → removed.
-    const removed = await getMcpToolsDeltaAttachment(
+    const removed = await getDeferredToolsDeltaAttachment(
       makeContext([fakeMcpTool('mcp__new__b', 'new')]),
       messages,
       opts,
     )
     expect(removed.length).toBe(1)
-    const rem = removed[0] as Extract<Attachment, { type: 'mcp_tools_delta' }>
+    const rem = removed[0] as Extract<
+      Attachment,
+      { type: 'deferred_tools_delta' }
+    >
     expect(rem.removedNames).toEqual(['srv'])
     expect(rem.addedNames).toEqual(['new'])
   })

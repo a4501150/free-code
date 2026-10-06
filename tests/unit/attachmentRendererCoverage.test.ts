@@ -25,7 +25,7 @@ const VISIBLE_FIXTURES: Array<[Attachment, string]> = [
   ],
   [
     {
-      type: 'mcp_tools_delta',
+      type: 'deferred_tools_delta',
       generation: 1,
       servers: [
         { name: 's1', file: 'servers/s1.json', toolCount: 3, hash: 'h' },
@@ -37,7 +37,7 @@ const VISIBLE_FIXTURES: Array<[Attachment, string]> = [
       builtinsAdded: [],
       builtinsRemoved: [],
     },
-    'New MCP servers are connected',
+    'deferred to the catalog',
   ],
   [
     {
@@ -111,7 +111,6 @@ const VISIBLE_NOT_FIXTURE_TESTED = [
   'companion_intro',
   'critical_system_reminder',
   'date_change',
-  'deferred_tools_delta',
   'diagnostics',
   'directory',
   'dynamic_skill',

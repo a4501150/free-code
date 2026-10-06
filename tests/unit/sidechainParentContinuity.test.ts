@@ -33,7 +33,7 @@ const instructionsSeed = msg('instr-1', {
 const toolsSeed = msg('tools-1', {
   type: 'attachment',
   attachment: {
-    type: 'mcp_tools_delta',
+    type: 'deferred_tools_delta',
     generation: 1,
     servers: [],
     builtins: [],

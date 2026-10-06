@@ -27,7 +27,7 @@ import {
   createAttachmentMessage,
   generateFileAttachment,
   getAgentListingDeltaAttachment,
-  getMcpToolsDeltaAttachment,
+  getDeferredToolsDeltaAttachment,
   getMcpInstructionsDeltaAttachment,
   getAssistantModeAttachment,
   getSessionGuidanceAttachment,
@@ -379,7 +379,10 @@ async function pushReAnnounceAttachments(
   )) {
     target.push(createAttachmentMessage(att))
   }
-  for (const att of await getMcpToolsDeltaAttachment(context, scanMessages)) {
+  for (const att of await getDeferredToolsDeltaAttachment(
+    context,
+    scanMessages,
+  )) {
     target.push(createAttachmentMessage(att))
   }
   for (const att of getAgentListingDeltaAttachment(context, scanMessages)) {

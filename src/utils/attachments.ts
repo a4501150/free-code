@@ -653,13 +653,9 @@ export type Attachment =
       level: 'high'
     }
   | {
+      // Renamed from mcp_tools_delta (and distinct from the ToolSearch-era
+      // deferred_tools_delta rows, which lack `servers` and render inert).
       type: 'deferred_tools_delta'
-      addedNames: string[]
-      addedLines: string[]
-      removedNames: string[]
-    }
-  | {
-      type: 'mcp_tools_delta'
       generation: number
       /** Catalog snapshot at announce time; scanned back to diff changes. */
       servers: CatalogServerSnapshot[]
@@ -917,7 +913,7 @@ export async function getAttachments(
     // Context-group ordering (same in compact.ts re-announce and the
     // runAgent.ts turn-0 seed): assistant_mode (main-thread only, so absent
     // from the seed), session_guidance, git_instructions, companion_intro,
-    // mcp_instructions_delta, mcp_tools_delta, agent_listing_delta, then
+    // mcp_instructions_delta, deferred_tools_delta, agent_listing_delta, then
     // skill_listing below.
     maybe('assistant_mode', () =>
       Promise.resolve(getAssistantModeAttachment(toolUseContext, messages)),
@@ -940,8 +936,8 @@ export async function getAttachments(
         ),
       ),
     ),
-    maybe('mcp_tools_delta', () =>
-      getMcpToolsDeltaAttachment(toolUseContext, messages),
+    maybe('deferred_tools_delta', () =>
+      getDeferredToolsDeltaAttachment(toolUseContext, messages),
     ),
     maybe('agent_listing_delta', () =>
       Promise.resolve(getAgentListingDeltaAttachment(toolUseContext, messages)),
@@ -1496,7 +1492,7 @@ export type AnnouncedToolCatalog = {
 // the full catalog — at session start, after /compact ate prior announcements,
 // or in a subagent whose transcript has none. An empty catalog diffs to
 // nothing and announces nothing, so the full announce costs no noise.
-export async function getMcpToolsDeltaAttachment(
+export async function getDeferredToolsDeltaAttachment(
   toolUseContext: ToolUseContext,
   messages: Message[] | undefined,
   opts?: { catalogDir?: string; statePath?: string },
@@ -1539,7 +1535,7 @@ export async function getMcpToolsDeltaAttachment(
   let last: AnnouncedToolCatalog | null = null
   for (const msg of messages ?? []) {
     if (msg.type !== 'attachment') continue
-    if (msg.attachment.type !== 'mcp_tools_delta') continue
+    if (msg.attachment.type !== 'deferred_tools_delta') continue
     last = {
       generation: msg.attachment.generation,
       servers: msg.attachment.servers,
@@ -1581,7 +1577,7 @@ export async function getMcpToolsDeltaAttachment(
   removedNames.sort()
   return [
     {
-      type: 'mcp_tools_delta',
+      type: 'deferred_tools_delta',
       generation: manifest.generation,
       servers,
       builtins: manifest.builtins,

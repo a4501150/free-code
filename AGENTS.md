@@ -19,7 +19,7 @@ commented IN the file that governs them.
 
 ## Prompt cache invariants
 
-- Prefix order is tools, system, messages. The system prompt must stay byte-identical across sessions and byte-stable for a session's lifetime — do not reintroduce an uncached system-prompt section (the old `DANGEROUS_uncachedSystemPromptSection` churned the single cached block every turn). Session facts ride the persisted `user_context_snapshot`/`user_context_delta`; mid-session-dynamic content rides its own attachment type (`mcp_tools_delta`, `mcp_instructions_delta`, `session_guidance`) — never the prompt.
+- Prefix order is tools, system, messages. The system prompt must stay byte-identical across sessions and byte-stable for a session's lifetime — do not reintroduce an uncached system-prompt section (the old `DANGEROUS_uncachedSystemPromptSection` churned the single cached block every turn). Session facts ride the persisted `user_context_snapshot`/`user_context_delta`; mid-session-dynamic content rides its own attachment type (`deferred_tools_delta`, `mcp_instructions_delta`, `session_guidance`) — never the prompt.
 - Dynamic carriers use the stateless-scan pattern: diff against announcements found in the transcript, and "no prior announcement" must mean a FULL announce (session start, post-compaction re-arm, subagent turn-0), never silence. A snapshot/delta carrying no `domain` covers every domain: replay once, never re-baseline.
 - Everything inside the prefix must be byte-stable across builds too: tool descriptions (they embed the tool list) and the catalog manifest path.
 - The Edit tool description is the only place telling the model which Bash channels count as file sightings — keep it in sync with the allowlist in `src/utils/fileSightings.ts`.

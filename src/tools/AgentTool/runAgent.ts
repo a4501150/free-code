@@ -47,7 +47,7 @@ import {
   createAttachmentMessage,
   getGitInstructionsAttachment,
   getMcpInstructionsDeltaAttachment,
-  getMcpToolsDeltaAttachment,
+  getDeferredToolsDeltaAttachment,
   getSkillListingAttachments,
 } from '../../utils/attachments.js'
 import { isMemoryFilePath } from '../../utils/claudemd.js'
@@ -737,7 +737,7 @@ export async function* runAgent({
     // Turn-0 MCP catalog announce: the worker sees the connected servers and
     // their schema file paths up front (before its first tool iteration).
     // The tool loop's own delta diffs against this snapshot and stays quiet.
-    for (const attachment of await getMcpToolsDeltaAttachment(
+    for (const attachment of await getDeferredToolsDeltaAttachment(
       agentToolUseContext,
       initialMessages,
     )) {
