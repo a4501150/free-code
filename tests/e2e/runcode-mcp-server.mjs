@@ -59,7 +59,8 @@ rl.on('line', line => {
       send({
         jsonrpc: '2.0',
         id: req.id,
-        result: req.method === 'prompts/list' ? { prompts: [] } : { resources: [] },
+        result:
+          req.method === 'prompts/list' ? { prompts: [] } : { resources: [] },
       })
       break
     default:
