@@ -21,7 +21,9 @@ export function renderToolCallParams(
       }
     }
   } else {
-    entries = Object.entries(input)
+    // Inputs built in JS (RunCode bridge child calls) can carry explicit
+    // undefined values, which JSON.stringify renders as no output at all.
+    entries = Object.entries(input).filter(([, value]) => value != null)
   }
 
   if (entries.length === 0) return ''
@@ -32,7 +34,9 @@ export function renderToolCallParams(
 
   const visible = entries.slice(0, maxParams)
   const parts = visible.map(([key, value]) => {
-    let rendered = jsonStringify(value)
+    // jsonStringify is typed as string but returns undefined for
+    // functions and symbols.
+    let rendered = jsonStringify(value) ?? String(value)
     if (rendered.length > maxValueChars) {
       rendered = rendered.slice(0, maxValueChars).trimEnd() + '…'
     }

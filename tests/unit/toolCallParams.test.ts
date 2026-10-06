@@ -61,6 +61,20 @@ describe('renderToolCallParams', () => {
     expect(result).not.toContain('limit')
   })
 
+  test('undefined values are skipped without compactParamKeys', () => {
+    // RunCode bridge child calls can carry explicit undefined values,
+    // which JSON.stringify renders as no output at all.
+    const inputWithUndef = { ...input, limit: undefined }
+    const result = renderToolCallParams(inputWithUndef, 'compact')
+    expect(result).toContain('file_path:')
+    expect(result).not.toContain('limit')
+  })
+
+  test('symbol values render via String() instead of throwing', () => {
+    const result = renderToolCallParams({ sym: Symbol('x') }, 'full')
+    expect(result).toContain('sym: Symbol(x)')
+  })
+
   test('no "…+N more" suffix for intentionally hidden params', () => {
     const result = renderToolCallParams(input, 'compact', ['file_path'])
     expect(result).not.toContain('more')
