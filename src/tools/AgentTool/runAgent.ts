@@ -48,6 +48,7 @@ import {
   getGitInstructionsAttachment,
   getMcpInstructionsDeltaAttachment,
   getDeferredToolsDeltaAttachment,
+  getMcpToolsDeltaAttachment,
   getSkillListingAttachments,
 } from '../../utils/attachments.js'
 import { isMemoryFilePath } from '../../utils/claudemd.js'
@@ -722,6 +723,18 @@ export async function* runAgent({
     initialMessages.push(createAttachmentMessage(attachment))
   }
 
+  // Turn-0 deferred built-ins seed (forks skip it: they inherit the parent
+  // transcript, announcement included). Seeded ahead of the MCP instructions
+  // to match the context-group ordering in attachments.ts and compact.ts.
+  if (forkContextMessages === undefined) {
+    for (const attachment of await getDeferredToolsDeltaAttachment(
+      agentToolUseContext,
+      initialMessages,
+    )) {
+      initialMessages.push(createAttachmentMessage(attachment))
+    }
+  }
+
   // Turn-0 MCP instructions seed, unscoped by fork status: the delta scans
   // initialMessages, so a fork's inherited transcript already announces the
   // parent's servers and only agent-specific servers get announced here.
@@ -734,10 +747,10 @@ export async function* runAgent({
   }
 
   if (forkContextMessages === undefined) {
-    // Turn-0 MCP catalog announce: the worker sees the connected servers and
+    // Turn-0 MCP catalog seed: the worker sees the connected servers and
     // their schema file paths up front (before its first tool iteration).
     // The tool loop's own delta diffs against this snapshot and stays quiet.
-    for (const attachment of await getDeferredToolsDeltaAttachment(
+    for (const attachment of await getMcpToolsDeltaAttachment(
       agentToolUseContext,
       initialMessages,
     )) {

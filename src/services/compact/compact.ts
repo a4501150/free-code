@@ -29,6 +29,7 @@ import {
   getAgentListingDeltaAttachment,
   getDeferredToolsDeltaAttachment,
   getMcpInstructionsDeltaAttachment,
+  getMcpToolsDeltaAttachment,
   getAssistantModeAttachment,
   getSessionGuidanceAttachment,
   getGitInstructionsAttachment,
@@ -359,8 +360,9 @@ async function pushReAnnounceAttachments(
   scanMessages: Message[],
 ): Promise<void> {
   // Context-group ordering (same in attachments.ts and the runAgent.ts
-  // turn-0 seed): assistant_mode, session_guidance, git_instructions, then
-  // the MCP carriers. assistant_mode is main-thread-only: the seed omits it,
+  // turn-0 seed): assistant_mode, session_guidance, git_instructions,
+  // deferred_tools_delta, then the MCP pair (mcp_instructions_delta,
+  // mcp_tools_delta). assistant_mode is main-thread-only: the seed omits it,
   // compaction re-announce does not, and its scan treats a post-compaction
   // transcript with no prior announcement as a full re-arm.
   for (const att of getAssistantModeAttachment(context, scanMessages)) {
@@ -372,6 +374,12 @@ async function pushReAnnounceAttachments(
   for (const att of getGitInstructionsAttachment(context, scanMessages)) {
     target.push(createAttachmentMessage(att))
   }
+  for (const att of await getDeferredToolsDeltaAttachment(
+    context,
+    scanMessages,
+  )) {
+    target.push(createAttachmentMessage(att))
+  }
   for (const att of getMcpInstructionsDeltaAttachment(
     context.options.mcpClients,
     context.options.tools,
@@ -379,10 +387,7 @@ async function pushReAnnounceAttachments(
   )) {
     target.push(createAttachmentMessage(att))
   }
-  for (const att of await getDeferredToolsDeltaAttachment(
-    context,
-    scanMessages,
-  )) {
+  for (const att of await getMcpToolsDeltaAttachment(context, scanMessages)) {
     target.push(createAttachmentMessage(att))
   }
   for (const att of getAgentListingDeltaAttachment(context, scanMessages)) {

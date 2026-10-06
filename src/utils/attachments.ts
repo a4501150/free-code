@@ -653,18 +653,24 @@ export type Attachment =
       level: 'high'
     }
   | {
-      // Renamed from mcp_tools_delta (and distinct from the ToolSearch-era
-      // deferred_tools_delta rows, which lack `servers` and render inert).
+      // The lazily-exposed built-ins deferred to the catalog; MCP servers
+      // ride mcp_tools_delta. ToolSearch-era rows sharing this tag lack
+      // `builtins` and render inert.
       type: 'deferred_tools_delta'
       generation: number
       /** Catalog snapshot at announce time; scanned back to diff changes. */
-      servers: CatalogServerSnapshot[]
       builtins: string[]
+      builtinsAdded: string[]
+      builtinsRemoved: string[]
+    }
+  | {
+      type: 'mcp_tools_delta'
+      generation: number
+      /** Catalog snapshot at announce time; scanned back to diff changes. */
+      servers: CatalogServerSnapshot[]
       addedNames: string[]
       changedNames: string[]
       removedNames: string[]
-      builtinsAdded: string[]
-      builtinsRemoved: string[]
     }
   | {
       type: 'agent_listing_delta'
@@ -895,6 +901,11 @@ export async function getAttachments(
   // This ensures files are added to nestedMemoryAttachmentTriggers before nested_memory processes them
   const userAttachmentResults = await Promise.all(userInputAttachments)
 
+  // One catalog write and diff serve both carriers; each maybe() entry
+  // takes its own slice (their ordering positions differ, and either slice
+  // can be empty while the other announces).
+  const catalogDeltas = computeToolCatalogDeltas(toolUseContext, messages)
+
   // Thread-safe attachments available in sub-agents
   // NOTE: These must be created AFTER userInputAttachments completes to ensure
   // nestedMemoryAttachmentTriggers is populated before getNestedMemoryAttachments runs
@@ -913,8 +924,9 @@ export async function getAttachments(
     // Context-group ordering (same in compact.ts re-announce and the
     // runAgent.ts turn-0 seed): assistant_mode (main-thread only, so absent
     // from the seed), session_guidance, git_instructions, companion_intro,
-    // mcp_instructions_delta, deferred_tools_delta, agent_listing_delta, then
-    // skill_listing below.
+    // deferred_tools_delta (built-ins only move with settings, so they sit
+    // ahead of the mid-session-fragile MCP pair), mcp_instructions_delta,
+    // mcp_tools_delta, agent_listing_delta, then skill_listing below.
     maybe('assistant_mode', () =>
       Promise.resolve(getAssistantModeAttachment(toolUseContext, messages)),
     ),
@@ -927,6 +939,7 @@ export async function getAttachments(
     maybe('companion_intro', () =>
       Promise.resolve(getCompanionIntroAttachment(messages)),
     ),
+    maybe('deferred_tools_delta', async () => (await catalogDeltas).deferred),
     maybe('mcp_instructions_delta', () =>
       Promise.resolve(
         getMcpInstructionsDeltaAttachment(
@@ -936,9 +949,7 @@ export async function getAttachments(
         ),
       ),
     ),
-    maybe('deferred_tools_delta', () =>
-      getDeferredToolsDeltaAttachment(toolUseContext, messages),
-    ),
+    maybe('mcp_tools_delta', async () => (await catalogDeltas).mcp),
     maybe('agent_listing_delta', () =>
       Promise.resolve(getAgentListingDeltaAttachment(toolUseContext, messages)),
     ),
@@ -1480,25 +1491,29 @@ function getUltrathinkEffortAttachment(input: string | null): Attachment[] {
   return [{ type: 'ultrathink_effort', level: 'high' }]
 }
 
-export type AnnouncedToolCatalog = {
-  generation: number
-  servers: CatalogServerSnapshot[]
-  builtins: string[]
+type CatalogDeltas = {
+  /** Lazily-exposed built-ins deferred to the catalog. */
+  deferred: Attachment[]
+  /** MCP servers deferred to the catalog. */
+  mcp: Attachment[]
 }
 
 // Diff the rendered tool catalog against the last snapshot announced in
 // this transcript (stateless-scan pattern, like mcp_instructions_delta).
-// A scan that finds nothing diffs against nothing, so the first announce is
-// the full catalog — at session start, after /compact ate prior announcements,
-// or in a subagent whose transcript has none. An empty catalog diffs to
-// nothing and announces nothing, so the full announce costs no noise.
-export async function getDeferredToolsDeltaAttachment(
+// One scan feeds both carriers: mcp_tools_delta announces MCP servers
+// (which come and go mid-session), deferred_tools_delta announces the
+// lazily-exposed built-ins (which only move with settings). A scan that
+// finds nothing diffs against nothing, so the first announce is the full
+// catalog — at session start, after /compact ate prior announcements, or in
+// a subagent whose transcript has none. An empty catalog diffs to nothing
+// and announces nothing, so the full announce costs no noise.
+async function computeToolCatalogDeltas(
   toolUseContext: ToolUseContext,
   messages: Message[] | undefined,
   opts?: { catalogDir?: string; statePath?: string },
-): Promise<Attachment[]> {
+): Promise<CatalogDeltas> {
   // Kill switch: MCP schemas ride the request again; no catalog to announce.
-  if (mcpToolCatalogDisabled()) return []
+  if (mcpToolCatalogDisabled()) return { deferred: [], mcp: [] }
   const lazyNames = new Set(getSettings_DEPRECATED()?.lazyTools ?? [])
   const allTools = toolUseContext.options.tools
   const mcpTools = allTools.filter(
@@ -1526,24 +1541,31 @@ export async function getDeferredToolsDeltaAttachment(
       })
     ).manifest
   } catch {
-    return []
+    return { deferred: [], mcp: [] }
   }
   const servers: CatalogServerSnapshot[] = manifest.servers.map(
     ({ description: _description, ...snap }) => snap,
   )
 
-  let last: AnnouncedToolCatalog | null = null
+  // Last row wins, per carrier baseline. Rows from the brief unified-carrier
+  // era (deferred_tools_delta rows carrying `servers`) serve both baselines;
+  // ToolSearch-era rows carry neither snapshot and are skipped.
+  let lastServers: CatalogServerSnapshot[] | null = null
+  let lastBuiltins: string[] | null = null
   for (const msg of messages ?? []) {
     if (msg.type !== 'attachment') continue
-    if (msg.attachment.type !== 'deferred_tools_delta') continue
-    last = {
-      generation: msg.attachment.generation,
-      servers: msg.attachment.servers,
-      builtins: msg.attachment.builtins,
+    const a = msg.attachment
+    if (a.type === 'mcp_tools_delta') {
+      lastServers = a.servers
+    } else if (a.type === 'deferred_tools_delta') {
+      if ('servers' in a) {
+        lastServers = (a as { servers: CatalogServerSnapshot[] }).servers
+      }
+      if ('builtins' in a) lastBuiltins = a.builtins
     }
   }
-  const prevServers = new Map((last?.servers ?? []).map(s => [s.name, s]))
-  const prevBuiltins = new Set(last?.builtins ?? [])
+  const prevServers = new Map((lastServers ?? []).map(s => [s.name, s]))
+  const prevBuiltins = new Set(lastBuiltins ?? [])
   const addedNames: string[] = []
   const changedNames: string[] = []
   for (const s of servers) {
@@ -1562,32 +1584,59 @@ export async function getDeferredToolsDeltaAttachment(
     n => !manifest.builtins.includes(n),
   )
 
-  if (
-    addedNames.length === 0 &&
-    changedNames.length === 0 &&
-    removedNames.length === 0 &&
-    builtinsAdded.length === 0 &&
-    builtinsRemoved.length === 0
-  ) {
-    return []
-  }
-
   addedNames.sort()
   changedNames.sort()
   removedNames.sort()
-  return [
-    {
-      type: 'deferred_tools_delta',
-      generation: manifest.generation,
-      servers,
-      builtins: manifest.builtins,
-      addedNames,
-      changedNames,
-      removedNames,
-      builtinsAdded,
-      builtinsRemoved,
-    },
-  ]
+  const mcp: Attachment[] =
+    addedNames.length === 0 &&
+    changedNames.length === 0 &&
+    removedNames.length === 0
+      ? []
+      : [
+          {
+            type: 'mcp_tools_delta',
+            generation: manifest.generation,
+            servers,
+            addedNames,
+            changedNames,
+            removedNames,
+          },
+        ]
+  const deferred: Attachment[] =
+    builtinsAdded.length === 0 && builtinsRemoved.length === 0
+      ? []
+      : [
+          {
+            type: 'deferred_tools_delta',
+            generation: manifest.generation,
+            builtins: manifest.builtins,
+            builtinsAdded,
+            builtinsRemoved,
+          },
+        ]
+  return { deferred, mcp }
+}
+
+/** Catalog announce for the deferred built-ins only. Standalone entry point
+ * for the compact re-announce and the subagent turn-0 seed; the per-turn
+ * pipeline writes the catalog once for both carriers. */
+export async function getDeferredToolsDeltaAttachment(
+  toolUseContext: ToolUseContext,
+  messages: Message[] | undefined,
+  opts?: { catalogDir?: string; statePath?: string },
+): Promise<Attachment[]> {
+  return (await computeToolCatalogDeltas(toolUseContext, messages, opts))
+    .deferred
+}
+
+/** Catalog announce for the deferred MCP servers only. Same single-write
+ * caveat as getDeferredToolsDeltaAttachment. */
+export async function getMcpToolsDeltaAttachment(
+  toolUseContext: ToolUseContext,
+  messages: Message[] | undefined,
+  opts?: { catalogDir?: string; statePath?: string },
+): Promise<Attachment[]> {
+  return (await computeToolCatalogDeltas(toolUseContext, messages, opts)).mcp
 }
 
 /**

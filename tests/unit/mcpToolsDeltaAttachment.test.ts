@@ -4,7 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import type { Tool, ToolUseContext } from '../../src/Tool.js'
 import type { Attachment, Message } from '../../src/types/message.js'
-import { getDeferredToolsDeltaAttachment } from '../../src/utils/attachments.js'
+import { getMcpToolsDeltaAttachment } from '../../src/utils/attachments.js'
 
 let catalogDir: string
 // Harness state lives outside the model-facing catalog dir; keep tests off
@@ -51,7 +51,7 @@ function attachMessage(attachment: Attachment): Message {
 }
 
 async function announce(tools: Tool[], messages: Message[] = []) {
-  return getDeferredToolsDeltaAttachment(contextWithTools(tools), messages, {
+  return getMcpToolsDeltaAttachment(contextWithTools(tools), messages, {
     catalogDir,
     statePath,
   })
@@ -112,7 +112,7 @@ describe('MCP tools delta attachment', () => {
     const [changed] = await announce([changedTool], [attachMessage(baseline!)])
 
     expect(changed).toMatchObject({
-      type: 'deferred_tools_delta',
+      type: 'mcp_tools_delta',
       addedNames: [],
       changedNames: ['server'],
       removedNames: [],
@@ -130,7 +130,7 @@ describe('MCP tools delta attachment', () => {
     const [removed] = await announce([], [attachMessage(baseline!)])
 
     expect(removed).toMatchObject({
-      type: 'deferred_tools_delta',
+      type: 'mcp_tools_delta',
       addedNames: [],
       changedNames: [],
       removedNames: ['server'],
@@ -156,7 +156,7 @@ describe('MCP tools delta attachment', () => {
     const [added] = await announce([tool1, tool2], [attachMessage(baseline!)])
 
     expect(added).toMatchObject({
-      type: 'deferred_tools_delta',
+      type: 'mcp_tools_delta',
       addedNames: ['other'],
       changedNames: [],
       removedNames: [],

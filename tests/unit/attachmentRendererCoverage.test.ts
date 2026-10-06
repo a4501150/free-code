@@ -27,15 +27,22 @@ const VISIBLE_FIXTURES: Array<[Attachment, string]> = [
     {
       type: 'deferred_tools_delta',
       generation: 1,
+      builtins: ['CronCreate'],
+      builtinsAdded: ['CronCreate'],
+      builtinsRemoved: [],
+    },
+    'Built-in tools (declarations:',
+  ],
+  [
+    {
+      type: 'mcp_tools_delta',
+      generation: 1,
       servers: [
         { name: 's1', file: 'servers/s1.json', toolCount: 3, hash: 'h' },
       ],
-      builtins: [],
       addedNames: ['s1'],
       changedNames: [],
       removedNames: [],
-      builtinsAdded: [],
-      builtinsRemoved: [],
     },
     'deferred to the catalog',
   ],

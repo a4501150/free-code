@@ -41,9 +41,8 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'plan_mode_exit',
   'plan_mode_reentry',
   'structured_output',
-  // Rows persisted under the pre-rename mcp_tools_delta tag render null via
-  // the switch default, so no entry for that tag is needed here.
   'deferred_tools_delta',
+  'mcp_tools_delta',
   'mcp_instructions_delta',
   'session_guidance',
   'assistant_mode',

@@ -4004,31 +4004,39 @@ You have exited auto mode. The user may now want to interact more directly. You 
     case 'deferred_tools_delta': {
       // ToolSearch-era rows carry this same tag with the old
       // addedNames/addedLines/removedNames shape; they render inert.
-      if (!('servers' in attachment)) return []
+      if (!('builtins' in attachment)) return []
+      const catalog = toolCatalogDir()
+      const parts: string[] = []
+      if (attachment.builtinsAdded.length > 0) {
+        parts.push(
+          `These tools are deferred to the catalog (call them as functions from a ${RUN_CODE_TOOL_NAME} script; read the declarations first for exact names and argument types):\nBuilt-in tools (declarations: ${catalog}/builtins.ts): ${attachment.builtinsAdded.join(', ')}`,
+        )
+      }
+      if (attachment.builtinsRemoved.length > 0) {
+        parts.push(
+          `These tools are now directly available again and left the catalog: ${attachment.builtinsRemoved.join(', ')}.`,
+        )
+      }
+      if (parts.length === 0) {
+        // Defensive: the emitter never announces an empty diff. Render
+        // nothing rather than an empty system-reminder.
+        return []
+      }
+      return wrapMessagesInSystemReminder([
+        createUserMessage({ content: parts.join('\n\n'), isMeta: true }),
+      ])
+    }
+    case 'mcp_tools_delta': {
       const parts: string[] = []
       const catalog = toolCatalogDir()
       const byName = new Map(attachment.servers.map(s => [s.name, s]))
-      if (
-        attachment.addedNames.length > 0 ||
-        attachment.builtinsAdded.length > 0
-      ) {
-        // Built-ins first: they only move with settings or feature gates;
-        // MCP servers connect and disconnect mid-session.
-        const sections: string[] = []
-        if (attachment.builtinsAdded.length > 0) {
-          sections.push(
-            `Built-in tools (declarations: ${catalog}/builtins.ts): ${attachment.builtinsAdded.join(', ')}`,
-          )
-        }
-        if (attachment.addedNames.length > 0) {
-          const lines = attachment.addedNames.map(name => {
-            const s = byName.get(name)
-            return `- ${name}: ${s ? `${s.toolCount} tools (declarations: ${catalog}/${s.file})` : 'no tools'}`
-          })
-          sections.push(`MCP servers:\n${lines.join('\n')}`)
-        }
+      if (attachment.addedNames.length > 0) {
+        const lines = attachment.addedNames.map(name => {
+          const s = byName.get(name)
+          return `- ${name}: ${s ? `${s.toolCount} tools (declarations: ${catalog}/${s.file})` : 'no tools'}`
+        })
         parts.push(
-          `These tools are deferred to the catalog (call them as functions from a ${RUN_CODE_TOOL_NAME} script; read the declarations first for exact names and argument types):\n${sections.join('\n\n')}`,
+          `These tools are deferred to the catalog (call them as functions from a ${RUN_CODE_TOOL_NAME} script; read the declarations first for exact names and argument types):\nMCP servers:\n${lines.join('\n')}`,
         )
       }
       if (attachment.changedNames.length > 0) {
@@ -4043,11 +4051,6 @@ You have exited auto mode. The user may now want to interact more directly. You 
       if (attachment.removedNames.length > 0) {
         parts.push(
           `These MCP servers disconnected and their deferred tools are no longer available: ${attachment.removedNames.join(', ')}.`,
-        )
-      }
-      if (attachment.builtinsRemoved.length > 0) {
-        parts.push(
-          `These tools are now directly available again and left the catalog: ${attachment.builtinsRemoved.join(', ')}.`,
         )
       }
       if (parts.length === 0) {
@@ -4141,9 +4144,6 @@ You have exited auto mode. The user may now want to interact more directly. You 
     'ultramemory', // removed in PR #23596
     'task_reminder',
     'terminal_focus', // proactive-mode focus carrier, removed with the tick loop
-    'mcp_tools_delta', // renamed to deferred_tools_delta; rows from before
-    // the rename render inert (the tag's new-carrier scan never sees them,
-    // so one full re-announce re-arms the diff)
   ]
   if (LEGACY_ATTACHMENT_TYPES.includes((attachment as { type: string }).type)) {
     return []
