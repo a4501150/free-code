@@ -62,6 +62,13 @@ export type SearchOrReadResult = {
   isTaskManagement: boolean
   /** Bash command that is NOT a search/read (under fullscreen mode) */
   isBash?: boolean
+  /**
+   * Bash tool_use whose streamed input has not parsed a `command` yet. Such
+   * a call cannot be classified at all, so it must not bump the bash bucket:
+   * it may resolve as a search or read, and a count pinned from the wrong
+   * bucket could never tick back down (the renderer max-refs its counts).
+   */
+  isBashStreaming?: boolean
 }
 
 /**
@@ -213,7 +220,16 @@ export function getSearchOrReadInfo(
   const isList = result.isList ?? false
   const isCollapsible = result.isSearch || result.isRead || isList
   // Non-search/read Bash commands are also collapsible as their own category
-  // — "Ran N bash commands" instead of breaking the group.
+  // — "Ran N bash commands" instead of breaking the group. A Bash call still
+  // mid-stream carries a partially parsed input with no `command` yet, which
+  // safeParse rejects just like a real non-search command — bucket it as
+  // streaming instead so it lands in whichever bucket its completed input
+  // classifies into.
+  const isBashFallback = !isCollapsible && toolName === BASH_TOOL_NAME
+  const isBashStreaming =
+    isBashFallback &&
+    typeof (toolInput as { command?: unknown } | undefined)?.command !==
+      'string'
   return {
     isCollapsible: isCollapsible || toolName === BASH_TOOL_NAME,
     isSearch: result.isSearch,
@@ -223,7 +239,8 @@ export function getSearchOrReadInfo(
     isTaskManagement: false,
     isAbsorbedSilently: false,
     ...(tool.isMcp && { mcpServerName: tool.mcpInfo?.serverName }),
-    isBash: !isCollapsible && toolName === BASH_TOOL_NAME,
+    isBash: isBashFallback && !isBashStreaming,
+    isBashStreaming,
   }
 }
 
@@ -243,6 +260,7 @@ export function getSearchOrReadFromContent(
   isAbsorbedSilently: boolean
   mcpServerName?: string
   isBash?: boolean
+  isBashStreaming?: boolean
 } | null {
   if (content?.type === 'tool_use' && content.name) {
     const info = getSearchOrReadInfo(content.name, content.input, tools)
@@ -256,6 +274,7 @@ export function getSearchOrReadFromContent(
         isAbsorbedSilently: info.isAbsorbedSilently,
         mcpServerName: info.mcpServerName,
         isBash: info.isBash,
+        isBashStreaming: info.isBashStreaming,
       }
     }
   }
@@ -291,6 +310,7 @@ function getCollapsibleToolInfo(
   isAbsorbedSilently: boolean
   mcpServerName?: string
   isBash?: boolean
+  isBashStreaming?: boolean
 } | null {
   if (msg.type === 'assistant') {
     const content = msg.message.content[0]
@@ -534,6 +554,9 @@ export function getPendingCollapsedCategories(
       // No verb section to keep in present tense.
     } else if (toolInfo.mcpServerName) {
       pending.add('mcp')
+    } else if (toolInfo.isBashStreaming) {
+      // Not classifiable yet — no verb section to hold in present tense;
+      // a later frame classifies it once `command` parses.
     } else if (toolInfo.isBash) {
       pending.add('bash')
     } else if (toolInfo.isList) {
@@ -637,6 +660,23 @@ function getFilePathsFromReadMessage(msg: RenderableMessage): string[] {
  * group accumulator. Called only for results whose tool_use_id was recorded
  * in bashCommands (non-search/read bash).
  */
+/**
+ * Count tool_result blocks whose tool_use_id was registered as a plain Bash
+ * command — the execution proof that gates the "Ran N bash commands" count.
+ * Takes CollapsibleMessage and re-checks the type tag for the same reason
+ * the git-op scan below does: the collapse loop's else-if arm narrows the
+ * union past reach of a shared `message` property.
+ */
+function countExecutedBash(
+  msg: CollapsibleMessage,
+  group: GroupAccumulator,
+): number {
+  if (msg.type !== 'user') return 0
+  return msg.message.content.filter(
+    c => c.type === 'tool_result' && group.bashCommands?.has(c.tool_use_id),
+  ).length
+}
+
 function scanBashResultForGitOps(
   msg: CollapsibleMessage,
   group: GroupAccumulator,
@@ -905,13 +945,21 @@ export function collapseReadSearchGroups(
         if (input?.query) {
           currentGroup.latestDisplayHint = `"${input.query}"`
         }
+      } else if (toolInfo.isBashStreaming) {
+        // Bash call mid-stream: its input JSON has not parsed a command yet,
+        // so the call could still resolve as a search, a read, or a plain
+        // command. Count nothing — once `command` parses, a later frame
+        // buckets it correctly, and the summary's max-refed counts only ever
+        // grow. Same reasoning as the pathless-streaming-read fallback below.
       } else if (toolInfo.isBash) {
-        // Non-search/read Bash command — counted separately so the summary
-        // says "Ran N bash commands" instead of breaking the group. Not every
-        // command with a search stage lands here: a pipeline of search +
-        // output filter (`rg foo src | head`) classifies as a search.
-        const count = countToolUses(msg)
-        currentGroup.bashCount = (currentGroup.bashCount ?? 0) + count
+        // Non-search/read Bash command — its own "Ran N bash commands"
+        // section instead of breaking the group. Not counted here: the
+        // section only reflects commands that ACTUALLY EXECUTED, so the
+        // count lands when the tool_result arrives below, and a call whose
+        // command never matched any pattern (or never parsed one at all)
+        // can never show a verb before it runs. A pipeline of search +
+        // output filter (`rg foo src | head`) classifies as a search and
+        // never passes through here.
         const input = toolInfo.input as { command?: string } | undefined
         if (input?.command) {
           // Prefer the stripped `# comment` if present (it's what Claude wrote
@@ -919,8 +967,8 @@ export function collapseReadSearchGroups(
           currentGroup.latestDisplayHint =
             extractBashCommentLabel(input.command) ??
             commandAsHint(input.command)
-          // Remember tool_use_id → command so the result (arriving next) can
-          // be scanned for commit SHA / PR URL.
+          // Remember tool_use_id → command so the result (arriving next)
+          // can be scanned for commit SHA / PR URL.
           for (const id of getToolUseIdsFromMessage(msg)) {
             currentGroup.bashCommands?.set(id, input.command)
           }
@@ -1011,6 +1059,14 @@ export function collapseReadSearchGroups(
       currentGroup.messages.push(msg)
     } else if (isCollapsibleToolResult(msg, currentGroup.toolUseIds)) {
       currentGroup.messages.push(msg)
+      // The result arriving is the proof a Bash command actually executed —
+      // only now does it enter the "Ran N bash commands" count. Registered
+      // ids come from the tool-use pass above; commands whose input never
+      // parsed a `command` were never registered and stay uncounted.
+      const executedBash = countExecutedBash(msg, currentGroup)
+      if (executedBash > 0) {
+        currentGroup.bashCount = (currentGroup.bashCount ?? 0) + executedBash
+      }
       // Scan bash results for commit SHAs / PR URLs to surface in the summary
       if (currentGroup.bashCommands?.size) {
         scanBashResultForGitOps(msg, currentGroup)
