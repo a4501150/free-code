@@ -34,7 +34,7 @@ const questionOptionSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options. See the tool description for the expected content format.',
+      'Optional preview content rendered when this option is focused; see the tool description for the expected format.',
     ),
 })
 
@@ -42,12 +42,12 @@ const questionSchema = z.object({
   question: z
     .string()
     .describe(
-      'The complete question to ask the user, ending with a question mark. Example: "Which library should we use for date formatting?" Phrase it accordingly when multiSelect is true, e.g. "Which features do you want to enable?"',
+      'The complete question to ask the user, ending with a question mark. Phrase it accordingly when multiSelect is true.',
     ),
   header: z
     .string()
     .describe(
-      `Very short label displayed as a chip/tag (max ${ASK_USER_QUESTION_TOOL_CHIP_WIDTH} chars). Examples: "Auth method", "Library", "Approach".`,
+      `Very short label displayed as a chip/tag (max ${ASK_USER_QUESTION_TOOL_CHIP_WIDTH} chars). Examples: "Auth method", "Library".`,
     ),
   options: z
     .array(questionOptionSchema)
@@ -64,7 +64,7 @@ const questionSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      'Allow selecting multiple options. Use when the choices are not mutually exclusive.',
+      'Allow multiple answers. Use when the choices are not mutually exclusive.',
     ),
 })
 

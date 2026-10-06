@@ -4,5 +4,5 @@ export const DESCRIPTION = `
 - Lists all background tasks and their current status
 - Returns task ID, type, status, description, timing, and output file path
 - Use this to check what background tasks are running or recently completed
-- This list does not fetch output: an agent's report arrives in its completion notification; a background shell's full output can be Read from its output file
+- This list does not fetch output: an agent's report arrives in its completion notification; a background shell's output file is safe to Read
 `

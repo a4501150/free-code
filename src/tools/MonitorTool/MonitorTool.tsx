@@ -13,12 +13,12 @@ const inputSchema = z.strictObject({
   command: z
     .string()
     .describe(
-      'The shell command to run in the background. Its stdout/stderr lines are captured as they arrive. Examples: `tail -f /var/log/app.log`, a polling script that checks a CI status, `watch -n 5 kubectl get pods`. Never tail raw build/compile output (bazel, webpack, gradle): it prints a progress line every second or two and floods the conversation with agent turns. Wrap it in a script that only prints when the build finishes, fails, or prints an error.',
+      'The shell command to run in the background; its stdout/stderr lines are captured as they arrive. Examples: `tail -f /var/log/app.log`, a polling script that checks a CI status. Never tail raw build/compile output — it floods the conversation with agent turns; wrap it so it prints only on completion, failure, or error.',
     ),
   label: z
     .string()
     .describe(
-      "A short human-readable label for this monitor, e.g. 'app-log-tail' or 'ci-poll'. Used in output notifications and the monitor list.",
+      "A short human-readable label for this monitor, e.g. 'app-log-tail' or 'ci-poll'.",
     ),
 })
 type InputSchema = typeof inputSchema

@@ -116,12 +116,8 @@ ${AGENT_PARALLELISM_GUIDANCE}`
   const backgroundSection = isBackgroundTasksEnabled()
     ? `
 
-When running an agent in the foreground, the ${AGENT_TOOL_NAME} tool will block and return once the agent finished, with its final report as this call's tool result.
-When running an agent in the background, the ${AGENT_TOOL_NAME} tool will return immediately with the agent's ID. The agent keeps running until it finishes and you will receive a system task notification carrying its report.
-
-You don't have to do anything waiting for a backgrounded agent, once it completed, a system task notification will come in automatically by harness.
-
-Until the system task notification arrives you know nothing about what the backgrounded subagent found or performed. The system task notification will contain the actual response from the subagent, so report "subagent is still running" when you have not received it, never a guess. Do not Read or tail the agent's output file while it runs — it is the agent's full transcript, and reading it brings the subagent's tool output back into your context.
+When running an agent in the foreground, the ${AGENT_TOOL_NAME} tool will block and return once the agent finished, with its final report as this call's tool result. When running an agent in the background, it returns immediately with the agent's ID; the agent keeps running until it finishes and you will receive a system task notification carrying its report — no waiting or polling.
+Until that notification arrives you know nothing about what the backgrounded subagent found or performed, so report "subagent is still running" when you have not received it, never a guess. Do not Read or tail the agent's output file while it runs — it is the agent's full transcript, and reading it brings the subagent's tool output back into your context.
 
 Backgrounding is not a parallelism mechanism — it only avoids blocking; parallelism is the single-message multi-use pattern above.`
     : ''
