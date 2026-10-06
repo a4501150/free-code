@@ -907,7 +907,9 @@ export function collapseReadSearchGroups(
         }
       } else if (toolInfo.isBash) {
         // Non-search/read Bash command — counted separately so the summary
-        // says "Ran N bash commands" instead of breaking the group.
+        // says "Ran N bash commands" instead of breaking the group. Not every
+        // command with a search stage lands here: a pipeline of search +
+        // output filter (`rg foo src | head`) classifies as a search.
         const count = countToolUses(msg)
         currentGroup.bashCount = (currentGroup.bashCount ?? 0) + count
         const input = toolInfo.input as { command?: string } | undefined
