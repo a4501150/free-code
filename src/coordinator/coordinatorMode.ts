@@ -1,5 +1,11 @@
 import { ASYNC_AGENT_ALLOWED_TOOLS } from '../constants/tools.js'
+import {
+  isToolExposedToModel,
+  RUN_CODE_TOOL_NAME,
+} from '../services/toolCatalog/exposure.js'
+import { toolCatalogDir } from '../services/toolCatalog/writer.js'
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
+import { LIST_AGENTS_TOOL_NAME } from '../tools/ListAgentsTool/constants.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
@@ -103,6 +109,16 @@ export function getCoordinatorUserContext(
 }
 
 export function getCoordinatorSystemPrompt(): string {
+  // Messaging tools ride the same lazyTools deferral as any built-in; when
+  // deferred the coordinator reaches them through the RunCode catalog.
+  const cataloged = [SEND_MESSAGE_TOOL_NAME, LIST_AGENTS_TOOL_NAME].filter(
+    name => !isToolExposedToModel({ name }),
+  )
+  const catalogedNote =
+    cataloged.length > 0
+      ? `
+${cataloged.join(' and ')} ${cataloged.length === 1 ? 'is' : 'are'} cataloged rather than in your tool list — call ${cataloged.length === 1 ? 'it' : 'them'} as functions from a ${RUN_CODE_TOOL_NAME} script; the declarations are in ${toolCatalogDir()}/builtins.ts. The call shapes below show the function arguments.\n`
+      : ''
   const workerCapabilities = isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)
     ? 'Workers have access to Bash, Read, and Edit tools, plus MCP tools from configured MCP servers.'
     : 'Workers have access to standard tools, MCP tools from configured MCP servers, and project skills via the Skill tool. Delegate only listed skill invocations to workers; do not infer skill names from common workflows or built-in CLI commands.'
@@ -123,10 +139,10 @@ Every message you send is to the user. Worker results and system notifications a
 
 - **${AGENT_TOOL_NAME}** - Spawn a new worker
 - **${SEND_MESSAGE_TOOL_NAME}** - Continue an existing worker (send a follow-up to its \`to\` agent ID), or deliver a prompt turn to another live session (\`to\` = \`session:<id>\`)
-- **ListAgents** - Discover messaging targets: your spawned workers (by ID or name) and other live sessions on this machine
+- **${LIST_AGENTS_TOOL_NAME}** - Discover messaging targets: your spawned workers (by ID or name) and other live sessions on this machine
 - **${BACKGROUND_TASK_STOP_TOOL_NAME}** - Stop a running worker
 - **subscribe_pr_activity / unsubscribe_pr_activity** (if available) - Subscribe to GitHub PR events (review comments, CI results). Events arrive as user messages. Merge conflict transitions do NOT arrive — GitHub does not send \`mergeable_state\` changes in webhooks, so poll \`gh pr view N --json mergeable\` if you track conflict status. Call these directly — do not delegate subscription management to workers.
-
+${catalogedNote}
 When calling ${AGENT_TOOL_NAME}:
 - Do not use one worker to check on another. Workers will notify you when they are done.
 - Do not use workers to trivially report file contents or run commands. Give them higher-level tasks.
