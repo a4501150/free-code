@@ -15,7 +15,6 @@ import {
   getDenyRuleForTool,
 } from '../../utils/permissions/permissions.js'
 import { RUN_CODE_TOOL_NAME } from '../../services/toolCatalog/exposure.js'
-import { toolCatalogDir } from '../../services/toolCatalog/writer.js'
 import { createRunCodeBridge } from './bridge.js'
 import { runScript } from './loader.js'
 import {
@@ -81,7 +80,7 @@ export const RunCodeTool = buildTool({
   },
   async prompt() {
     return [
-      `Run a TypeScript script that imports cataloged tools and orchestrates them in one execution. The catalog directory is ${toolCatalogDir()}: read index declarations in servers/<name>.ts (import specifier "mcp/<server>") and builtins.ts (import specifier "freecode:builtins") for exact function names and argument types.`,
+      `Run a TypeScript script that imports cataloged tools and orchestrates them in one execution. The catalog directory is named in your environment context ("Tool catalog directory: ..."): read index declarations in servers/<name>.ts (import specifier "mcp/<server>") and builtins.ts (import specifier "freecode:builtins") for exact function names and argument types.`,
       'Each tool call from the script goes through the normal permission and hook pipeline, so rules for the underlying tools apply unchanged. Use await for each call and console.log to report intermediate findings; only your logs and the call results come back.',
       'No filesystem or network access from the script — use cataloged tools. Dynamic import() and export default are not supported.',
     ].join('\n')
