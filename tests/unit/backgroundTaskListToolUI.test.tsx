@@ -6,7 +6,7 @@ describe('BackgroundTaskListTool UI', () => {
   test('renders one row per task with status, kind and description', async () => {
     const rendered = await renderToString(
       renderToolResultMessage({
-        count: 2,
+        count: 3,
         tasks: [
           {
             task_id: 'abc12345',
@@ -26,6 +26,15 @@ describe('BackgroundTaskListTool UI', () => {
             output_file: '/tmp/def67890.output',
             agent_type: 'general-purpose',
           },
+          {
+            task_id: 'mon_1_abc',
+            task_type: 'local_bash',
+            kind: 'monitor',
+            status: 'running',
+            description: 'watch the deploy log',
+            start_time: 1,
+            output_file: '/tmp/mon_1_abc.output',
+          },
         ],
       }),
     )
@@ -34,6 +43,7 @@ describe('BackgroundTaskListTool UI', () => {
     // assert the stable per-row prefixes and detail fragments.
     expect(rendered).toContain('[running] bash')
     expect(rendered).toContain('[completed] agent')
+    expect(rendered).toContain('[running] monitor')
     expect(rendered).toContain('general-purpose')
   })
 

@@ -2,8 +2,8 @@ import { z } from 'zod/v4'
 import * as React from 'react'
 import { MessageResponse } from '../../components/MessageResponse.js'
 import { Text } from '../../ink.js'
-import type { TaskStateBase } from '../../Task.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
+import type { BashTaskKind } from '../../tasks/LocalShellTask/guards.js'
 import type { TaskState } from '../../tasks/types.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { BACKGROUND_TASK_LIST_TOOL_NAME, DESCRIPTION } from './constants.js'
@@ -14,6 +14,9 @@ type InputSchema = typeof inputSchema
 interface TaskSummary {
   task_id: string
   task_type: string
+  // Monitor-kind shells run via the MonitorManager; the model needs to tell
+  // them apart from a plain shell.
+  kind?: BashTaskKind
   status: string
   description: string
   start_time: number
@@ -43,20 +46,15 @@ function toSummary(task: TaskState): TaskSummary {
     base.end_time = task.endTime
   }
   if (task.type === 'local_bash') {
-    base.command = (task as TaskStateBase & { command?: string }).command
-    const result = (task as TaskStateBase & { result?: { code?: number } })
-      .result
-    if (result?.code !== undefined) {
-      base.exit_code = result.code
+    base.command = task.command
+    base.kind = task.kind
+    if (task.result?.code !== undefined) {
+      base.exit_code = task.result.code
     }
   }
   if (task.type === 'local_agent') {
-    const agent = task as TaskStateBase & {
-      agentType?: string
-      model?: string
-    }
-    base.agent_type = agent.agentType
-    base.model = agent.model
+    base.agent_type = task.agentType
+    base.model = task.model
   }
   return base
 }
@@ -75,7 +73,7 @@ export function renderToolResultMessage(output: Output): React.ReactNode {
   return (
     <MessageResponse>
       {output.tasks.map(task => {
-        const kind = task.task_type.replace(/^local_/, '')
+        const kind = task.kind ?? task.task_type.replace(/^local_/, '')
         const exit =
           task.exit_code !== undefined ? ` · exit ${task.exit_code}` : ''
         const agent = task.agent_type ? ` · ${task.agent_type}` : ''
@@ -101,6 +99,7 @@ export const BackgroundTaskListTool = buildTool({
       z.object({
         task_id: z.string(),
         task_type: z.string(),
+        kind: z.enum(['bash', 'monitor']).optional(),
         status: z.string(),
         description: z.string(),
         start_time: z.number(),
@@ -137,7 +136,7 @@ export const BackgroundTaskListTool = buildTool({
   },
   renderToolResultMessage,
   async call(_input, { getAppState }) {
-    const allTasks = Object.values(getAppState().tasks ?? {}) as TaskState[]
+    const allTasks = Object.values(getAppState().tasks ?? {})
 
     const tasks = allTasks
       .sort((a, b) => {
