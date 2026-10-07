@@ -9,6 +9,7 @@ import {
   getRainbowColor,
   isUltrathinkEnabled,
 } from '../../utils/thinking.js'
+import { findBuddyTriggerPositions } from '../../buddy/keyword.js'
 import { MessageActionsSelectedContext } from '../messageActions.js'
 
 type Props = {
@@ -41,9 +42,10 @@ export function HighlightedThinkingText({
     )
   }
 
-  const triggers = isUltrathinkEnabled()
-    ? findThinkingTriggerPositions(text)
-    : []
+  const triggers = [
+    ...(isUltrathinkEnabled() ? findThinkingTriggerPositions(text) : []),
+    ...findBuddyTriggerPositions(text),
+  ].sort((a, b) => a.start - b.start)
 
   if (triggers.length === 0) {
     return <PointerRow color={pointerColor}>{text}</PointerRow>

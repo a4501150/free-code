@@ -151,6 +151,7 @@ import {
   isUltrathinkEnabled,
 } from '../../utils/thinking.js'
 import { findUltrareviewTriggerPositions } from '../../utils/ultrareview/keyword.js'
+import { findBuddyTriggerPositions } from '../../buddy/keyword.js'
 import {
   getVisibleAgentTasks,
   useCoordinatorTaskCount,
@@ -622,6 +623,11 @@ function PromptInput({
     [displayedValue],
   )
 
+  const buddyTriggers = useMemo(
+    () => findBuddyTriggerPositions(displayedValue),
+    [displayedValue],
+  )
+
   const slashCommandTriggers = useMemo(() => {
     const positions = findSlashCommandPositions(displayedValue)
     // Only highlight valid commands
@@ -766,6 +772,19 @@ function PromptInput({
       }
     }
 
+    // Same rainbow treatment for the /buddy command
+    for (const trigger of buddyTriggers) {
+      for (let i = trigger.start; i < trigger.end; i++) {
+        highlights.push({
+          start: i,
+          end: i + 1,
+          color: getRainbowColor(i - trigger.start),
+          shimmerColor: getRainbowColor(i - trigger.start, true),
+          priority: 10,
+        })
+      }
+    }
+
     return highlights
   }, [
     isSearchingHistory,
@@ -781,6 +800,7 @@ function PromptInput({
     voiceInterimRange,
     thinkTriggers,
     ultrareviewTriggers,
+    buddyTriggers,
   ])
 
   const { addNotification, removeNotification } = useNotifications()
