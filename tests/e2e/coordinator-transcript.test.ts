@@ -107,7 +107,14 @@ describe('Coordinator worker transcript view', () => {
 
     // Kick off the coordinator
     await session.sendLine('spawn a worker')
-    await session.waitForText('for shortcuts', 30_000)
+    // While background agents run, the coordinator footer shows
+    // 'ctrl+x ctrl+k to stop agents' instead of the idle '? for shortcuts'
+    // marker, so wait for the worker row itself before navigating to it.
+    await session.waitForScreen(s => s.includes('sleeper worker'), {
+      timeoutMs: 15_000,
+      currentPaneOnly: true,
+      description: 'worker row in coordinator panel',
+    })
 
     // Wait for the worker to start (it uses worker-model)
     await waitForRequest(server, req => req.body.model === 'worker-model', {
