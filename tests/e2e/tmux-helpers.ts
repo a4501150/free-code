@@ -324,7 +324,25 @@ export class TmuxSession {
    */
   async stop(): Promise<void> {
     if (this.started) {
+      // tmux kill-session only SIGHUPs the pane's process group, and the CLI
+      // neither treats SIGHUP as fatal nor drops an in-flight turn — a
+      // lingering turn keeps firing requests into the shared mock server and
+      // poisons the next test's FIFO queue. Hard-kill the pane's process
+      // group (the pane command runs as its own group leader).
+      let panePids: string[] = []
+      try {
+        const out = await exec(
+          `tmux list-panes -t ${this.sessionName} -F '#{pane_pid}'`,
+        )
+        panePids = out.trim().split('\n').filter(Boolean)
+      } catch {
+        // Session already gone — nothing to escalate.
+      }
       await exec(`tmux kill-session -t ${this.sessionName} 2>/dev/null || true`)
+      for (const pid of panePids) {
+        // Negative pid kills the whole group; failure means it is already gone.
+        await exec(`kill -KILL -${pid} 2>/dev/null || true`)
+      }
       this.started = false
     }
     if (this._ownsDirs) {
