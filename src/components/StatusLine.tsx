@@ -142,6 +142,13 @@ function buildStatusLineCommandInput(
       total_cache_read_input_tokens: getTotalCacheReadInputTokens(),
       context_window_size: contextWindowSize,
       current_usage: currentUsage,
+      // Exact sum of current_usage; scripts must not back-compute tokens
+      // from used_percentage (rounded to window/100, e.g. 5k steps at 500k).
+      used_tokens: currentUsage
+        ? currentUsage.input_tokens +
+          currentUsage.cache_creation_input_tokens +
+          currentUsage.cache_read_input_tokens
+        : 0,
       used_percentage: contextPercentages.used,
       remaining_percentage: contextPercentages.remaining,
     },

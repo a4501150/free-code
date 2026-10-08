@@ -30,10 +30,11 @@ BEGIN { RS = "\037END" }
     sub(/^"cwd":"/, "", v); sub(/"$/, "", v)
     if (v != "") cwd = v
   }
-  printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037guard\n",
+  printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037guard\n",
     model, cwd,
     num(j, "used_percentage", ""), num(j, "context_window_size"),
-    num(j, "total_input_tokens"), num(j, "total_output_tokens"),
+    num(j, "used_tokens", ""), num(j, "total_input_tokens"),
+    num(j, "total_output_tokens"),
     num(j, "total_cache_read_input_tokens"),
     num(j, "total_cache_creation_input_tokens")
 }
@@ -46,10 +47,10 @@ function num(s, key, dflt, re, v) {
   }
   return dflt
 }
-END { if (NR == 0) printf "?\037~\0370\0370\0370\0370\0370\0370\037guard\n" }
+END { if (NR == 0) printf "?\037~\0370\0370\0370\0370\0370\0370\0370\037guard\n" }
 ')
 
-IFS=$'\037' read -r model cwd used ctx_size tot_in tot_out cache_rd cache_wr _guard <<EOF
+IFS=$'\037' read -r model cwd used ctx_size used_toks tot_in tot_out cache_rd cache_wr _guard <<EOF
 $parsed
 EOF
 
@@ -81,7 +82,13 @@ else
   ce_pct=$(awk "BEGIN { printf \"%.0f\", ($cache_rd / ($tot_in + $cache_rd + $cache_wr)) * 100 }")
 fi
 
-if [ -n "$used" ]; then
+if [ -n "$used_toks" ]; then
+  # used_percentage is rounded to window/100; used_tokens is exact.
+  ctx_used_fmt=$(fmt_num "$used_toks")
+  used_pct=$(awk "BEGIN { printf \"%.0f\", $used + 0 }")
+  ctx_part="${ctx_used_fmt}/${ctx_size_fmt} (${used_pct}%)"
+elif [ -n "$used" ]; then
+  # Older builds' JSON lacks used_tokens: reconstruct (quantized).
   ctx_used_fmt=$(awk "BEGIN { printf \"%.0f\", $ctx_size * $used / 100 }")
   ctx_used_fmt=$(fmt_num "$ctx_used_fmt")
   used_pct=$(awk "BEGIN { printf \"%.0f\", $used }")

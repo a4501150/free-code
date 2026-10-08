@@ -47,6 +47,14 @@ export type StatusLineCommandInput = {
     total_cache_read_input_tokens: number
     context_window_size: number
     current_usage: CurrentUsage | null
+    /**
+     * Exact current-context tokens (input + cache read + cache write) for the
+     * live conversation. Statusline scripts must prefer this over
+     * reconstructing tokens from `used_percentage` — percentage rounding
+     * quantizes the result to context_window_size/100 (5k steps for a 500k
+     * window).
+     */
+    used_tokens: number
     used_percentage: number | null
     remaining_percentage: number | null
   }
