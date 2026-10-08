@@ -575,6 +575,16 @@ export class Node {
   _mfC: Float64Array | null = null
   _mfN = 0
   _mfWr = 0
+  // Definitive dimensions — the size from this node's last performLayout=
+  // true compute. Measure passes (computeFlexBasis) legitimately overwrite
+  // layout.width/height with intrinsic results; when the node is clean and
+  // every ancestor cache-hits, no definitive pass re-runs for it that
+  // generation, so layout.width keeps the intrinsic and the renderer paints
+  // the wrong size. calculateLayout restores these over layout.width/height
+  // before rounding. NaN = never definitively laid out (fresh, or zeroed by
+  // a hide) — the restore walk leaves the current value alone.
+  _defW = NaN
+  _defH = NaN
 
   constructor(config?: Config) {
     this.style = defaultStyle()
@@ -1108,8 +1118,24 @@ export class Node {
     )
     this.layout.left = mar[EDGE_LEFT] + (isDefined(posL) ? posL : 0)
     this.layout.top = mar[EDGE_TOP] + (isDefined(posT) ? posT : 0)
+    restoreDefinitiveDimensions(this)
     roundLayout(this, this.config.pointScaleFactor, 0, 0)
   }
+}
+
+// Measure passes write intrinsic results into layout.width/height (their
+// callers — computeFlexBasis — read them from there). A clean node whose
+// every ancestor cache-hits gets no performLayout=true call that
+// generation, so its layout keeps the last intrinsic instead of its
+// definitive size — restore _defW/_defH (still correct: the node is clean,
+// so nothing that determines its real size changed). Walks the whole tree
+// once per calculateLayout; two number compares per node.
+function restoreDefinitiveDimensions(node: Node): void {
+  if (!Number.isNaN(node._defW)) {
+    node.layout.width = node._defW
+    node.layout.height = node._defH
+  }
+  for (const c of node.children) restoreDefinitiveDimensions(c)
 }
 
 const DEFAULT_CONFIG = createConfig()
@@ -1175,6 +1201,8 @@ function commitCacheOutputs(node: Node, performLayout: boolean): void {
   if (performLayout) {
     node._lOutW = node.layout.width
     node._lOutH = node.layout.height
+    node._defW = node.layout.width
+    node._defH = node.layout.height
   } else {
     node._mOutW = node.layout.width
     node._mOutH = node.layout.height
@@ -2625,6 +2653,10 @@ function zeroLayoutRecursive(node: Node): void {
     c.layout.top = 0
     c.layout.width = 0
     c.layout.height = 0
+    // Hide zeroes the definitive dims too — a hidden node's computed size
+    // is 0, and a stale _defW would resurrect it via the restore walk.
+    c._defW = NaN
+    c._defH = NaN
     // Invalidate layout cache — without this, unhide → calculateLayout finds
     // the child clean (!isDirty_) with _hasL intact, hits the cache at line
     // ~1086, restores stale _lOutW/_lOutH, and returns early — skipping the
@@ -2651,12 +2683,16 @@ function collectLayoutChildren(node: Node, flow: Node[], abs: Node[]): void {
       c.layout.top = 0
       c.layout.width = 0
       c.layout.height = 0
+      c._defW = NaN
+      c._defH = NaN
       zeroLayoutRecursive(c)
     } else if (disp === Display.Contents) {
       c.layout.left = 0
       c.layout.top = 0
       c.layout.width = 0
       c.layout.height = 0
+      c._defW = NaN
+      c._defH = NaN
       // Recurse — nested display:contents lifts all the way up. The contents
       // node's own margin/padding/position/dimensions are ignored.
       collectLayoutChildren(c, flow, abs)
