@@ -8,6 +8,7 @@ import { LogSelector } from '../../components/LogSelector.js'
 import { MessageResponse } from '../../components/MessageResponse.js'
 import { Spinner } from '../../components/Spinner.js'
 import { useIsInsideModal } from '../../context/modalContext.js'
+import { useResumeSessionLogs } from '../../hooks/useResumeSessionLogs.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { setClipboard } from '../../ink/termio/osc.js'
 import { Box, Text } from '../../ink.js'
@@ -22,7 +23,6 @@ import {
   getSessionIdFromLog,
   isCustomTitleEnabled,
   isLiteLog,
-  loadAllProjectsMessageLogs,
   loadFullLog,
   loadSameRepoMessageLogs,
   searchSessionsByCustomTitle,
@@ -82,47 +82,38 @@ function ResumeCommand({
     entrypoint: ResumeEntrypoint,
   ) => Promise<void>
 }): React.ReactNode {
-  const [logs, setLogs] = React.useState<LogOption[]>([])
-  const [worktreePaths, setWorktreePaths] = React.useState<string[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const [worktreePaths, setWorktreePaths] = React.useState<string[] | null>(
+    null,
+  )
   const [resuming, setResuming] = React.useState(false)
-  const [showAllProjects, setShowAllProjects] = React.useState(false)
   const { rows } = useTerminalSize()
   const insideModal = useIsInsideModal()
+  const {
+    logs,
+    loading,
+    showAllProjects,
+    loadMoreLogs,
+    toggleAllProjects,
+    reload,
+  } = useResumeSessionLogs({
+    worktreePaths,
+    onError: () => onDone('Failed to load conversations'),
+  })
 
-  const loadLogs = React.useCallback(
-    async (allProjects: boolean, paths: string[]) => {
-      setLoading(true)
-      try {
-        const allLogs = allProjects
-          ? await loadAllProjectsMessageLogs()
-          : await loadSameRepoMessageLogs(paths)
-        // An empty list is not an error: LogSelector renders its own empty
-        // state, which is the only way to reach Ctrl+A (show all projects).
-        setLogs(filterResumableSessions(allLogs, getSessionId()))
-      } catch (_err) {
-        onDone('Failed to load conversations')
-      } finally {
-        setLoading(false)
-      }
-    },
-    [onDone],
+  // Same as the --resume startup screen, minus the current session.
+  const resumableLogs = React.useMemo(
+    () => filterResumableSessions(logs, getSessionId()),
+    [logs],
   )
 
   React.useEffect(() => {
-    async function init() {
-      const paths = await getWorktreePaths(getOriginalCwd())
-      setWorktreePaths(paths)
-      void loadLogs(false, paths)
-    }
-    void init()
-  }, [loadLogs])
-
-  const handleToggleAllProjects = React.useCallback(() => {
-    const newValue = !showAllProjects
-    setShowAllProjects(newValue)
-    void loadLogs(newValue, worktreePaths)
-  }, [showAllProjects, loadLogs, worktreePaths])
+    void getWorktreePaths(getOriginalCwd())
+      .then(setWorktreePaths)
+      .catch(error => {
+        logError(error)
+        setWorktreePaths([])
+      })
+  }, [])
 
   async function handleSelect(log: LogOption) {
     const sessionId = validateUuid(getSessionIdFromLog(log))
@@ -134,11 +125,12 @@ function ResumeCommand({
     // Load full messages for lite logs
     const fullLog = isLiteLog(log) ? await loadFullLog(log) : log
 
-    // Check if this conversation is from a different directory
+    // Check if this conversation is from a different directory. The picker is
+    // only reachable after loading, which waits for worktree paths to resolve.
     const crossProjectCheck = checkCrossProjectResume(
       fullLog,
       showAllProjects,
-      worktreePaths,
+      worktreePaths ?? [],
     )
     if (crossProjectCheck.isCrossProject) {
       if (crossProjectCheck.isSameRepoWorktree) {
@@ -197,13 +189,14 @@ function ResumeCommand({
 
   return (
     <LogSelector
-      logs={logs}
+      logs={resumableLogs}
       maxHeight={insideModal ? Math.floor(rows / 2) : rows - 2}
       onCancel={handleCancel}
       onSelect={handleSelect}
-      onLogsChanged={() => loadLogs(showAllProjects, worktreePaths)}
+      onLogsChanged={reload}
+      onLoadMore={loadMoreLogs}
       showAllProjects={showAllProjects}
-      onToggleAllProjects={handleToggleAllProjects}
+      onToggleAllProjects={toggleAllProjects}
       onAgenticSearch={agenticSessionSearch}
     />
   )

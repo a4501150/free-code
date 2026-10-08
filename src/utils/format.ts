@@ -1,6 +1,24 @@
 // Pure display formatters — leaf-safe (no Ink). Width-aware truncation lives in ./truncate.ts.
 
+import { homedir } from 'os'
+
 import { getRelativeTimeFormat, getTimeZone } from './intl.js'
+
+const HOME = homedir()
+
+/**
+ * Collapses the user's home directory prefix to `~` for display.
+ * @example collapseHomePath('/Users/me/src/app') → '~/src/app'
+ */
+export function collapseHomePath(path: string): string {
+  if (path === HOME) {
+    return '~'
+  }
+  if (path.startsWith(HOME + '/') || path.startsWith(HOME + '\\')) {
+    return '~' + path.slice(HOME.length)
+  }
+  return path
+}
 
 /**
  * Formats a byte count to a human-readable string (KB, MB, GB).

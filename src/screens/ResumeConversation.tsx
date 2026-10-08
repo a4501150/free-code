@@ -9,6 +9,7 @@ import {
   type ResumeSessionConflictChoice,
 } from '../components/ResumeSessionConflictDialog.js'
 import { Spinner } from '../components/Spinner.js'
+import { useResumeSessionLogs } from '../hooks/useResumeSessionLogs.js'
 import { setClipboard } from '../ink/termio/osc.js'
 import { Box, Text } from '../ink.js'
 import type {
@@ -37,14 +38,7 @@ import {
   type ResumeSessionConflict,
   restoreAgentFromSession,
 } from '../utils/sessionRestore.js'
-import {
-  enrichLogs,
-  isCustomTitleEnabled,
-  loadAllProjectsMessageLogsProgressive,
-  loadSameRepoMessageLogsProgressive,
-  saveMode,
-  type SessionLogResult,
-} from '../utils/sessionStorage.js'
+import { isCustomTitleEnabled, saveMode } from '../utils/sessionStorage.js'
 import * as loadAgentsDirNs from '../tools/AgentTool/loadAgentsDir.js'
 import type { ThinkingConfig } from '../utils/thinking.js'
 import type { ContentReplacementRecord } from '../utils/toolResultStorage.js'
@@ -108,10 +102,15 @@ export function ResumeConversation({
   const { rows } = useTerminalSize()
   const agentDefinitions = useAppState(s => s.agentDefinitions)
   const setAppState = useSetAppState()
-  const [logs, setLogs] = React.useState<LogOption[]>([])
-  const [loading, setLoading] = React.useState(true)
   const [resuming, setResuming] = React.useState(false)
-  const [showAllProjects, setShowAllProjects] = React.useState(false)
+  const {
+    logs,
+    loading,
+    showAllProjects,
+    loadMoreLogs,
+    toggleAllProjects,
+    reload,
+  } = useResumeSessionLogs({ worktreePaths })
   const [resumeData, setResumeData] = React.useState<{
     messages: Message[]
     fileHistorySnapshots?: FileHistorySnapshot[]
@@ -128,10 +127,6 @@ export function ResumeConversation({
     resolve: (choice: ResumeSessionConflictChoice) => void
   } | null>(null)
   const [joinPid, setJoinPid] = React.useState<number | null>(null)
-  const sessionLogResultRef = React.useRef<SessionLogResult | null>(null)
-  // Mirror of logs.length so loadMoreLogs can compute value indices outside
-  // the setLogs updater (keeping it pure per React's contract).
-  const logCountRef = React.useRef(0)
 
   const filteredLogs = React.useMemo(() => {
     let result = logs.filter(l => !l.isSidechain)
@@ -150,69 +145,6 @@ export function ResumeConversation({
     return result
   }, [logs, filterByPr])
   const isResumeWithRenameEnabled = isCustomTitleEnabled()
-
-  React.useEffect(() => {
-    loadSameRepoMessageLogsProgressive(worktreePaths)
-      .then(result => {
-        sessionLogResultRef.current = result
-        logCountRef.current = result.logs.length
-        setLogs(result.logs)
-        setLoading(false)
-      })
-      .catch(error => {
-        logError(error)
-        setLoading(false)
-      })
-  }, [worktreePaths])
-
-  const loadMoreLogs = React.useCallback((count: number) => {
-    const ref = sessionLogResultRef.current
-    if (!ref || ref.nextIndex >= ref.allStatLogs.length) return
-
-    void enrichLogs(ref.allStatLogs, ref.nextIndex, count).then(result => {
-      ref.nextIndex = result.nextIndex
-      if (result.logs.length > 0) {
-        // enrichLogs returns fresh unshared objects — safe to mutate in place.
-        // Offset comes from logCountRef so the setLogs updater stays pure.
-        const offset = logCountRef.current
-        result.logs.forEach((log, i) => {
-          log.value = offset + i
-        })
-        setLogs(prev => prev.concat(result.logs))
-        logCountRef.current += result.logs.length
-      } else if (ref.nextIndex < ref.allStatLogs.length) {
-        loadMoreLogs(count)
-      }
-    })
-  }, [])
-
-  const loadLogs = React.useCallback(
-    (allProjects: boolean) => {
-      setLoading(true)
-      const promise = allProjects
-        ? loadAllProjectsMessageLogsProgressive()
-        : loadSameRepoMessageLogsProgressive(worktreePaths)
-      promise
-        .then(result => {
-          sessionLogResultRef.current = result
-          logCountRef.current = result.logs.length
-          setLogs(result.logs)
-        })
-        .catch(error => {
-          logError(error)
-        })
-        .finally(() => {
-          setLoading(false)
-        })
-    },
-    [worktreePaths],
-  )
-
-  const handleToggleAllProjects = React.useCallback(() => {
-    const newValue = !showAllProjects
-    setShowAllProjects(newValue)
-    loadLogs(newValue)
-  }, [showAllProjects, loadLogs])
 
   function onCancel() {
     // eslint-disable-next-line custom-rules/no-process-exit
@@ -312,7 +244,6 @@ export function ResumeConversation({
       }
       void updateSessionName(result.agentName)
 
-      setLogs([])
       setResumeData({
         messages: result.messages,
         fileHistorySnapshots: result.fileHistorySnapshots,
@@ -404,13 +335,11 @@ export function ResumeConversation({
       maxHeight={rows}
       onCancel={onCancel}
       onSelect={onSelect}
-      onLogsChanged={
-        isResumeWithRenameEnabled ? () => loadLogs(showAllProjects) : undefined
-      }
+      onLogsChanged={isResumeWithRenameEnabled ? reload : undefined}
       onLoadMore={loadMoreLogs}
       initialSearchQuery={initialSearchQuery}
       showAllProjects={showAllProjects}
-      onToggleAllProjects={handleToggleAllProjects}
+      onToggleAllProjects={toggleAllProjects}
       onAgenticSearch={agenticSessionSearch}
     />
   )

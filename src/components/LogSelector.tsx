@@ -1,6 +1,5 @@
 import chalk from 'chalk'
 import figures from 'figures'
-import { basename } from 'node:path'
 import React from 'react'
 import { getOriginalCwd, getSessionId } from '../bootstrap/state.js'
 import { useExitOnCtrlCDWithKeybindings } from '../hooks/useExitOnCtrlCDWithKeybindings.js'
@@ -10,9 +9,14 @@ import { applyColor } from '../ink/colorize.js'
 import type { Color } from '../ink/styles.js'
 import { Box, Text, useInput, useTerminalFocus, useTheme } from '../ink.js'
 import { useKeybinding } from '../keybindings/useKeybinding.js'
+import { useShortcutDisplay } from '../keybindings/useShortcutDisplay.js'
 
 import type { LogOption } from '../types/logs.js'
-import { formatLogMetadata, truncateToWidth } from '../utils/format.js'
+import {
+  collapseHomePath,
+  formatLogMetadata,
+  truncateToWidth,
+} from '../utils/format.js'
 import { getWorktreePaths } from '../utils/getWorktreePaths.js'
 import { getBranch } from '../utils/git.js'
 import { getLogDisplayTitle } from '../utils/log.js'
@@ -23,11 +27,8 @@ import {
   saveCustomTitle,
 } from '../utils/sessionStorage.js'
 import { getTheme } from '../utils/theme.js'
-import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js'
 import { Select } from './CustomSelect/select.js'
-import { Byline } from './design-system/Byline.js'
 import { Divider } from './design-system/Divider.js'
-import { KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js'
 import { SearchBox } from './SearchBox.js'
 import { SessionPreview } from './SessionPreview.js'
 import { Spinner } from './Spinner.js'
@@ -163,7 +164,9 @@ function buildLogMetadata(
   const childPadding = isChild ? '    ' : '' // 4 spaces to match '  ▸ '
   const baseMetadata = formatLogMetadata(log)
   const projectSuffix =
-    showProjectPath && log.projectPath ? ` · ${log.projectPath}` : ''
+    showProjectPath && log.projectPath
+      ? ` · ${collapseHomePath(log.projectPath)}`
+      : ''
   return childPadding + baseMetadata + projectSuffix
 }
 
@@ -210,6 +213,11 @@ export function LogSelector({
   const [previewLog, setPreviewLog] = React.useState<LogOption | null>(null)
   const prevFocusedIdRef = React.useRef<string | null>(null)
   const [selectedTagIndex, setSelectedTagIndex] = React.useState(0)
+  // Display text for the (possibly user-rebound) cancel shortcut, used in the
+  // footer hint strings. Rename mode binds confirm:no under the Settings
+  // context; everything else uses Confirmation.
+  const escHint = useShortcutDisplay('confirm:no', 'Confirmation')
+  const escHintSettings = useShortcutDisplay('confirm:no', 'Settings')
 
   // Agentic search state
   const [agenticSearchState, setAgenticSearchState] =
@@ -263,9 +271,6 @@ export function LogSelector({
       : 0
   const selectedTab = tagTabs[effectiveTagIndex]
   const tagFilter = selectedTab === 'All' ? undefined : selectedTab
-
-  // Tag tabs are now a single line with horizontal scrolling
-  const tagTabsLines = hasTags ? 1 : 0
 
   // Base filtering (instant) - applies tag, branch, and resume filters
   const baseFilteredLogs = React.useMemo(() => {
@@ -373,6 +378,7 @@ export function LogSelector({
       return []
     }
 
+    const showProjectPath = showAllProjects || showAllWorktrees
     const sessionGroups = groupLogsBySessionId(displayedLogs)
 
     return Array.from(sessionGroups.entries()).map(
@@ -386,9 +392,7 @@ export function LogSelector({
 
         if (groupLogs.length === 1) {
           // Single log - no children
-          const metadata = buildLogMetadata(latestLog, {
-            showProjectPath: showAllProjects,
-          })
+          const metadata = buildLogMetadata(latestLog, { showProjectPath })
           return {
             id: `log:${sessionId}:0`,
             value: { log: latestLog, indexInFiltered },
@@ -408,7 +412,7 @@ export function LogSelector({
             : null
           const childMetadata = buildLogMetadata(log, {
             isChild: true,
-            showProjectPath: showAllProjects,
+            showProjectPath,
           })
           return {
             id: `log:${sessionId}:${index + 1}`,
@@ -422,7 +426,7 @@ export function LogSelector({
         })
 
         const parentMetadata = buildLogMetadata(latestLog, {
-          showProjectPath: showAllProjects,
+          showProjectPath,
         })
         return {
           id: `group:${sessionId}`,
@@ -444,6 +448,7 @@ export function LogSelector({
     displayedLogs,
     maxLabelWidth,
     showAllProjects,
+    showAllWorktrees,
     snippets,
     highlightColor,
   ])
@@ -463,17 +468,14 @@ export function LogSelector({
         maxLabelWidth,
       )
 
-      const baseDescription = formatLogMetadata(log)
-      const projectSuffix =
-        showAllProjects && log.projectPath ? ` · ${log.projectPath}` : ''
+      const showProjectPath = showAllProjects || showAllWorktrees
+      const metadata = buildLogMetadata(log, { showProjectPath })
       const snippet = snippets.get(log)
       const snippetStr = snippet ? formatSnippet(snippet, highlightColor) : null
 
       return {
         label: summary,
-        description: snippetStr
-          ? `${baseDescription}${projectSuffix}\n  ${snippetStr}`
-          : baseDescription + projectSuffix,
+        description: snippetStr ? `${metadata}\n  ${snippetStr}` : metadata,
         dimDescription: true,
         value: index.toString(),
       }
@@ -484,6 +486,7 @@ export function LogSelector({
     highlightColor,
     maxLabelWidth,
     showAllProjects,
+    showAllWorktrees,
     snippets,
   ])
 
@@ -807,7 +810,12 @@ export function LogSelector({
         } else if (lowerInput === 'r' && key.ctrl && focusedLog) {
           setViewMode('rename')
           setRenameValue('')
-        } else if (lowerInput === 'v' && key.ctrl && focusedLog) {
+        } else if (
+          lowerInput === 'v' &&
+          key.ctrl &&
+          focusedLog &&
+          isResumeWithRenameEnabled
+        ) {
           setPreviewLog(focusedLog)
           setViewMode('preview')
         } else if (
@@ -827,22 +835,25 @@ export function LogSelector({
     { isActive: true },
   )
 
-  const filterIndicators = []
-  if (branchFilterEnabled && currentBranch) {
-    filterIndicators.push(currentBranch)
-  }
-  if (hasMultipleWorktrees && !showAllWorktrees) {
-    filterIndicators.push('current worktree')
-  }
-
-  const showAdditionalFilterLine =
-    filterIndicators.length > 0 && viewMode !== 'search'
+  // Persistent scope line: what set of transcripts the list (and search)
+  // covers. Always rendered — including while searching — so the scope is
+  // never ambiguous.
+  const branchScopeSuffix =
+    branchFilterEnabled && currentBranch ? ` · branch ${currentBranch}` : ''
+  const worktreeScopeSuffix = hasMultipleWorktrees
+    ? showAllWorktrees
+      ? ' · all worktrees'
+      : ' · current worktree'
+    : ''
+  const scopeLabel = showAllProjects
+    ? `ALL PROJECTS${branchScopeSuffix}`
+    : `${collapseHomePath(currentCwd)}${branchScopeSuffix}${worktreeScopeSuffix}`
 
   // Search box takes 3 lines (border top, content, border bottom)
   const searchBoxLines = 3
-  // +1 over the search box for the project-name line
-  const headerLines =
-    6 + searchBoxLines + (showAdditionalFilterLine ? 1 : 0) + tagTabsLines
+  // Non-search-box header lines: divider, blank, title/tag tabs, scope, blank
+  const headerLines = 5 + searchBoxLines
+  // footer divider + hint line
   const footerLines = 2
   const visibleCount = Math.max(
     1,
@@ -871,6 +882,52 @@ export function LogSelector({
       />
     )
   }
+
+  // Pinned footer: a dim divider plus a single hint line, truncated to the
+  // panel width so it can never wrap into the list.
+  const footerHints: string[] = []
+  if (exitState.pending) {
+    footerHints.push(`Press ${exitState.keyName} again to exit`)
+  } else if (viewMode === 'rename') {
+    footerHints.push('Enter to save', `${escHintSettings} to cancel`)
+  } else if (agenticSearchState.status === 'searching') {
+    footerHints.push('Searching with Claude…', `${escHint} to cancel`)
+  } else if (isAgenticSearchOptionFocused) {
+    footerHints.push('Enter to search', '↓ to skip', `${escHint} to cancel`)
+  } else if (viewMode === 'search') {
+    footerHints.push('Type to Search', 'Enter to select', `${escHint} to clear`)
+  } else {
+    if (onToggleAllProjects) {
+      footerHints.push(
+        `Ctrl+A to show ${showAllProjects ? 'current dir' : 'all projects'}`,
+      )
+    }
+    if (currentBranch) {
+      footerHints.push('Ctrl+B to toggle branch')
+    }
+    if (hasMultipleWorktrees) {
+      footerHints.push(
+        `Ctrl+W to show ${showAllWorktrees ? 'current worktree' : 'all worktrees'}`,
+      )
+    }
+    // Preview only renders with the rename/custom-title feature; advertising
+    // it in flat view would trap the user in a phantom mode.
+    if (focusedLog && isResumeWithRenameEnabled) {
+      footerHints.push('Ctrl+V to preview')
+    }
+    if (focusedLog) {
+      footerHints.push('Ctrl+R to rename')
+    }
+    footerHints.push('Type to search', `${escHint} to cancel`)
+    const expandCollapseHint = getExpandCollapseHint()
+    if (expandCollapseHint) {
+      footerHints.push(expandCollapseHint)
+    }
+  }
+  const footerText = truncateToWidth(
+    footerHints.join(' · '),
+    Math.max(20, columns - 2),
+  )
 
   return (
     <Box
@@ -917,15 +974,17 @@ export function LogSelector({
         cursorOffset={searchCursorOffset}
       />
       <Box flexShrink={0} paddingLeft={2}>
-        <Text dimColor>{basename(getOriginalCwd())}</Text>
+        <Text dimColor>
+          Scope:{' '}
+          {showAllProjects ? (
+            <Text bold color="suggestion">
+              {scopeLabel}
+            </Text>
+          ) : (
+            <Text>{scopeLabel}</Text>
+          )}
+        </Text>
       </Box>
-      {filterIndicators.length > 0 && viewMode !== 'search' && (
-        <Box flexShrink={0} paddingLeft={2}>
-          <Text dimColor>
-            <Byline>{filterIndicators}</Byline>
-          </Text>
-        </Box>
-      )}
       <Box flexShrink={0}>
         <Text> </Text>
       </Box>
@@ -1093,96 +1152,11 @@ export function LogSelector({
           onUpFromFirstItem={enterSearchMode}
         />
       )}
-      <Box paddingLeft={2}>
-        {exitState.pending ? (
-          <Text dimColor>Press {exitState.keyName} again to exit</Text>
-        ) : viewMode === 'rename' ? (
-          <Text dimColor>
-            <Byline>
-              <KeyboardShortcutHint shortcut="Enter" action="save" />
-              <ConfigurableShortcutHint
-                action="confirm:no"
-                context="Confirmation"
-                description="cancel"
-              />
-            </Byline>
-          </Text>
-        ) : agenticSearchState.status === 'searching' ? (
-          <Text dimColor>
-            <Byline>
-              <Text>Searching with Claude…</Text>
-              <ConfigurableShortcutHint
-                action="confirm:no"
-                context="Confirmation"
-                description="cancel"
-              />
-            </Byline>
-          </Text>
-        ) : isAgenticSearchOptionFocused ? (
-          <Text dimColor>
-            <Byline>
-              <KeyboardShortcutHint shortcut="Enter" action="search" />
-              <KeyboardShortcutHint shortcut="↓" action="skip" />
-              <ConfigurableShortcutHint
-                action="confirm:no"
-                context="Confirmation"
-                description="cancel"
-              />
-            </Byline>
-          </Text>
-        ) : viewMode === 'search' ? (
-          <Text dimColor>
-            <Byline>
-              <Text>{'Type to Search'}</Text>
-              <KeyboardShortcutHint shortcut="Enter" action="select" />
-              <ConfigurableShortcutHint
-                action="confirm:no"
-                context="Confirmation"
-                description="clear"
-              />
-            </Byline>
-          </Text>
-        ) : (
-          <Text dimColor>
-            <Byline>
-              {onToggleAllProjects && (
-                <KeyboardShortcutHint
-                  shortcut="Ctrl+A"
-                  action={`show ${showAllProjects ? 'current dir' : 'all projects'}`}
-                />
-              )}
-              {currentBranch && (
-                <KeyboardShortcutHint
-                  shortcut="Ctrl+B"
-                  action="toggle branch"
-                />
-              )}
-              {hasMultipleWorktrees && (
-                <KeyboardShortcutHint
-                  shortcut="Ctrl+W"
-                  action={`show ${showAllWorktrees ? 'current worktree' : 'all worktrees'}`}
-                />
-              )}
-              {focusedLog && (
-                <KeyboardShortcutHint shortcut="Ctrl+V" action="preview" />
-              )}
-              {focusedLog && (
-                <KeyboardShortcutHint shortcut="Ctrl+R" action="rename" />
-              )}
-              <Text>Type to search</Text>
-              <ConfigurableShortcutHint
-                action="confirm:no"
-                context="Confirmation"
-                description="cancel"
-              />
-              {/* Ternary, not &&: an empty string survives Children.toArray, so
-                  Byline would render a trailing " · " with nothing after it. */}
-              {getExpandCollapseHint() ? (
-                <Text>{getExpandCollapseHint()}</Text>
-              ) : null}
-            </Byline>
-          </Text>
-        )}
+      <Box flexShrink={0} flexDirection="column">
+        <Divider />
+        <Box paddingLeft={2}>
+          <Text dimColor>{footerText}</Text>
+        </Box>
       </Box>
     </Box>
   )
