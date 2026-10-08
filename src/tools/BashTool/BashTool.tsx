@@ -99,7 +99,6 @@ import {
   renderToolUseErrorMessage,
   renderToolUseMessage,
   renderToolUseProgressMessage,
-  renderToolUseQueuedMessage,
 } from './UI.js'
 import {
   buildImageToolResult,
@@ -756,7 +755,6 @@ export const BashTool = buildTool({
   },
   renderToolUseMessage,
   renderToolUseProgressMessage,
-  renderToolUseQueuedMessage,
   renderToolResultMessage,
   // BashToolResultMessage shows <OutputLine content={stdout}> + stderr.
   // UI never shows persistedOutputPath wrapper, backgroundInfo — those are

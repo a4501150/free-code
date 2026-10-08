@@ -171,14 +171,6 @@ export function renderToolUseProgressMessage(
   )
 }
 
-export function renderToolUseQueuedMessage(): React.ReactNode {
-  return (
-    <MessageResponse height={1}>
-      <Text dimColor>Waiting…</Text>
-    </MessageResponse>
-  )
-}
-
 export function renderToolResultMessage(
   content: Out,
   progressMessagesForMessage: ProgressMessage<BashProgress>[],
