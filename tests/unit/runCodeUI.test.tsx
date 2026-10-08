@@ -232,6 +232,51 @@ describe('RunCode result and error lines', () => {
     expect(verbose).toContain('echo0')
   })
 
+  test('expanded result shows each call with its full output', async () => {
+    const node = renderToolResultMessage(
+      {
+        segments: [
+          { name: 'mcp__srv__echo', ok: true, output: 'echo:hi\nsecond line' },
+          {
+            name: 'mcp__srv__boom',
+            ok: false,
+            error: 'inner exploded\nfull payload',
+          },
+        ],
+        logs: 'console line',
+      },
+      [],
+      { verbose: true },
+    )
+    const frame = await renderToString(wrap(node))
+    // Per-call outputs and the console block appear in the expanded view;
+    // the collapsed view (tested above) shows neither.
+    expect(frame).toContain('echo:hi')
+    expect(frame).toContain('second line')
+    expect(frame).toContain('full payload')
+    expect(frame).toContain('console line')
+    const collapsed = await renderToString(
+      wrap(
+        renderToolResultMessage(
+          {
+            segments: [
+              {
+                name: 'mcp__srv__echo',
+                ok: true,
+                output: 'echo:hi\nsecond line',
+              },
+            ],
+            logs: 'console line',
+          },
+          [],
+          { verbose: false },
+        ),
+      ),
+    )
+    expect(collapsed).not.toContain('second line')
+    expect(collapsed).not.toContain('console line')
+  })
+
   test('logs-only script reports the logged lines, no calls reports none', async () => {
     const logsFrame = await renderToString(
       wrap(renderToolResultMessage({ segments: [], logs: 'console only' })),

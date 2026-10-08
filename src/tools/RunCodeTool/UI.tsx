@@ -15,6 +15,7 @@ import { FallbackToolUseErrorMessage } from '../../components/FallbackToolUseErr
 import { StatusIcon } from '../../components/design-system/StatusIcon.js'
 import { Message as MessageComponent } from '../../components/Message.js'
 import { MessageResponse } from '../../components/MessageResponse.js'
+import { OutputLine } from '../../components/shell/OutputLine.js'
 import { Byline } from '../../components/design-system/Byline.js'
 import type { ProgressMessage } from '../../types/message.js'
 import type { RunCodeProgress, ToolProgressData } from '../../types/tools.js'
@@ -311,7 +312,43 @@ export function renderToolResultMessage(
       </MessageResponse>
     )
   }
-  const { displayed, hidden } = shownRows(rows, options?.verbose ?? false)
+  if (options?.verbose) {
+    // Expanded view: each call's full output under its status row, plus the
+    // script's console.log block. Segments carry the per-call output text.
+    return (
+      <MessageResponse>
+        <Box flexDirection="column">
+          {output.segments.map((s, i) => (
+            <Box key={`seg_${i}`} flexDirection="column">
+              <Box flexDirection="row">
+                <StatusIcon status={s.ok ? 'success' : 'error'} withSpace />
+                <Text color={s.ok ? undefined : 'error'} wrap="truncate-end">
+                  {displayName(s.name)}
+                  {s.ok ? '' : ' · failed'}
+                </Text>
+              </Box>
+              {s.ok ? (
+                s.output ? (
+                  <OutputLine content={s.output} verbose />
+                ) : (
+                  <Text dimColor>(no output)</Text>
+                )
+              ) : (
+                <OutputLine content={s.error ?? ''} verbose isError />
+              )}
+            </Box>
+          ))}
+          {output.logs.length > 0 && (
+            <>
+              <Text dimColor>Script output:</Text>
+              <OutputLine content={output.logs} verbose />
+            </>
+          )}
+        </Box>
+      </MessageResponse>
+    )
+  }
+  const { displayed, hidden } = shownRows(rows, false)
   const logLines = output.logs.length > 0 ? output.logs.split('\n').length : 0
   return (
     <MessageResponse>
