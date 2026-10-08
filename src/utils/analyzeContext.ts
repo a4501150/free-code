@@ -51,7 +51,7 @@ import { isEnvTruthy } from './envUtils.js'
 import { toError } from './errors.js'
 import { logError } from './log.js'
 import { normalizeMessagesForAPI } from './messages.js'
-import { getRuntimeMainLoopModel } from './model/model.js'
+import { getMainLoopModel, getRuntimeMainLoopModel } from './model/model.js'
 import type { SettingSource } from './settings/constants.js'
 import { jsonStringify } from './slowOperations.js'
 import { buildEffectiveSystemPrompt } from './systemPrompt.js'
@@ -80,6 +80,60 @@ async function countTokensWithFallback(
     `countTokensWithFallback: API returned null, using rough estimate (${tools.length} tools)`,
   )
   return roughTokenCountEstimation(jsonStringify({ messages, tools }))
+}
+
+/**
+ * count_tokens requires a messages array, so single-category counts (system
+ * sections, agent blurbs, tool schemas) ride a placeholder user message
+ * whose framing the real request never pays — that content travels as the
+ * `system` and `tools` params, not as messages. Measure that framing once
+ * per model and subtract it from category counts.
+ *
+ * The message mirrors the anthropic adapter's empty-messages substitution
+ * ({role:'user', content:'foo'}); other adapters' placeholders differ by a
+ * few tokens at most.
+ */
+const placeholderFramingByModel = new Map<string, number>()
+
+export function clearTokenCountBaselines(): void {
+  placeholderFramingByModel.clear()
+}
+
+async function placeholderFramingTokens(): Promise<number> {
+  const model = getMainLoopModel()
+  const cached = placeholderFramingByModel.get(model)
+  if (cached !== undefined) return cached
+  const measured = await countMessagesTokensWithAPI(
+    [{ role: 'user', content: 'foo' }],
+    [],
+  )
+  const framing = measured ?? 0
+  placeholderFramingByModel.set(model, framing)
+  return framing
+}
+
+/**
+ * Apportion a measured total across entries by content size, so a single
+ * batched count call can back a per-entry breakdown. The last entry absorbs
+ * rounding so the parts sum exactly to the total.
+ */
+function apportionTokens(
+  total: number,
+  entries: readonly { content: string }[],
+): number[] {
+  const totalChars = entries.reduce((sum, e) => sum + e.content.length, 0)
+  if (totalChars <= 0) return entries.map(() => 0)
+  const tokens: number[] = []
+  let allocated = 0
+  entries.forEach((entry, i) => {
+    const t =
+      i === entries.length - 1
+        ? Math.max(0, total - allocated)
+        : Math.floor((total * entry.content.length) / totalChars)
+    allocated += t
+    tokens.push(t)
+  })
+  return tokens
 }
 
 interface ContextCategory {
@@ -221,14 +275,21 @@ export async function countToolDefinitionTokens(
       }),
     ),
   )
-  const result = await countTokensWithFallback([], toolSchemas)
-  if (result === null || result === 0) {
-    const toolNames = tools.map(t => t.name).join(', ')
-    logForDebugging(
-      `countToolDefinitionTokens returned ${result} for ${tools.length} tools: ${toolNames.slice(0, 100)}${toolNames.length > 100 ? '...' : ''}`,
-    )
+  const result = await countMessagesTokensWithAPI([], toolSchemas)
+  if (result !== null) {
+    // Tools-only counts carry a placeholder user message (the counting API
+    // requires messages) whose framing the real request never pays — the
+    // tools ride the `tools` param. Discount it.
+    const framing = await placeholderFramingTokens()
+    return Math.max(0, result - framing)
   }
-  return result ?? 0
+  const roughEstimate = roughTokenCountEstimation(
+    jsonStringify({ messages: [], tools: toolSchemas }),
+  )
+  logForDebugging(
+    `countToolDefinitionTokens fell back to rough estimate (${tools.length} tools): ${toolSchemas.length} schemas, estimate ${roughEstimate}`,
+  )
+  return roughEstimate
 }
 
 /** Extract a human-readable name from a system prompt section's content */
@@ -272,22 +333,42 @@ async function countSystemTokens(
     return { systemPromptTokens: 0, systemPromptSections: [] }
   }
 
-  const systemTokenCounts = await Promise.all(
-    namedEntries.map(({ content }) =>
-      countTokensWithFallback([{ role: 'user', content }], []),
-    ),
+  // One count call for the whole prompt instead of one per section — each
+  // call pays the counting message's framing overhead, so N calls inflated
+  // the total by N x overhead. Section detail is apportioned from the
+  // measured total by content size.
+  const apiTotal = await countMessagesTokensWithAPI(
+    [
+      {
+        role: 'user',
+        content: namedEntries.map(({ content }) => content).join('\n\n'),
+      },
+    ],
+    [],
   )
+
+  let systemPromptTokens: number
+  let sectionTokens: number[]
+  if (apiTotal !== null) {
+    // The message wrapper is never part of the real request — the system
+    // prompt rides the `system` param — so discount its framing.
+    const framing = await placeholderFramingTokens()
+    systemPromptTokens = Math.max(0, apiTotal - framing)
+    sectionTokens = apportionTokens(systemPromptTokens, namedEntries)
+  } else {
+    // API unavailable — per-section rough estimates (chars/4) carry no
+    // framing to discount.
+    sectionTokens = namedEntries.map(({ content }) =>
+      roughTokenCountEstimation(content),
+    )
+    systemPromptTokens = sectionTokens.reduce((sum, t) => sum + t, 0)
+  }
 
   const systemPromptSections: SystemPromptSectionDetail[] = namedEntries.map(
     (entry, i) => ({
       name: entry.name,
-      tokens: systemTokenCounts[i] || 0,
+      tokens: sectionTokens[i] ?? 0,
     }),
-  )
-
-  const systemPromptTokens = systemTokenCounts.reduce(
-    (sum: number, tokens) => sum + (tokens || 0),
-    0,
   )
 
   return { systemPromptTokens, systemPromptSections }
@@ -303,35 +384,49 @@ async function countMemoryFileTokens(): Promise<{
   }
 
   const memoryFilesData = filterInjectedMemoryFiles(await getMemoryFiles())
-  const memoryFileDetails: MemoryFile[] = []
-  let claudeMdTokens = 0
-
   if (memoryFilesData.length < 1) {
-    return {
-      memoryFileDetails: [],
-      claudeMdTokens: 0,
-    }
+    return { memoryFileDetails: [], claudeMdTokens: 0 }
   }
 
-  const claudeMdTokenCounts = await Promise.all(
-    memoryFilesData.map(async file => {
-      const tokens = await countTokensWithFallback(
-        [{ role: 'user', content: file.content }],
-        [],
-      )
-
-      return { file, tokens: tokens || 0 }
-    }),
+  // One count call for all files instead of one per file (each call pays the
+  // counting message's framing overhead). Per-file detail is apportioned
+  // from the measured total by content size.
+  const apiTotal = await countMessagesTokensWithAPI(
+    [
+      {
+        role: 'user',
+        content: memoryFilesData.map(file => file.content).join('\n\n'),
+      },
+    ],
+    [],
   )
 
-  for (const { file, tokens } of claudeMdTokenCounts) {
+  let fileTokens: number[]
+  if (apiTotal !== null) {
+    // Memory files ride the `system` param, so the counting message's
+    // framing is never paid by the real request — discount it.
+    const framing = await placeholderFramingTokens()
+    fileTokens = apportionTokens(
+      Math.max(0, apiTotal - framing),
+      memoryFilesData,
+    )
+  } else {
+    fileTokens = memoryFilesData.map(file =>
+      roughTokenCountEstimation(file.content),
+    )
+  }
+
+  const memoryFileDetails: MemoryFile[] = []
+  let claudeMdTokens = 0
+  memoryFilesData.forEach((file, i) => {
+    const tokens = fileTokens[i] || 0
     claudeMdTokens += tokens
     memoryFileDetails.push({
       path: file.path,
       type: file.type,
       tokens,
     })
-  }
+  })
 
   return { claudeMdTokens, memoryFileDetails }
 }
@@ -632,23 +727,34 @@ async function countAgentTokens(agentDefinitions: {
   const allAgents = agentDefinitions.activeAgents
   const agentDetails: Agent[] = []
   let agentTokens = 0
+  if (allAgents.length < 1) {
+    return { agentTokens, agentDetails }
+  }
 
-  const tokenCounts = await Promise.all(
-    allAgents.map(agent =>
-      countTokensWithFallback(
-        [
-          {
-            role: 'user',
-            content: [agent.agentType, agent.whenToUse].join(' '),
-          },
-        ],
-        [],
-      ),
-    ),
+  // One count call for all agent blurbs instead of one per agent (each call
+  // pays the counting message's framing overhead). Per-agent detail is
+  // apportioned from the measured total by content size.
+  const blurbs = allAgents.map(agent =>
+    [agent.agentType, agent.whenToUse].join(' '),
+  )
+  const apiTotal = await countMessagesTokensWithAPI(
+    [{ role: 'user', content: blurbs.join('\n\n') }],
+    [],
   )
 
+  let agentTokenCounts: number[]
+  if (apiTotal !== null) {
+    const framing = await placeholderFramingTokens()
+    agentTokenCounts = apportionTokens(
+      Math.max(0, apiTotal - framing),
+      blurbs.map(content => ({ content })),
+    )
+  } else {
+    agentTokenCounts = blurbs.map(content => roughTokenCountEstimation(content))
+  }
+
   for (const [i, agent] of allAgents.entries()) {
-    const tokens = tokenCounts[i] || 0
+    const tokens = agentTokenCounts[i] || 0
     if (agent.source !== 'built-in') {
       agentTokens += tokens || 0
     }
