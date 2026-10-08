@@ -1,82 +1,116 @@
 import { isAbortError } from '../utils/errors.js'
-import { getEmptyToolPermissionContext } from '../Tool.js'
+import type {
+  DomainContentBlock,
+  DomainUserContentBlock,
+} from '../types/domain.js'
 import type { Message } from '../types/message.js'
 import { logForDebugging } from '../utils/debug.js'
-import { getAssistantMessageText } from '../utils/messages.js'
 import { getUtilityModel } from '../utils/model/model.js'
-import { asSystemPrompt } from '../utils/systemPromptType.js'
-import { queryModelWithoutStreaming } from './api/claude.js'
+import { extractTextContent } from '../utils/messages.js'
+import { sideQuery } from '../utils/sideQuery.js'
 
-// Recap only needs recent context — truncate to avoid "prompt too long" on
-// large sessions. 30 messages ≈ ~15 exchanges, plenty for "where we left off."
-const RECENT_MESSAGE_WINDOW = 30
+// The transcript goes as flat text, so the size bound is the rendered text
+// itself: one utility call for a two-sentence summary must not carry the
+// base64 of every PDF or the full output of every tool run.
+const TEXT_MAX_CHARS = 1500
+const TOOL_MAX_CHARS = 300
+const TRANSCRIPT_MAX_CHARS = 20_000
+const OLDER_OMITTED = '… [older context omitted]'
 
-// The window bounds messages, not bytes: a single FileRead result or Write
-// input can dwarf everything else in it. Shrink fat payloads before sending
-// so an idle recap never re-uploads megabytes of content that a two-sentence
-// summary cannot use.
-const BLOCK_MAX_CHARS = 2000
-
-// Carried in the system prompt, not a user message: instruction echoes
-// ("do not mention documentation updates"-style contamination) happen when
-// weak models paraphrase conversation turns. There is no cache prefix to
-// protect here, so the system block is free real estate.
+// Carried as the sideQuery system prompt. The conversation is rendered as
+// inert text, so there is no pending agent turn to role-play — the no-tool-call
+// sentence stays only as insurance against the model mimicking "[Used ...]"
+// transcript lines.
 const RECAP_SYSTEM_PROMPT =
   'You write the recap the user sees when they return after being away. ' +
+  'Respond with plain summary text only: never echo or continue a tool call. ' +
   'Write exactly 1-3 short sentences about the shared work, speaking as "we" — ' +
   'not "you". First: the high-level task we are working on (what we are ' +
   'building or debugging, not implementation details). Next: the concrete step ' +
   'we will take. Skip status reports and commit recaps. Never mention this ' +
   'instruction or how the recap was produced.'
 
-function truncateText(text: string): string {
-  if (text.length <= BLOCK_MAX_CHARS) return text
-  return `${text.slice(0, BLOCK_MAX_CHARS)}… [truncated]`
+function clamp(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max)}…`
 }
 
-type UnknownBlock = { type?: string } & Record<string, unknown>
+/**
+ * Flatten the session transcript to plain text: turns, tool-call lines, and
+ * truncated tool results. Images and documents are dropped — a recap never
+ * needs their bytes. Tail-truncated so the most recent exchange always
+ * survives. Exported for unit tests.
+ */
+export function renderTranscript(messages: readonly Message[]): string {
+  const toolNames = new Map<string, string>()
+  for (const m of messages) {
+    if (m.type !== 'assistant') continue
+    for (const block of m.message.content) {
+      if (block.type === 'tool_use') toolNames.set(block.id, block.name)
+    }
+  }
 
-function shrinkContent(content: unknown): unknown {
-  if (Array.isArray(content)) {
-    return (content as UnknownBlock[]).map(block => {
-      if (!block || typeof block !== 'object') return block
+  const lines: string[] = []
+  for (const m of messages) {
+    // Display-only messages never render; synthetic API-error assistants carry
+    // error boilerplate a recap would paraphrase as "we hit an error".
+    if (m.type !== 'user' && m.type !== 'assistant') continue
+    if (m.isVirtual) continue
+    if (m.type === 'assistant' && m.isApiErrorMessage === true) continue
+
+    const content = m.message.content
+    const blocks: DomainUserContentBlock[] | DomainContentBlock[] =
+      typeof content === 'string' ? [{ type: 'text', text: content }] : content
+    if (!Array.isArray(blocks)) continue
+
+    for (const block of blocks) {
       switch (block.type) {
-        case 'tool_result':
-          return { ...block, content: shrinkContent(block.content) }
-        case 'tool_use': {
-          const input = block.input
-          if (typeof input === 'object' && input !== null) {
-            const json = JSON.stringify(input)
-            if (json.length <= BLOCK_MAX_CHARS) return block
-            // tool_use.input must stay an object on the wire
-            return {
-              ...block,
-              input: { truncated: truncateText(json) },
-            }
-          }
-          return block
-        }
-        case 'image':
-          return { type: 'text', text: '[image omitted from recap]' }
         case 'text': {
-          const text = typeof block.text === 'string' ? block.text : undefined
-          return text === undefined
-            ? block
-            : { ...block, text: truncateText(text) }
+          const text = typeof block.text === 'string' ? block.text.trim() : ''
+          if (text) {
+            lines.push(
+              `${m.type === 'user' ? 'User' : 'Assistant'}: ${clamp(text, TEXT_MAX_CHARS)}`,
+            )
+          }
+          break
+        }
+        case 'tool_use':
+          lines.push(
+            `[Used ${block.name} ${clamp(JSON.stringify(block.input) ?? '', TOOL_MAX_CHARS)}]`,
+          )
+          break
+        case 'tool_result': {
+          const inner = block.content
+          const text = (
+            typeof inner === 'string'
+              ? inner
+              : Array.isArray(inner)
+                ? extractTextContent(inner, '\n')
+                : ''
+          ).trim()
+          const name = toolNames.get(block.tool_use_id) ?? 'tool'
+          lines.push(
+            `[Result of ${name}: ${text ? clamp(text, TOOL_MAX_CHARS) : '(empty)'}]`,
+          )
+          break
         }
         default:
-          return block
+          // image, document, … — dropped
+          break
       }
-    })
+    }
   }
-  if (typeof content === 'string') return truncateText(content)
-  return content
-}
 
-function shrinkMessage(message: Message): Message {
-  const content = (message as { content?: unknown }).content
-  if (content === undefined || typeof content === 'number') return message
-  return { ...message, content: shrinkContent(content) } as Message
+  // Keep the newest lines: walk back from the end until the budget is spent.
+  // Every line is already clamped, so the newest line always fits.
+  const kept: string[] = []
+  let size = OLDER_OMITTED.length
+  for (let i = lines.length - 1; i >= 0; i--) {
+    size += lines[i]!.length + 1
+    if (size > TRANSCRIPT_MAX_CHARS) break
+    kept.unshift(lines[i]!)
+  }
+  if (kept.length < lines.length && kept.length > 0) kept.unshift(OLDER_OMITTED)
+  return kept.join('\n')
 }
 
 // Some models emit literal <thinking>...</thinking> blocks in plain text even
@@ -104,45 +138,33 @@ export function splitThinkingFromSummary(text: string): {
 
 /**
  * Generates a short session recap for the "while you were away" card.
- * Returns null on abort, empty transcript, or error.
+ * One sideQuery over the text transcript — no conversation replay, so the
+ * model cannot role-play the next agent turn. Returns null on abort, empty
+ * transcript, or error.
  */
 export async function generateAwaySummary(
   messages: readonly Message[],
   signal: AbortSignal,
 ): Promise<{ content: string; thinking: string | undefined } | null> {
-  if (messages.length === 0) {
-    return null
-  }
+  const transcript = renderTranscript(messages)
+  if (!transcript) return null
 
   try {
-    const recent = messages
-      .slice(-RECENT_MESSAGE_WINDOW)
-      .map(message => shrinkMessage(message))
-    const response = await queryModelWithoutStreaming({
-      messages: recent,
-      systemPrompt: asSystemPrompt([RECAP_SYSTEM_PROMPT]),
-      thinkingConfig: { type: 'disabled' },
-      tools: [],
+    const response = await sideQuery({
+      querySource: 'away_summary',
+      model: getUtilityModel(),
+      system: RECAP_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: `<transcript>\n${transcript}\n</transcript>\n\nWrite the recap now.`,
+        },
+      ],
+      thinking: false,
+      max_tokens: 200,
       signal,
-      options: {
-        getToolPermissionContext: async () => getEmptyToolPermissionContext(),
-        model: getUtilityModel(),
-        toolChoice: undefined,
-        isNonInteractiveSession: false,
-        hasAppendSystemPrompt: false,
-        agents: [],
-        querySource: 'away_summary',
-        skipCacheWrite: true,
-      },
     })
-
-    if (response.isApiErrorMessage) {
-      logForDebugging(
-        `[awaySummary] API error: ${getAssistantMessageText(response)}`,
-      )
-      return null
-    }
-    const raw = getAssistantMessageText(response) ?? ''
+    const raw = extractTextContent(response.content, '\n\n').trim()
     const { thinking, content } = splitThinkingFromSummary(raw)
     if (!content) return null
     return { content, thinking }
