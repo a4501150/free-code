@@ -5,10 +5,7 @@ function getEnterPlanModeToolPromptExternal(): string {
 
 Skip plan mode for simple fixes, single-function additions, clear requirements, or tasks where the approach is obvious. If you would use ${ASK_USER_QUESTION_TOOL_NAME} to clarify the approach, use EnterPlanMode and then use the ${ASK_USER_QUESTION_TOOL_NAME} to get clarification.
 
-## Important Notes
-
-- This tool REQUIRES user approval - they must consent to entering plan mode
-- If you are unsure whether to use it, choose planning - getting agreement before coding is better than redoing work
+This tool REQUIRES user approval - they must consent to entering plan mode. If you are unsure whether to use it, choose planning - getting agreement before coding is better than redoing work.
 `
 }
 

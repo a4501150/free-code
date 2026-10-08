@@ -116,8 +116,9 @@ ${AGENT_PARALLELISM_GUIDANCE}`
   const backgroundSection = isBackgroundTasksEnabled()
     ? `
 
-When running an agent in the foreground, the ${AGENT_TOOL_NAME} tool will block and return once the agent finished, with its final report as this call's tool result. When running an agent in the background, it returns immediately with the agent's ID; the agent keeps running until it finishes and you will receive a system task notification carrying its report — no waiting or polling.
-Until that notification arrives you know nothing about what the backgrounded subagent found or performed, so report "subagent is still running" when you have not received it, never a guess. Do not Read or tail the agent's output file while it runs — it is the agent's full transcript, and reading it brings the subagent's tool output back into your context.
+Two run patterns:
+- Foreground (default): the ${AGENT_TOOL_NAME} tool blocks and returns once the agent finished, with its final report as this call's tool result.
+- Background (\`run_in_background: true\`): returns immediately with the agent's ID; the agent keeps running and you will receive a system task notification carrying its report — no waiting or polling. Until that notification arrives you know nothing about what the backgrounded subagent found or performed, so report "subagent is still running" when you have not received it, never a guess. Do not Read or tail the agent's output file while it runs — it is the agent's full transcript, and reading it brings the subagent's tool output back into your context.
 
 Backgrounding is not a parallelism mechanism — it only avoids blocking; parallelism is the single-message multi-use pattern above.`
     : ''
@@ -134,9 +135,5 @@ Backgrounding is not a parallelism mechanism — it only avoids blocking; parall
   // always in the schema, so they need no bullet here.
   return `${shared}${backgroundSection}
 
- - Do not use ${AGENT_TOOL_NAME} for tasks you can handle directly (reading specific files, targeted searches) or for tasks unrelated to the listed agent descriptions.
- - ${forkAvailable ? 'Any agent other than a fork starts with zero context. ' : ''}Brief the agent like a colleague who just entered the room — it has not seen this conversation. Explain the goal, what you already ruled out, the exact file paths, and whether to write code or only research. Never delegate understanding: "based on your findings, fix the bug" pushes the reasoning onto the agent.
- - The agent works on its own task list and cannot change yours. Put everything the agent must act on in the prompt, not in a task description it has to look up.
- - The agent returns a single message and the user sees it only by expanding the agent's result, so send a concise summary yourself. Do not use an agent to retrieve full file contents — what it reads is summarized in the handoff; use the Read tool directly.
-- Avoid duplicating work that active agents are already doing. If you delegate research, do not run the same searches yourself.${forkBullet}`
+ - ${forkAvailable ? 'Any agent other than a fork starts with zero context. ' : ''}Brief the agent like a colleague who just entered the room — it has not seen this conversation. Explain the goal, what you already ruled out, the exact file paths, and whether to write code or only research. Never delegate understanding: "based on your findings, fix the bug" pushes the reasoning onto the agent.${forkBullet}`
 }

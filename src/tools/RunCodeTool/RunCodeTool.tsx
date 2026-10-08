@@ -26,12 +26,7 @@ import {
 } from './UI.js'
 
 const inputSchema = z.object({
-  code: z
-    .string()
-    .min(1)
-    .describe(
-      'TypeScript script body. Import catalog tools statically: `import { tool } from "mcp/<server>"` (server files in the tool catalog) or `import { ... } from "freecode:builtins"`. Call them with await; console.log reports findings.',
-    ),
+  code: z.string().min(1).describe('TypeScript script body.'),
   title: z
     .string()
     .optional()

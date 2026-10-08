@@ -213,13 +213,13 @@ export const outputSchema = (() => {
     outputFile: z
       .string()
       .describe(
-        'Path to the agent output file — its full JSONL transcript, kept for the user; do not Read it into your context',
+        'Path to the agent output file — its full JSONL transcript, kept for the user',
       ),
     canReadOutputFile: z
       .boolean()
       .optional()
       .describe(
-        'Whether the calling agent has Read/Bash tools to check progress',
+        'Whether the calling agent has Read/Bash tools (controls which continuation hint the result renders)',
       ),
   })
 

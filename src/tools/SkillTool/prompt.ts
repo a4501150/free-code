@@ -147,11 +147,8 @@ When users ask you to perform tasks, check whether any of the available skills m
 
 When users reference a "slash command" or "/<something>", invoke this tool only if the referenced name appears in the available skills listing.
 
-How to invoke:
-- Use this tool with the exact skill name from the available skills listing and optional arguments
-- Examples: \`skill: "lorem-ipsum", args: "50000"\` (arguments optional); fully qualified plugin names work too: \`skill: "ms-office-suite:pdf"\`
-
 Important:
+- Use the exact skill name from the available skills listing with optional arguments; fully qualified plugin names work too (e.g., \`skill: "ms-office-suite:pdf"\`)
 - Available skills are listed in system-reminder messages in the conversation
 - When a listed skill matches the user's request, this is a BLOCKING REQUIREMENT: after any brief acknowledgment, invoke the relevant Skill tool BEFORE performing substantive work or giving a substantive response about the task
 - NEVER mention a skill without calling this tool

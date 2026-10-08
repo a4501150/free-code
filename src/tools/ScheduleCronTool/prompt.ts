@@ -41,22 +41,10 @@ Jobs live only in this Claude session — nothing is written to disk, and the jo
     ? 'Durable jobs resume automatically on next launch. One-shot jobs whose time passed are queued for a late run. Session-only jobs end with the process. '
     : ''
 
-  return `Schedule a prompt to be enqueued at a future time. Use for both recurring schedules and one-shot reminders.
+  return `Schedule a prompt to be enqueued at a future time — recurring on a cron schedule or once at a specific time. Uses standard 5-field cron in the user's local timezone: minute hour day-of-month month day-of-week ("0 9 * * *" means 9am local — no timezone conversion needed).
 
-Uses standard 5-field cron in the user's local timezone: minute hour day-of-month month day-of-week. "0 9 * * *" means 9am local — no timezone conversion needed.
-
-## One-shot tasks (recurring: false)
-
-For "remind me at X" or "at <time>, do Y" requests. The job fires once, then deletes itself.
-Pin minute/hour/day-of-month/month to specific values:
-  "remind me at 2:30pm today to check the deploy" → cron: "30 14 <today_dom> <today_month> *", recurring: false
-  "tomorrow morning, run the deploy check" → cron: "57 8 <tomorrow_dom> <tomorrow_month> *", recurring: false
-
-## Recurring jobs (recurring: true, the default)
-
-For "every N minutes" / "every hour" / "weekdays at 9am" requests:
-  "*/5 * * * *" (every 5 min), "0 * * * *" (hourly), "0 9 * * 1-5" (weekdays at 9am local)
-
+- Recurring (recurring: true, the default): for "every N minutes" / "every hour" / "weekdays at 9am" — "*/5 * * * *", "0 * * * *", "0 9 * * 1-5".
+- One-shot (recurring: false): for "remind me at X" or "at <time>, do Y" — fires once then deletes itself. Pin minute/hour/day-of-month/month to the target time: "remind me at 2:30pm today" → "30 14 <today_dom> <today_month> *", "tomorrow morning, run the deploy check" → "57 8 <tomorrow_dom> <tomorrow_month> *".
 
 ${durabilitySection}
 

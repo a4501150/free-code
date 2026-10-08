@@ -1,20 +1,7 @@
 export const DESCRIPTION = 'Send a message to another agent or session'
 
 export function getPrompt(): string {
-  return `
-# SendMessage
+  return `Send a message to another agent or session. Your plain text output is NOT visible to other agents — to communicate, you MUST call this tool.
 
-Send a message to another agent or session.
-
-\`\`\`json
-{"to": "researcher", "message": "start on task #1"}
-\`\`\`
-
-| \`to\` | |
-|---|---|
-| \`"agent-a1b"\` or a registered agent name | A subagent you spawned with the Agent tool. Running agents get the message at their next tool round; stopped or finished agents are resumed from their transcript. |
-| \`"session:<id>"\` | Another live session, delivered to it as a prompt turn. Discover targets (and their IDs) with ListAgents. |
-
-Your plain text output is NOT visible to other agents. To communicate, you MUST call this tool. Messages from workers arrive automatically as notifications; you do not need to check an inbox. Refer to agents by name or ID, never by UUID. When you relay a message, do not quote the original. The original is already shown to the user.
-`.trim()
+A stopped or finished subagent is resumed from its transcript when messaged; discover targets (and their IDs) with ListAgents. Messages from workers arrive automatically as notifications; you do not need to check an inbox. Refer to agents by name or ID, never by UUID. When you relay a message, do not quote the original — it is already shown to the user.`
 }

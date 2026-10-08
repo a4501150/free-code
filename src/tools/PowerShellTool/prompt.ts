@@ -57,8 +57,9 @@ export async function getPrompt(): Promise<string> {
   const backgroundSection = isBackgroundTasksEnabled()
     ? `
 
-When running a command in the foreground, the tool blocks and returns once the command finishes, with its output.
-When running a command in the background (\`run_in_background: true\`), the tool returns immediately with a task ID and an output file path. The command keeps running until it exits or a terminating code or signal is caught, and you will receive a system task notification reporting its status and its output file path. You don't have to do anything while waiting for a backgrounded command: once it completes, the notification is delivered automatically by the harness.`
+Two run patterns:
+- Foreground (default): blocks until the command finishes and returns its output.
+- Background (\`run_in_background: true\`): returns immediately with a task ID and an output file path; a system task notification reports its completion — no waiting or polling.`
     : ''
 
   return `Executes a given PowerShell command and returns its output. Shell state (variables, functions) does not persist between commands.${backgroundSection}

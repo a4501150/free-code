@@ -16,16 +16,8 @@ import { getInitialSettings } from '../../utils/settings/settings.js'
 
 const PUSH_NOTIFICATION_TOOL_NAME = 'PushNotification'
 const DESCRIPTION = 'Send a push notification to the user'
-const PROMPT = `Send a push notification to the user's device/terminal.
-
-Use this to alert the user about:
-- Task completion ("your build finished", "PR is ready for review")
-- Input needed ("waiting for your decision on X")
-- Important events ("deployment succeeded", "tests passed")
-
-The notification will be delivered via the user's configured notification channel (terminal bell, iTerm2, Kitty, system notifications, etc.). Delivery is not guaranteed — check the tool result (sent: true/false) before claiming the user was notified.
-
-Each notification interrupts the user — only use it when an interruption is warranted (e.g., a task they care about has finished, or input is needed and you cannot continue without it).`
+const PROMPT = `Send a push notification to the user's device/terminal — for task completion, input needed, or important events.
+Delivery is not guaranteed — check the tool result (sent: true/false) before claiming the user was notified. Each notification interrupts the user — only use it when an interruption is warranted (e.g., a task they care about has finished, or input is needed and you cannot continue without it).`
 
 const inputSchema = z.strictObject({
   title: z

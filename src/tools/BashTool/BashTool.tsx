@@ -352,11 +352,9 @@ const fullInputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      `Turns the command into a long-running monitor instead of a one-shot command. ` +
+      `Run the command as a long-running monitor instead of a one-shot command. ` +
         `Value is the max notification cadence: a positive number followed by s, m, or h ` +
-        `(e.g. "90s", "5m", "1h"). New output notifies the model at most this often, ` +
-        `and only when the latest output line differs from the last notified line. ` +
-        `Mutually exclusive with run_in_background.`,
+        `(e.g. "90s", "5m", "1h"). Mutually exclusive with run_in_background.`,
     ),
   _simulatedSedEdit: z
     .object({

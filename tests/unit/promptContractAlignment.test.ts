@@ -152,9 +152,7 @@ describe('conditional mode prompt alignment', () => {
     expect(mainPrompt).not.toContain('SLEEP_TOOL_NAME')
     expect(mainPrompt).not.toContain('/<skill-name> is shorthand')
     expect(mainPrompt).not.toContain('For broader codebase exploration')
-    expect(agentPrompt).toContain(
-      'Avoid duplicating work that active agents are already doing',
-    )
+    expect(agentPrompt).toContain('Never delegate understanding')
     expect(agentPrompt).toContain('not a parallelism mechanism')
     expect(agentPrompt).toContain(
       'you will receive a system task notification carrying its report',

@@ -12,7 +12,7 @@ export const MAX_LINES_TO_READ = 2000
 export const DESCRIPTION = 'Read a file from the local filesystem.'
 
 export const LINE_FORMAT_INSTRUCTION =
-  "- Each line is prefixed with its 1-based line number and a colon, then the verbatim line content (for example `12:  return x`). When copying text out of this output for the Edit tool's `old_string` or `new_string`, strip the `N:` prefix — it is not part of the file content."
+  '- Each line is prefixed with its 1-based line number and a colon, then the verbatim line content (for example `12:  return x`). The `N:` prefix is not part of the file content.'
 
 /**
  * Renders the Read tool prompt template.  The caller (FileReadTool) supplies
@@ -25,9 +25,7 @@ export function renderPromptTemplate(
   return `Reads a file from the local filesystem.
 
 Usage:
-- The file_path parameter must be an absolute path, not a relative path
-${maxSizeInstruction ? `- ${maxSizeInstruction}` : ''}
-- For text and source files, provide only \`file_path\` to read the full file. To read a portion, provide \`offset\`, \`limit\`, or both.
+${maxSizeInstruction ? `- ${maxSizeInstruction}\n` : ''}- For text and source files, provide only \`file_path\` to read the full file. To read a portion, provide \`offset\`, \`limit\`, or both.
 ${lineFormat}
 - This tool can read images (for example PNG, JPG) as visual content, Jupyter notebooks (.ipynb, returning all cells with their outputs), and PDF files (.pdf)${
     isPDFSupported()
