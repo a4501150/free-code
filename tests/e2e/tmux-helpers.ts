@@ -602,7 +602,11 @@ function getPermissionOrIdleState(
   if (
     screen.includes('Started in background.') ||
     screen.includes('Ran 1 bash command') ||
-    screen.includes('bash commands')
+    screen.includes('bash commands') ||
+    // A live/pinned monitor replaces the `for shortcuts` hint with the
+    // task pill, so an otherwise-idle CLI with a monitor never matches
+    // readyText — the pill itself is the idle marker.
+    screen.includes('monitor · ↓ to manage')
   ) {
     return 'idle'
   }

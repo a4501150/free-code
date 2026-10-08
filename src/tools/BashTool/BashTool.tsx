@@ -17,7 +17,6 @@ import type {
   SetToolJSXFn,
   ToolCallProgress,
   ToolUseContext,
-  ValidationResult,
 } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import {
@@ -27,7 +26,6 @@ import {
   spawnShellTask,
   unregisterForeground,
 } from '../../tasks/LocalShellTask/LocalShellTask.js'
-import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../../tools/BackgroundTaskStopTool/prompt.js'
 import type { AgentId } from '../../types/ids.js'
 import type { AssistantMessage } from '../../types/message.js'
 import { parseForSecurity } from '../../utils/bash/ast.js'
@@ -58,13 +56,6 @@ import { windowsPathToPosixPath } from '../../utils/windowsPaths.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
 import { semanticNumber } from '../../utils/semanticNumber.js'
 import { EndTruncatingAccumulator } from '../../utils/stringUtils.js'
-import { getMonitorManager } from '../../utils/monitors.js'
-import {
-  notifyIntervalError,
-  parseNotifyIntervalMs,
-} from '../../utils/parseNotifyInterval.js'
-import { wireMonitorNotifications } from '../../tasks/MonitorTask/notifications.js'
-import { registerMonitorTaskState } from '../../tasks/MonitorTask/taskState.js'
 import { BACKGROUND_TASK_NUDGE } from '../../utils/task/backgroundNudge.js'
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js'
 import { TaskOutput } from '../../utils/task/TaskOutput.js'
@@ -347,14 +338,6 @@ const fullInputSchema = z.strictObject({
   run_in_background: semanticBoolean(z.boolean().optional()).describe(
     `Whether to run the command in the background.`,
   ),
-  monitor_notify_freq: z
-    .string()
-    .optional()
-    .describe(
-      `Run the command as a long-running monitor instead of a one-shot command. ` +
-        `Value is the max notification cadence: a positive number followed by s, m, or h ` +
-        `(e.g. "90s", "5m", "1h"). Mutually exclusive with run_in_background.`,
-    ),
   _simulatedSedEdit: z
     .object({
       filePath: z.string(),
@@ -368,12 +351,11 @@ const fullInputSchema = z.strictObject({
 // field set by SedEditPermissionRequest after the user approves a sed edit preview.
 // Exposing it in the schema would let the model bypass permission checks by
 // pairing an innocuous command with an arbitrary file write.
-// Also conditionally remove run_in_background and monitor_notify_freq when
-// background tasks are disabled.
+// Also conditionally remove run_in_background when background tasks are
+// disabled.
 const inputSchema = isBackgroundTasksDisabled
   ? fullInputSchema.omit({
       run_in_background: true,
-      monitor_notify_freq: true,
       _simulatedSedEdit: true,
     })
   : fullInputSchema.omit({ _simulatedSedEdit: true })
@@ -395,12 +377,6 @@ const outputSchema = z.object({
     .string()
     .optional()
     .describe('ID of the background task if command is running in background'),
-  monitorTaskId: z
-    .string()
-    .optional()
-    .describe(
-      'ID of the started monitor when monitor_notify_freq was set (mutually exclusive with backgroundTaskId)',
-    ),
   backgroundedByUser: z
     .boolean()
     .optional()
@@ -540,66 +516,6 @@ async function applySedEdit(
   }
 }
 
-/** Start a monitor from the Bash tool's monitor_notify_freq mode: a
- *  long-running detached command whose changed output is surfaced to the
- *  model as task notifications. validateInput has already verified the
- *  freq parses — the throw below is defense against callers that skip it. */
-async function startMonitor(
-  input: BashToolInput,
-  context: ToolUseContext,
-): Promise<{ data: Out }> {
-  const notifyIntervalMs = parseNotifyIntervalMs(
-    input.monitor_notify_freq ?? '',
-  )
-  if (notifyIntervalMs === undefined) {
-    throw new Error(notifyIntervalError(input.monitor_notify_freq))
-  }
-  const manager = getMonitorManager()
-  const setAppState = context.setAppStateForTasks ?? context.setAppState
-  wireMonitorNotifications(manager, setAppState)
-
-  const label =
-    input.description ?? truncate(input.command, TOOL_SUMMARY_MAX_LENGTH)
-  const monitor = manager.start(input.command, label, {
-    agentId: context.agentId,
-    notifyIntervalMs,
-  })
-  registerMonitorTaskState(monitor, setAppState, context.toolUseId)
-
-  // Give the process a brief moment to produce initial output (e.g. an
-  // immediate error from a bad command), but don't block the turn. Race
-  // a short timeout against the first output line or early exit.
-  await new Promise<void>(resolve => {
-    if (monitor.output.length > 0 || monitor.status !== 'running') {
-      resolve()
-      return
-    }
-    let done = false
-    const finish = () => {
-      if (done) return
-      done = true
-      clearTimeout(timer)
-      clearInterval(checkInterval)
-      resolve()
-    }
-    const checkInterval = setInterval(() => {
-      if (monitor.output.length > 0 || monitor.status !== 'running') finish()
-    }, 20)
-    const timer = setTimeout(finish, 100)
-  })
-
-  const stdout = [...monitor.output].join('\n')
-
-  return {
-    data: {
-      stdout,
-      stderr: '',
-      interrupted: false,
-      monitorTaskId: monitor.id,
-    },
-  }
-}
-
 export const BashTool = buildTool({
   renderPermissionRequest: () => BashPermissionRequest,
 
@@ -616,13 +532,6 @@ export const BashTool = buildTool({
     return this.isReadOnly?.(input) ?? false
   },
   isReadOnly(input) {
-    // Monitor mode is a never-returning detached command — never read-only
-    // (a false positive feeds memory extraction and speculation approval).
-    // The 'in' guard mirrors normalizeInput: the field is absent from the
-    // schema when background tasks are disabled.
-    if ('monitor_notify_freq' in input && input.monitor_notify_freq) {
-      return false
-    }
     const compoundCommandHasCd = isNormalizedCdCommand(input.command)
     const result = checkReadOnlyConstraints(input, compoundCommandHasCd)
     return result.behavior === 'allow'
@@ -681,19 +590,16 @@ export const BashTool = buildTool({
     // Replace \\; with \; (commonly needed for find -exec commands)
     normalizedCommand = normalizedCommand.replace(/\\\\;/g, '\\;')
 
-    // Check for run_in_background and monitor_notify_freq (may not exist
-    // in schema if the backgroundTasksEnabled setting is off)
+    // Check for run_in_background (may not exist in schema if the
+    // backgroundTasksEnabled setting is off)
     const run_in_background =
       'run_in_background' in parsed ? parsed.run_in_background : undefined
-    const monitor_notify_freq =
-      'monitor_notify_freq' in parsed ? parsed.monitor_notify_freq : undefined
 
     return {
       command: normalizedCommand,
       ...(timeout !== undefined && { timeout }),
       ...(description !== undefined && { description }),
       ...(run_in_background !== undefined && { run_in_background }),
-      ...(monitor_notify_freq !== undefined && { monitor_notify_freq }),
     } as z.infer<InputSchema>
   },
   compactParamKeys: ['description', 'command'],
@@ -730,26 +636,6 @@ export const BashTool = buildTool({
       input.description ?? truncate(input.command, TOOL_SUMMARY_MAX_LENGTH)
     return `Running ${desc}`
   },
-  async validateInput(input: BashToolInput): Promise<ValidationResult> {
-    if (input.monitor_notify_freq !== undefined) {
-      if (input.run_in_background === true) {
-        return {
-          result: false,
-          message:
-            'monitor_notify_freq and run_in_background are mutually exclusive: a monitor already runs in the background.',
-          errorCode: 1,
-        }
-      }
-      if (parseNotifyIntervalMs(input.monitor_notify_freq) === undefined) {
-        return {
-          result: false,
-          message: notifyIntervalError(input.monitor_notify_freq),
-          errorCode: 2,
-        }
-      }
-    }
-    return { result: true }
-  },
   async checkPermissions(input, context): Promise<PermissionResult> {
     return bashToolHasPermission(input, context)
   },
@@ -769,7 +655,6 @@ export const BashTool = buildTool({
       stderr,
       isImage,
       backgroundTaskId,
-      monitorTaskId,
       backgroundedByUser,
       assistantAutoBackgrounded,
       structuredContent,
@@ -832,15 +717,10 @@ export const BashTool = buildTool({
       }
     }
 
-    let monitorInfo = ''
-    if (monitorTaskId) {
-      monitorInfo = `Monitor started with ID: ${monitorTaskId}. It runs detached; whenever the latest output line changes you will get a system task notification in a later turn (at most once per the requested interval) — you do not need to wait or poll. Full output file: ${getTaskOutputPath(monitorTaskId)}. Stop it with ${BACKGROUND_TASK_STOP_TOOL_NAME}.`
-    }
-
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
-      content: [processedStdout, errorMessage, backgroundInfo, monitorInfo]
+      content: [processedStdout, errorMessage, backgroundInfo]
         .filter(Boolean)
         .join('\n'),
       is_error: interrupted,
@@ -861,15 +741,6 @@ export const BashTool = buildTool({
         toolUseContext,
         parentMessage,
       )
-    }
-
-    // Monitor mode: the command becomes a long-running detached watch whose
-    // changed output reaches the model as task notifications. Must run
-    // before runShellCommand — the MonitorManager spawns its own detached
-    // child, and the run_in_background path below reuses an already-spawned
-    // foreground ShellCommand (a late branch here would spawn twice).
-    if (input.monitor_notify_freq !== undefined) {
-      return startMonitor(input, toolUseContext)
     }
 
     const { abortController, getAppState, setAppState, setToolJSX } =

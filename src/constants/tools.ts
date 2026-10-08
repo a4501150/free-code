@@ -4,6 +4,7 @@ import { ENTER_PLAN_MODE_TOOL_NAME } from '../tools/EnterPlanModeTool/constants.
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt.js'
 import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../tools/BackgroundTaskStopTool/prompt.js'
+import { MONITOR_TOOL_NAME } from '../tools/MonitorTool/toolName.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { SHELL_TOOL_NAMES } from '../utils/shell/shellToolUtils.js'
 import { FILE_EDIT_TOOL_NAME } from '../tools/FileEditTool/constants.js'
@@ -54,6 +55,9 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
   // queued follow-ups.
   SEND_MESSAGE_TOOL_NAME,
   LIST_AGENTS_TOOL_NAME,
+  // Monitors register against the shared task registry with the worker's
+  // own agentId, so notices route back to the worker that started them.
+  MONITOR_TOOL_NAME,
   ...SHELL_TOOL_NAMES,
   FILE_EDIT_TOOL_NAME,
   FILE_WRITE_TOOL_NAME,

@@ -1,6 +1,6 @@
 /**
- * Parse a human duration string into milliseconds for Bash's
- * monitor_notify_freq parameter. Single-unit only (e.g. "90s", "5m",
+ * Parse a human duration string into milliseconds for the Monitor tool's
+ * notify_interval parameter. Single-unit only (e.g. "90s", "5m",
  * "1h", "1.5h"). Fails fast on anything else — an unparseable value must
  * error, never silently fall back to a default (dead-flag trap).
  */
@@ -31,5 +31,5 @@ export const NOTIFY_INTERVAL_FORMATS =
  *  construction site: validateInput and the defensive call-path throw must
  *  produce the same text. */
 export function notifyIntervalError(value: string | undefined): string {
-  return `Invalid monitor_notify_freq "${value}": expected ${NOTIFY_INTERVAL_FORMATS}.`
+  return `Invalid notify_interval "${value}": expected ${NOTIFY_INTERVAL_FORMATS}.`
 }

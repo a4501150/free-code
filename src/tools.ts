@@ -10,6 +10,7 @@ import { FileReadTool } from './tools/FileReadTool/FileReadTool.js'
 import { FileWriteTool } from './tools/FileWriteTool/FileWriteTool.js'
 import { BackgroundTaskStopTool } from './tools/BackgroundTaskStopTool/BackgroundTaskStopTool.js'
 import { BackgroundTaskListTool } from './tools/BackgroundTaskListTool/BackgroundTaskListTool.js'
+import { MonitorTool } from './tools/MonitorTool/MonitorTool.js'
 import { BriefTool } from './tools/BriefTool/BriefTool.js'
 import { CronCreateTool } from './tools/ScheduleCronTool/CronCreateTool.js'
 import { CronDeleteTool } from './tools/ScheduleCronTool/CronDeleteTool.js'
@@ -93,6 +94,7 @@ export function getAllBaseTools(): Tools {
     FileWriteTool,
     BackgroundTaskStopTool,
     BackgroundTaskListTool,
+    MonitorTool,
     AskUserQuestionTool,
     SkillTool,
     RunCodeTool,

@@ -1,11 +1,12 @@
 /**
- * Monitor-mode Bash E2E
+ * Monitor tool E2E
  *
- * Verifies the monitor_notify_freq parameter on the Bash tool: the command
- * runs detached as a monitor, the tool result carries the monitor task ID,
- * and the model receives a <task-notification> with <task-type>monitor</
- * task-type> on a later auto-fired turn. Also asserts the Monitor /
- * MonitorList / MonitorStop tools are absent from the tool pool.
+ * Verifies the standalone Monitor tool: the command runs detached as a
+ * monitor, the tool result carries the monitor task ID, and the model
+ * receives a <task-notification> with <task-type>monitor</task-type> on a
+ * later auto-fired turn. Also asserts the monitor lifecycle stays on
+ * BackgroundTaskList/BackgroundTaskStop (no MonitorList/MonitorStop tools)
+ * and that Bash no longer exposes a monitor mode.
  *
  * Modeled on background-task-kill-notification.test.ts.
  */
@@ -28,7 +29,7 @@ setDefaultTimeout(180_000)
 
 const test = createLoggingTest(bunTest)
 
-describe('Bash monitor_notify_freq', () => {
+describe('Monitor tool', () => {
   let server: MockAnthropicServer
   let session: TmuxSession
 
@@ -51,11 +52,11 @@ describe('Bash monitor_notify_freq', () => {
       // then stays quiet (the notification fires on the changed line).
       toolUseResponse([
         {
-          name: 'Bash',
+          name: 'Monitor',
           input: {
             command: 'echo monitor-line-alpha; sleep 60',
             description: 'log-tail-probe',
-            monitor_notify_freq: '1s',
+            notify_interval: '1s',
           },
         },
       ]),
@@ -104,14 +105,22 @@ describe('Bash monitor_notify_freq', () => {
       .some(req => /Monitor started with ID: mon_/.test(userTextBlob(req)))
     expect(started).toBe(true)
 
-    // The Monitor tool family is gone from the model-facing tool pool.
+    // The Monitor tool is in the tool pool; lifecycle stays on the
+    // BackgroundTask* pair (no MonitorList/MonitorStop), and Bash has no
+    // monitor mode param.
     const first = server.getRequestLog()[0]
-    const toolNames = ((first.body.tools ?? []) as Array<{ name: string }>).map(
-      t => t.name,
-    )
-    expect(toolNames).not.toContain('Monitor')
+    const tools = (first.body.tools ?? []) as Array<{
+      name: string
+      input_schema?: { properties?: Record<string, unknown> }
+    }>
+    const toolNames = tools.map(t => t.name)
+    expect(toolNames).toContain('Monitor')
     expect(toolNames).not.toContain('MonitorList')
     expect(toolNames).not.toContain('MonitorStop')
     expect(toolNames).toContain('BackgroundTaskStop')
+    const bash = tools.find(t => t.name === 'Bash')
+    expect(Object.keys(bash?.input_schema?.properties ?? {})).not.toContain(
+      'monitor_notify_freq',
+    )
   })
 })

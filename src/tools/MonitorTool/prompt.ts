@@ -1,0 +1,13 @@
+import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../BackgroundTaskStopTool/prompt.js'
+import { BACKGROUND_TASK_LIST_TOOL_NAME } from '../BackgroundTaskListTool/constants.js'
+import { NOTIFY_INTERVAL_FORMATS } from '../../utils/parseNotifyInterval.js'
+
+export function getMonitorPrompt(): string {
+  return [
+    'Starts an open-ended watch: the command runs detached and keeps running; new output is surfaced as a system task notification at a turn boundary, not streamed mid-turn. Use it to react to output while it is still arriving — tailing a log, polling a CI job, waiting for a file to change. For a one-shot command whose result you need, use Bash (foreground or `run_in_background`) instead, and never emulate a watch with `sleep` loops in the foreground.',
+    `The \`notify_interval\` parameter (${NOTIFY_INTERVAL_FORMATS}) is the MAXIMUM notification cadence, not a timer — a notification fires only when the latest output line differs from the last notified line, and at most once per interval; identical consecutive lines never notify. The harness enforces the cadence itself: never implement it inside the command with \`sleep\` (no \`sleep 90; check\`, no loop whose sleep matches the interval) — poll world state at whatever rate gives timely detection, run the first check immediately at t=0, and print only when the verdict changes; repeated identical lines cost nothing.`,
+    'At t=0, verify you locked onto the right target: if it is missing, already in the expected terminal state, or a different entity than you meant (say, the latest run of the wrong workflow), print that finding and exit immediately instead of watching silently. An exit that prints nothing is a failed monitor — every exit path (verdict reached, wrong or already-terminal target at t=0, deadline expired) must print exactly one short line stating the outcome.',
+    "Every notification costs a full agent turn: wrap the command so it prints only verdicts and errors — never raw build/compile output (bazel, webpack, gradle). End by a hard deadline. When a monitor notification arrives, quote its verdict line in your reply — the verdict reaches the conversation only through you, and the user should not have to open the task panel to learn the outcome. Poll authoritative world state for an exact match instead of watching one object's lifetime or grepping a loose prefix, and capture `rc=$?` before any pipe, because `cmd | tail; echo $?` reports tail's status, not the command's.",
+    `Check status on demand with ${BACKGROUND_TASK_LIST_TOOL_NAME} or by reading the output file; stop the monitor with ${BACKGROUND_TASK_STOP_TOOL_NAME}.`,
+  ].join('\n')
+}

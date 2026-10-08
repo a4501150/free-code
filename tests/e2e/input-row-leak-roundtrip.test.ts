@@ -88,11 +88,11 @@ describe('input row leak after dialog round-trip', () => {
           server.reset([
             toolUseResponse([
               {
-                name: 'Bash',
+                name: 'Monitor',
                 input: {
                   command:
                     'for i in 1 2 3 4 5 6 7 8 9 10 11 12; do echo "monitor tick $i"; sleep 2; done',
-                  monitor_notify_freq: '3s',
+                  notify_interval: '3s',
                 },
               },
             ]),
