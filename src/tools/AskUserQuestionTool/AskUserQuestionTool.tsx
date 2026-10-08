@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { useMemo } from 'react'
 import { AskUserQuestionPermissionRequest } from '../../components/permissions/AskUserQuestionPermissionRequest/AskUserQuestionPermissionRequest.js'
 import {
   getAllowedChannels,
@@ -8,9 +9,11 @@ import { MessageResponse } from 'src/components/MessageResponse.js'
 import { BLACK_CIRCLE } from 'src/constants/figures.js'
 import { getModeColor } from 'src/utils/permissions/PermissionMode.js'
 import { z } from 'zod/v4'
-import { Box, Text } from '../../ink.js'
+import { useTerminalSize } from '../../hooks/useTerminalSize.js'
+import { Ansi, Box, Text } from '../../ink.js'
 import type { Tool } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
+import { renderTruncatedContent } from '../../utils/terminal.js'
 import {
   ASK_USER_QUESTION_TOOL_CHIP_WIDTH,
   ASK_USER_QUESTION_TOOL_NAME,
@@ -157,9 +160,21 @@ export type Output = z.infer<OutputSchema>
 
 function AskUserQuestionResultMessage({
   answers,
+  verbose,
 }: {
   answers: Output['answers']
+  verbose: boolean
 }): React.ReactNode {
+  const { columns } = useTerminalSize()
+  const content = useMemo(() => {
+    const text = Object.entries(answers)
+      .map(([questionText, answer]) => `· ${questionText} → ${answer}`)
+      .join('\n')
+    // Same 3-line fold as bash output — ctrl+o transcript mode (verbose)
+    // shows everything.
+    return verbose ? text : renderTruncatedContent(text, columns)
+  }, [answers, verbose, columns])
+
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box flexDirection="row">
@@ -167,13 +182,9 @@ function AskUserQuestionResultMessage({
         <Text>User answered Claude&apos;s questions:</Text>
       </Box>
       <MessageResponse>
-        <Box flexDirection="column">
-          {Object.entries(answers).map(([questionText, answer]) => (
-            <Text key={questionText} color="inactive">
-              · {questionText} → {answer}
-            </Text>
-          ))}
-        </Box>
+        <Text color="inactive">
+          <Ansi>{content}</Ansi>
+        </Text>
       </MessageResponse>
     </Box>
   )
@@ -262,8 +273,8 @@ export const AskUserQuestionTool: Tool<InputSchema, Output> = buildTool({
   renderToolUseProgressMessage() {
     return null
   },
-  renderToolResultMessage({ answers }, _toolUseID) {
-    return <AskUserQuestionResultMessage answers={answers} />
+  renderToolResultMessage({ answers }, _progressMessages, { verbose }) {
+    return <AskUserQuestionResultMessage answers={answers} verbose={verbose} />
   },
   renderToolUseRejectedMessage() {
     return (
