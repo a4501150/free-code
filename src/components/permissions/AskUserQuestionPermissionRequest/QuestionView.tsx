@@ -239,22 +239,17 @@ export function QuestionView({
   return (
     <Box
       flexDirection="column"
-      marginTop={0}
+      marginTop={1}
       tabIndex={0}
       autoFocus
       onKeyDown={handleKeyDown}
     >
+      <Divider color="inactive" />
       {isInPlanMode && planFilePath && (
-        <Box flexDirection="column" gap={0}>
-          <Divider color="inactive" />
-          <Text color="inactive">
-            Planning: <FilePathLink filePath={planFilePath} />
-          </Text>
-        </Box>
+        <Text color="inactive">
+          Planning: <FilePathLink filePath={planFilePath} />
+        </Text>
       )}
-      <Box marginTop={-1}>
-        <Divider color="inactive" />
-      </Box>
       <Box flexDirection="column" paddingTop={0}>
         <QuestionNavigationBar
           questions={questions}
