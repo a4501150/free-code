@@ -56,7 +56,13 @@ import { useInputBuffer } from '../../hooks/useInputBuffer.js'
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js'
 import { usePromptSuggestion } from '../../hooks/usePromptSuggestion.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
-import { useTypeahead } from '../../hooks/useTypeahead.js'
+import { useAppStateTypeaheadDataSources } from '../../hooks/useAppStateTypeaheadDataSources.js'
+import {
+  CommandPalette,
+  type CommandPaletteHandle,
+} from '../panels/commandPalette/CommandPalette.js'
+import { computeSyncPromptGhostText } from '../panels/commandPalette/useTypeahead.js'
+import { createCommandPaletteStore } from '../panels/commandPalette/paletteStore.js'
 import type { BorderTextOptions } from '../../ink/render-border.js'
 import type { DOMElement } from '../../ink/dom.js'
 import { getFocusManager, type FocusManager } from '../../ink/focus.js'
@@ -1008,30 +1014,17 @@ function PromptInput({
     }
   }
 
-  // Create a suggestions state directly - we'll sync it with useTypeahead later
-  const [suggestionsState, setSuggestionsStateRaw] = useState<{
-    suggestions: SuggestionItem[]
-    selectedSuggestion: number
-    commandArgumentHint?: string
-  }>({
-    suggestions: [],
-    selectedSuggestion: -1,
-    commandArgumentHint: undefined,
-  })
-
-  // Setter for suggestions state
-  const setSuggestionsState = useCallback(
-    (
-      updater:
-        | typeof suggestionsState
-        | ((prev: typeof suggestionsState) => typeof suggestionsState),
-    ) => {
-      setSuggestionsStateRaw(prev =>
-        typeof updater === 'function' ? updater(prev) : updater,
-      )
-    },
-    [],
+  // Palette suggestion state lives in a palette-owned external store; the
+  // engine (mounted as <CommandPalette> below) is the only writer, and this
+  // subscription keeps the input line's suggestion-dependent rendering in
+  // the same commit as palette updates.
+  const paletteStore = useMemo(createCommandPaletteStore, [])
+  const suggestionsState = useSyncExternalStore(
+    paletteStore.subscribe,
+    paletteStore.getState,
   )
+  const { suggestions, selectedSuggestion, commandArgumentHint } =
+    suggestionsState
 
   const onSubmit = useCallback(
     async (inputParam: string, isSubmittingSlashCommand = false) => {
@@ -1174,28 +1167,24 @@ function PromptInput({
     ],
   )
 
-  const {
-    suggestions,
-    selectedSuggestion,
-    commandArgumentHint,
-    inlineGhostText,
-    maxColumnWidth,
-    handleKeyDown: typeaheadHandleKeyDown,
-  } = useTypeahead({
-    commands,
-    onInputChange: trackAndSetInput,
-    onSubmit,
-    setCursorOffset,
-    input,
-    cursorOffset,
-    mode,
-    agents,
-    setSuggestionsState,
-    suggestionsState,
-    suppressSuggestions: isSearchingHistory || historyIndex > 0,
-    markAccepted,
-    onModeChange,
-  })
+  // Store-backed palette data sources — the seam between the REPL host and
+  // the host-agnostic palette (panels/commandPalette/dataSources.ts).
+  const typeaheadDataSources = useAppStateTypeaheadDataSources()
+  const paletteRef = useRef<CommandPaletteHandle>(null)
+  const suppressSuggestions = isSearchingHistory || historyIndex > 0
+  const promptGhostText = useMemo(
+    () =>
+      suppressSuggestions || mode !== 'prompt'
+        ? undefined
+        : computeSyncPromptGhostText(input, cursorOffset, mode, commands),
+    [suppressSuggestions, mode, input, cursorOffset, commands],
+  )
+  // Effective ghost text: prompt mode computes the mid-input command ghost
+  // synchronously (pure calc over current props); other modes read the
+  // async bash-history ghost from the palette store — the same merge the
+  // engine applies internally.
+  const inlineGhostText =
+    mode === 'prompt' ? promptGhostText : suggestionsState.inlineGhostText
 
   // Keyboard dispatch target. Tree-dispatched keydowns land on this Box
   // when nothing else holds DOM focus (no autoFocus'd dialog): register it
@@ -1224,7 +1213,10 @@ function PromptInput({
   }, [isPromptDispatchTarget])
 
   function handlePromptKeyDown(e: KeyboardEvent): void {
-    typeaheadHandleKeyDown(e)
+    // Palette first (suggestion navigation/accept), then history, then the
+    // REPL-forwarded handlers — same composition order as before the
+    // palette became a child component.
+    paletteRef.current?.handleKeyDown(e)
     historyHandleKeyDown(e)
     for (const handler of forwardedKeyDownHandlers) handler(e)
   }
@@ -2348,6 +2340,24 @@ function PromptInput({
       ref={promptContainerRef}
       onKeyDown={handlePromptKeyDown}
     >
+      {/* Palette engine — renders null; suggestion state flows through
+          paletteStore and the promptOverlayContext portal. */}
+      <CommandPalette
+        ref={paletteRef}
+        store={paletteStore}
+        commands={commands}
+        agents={agents}
+        input={input}
+        cursorOffset={cursorOffset}
+        mode={mode}
+        suppressSuggestions={suppressSuggestions}
+        dataSources={typeaheadDataSources}
+        onInputChange={trackAndSetInput}
+        setCursorOffset={setCursorOffset}
+        onSubmit={onSubmit}
+        markAccepted={markAccepted}
+        onModeChange={onModeChange}
+      />
       {hasSuppressedDialogs && (
         <Box marginTop={1} marginLeft={2}>
           <Text dimColor>Waiting for permission…</Text>
@@ -2417,9 +2427,6 @@ function PromptInput({
         exitMessage={exitMessage}
         vimMode={isVimModeEnabled() ? vimMode : undefined}
         mode={mode}
-        suggestions={suggestions}
-        selectedSuggestion={selectedSuggestion}
-        maxColumnWidth={maxColumnWidth}
         toolPermissionContext={toolPermissionContext}
         helpOpen={helpOpen}
         suppressHint={input.length > 0}

@@ -6,14 +6,21 @@ import { GlobalKeybindingHandlers } from '../../hooks/useGlobalKeybindings.js'
 import { CommandKeybindingHandlers } from '../../hooks/useCommandKeybindings.js'
 import { ScrollKeybindingHandler } from '../ScrollKeybindingHandler.js'
 import { CancelRequestHandler } from '../../hooks/useCancelRequest.js'
-import { MessageActionsKeybindings } from '../messageActions.js'
+import {
+  type MessageActionsState,
+  MessageActionsKeybindings,
+} from '../messageActions.js'
 import type { ScrollBoxHandle } from '../../ink/components/ScrollBox.js'
 import { useVoiceKeybindingHandler } from '../../hooks/useVoiceIntegration.js'
 import { useBackgroundTaskNavigation } from '../../hooks/useBackgroundTaskNavigation.js'
+import type { ToolJSXState } from '../../hooks/repl/useReplToolJSX.js'
 import {
   PromptKeyDownContext,
   type PromptKeyDownHandler,
 } from './PromptKeyDownContext.js'
+
+/** The three voice-controller members the shell forwards to the keybinding hook. */
+type VoiceKeybindingProps = Parameters<typeof useVoiceKeybindingHandler>[0]
 
 export function ReplKeybindingShell({
   titleIsAnimating,
@@ -39,20 +46,24 @@ export function ReplKeybindingShell({
   terminalTitle: string
   titleDisabled: boolean
   showStatusInTerminalTab: boolean
-  globalKeybindingProps: any
-  voice: any
-  toolJSX: any
-  onSubmit: any
+  globalKeybindingProps: React.ComponentProps<typeof GlobalKeybindingHandlers>
+  voice: {
+    handleKeyEvent: VoiceKeybindingProps['voiceHandleKeyEvent']
+    stripTrailing: VoiceKeybindingProps['stripTrailing']
+    resetAnchor: VoiceKeybindingProps['resetAnchor']
+  }
+  toolJSX: ToolJSXState
+  onSubmit: React.ComponentProps<typeof CommandKeybindingHandlers>['onSubmit']
   scrollRef: React.RefObject<ScrollBoxHandle | null>
   scrollIsActive: boolean
   scrollIsModal?: boolean
   scrollOnScroll?:
     | ((sticky: boolean, handle: ScrollBoxHandle) => void)
     | undefined
-  cancelRequestProps: any
-  messageActionHandlers?: any
+  cancelRequestProps: React.ComponentProps<typeof CancelRequestHandler>
+  messageActionHandlers?: Record<string, () => void>
   disableMessageActions?: boolean
-  cursor?: any
+  cursor?: MessageActionsState | null
   /** Undefined when a local-jsx dialog is open (Shift+Down would stack dialogs). */
   onOpenBackgroundTasks?: () => void
   children: React.ReactNode

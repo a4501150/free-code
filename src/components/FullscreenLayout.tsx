@@ -22,13 +22,11 @@ import React, {
   useSyncExternalStore,
 } from 'react'
 import { fileURLToPath } from 'url'
-import { ModalContext } from '../context/modalContext.js'
 import {
   PromptOverlayProvider,
   usePromptOverlay,
   usePromptOverlayDialog,
 } from '../context/promptOverlayContext.js'
-import { useTerminalSize } from '../hooks/useTerminalSize.js'
 import ScrollBox, { type ScrollBoxHandle } from '../ink/components/ScrollBox.js'
 import instances from '../ink/instances.js'
 import { Box, Text } from '../ink.js'
@@ -36,11 +34,9 @@ import type { Message } from '../types/message.js'
 import { openBrowser, openPath } from '../utils/browser.js'
 import { plural } from '../utils/stringUtils.js'
 import { shouldHideAttachmentInUI } from './messages/attachmentVisibility.js'
+import { DialogSlot } from './panels/dialog/DialogSlot.js'
 import PromptInputFooterSuggestions from './PromptInput/PromptInputFooterSuggestions.js'
 import type { StickyPrompt } from './VirtualMessageList.js'
-
-/** Rows of transcript context kept visible above the modal pane's ▔ divider. */
-const MODAL_TRANSCRIPT_PEEK = 2
 
 /** Context for scroll-derived chrome (sticky header, pill). StickyTracker
  *  in VirtualMessageList writes via this instead of threading a callback
@@ -348,7 +344,6 @@ export function FullscreenLayout({
   newMessageCount = 0,
   onPillClick,
 }: Props): React.ReactNode {
-  const { rows: terminalRows, columns } = useTerminalSize()
   // Scroll-derived chrome state lives HERE, not in REPL. StickyTracker
   // writes via ScrollChromeContext; pillVisible subscribes directly to
   // ScrollBox. Both change rarely (pill flips once per threshold crossing,
@@ -457,55 +452,7 @@ export function FullscreenLayout({
         </Box>
       </Box>
       {modal != null && (
-        <ModalContext
-          value={{
-            rows: terminalRows - MODAL_TRANSCRIPT_PEEK - 1,
-            columns: columns - 4,
-            scrollRef: modalScrollRef ?? null,
-          }}
-        >
-          {/* Bottom-anchored, grows upward to fit content. maxHeight keeps a
-                few rows of transcript peek above the ▔ divider. Short modals
-                (/model) sit small at the bottom with lots of transcript above;
-                tall modals grow as needed, clipped by overflow.
-                Previously fixed-height (top+bottom anchored) — any fixed cap
-                either clipped tall content or left short content floating in
-                a mostly-empty pane.
-
-                flexShrink=0 on the inner Box is load-bearing: with Shrink=1,
-                yoga squeezes deep children to h=0 when content > maxHeight,
-                and sibling Texts land on the same row → ghost overlap
-                ("5 serversP servers"). Clipping at the outer Box's maxHeight
-                keeps children at natural size.
-
-                Divider wrapped in flexShrink=0: when the inner box overflows
-                (tall /config option list), yoga shrinks the divider Text to
-                h=0 to absorb the deficit — it's the only shrinkable sibling.
-                The wrapper keeps it at 1 row; overflow past maxHeight is
-                clipped at the bottom by overflow=hidden instead. */}
-          <Box
-            position="absolute"
-            bottom={0}
-            left={0}
-            right={0}
-            maxHeight={terminalRows - MODAL_TRANSCRIPT_PEEK}
-            flexDirection="column"
-            overflow="hidden"
-            opaque
-          >
-            <Box flexShrink={0}>
-              <Text color="permission">{'▔'.repeat(columns)}</Text>
-            </Box>
-            <Box
-              flexDirection="column"
-              paddingX={2}
-              flexShrink={0}
-              overflow="hidden"
-            >
-              {modal}
-            </Box>
-          </Box>
-        </ModalContext>
+        <DialogSlot scrollRef={modalScrollRef}>{modal}</DialogSlot>
       )}
     </PromptOverlayProvider>
   )

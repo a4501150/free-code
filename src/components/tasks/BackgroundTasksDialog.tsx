@@ -1,582 +1,65 @@
-import figures from 'figures'
-import React, {
-  type ReactNode,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
-import { isCoordinatorMode } from 'src/coordinator/coordinatorMode.js'
-import { useTerminalSize } from 'src/hooks/useTerminalSize.js'
+/**
+ * REPL host adapter for the background-tasks dialog: reads the AppState
+ * task store, wires the static Task.kill dispatch, and delegates rendering
+ * to the host-agnostic panels/BackgroundTasksDialog component. Both mounts
+ * (the /tasks command and the REPL's Shift+Down path) go through this
+ * adapter, keeping their existing props.
+ */
+
+import * as React from 'react'
 import { useAppState, useSetAppState } from 'src/state/AppState.js'
 import type { ToolUseContext } from 'src/Tool.js'
-import {
-  DreamTask,
-  type DreamTaskState,
-} from 'src/tasks/DreamTask/DreamTask.js'
-import type { LocalAgentTaskState } from 'src/tasks/LocalAgentTask/LocalAgentTask.js'
+import { DreamTask } from 'src/tasks/DreamTask/DreamTask.js'
 import { LocalAgentTask } from 'src/tasks/LocalAgentTask/LocalAgentTask.js'
-import type { LocalShellTaskState } from 'src/tasks/LocalShellTask/guards.js'
 import { LocalShellTask } from 'src/tasks/LocalShellTask/LocalShellTask.js'
-import type { MonitorMcpTaskState } from 'src/tasks/MonitorMcpTask/MonitorMcpTask.js'
-import {
-  type BackgroundTaskState,
-  isBackgroundTask,
-  type TaskState,
-} from 'src/tasks/types.js'
-import type { DeepImmutable } from 'src/types/utils.js'
-import { intersperse } from 'src/utils/array.js'
+import type { TaskState } from 'src/tasks/types.js'
 import type { CommandResultDisplay } from '../../commands.js'
-import { useRegisterOverlay } from '../../context/overlayContext.js'
-import type { ExitState } from '../../hooks/useExitOnCtrlCDWithKeybindings.js'
-import type { KeyboardEvent } from '../../ink/events/keyboard-event.js'
-import { Box, Text } from '../../ink.js'
-import { useKeybindings } from '../../keybindings/useKeybinding.js'
-import { useShortcutDisplay } from '../../keybindings/useShortcutDisplay.js'
-import { count } from '../../utils/array.js'
-import { Byline } from '../design-system/Byline.js'
-import { Dialog } from '../design-system/Dialog.js'
-import { KeyboardShortcutHint } from '../design-system/KeyboardShortcutHint.js'
-import { AsyncAgentDetailDialog } from './AsyncAgentDetailDialog.js'
-import { BackgroundTask as BackgroundTaskComponent } from './BackgroundTask.js'
-import { DreamDetailDialog } from './DreamDetailDialog.js'
-import { ShellDetailDialog } from './ShellDetailDialog.js'
-
-type ViewState = { mode: 'list' } | { mode: 'detail'; itemId: string }
+import {
+  BackgroundTasksDialog as BackgroundTasksDialogPanel,
+  type KillableTaskType,
+} from '../panels/BackgroundTasksDialog/BackgroundTasksDialog.js'
 
 type Props = {
   onDone: (
     result?: string,
     options?: { display?: CommandResultDisplay },
   ) => void
+  /** Accepted for mount-contract compatibility; the panel no longer uses it. */
   toolUseContext: ToolUseContext
   initialDetailTaskId?: string
 }
 
-type ListItem =
-  | {
-      id: string
-      type: 'local_bash'
-      label: string
-      status: string
-      task: DeepImmutable<LocalShellTaskState>
-    }
-  | {
-      id: string
-      type: 'local_agent'
-      label: string
-      status: string
-      task: DeepImmutable<LocalAgentTaskState>
-    }
-  | {
-      id: string
-      type: 'monitor_mcp'
-      label: string
-      status: string
-      task: DeepImmutable<MonitorMcpTaskState>
-    }
-  | {
-      id: string
-      type: 'dream'
-      label: string
-      status: string
-      task: DeepImmutable<DreamTaskState>
-    }
-
-// Helper to get filtered background tasks (excludes foregrounded local_agent)
-function getSelectableBackgroundTasks(
-  tasks: Record<string, TaskState> | undefined,
-  foregroundedTaskId: string | undefined,
-): TaskState[] {
-  const backgroundTasks = Object.values(tasks ?? {}).filter(isBackgroundTask)
-  return backgroundTasks.filter(
-    task => !(task.type === 'local_agent' && task.id === foregroundedTaskId),
-  )
-}
-
 export function BackgroundTasksDialog({
   onDone,
-  toolUseContext,
   initialDetailTaskId,
 }: Props): React.ReactNode {
-  const tasks = useAppState(s => s.tasks)
+  const tasks = useAppState(s => s.tasks) as
+    | Record<string, TaskState>
+    | undefined
   const foregroundedTaskId = useAppState(s => s.foregroundedTaskId)
   const setAppState = useSetAppState()
-  const killAgentsShortcut = useShortcutDisplay('chat:killAgents', 'Chat')
-  const typedTasks = tasks as Record<string, TaskState> | undefined
 
-  // Track if we skipped list view on mount (for back button behavior)
-  const skippedListOnMount = useRef(false)
-
-  // Compute initial view state - skip list if caller provided a specific task,
-  // or if there's exactly one task
-  const [viewState, setViewState] = useState<ViewState>(() => {
-    if (initialDetailTaskId) {
-      skippedListOnMount.current = true
-      return { mode: 'detail', itemId: initialDetailTaskId }
-    }
-    const allItems = getSelectableBackgroundTasks(
-      typedTasks,
-      foregroundedTaskId,
-    )
-    if (allItems.length === 1) {
-      skippedListOnMount.current = true
-      return { mode: 'detail', itemId: allItems[0]!.id }
-    }
-    return { mode: 'list' }
-  })
-  const [selectedIndex, setSelectedIndex] = useState<number>(0)
-
-  // Register as modal overlay so parent Chat keybindings (up/down for history)
-  // are deactivated while this dialog is open
-  useRegisterOverlay('background-tasks-dialog')
-
-  // Memoize the sorted and categorized items together to ensure stable references
-  const { bashTasks, agentTasks, mcpMonitors, dreamTasks, allSelectableItems } =
-    useMemo(() => {
-      // Filter to only show running/pending background tasks, matching the status bar count
-      const backgroundTasks = Object.values(typedTasks ?? {}).filter(
-        isBackgroundTask,
-      )
-      const allItems = backgroundTasks.map(toListItem)
-      const sorted = allItems.sort((a, b) => {
-        const aStatus = a.status
-        const bStatus = b.status
-        if (aStatus === 'running' && bStatus !== 'running') return -1
-        if (aStatus !== 'running' && bStatus === 'running') return 1
-        const aTime = 'task' in a ? a.task.startTime : 0
-        const bTime = 'task' in b ? b.task.startTime : 0
-        return bTime - aTime
-      })
-      const shells = sorted.filter(
-        item => item.type === 'local_bash' && item.task.kind !== 'monitor',
-      )
-      // Monitor-kind shell tasks render in the Monitors
-      // section alongside the externally-unused monitor_mcp items.
-      const monitorItems = sorted.filter(
-        item =>
-          (item.type === 'local_bash' && item.task.kind === 'monitor') ||
-          item.type === 'monitor_mcp',
-      )
-      // Exclude foregrounded task - it's being viewed in the main UI, not a background task
-      const agent = sorted.filter(
-        item => item.type === 'local_agent' && item.id !== foregroundedTaskId,
-      )
-      const dreamTasks = sorted.filter(item => item.type === 'dream')
-      return {
-        bashTasks: shells,
-        agentTasks: agent,
-        mcpMonitors: monitorItems,
-        dreamTasks,
-        // Order MUST match JSX render order (bash → monitorMcp →
-        // agent → dream) so ↓/↑ navigation moves the cursor
-        // visually downward.
-        allSelectableItems: [
-          ...shells,
-          ...monitorItems,
-          ...agent,
-          ...dreamTasks,
-        ],
-      }
-    }, [typedTasks, foregroundedTaskId])
-
-  const currentSelection = allSelectableItems[selectedIndex] ?? null
-
-  // Use configurable keybindings for standard navigation and confirm/cancel.
-  // confirm:no is handled by Dialog's onCancel prop.
-  useKeybindings(
-    {
-      'confirm:previous': () => setSelectedIndex(prev => Math.max(0, prev - 1)),
-      'confirm:next': () =>
-        setSelectedIndex(prev =>
-          Math.min(allSelectableItems.length - 1, prev + 1),
-        ),
-      'confirm:yes': () => {
-        const current = allSelectableItems[selectedIndex]
-        if (current) {
-          setViewState({ mode: 'detail', itemId: current.id })
-        }
-      },
-    },
-    { context: 'Confirmation', isActive: viewState.mode === 'list' },
-  )
-
-  // Component-specific shortcuts (x=stop, f=foreground, right=zoom) shown in UI.
-  // These are task-type and status dependent, not standard dialog keybindings.
-  const handleKeyDown = (e: KeyboardEvent) => {
-    // Only handle input when in list mode
-    if (viewState.mode !== 'list') return
-
-    if (e.key === 'left') {
-      e.preventDefault()
-      onDone('Background tasks dialog dismissed', { display: 'system' })
-      return
-    }
-
-    // Compute current selection at the time of the key press
-    const currentSelection = allSelectableItems[selectedIndex]
-    if (!currentSelection) return // everything below requires a selection
-
-    if (e.key === 'x') {
-      e.preventDefault()
-      if (
-        currentSelection.type === 'local_bash' &&
-        currentSelection.status === 'running'
-      ) {
-        void killShellTask(currentSelection.id)
-      } else if (
-        currentSelection.type === 'local_agent' &&
-        currentSelection.status === 'running'
-      ) {
-        void killAgentTask(currentSelection.id)
-      } else if (
-        currentSelection.type === 'dream' &&
-        currentSelection.status === 'running'
-      ) {
-        void killDreamTask(currentSelection.id)
-      }
-    }
-  }
-
-  async function killShellTask(taskId: string): Promise<void> {
-    await LocalShellTask.kill(taskId, setAppState)
-  }
-
-  async function killAgentTask(taskId: string): Promise<void> {
-    await LocalAgentTask.kill(taskId, setAppState)
-  }
-
-  async function killDreamTask(taskId: string): Promise<void> {
-    await DreamTask.kill(taskId, setAppState)
-  }
-
-  // Wrap onDone in useEffectEvent to get a stable reference that always calls
-  // the current onDone callback without causing the effect to re-fire.
-  const onDoneEvent = useEffectEvent(onDone)
-
-  useEffect(() => {
-    if (viewState.mode !== 'list') {
-      const task = (typedTasks ?? {})[viewState.itemId]
-      if (!task || !isBackgroundTask(task)) {
-        // Task was removed or is no longer a background task (e.g. killed).
-        // If we skipped the list on mount, close the dialog entirely.
-        if (skippedListOnMount.current) {
-          onDoneEvent('Background tasks dialog dismissed', {
-            display: 'system',
-          })
-        } else {
-          setViewState({ mode: 'list' })
-        }
-      }
-    }
-
-    const totalItems = allSelectableItems.length
-    if (selectedIndex >= totalItems && totalItems > 0) {
-      setSelectedIndex(totalItems - 1)
-    }
-  }, [viewState, typedTasks, selectedIndex, allSelectableItems, onDoneEvent])
-
-  // Helper to go back to list view (or close dialog if we skipped list on
-  // mount AND there's still only ≤1 item). Checking current count prevents
-  // the stale-state trap: if you opened with 1 task (auto-skipped to detail),
-  // then a second task started, 'back' should show the list — not close.
-  const goBackToList = () => {
-    if (skippedListOnMount.current && allSelectableItems.length <= 1) {
-      onDone('Background tasks dialog dismissed', { display: 'system' })
-    } else {
-      skippedListOnMount.current = false
-      setViewState({ mode: 'list' })
-    }
-  }
-
-  // If an item is selected, show the appropriate view
-  if (viewState.mode !== 'list' && typedTasks) {
-    const task = typedTasks[viewState.itemId]
-    if (!task) {
-      return null
-    }
-
-    // Detail mode - show appropriate detail dialog
-    switch (task.type) {
+  const onKill = (type: KillableTaskType, taskId: string): void => {
+    switch (type) {
       case 'local_bash':
-        return (
-          <ShellDetailDialog
-            shell={task}
-            onDone={onDone}
-            onKillShell={() => void killShellTask(task.id)}
-            onBack={goBackToList}
-            key={`shell-${task.id}`}
-          />
-        )
+        void LocalShellTask.kill(taskId, setAppState)
+        break
       case 'local_agent':
-        return (
-          <AsyncAgentDetailDialog
-            agent={task}
-            onDone={onDone}
-            onKillAgent={() => void killAgentTask(task.id)}
-            onBack={goBackToList}
-            key={`agent-${task.id}`}
-          />
-        )
-      case 'monitor_mcp':
-        return null
+        void LocalAgentTask.kill(taskId, setAppState)
+        break
       case 'dream':
-        return (
-          <DreamDetailDialog
-            task={task}
-            onDone={() =>
-              onDone('Background tasks dialog dismissed', {
-                display: 'system',
-              })
-            }
-            onBack={goBackToList}
-            onKill={
-              task.status === 'running'
-                ? () => void killDreamTask(task.id)
-                : undefined
-            }
-            key={`dream-${task.id}`}
-          />
-        )
+        void DreamTask.kill(taskId, setAppState)
+        break
     }
   }
 
-  const runningBashCount = count(bashTasks, _ => _.status === 'running')
-  const runningAgentCount = count(agentTasks, _ => _.status === 'running')
-  const runningMonitorCount = count(mcpMonitors, _ => _.status === 'running')
-  const subtitle = intersperse(
-    [
-      ...(runningBashCount > 0
-        ? [
-            <Text key="shells">
-              {runningBashCount}{' '}
-              {runningBashCount !== 1 ? 'active shells' : 'active shell'}
-            </Text>,
-          ]
-        : []),
-      ...(runningMonitorCount > 0
-        ? [
-            <Text key="monitors">
-              {runningMonitorCount}{' '}
-              {runningMonitorCount !== 1 ? 'active monitors' : 'active monitor'}
-            </Text>,
-          ]
-        : []),
-      ...(runningAgentCount > 0
-        ? [
-            <Text key="agents">
-              {runningAgentCount}{' '}
-              {runningAgentCount !== 1 ? 'active agents' : 'active agent'}
-            </Text>,
-          ]
-        : []),
-    ],
-    index => <Text key={`separator-${index}`}> · </Text>,
-  )
-
-  const actions = [
-    <KeyboardShortcutHint key="upDown" shortcut="↑/↓" action="select" />,
-    <KeyboardShortcutHint key="enter" shortcut="Enter" action="view" />,
-    ...((currentSelection?.type === 'local_bash' ||
-      currentSelection?.type === 'local_agent' ||
-      currentSelection?.type === 'monitor_mcp' ||
-      currentSelection?.type === 'dream') &&
-    currentSelection.status === 'running'
-      ? [<KeyboardShortcutHint key="kill" shortcut="x" action="stop" />]
-      : []),
-    ...(agentTasks.some(t => t.status === 'running')
-      ? [
-          <KeyboardShortcutHint
-            key="kill-all"
-            shortcut={killAgentsShortcut}
-            action="stop all agents"
-          />,
-        ]
-      : []),
-    <KeyboardShortcutHint key="esc" shortcut="←/Esc" action="close" />,
-  ]
-
-  const handleCancel = () =>
-    onDone('Background tasks dialog dismissed', { display: 'system' })
-
-  function renderInputGuide(exitState: ExitState): React.ReactNode {
-    if (exitState.pending) {
-      return <Text>Press {exitState.keyName} again to exit</Text>
-    }
-    return <Byline>{actions}</Byline>
-  }
-
   return (
-    <Box
-      flexDirection="column"
-      tabIndex={0}
-      autoFocus
-      onKeyDown={handleKeyDown}
-    >
-      <Dialog
-        title="Background tasks"
-        subtitle={<>{subtitle}</>}
-        onCancel={handleCancel}
-        color="background"
-        inputGuide={renderInputGuide}
-      >
-        {allSelectableItems.length === 0 ? (
-          <Text dimColor>No tasks currently running</Text>
-        ) : (
-          <Box flexDirection="column">
-            {bashTasks.length > 0 && (
-              <Box flexDirection="column">
-                <Text dimColor>
-                  <Text bold>{'  '}Shells</Text> ({bashTasks.length})
-                </Text>
-                <Box flexDirection="column">
-                  {bashTasks.map(item => (
-                    <Item
-                      key={item.id}
-                      item={item}
-                      isSelected={item.id === currentSelection?.id}
-                    />
-                  ))}
-                </Box>
-              </Box>
-            )}
-
-            {mcpMonitors.length > 0 && (
-              <Box
-                flexDirection="column"
-                marginTop={bashTasks.length > 0 ? 1 : 0}
-              >
-                <Text dimColor>
-                  <Text bold>{'  '}Monitors</Text> ({mcpMonitors.length})
-                </Text>
-                <Box flexDirection="column">
-                  {mcpMonitors.map(item => (
-                    <Item
-                      key={item.id}
-                      item={item}
-                      isSelected={item.id === currentSelection?.id}
-                    />
-                  ))}
-                </Box>
-              </Box>
-            )}
-
-            {agentTasks.length > 0 && (
-              <Box
-                flexDirection="column"
-                marginTop={
-                  bashTasks.length > 0 || mcpMonitors.length > 0 ? 1 : 0
-                }
-              >
-                <Text dimColor>
-                  <Text bold>{'  '}Local agents</Text> ({agentTasks.length})
-                </Text>
-                <Box flexDirection="column">
-                  {agentTasks.map(item => (
-                    <Item
-                      key={item.id}
-                      item={item}
-                      isSelected={item.id === currentSelection?.id}
-                    />
-                  ))}
-                </Box>
-              </Box>
-            )}
-
-            {dreamTasks.length > 0 && (
-              <Box
-                flexDirection="column"
-                marginTop={
-                  bashTasks.length > 0 ||
-                  mcpMonitors.length > 0 ||
-                  agentTasks.length > 0
-                    ? 1
-                    : 0
-                }
-              >
-                <Box flexDirection="column">
-                  {dreamTasks.map(item => (
-                    <Item
-                      key={item.id}
-                      item={item}
-                      isSelected={item.id === currentSelection?.id}
-                    />
-                  ))}
-                </Box>
-              </Box>
-            )}
-          </Box>
-        )}
-      </Dialog>
-    </Box>
-  )
-}
-
-function toListItem(task: BackgroundTaskState): ListItem {
-  switch (task.type) {
-    case 'local_bash':
-      return {
-        id: task.id,
-        type: 'local_bash',
-        label: task.kind === 'monitor' ? task.description : task.command,
-        status: task.status,
-        task,
-      }
-    case 'local_agent':
-      return {
-        id: task.id,
-        type: 'local_agent',
-        label: task.description,
-        status: task.status,
-        task,
-      }
-    case 'monitor_mcp':
-      return {
-        id: task.id,
-        type: 'monitor_mcp',
-        label: task.description,
-        status: task.status,
-        task,
-      }
-    case 'dream':
-      return {
-        id: task.id,
-        type: 'dream',
-        label: task.description,
-        status: task.status,
-        task,
-      }
-    default:
-      // Every TaskType is covered above; add a case when adding one.
-      throw new Error(`unreachable task type: ${String(task)}`)
-  }
-}
-
-function Item({
-  item,
-  isSelected,
-}: {
-  item: ListItem
-  isSelected: boolean
-}): ReactNode {
-  const { columns } = useTerminalSize()
-  // Dialog border (2) + padding (2) + pointer prefix (2) + name/status overhead (~20)
-  const maxActivityWidth = Math.max(30, columns - 26)
-  // In coordinator mode, use grey pointer instead of blue
-  const useGreyPointer = isCoordinatorMode()
-
-  return (
-    <Box flexDirection="row">
-      <Text dimColor={useGreyPointer && isSelected}>
-        {isSelected ? figures.pointer + ' ' : '  '}
-      </Text>
-      <Text color={isSelected && !useGreyPointer ? 'suggestion' : undefined}>
-        <BackgroundTaskComponent
-          task={item.task}
-          maxActivityWidth={maxActivityWidth}
-        />
-      </Text>
-    </Box>
+    <BackgroundTasksDialogPanel
+      onDone={onDone}
+      initialDetailTaskId={initialDetailTaskId}
+      tasks={tasks}
+      foregroundedTaskId={foregroundedTaskId}
+      onKill={onKill}
+    />
   )
 }

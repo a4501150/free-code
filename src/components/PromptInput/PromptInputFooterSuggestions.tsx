@@ -5,25 +5,11 @@ import { stringWidth } from '../../ink/stringWidth.js'
 import { Box, Text } from '../../ink.js'
 import { truncatePathMiddle, truncateToWidth } from '../../utils/format.js'
 import type { Theme } from '../../utils/theme.js'
+import type { SuggestionItem } from '../panels/commandPalette/types.js'
 
-export type SuggestionItem = {
-  id: string
-  displayText: string
-  tag?: string
-  description?: string
-  metadata?: unknown
-  color?: keyof Theme
-}
-
-export type SuggestionType =
-  | 'command'
-  | 'file'
-  | 'directory'
-  | 'agent'
-  | 'shell'
-  | 'custom-title'
-  | 'slack-channel'
-  | 'none'
+// Palette types live in panels/commandPalette/types.ts; SuggestionItem is
+// re-exported here so existing importers keep working.
+export type { SuggestionItem } from '../panels/commandPalette/types.js'
 
 export const OVERLAY_MAX_ITEMS = 5
 

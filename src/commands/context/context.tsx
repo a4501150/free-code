@@ -1,6 +1,6 @@
 import * as React from 'react'
 import type { LocalJSXCommandContext } from '../../commands.js'
-import { ContextVisualization } from '../../components/ContextVisualization.js'
+import { ContextVisualization } from '../../components/panels/ContextPanel/ContextVisualization.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
 import type { Message } from '../../types/message.js'
 import { analyzeContextUsage } from '../../utils/analyzeContext.js'

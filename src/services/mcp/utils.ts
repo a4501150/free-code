@@ -123,6 +123,36 @@ export function excludeResourcesByServer(
 }
 
 /**
+ * A server whose auth was cleared: mark its client needs-auth/failed and
+ * drop its tools, commands and resources. ('failed' is a misnomer here, but
+ * we don't really differentiate between "not connected" and "failed" at the
+ * moment.)
+ */
+export function applyServerDisconnected<
+  S extends {
+    clients: MCPServerConnection[]
+    tools: Tool[]
+    commands: Command[]
+    resources: Record<string, ServerResource[]>
+  },
+>(mcp: S, serverName: string, clientType: 'needs-auth' | 'failed'): S {
+  const clients = mcp.clients.map(c => {
+    if (c.name !== serverName) return c
+    if (clientType === 'needs-auth') {
+      return { ...c, type: 'needs-auth' as const }
+    }
+    return { ...c, type: 'failed' as const }
+  })
+  return {
+    ...mcp,
+    clients,
+    tools: excludeToolsByServer(mcp.tools, serverName),
+    commands: excludeCommandsByServer(mcp.commands, serverName),
+    resources: excludeResourcesByServer(mcp.resources, serverName),
+  }
+}
+
+/**
  * Stable hash of an MCP server config for change detection on /reload-plugins.
  * Excludes `scope` (provenance, not content — moving a server from .mcp.json
  * to freecode.json shouldn't reconnect it). Keys sorted so `{a:1,b:2}` and

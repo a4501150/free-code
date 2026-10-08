@@ -1,15 +1,22 @@
 import * as React from 'react'
-import { Box, Text } from '../ink.js'
-import type { ContextData } from '../utils/analyzeContext.js'
-import { generateContextSuggestions } from '../utils/contextSuggestions.js'
-import { getDisplayPath } from '../utils/file.js'
-import { formatTokens } from '../utils/format.js'
+import { Box, Text } from '../../../ink.js'
+import type { ContextData } from '../../../utils/analyzeContext.js'
+import { generateContextSuggestions } from '../../../utils/contextSuggestions.js'
+import { getDisplayPath } from '../../../utils/file.js'
+import { formatTokens } from '../../../utils/format.js'
 import {
   getSourceDisplayName,
   type SettingSource,
-} from '../utils/settings/constants.js'
-import { plural } from '../utils/stringUtils.js'
-import { ContextSuggestions } from './ContextSuggestions.js'
+} from '../../../utils/settings/constants.js'
+import { plural } from '../../../utils/stringUtils.js'
+import { ContextSuggestions } from '../../ContextSuggestions.js'
+
+/**
+ * Host-agnostic /context output panel: renders a ContextData snapshot with
+ * neutral props. The classic host (src/commands/context/context.tsx) gathers
+ * the data via analyzeContextUsage and emits the rendered string to onDone as
+ * a local_command transcript row.
+ */
 
 const RESERVED_CATEGORY_NAME = 'Autocompact buffer'
 

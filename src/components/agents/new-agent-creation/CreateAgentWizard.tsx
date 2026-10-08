@@ -6,7 +6,7 @@ import { WizardProvider } from '../../wizard/index.js'
 import type { WizardStepComponent } from '../../wizard/types.js'
 import type { AgentWizardData } from './types.js'
 import { ColorStep } from './wizard-steps/ColorStep.js'
-import { ConfirmStepWrapper } from './wizard-steps/ConfirmStepWrapper.js'
+import { ConfirmStepWrapper } from '../../panels/AgentsMenuDialog/new-agent-creation/ConfirmStepWrapper.js'
 import { DescriptionStep } from './wizard-steps/DescriptionStep.js'
 import { GenerateStep } from './wizard-steps/GenerateStep.js'
 import { LocationStep } from './wizard-steps/LocationStep.js'
@@ -22,6 +22,8 @@ type Props = {
   existingAgents: AgentDefinition[]
   onComplete: (message: string) => void
   onCancel: () => void
+  /** Host-side write-back with the finalized agent — see ConfirmStepWrapper. */
+  onAgentCreated: (agent: AgentDefinition) => void
 }
 
 export function CreateAgentWizard({
@@ -29,6 +31,7 @@ export function CreateAgentWizard({
   existingAgents,
   onComplete,
   onCancel,
+  onAgentCreated,
 }: Props): ReactNode {
   // Create step components with props
   const steps: WizardStepComponent<AgentWizardData>[] = [
@@ -48,6 +51,7 @@ export function CreateAgentWizard({
         tools={tools}
         existingAgents={existingAgents}
         onComplete={onComplete}
+        onAgentCreated={onAgentCreated}
       />
     ),
   ]

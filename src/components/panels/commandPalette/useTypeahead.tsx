@@ -1,82 +1,77 @@
 import * as React from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNotifications } from 'src/context/notifications.js'
-import { Text } from 'src/ink.js'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
+import { Text } from '../../../ink.js'
 
 import { useDebounceCallback } from 'usehooks-ts'
-import { type Command, getCommandName } from '../commands.js'
+import { type Command, getCommandName } from '../../../commands.js'
 import {
   getModeFromInput,
   getValueFromInput,
-} from '../components/PromptInput/inputModes.js'
-import type {
-  SuggestionItem,
-  SuggestionType,
-} from '../components/PromptInput/PromptInputFooterSuggestions.js'
+} from '../../PromptInput/inputModes.js'
 import {
   useIsModalOverlayActive,
   useRegisterOverlay,
-} from '../context/overlayContext.js'
-import { KeyboardEvent } from '../ink/events/keyboard-event.js'
+} from '../../../context/overlayContext.js'
+import { KeyboardEvent } from '../../../ink/events/keyboard-event.js'
 import {
   useOptionalKeybindingContext,
   useRegisterKeybindingContext,
-} from '../keybindings/KeybindingContext.js'
-import { useKeybindings } from '../keybindings/useKeybinding.js'
-import { useShortcutDisplay } from '../keybindings/useShortcutDisplay.js'
-import { useAppState, useAppStateStore } from '../state/AppState.js'
-import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
+} from '../../../keybindings/KeybindingContext.js'
+import { useKeybindings } from '../../../keybindings/useKeybinding.js'
+import { useShortcutDisplay } from '../../../keybindings/useShortcutDisplay.js'
+import type { AgentDefinition } from '../../../tools/AgentTool/loadAgentsDir.js'
 import type {
   InlineGhostText,
   PromptInputMode,
-} from '../types/textInputTypes.js'
+} from '../../../types/textInputTypes.js'
 import {
   generateProgressiveArgumentHint,
   parseArguments,
-} from '../utils/argumentSubstitution.js'
+} from '../../../utils/argumentSubstitution.js'
 import {
   getShellCompletions,
   type ShellCompletionType,
-} from '../utils/bash/shellCompletion.js'
-import { formatLogMetadata } from '../utils/format.js'
-import {
-  getSessionIdFromLog,
-  searchSessionsByCustomTitle,
-} from '../utils/sessionStorage.js'
+} from '../../../utils/bash/shellCompletion.js'
 import {
   applyCommandSuggestion,
   findMidInputSlashCommand,
   generateCommandSuggestions,
   getBestCommandMatch,
   isCommandInput,
-} from '../utils/suggestions/commandSuggestions.js'
+} from '../../../utils/suggestions/commandSuggestions.js'
 import {
   getDirectoryCompletions,
   getPathCompletions,
   isPathLikeToken,
-} from '../utils/suggestions/directoryCompletion.js'
-import { getShellHistoryCompletion } from '../utils/suggestions/shellHistoryCompletion.js'
-import {
-  getSlackChannelSuggestions,
-  hasSlackMcpServer,
-} from '../utils/suggestions/slackChannelSuggestions.js'
+} from '../../../utils/suggestions/directoryCompletion.js'
+import { getShellHistoryCompletion } from '../../../utils/suggestions/shellHistoryCompletion.js'
+import { getSlackChannelSuggestions } from '../../../utils/suggestions/slackChannelSuggestions.js'
 import {
   applyFileSuggestion,
   findLongestCommonPrefix,
-  onIndexBuildComplete,
-  startBackgroundCacheRefresh,
-} from './fileSuggestions.js'
-import { generateUnifiedSuggestions } from './unifiedSuggestions.js'
+} from '../../../hooks/fileSuggestions.js'
+import {
+  applyDirectorySuggestion,
+  applyShellSuggestion,
+  extractCompletionToken,
+  extractSearchToken,
+  formatReplacementValue,
+} from './helpers.js'
+import type { SuggestionItem, SuggestionType } from './types.js'
+import type { TypeaheadDataSources } from './dataSources.js'
+import type {
+  CommandPaletteState,
+  CommandPaletteStore,
+} from './paletteStore.js'
+import { generateUnifiedSuggestions } from '../../../hooks/unifiedSuggestions.js'
 
-// Unicode-aware character class for file path tokens:
-// \p{L} = letters (CJK, Latin, Cyrillic, etc.)
-// \p{N} = numbers (incl. fullwidth)
-// \p{M} = combining marks (macOS NFD accents, Devanagari vowel signs)
-const AT_TOKEN_HEAD_RE = /^@[\p{L}\p{N}\p{M}_\-./\\()[\]~:]*/u
-const PATH_CHAR_HEAD_RE = /^[\p{L}\p{N}\p{M}_\-./\\()[\]~:]+/u
-const TOKEN_WITH_AT_RE =
-  /(@[\p{L}\p{N}\p{M}_\-./\\()[\]~:]*|[\p{L}\p{N}\p{M}_\-./\\()[\]~:]+)$/u
-const TOKEN_WITHOUT_AT_RE = /[\p{L}\p{N}\p{M}_\-./\\()[\]~:]+$/u
 const HAS_AT_SYMBOL_RE = /(^|\s)@([\p{L}\p{N}\p{M}_\-./\\()[\]~:]*|"[^"]*"?)$/u
 const HASH_CHANNEL_RE = /(^|\s)#([a-z0-9][a-z0-9_-]*)$/
 
@@ -137,125 +132,21 @@ type Props = {
   input: string
   cursorOffset: number
   commands: Command[]
-  mode: string
+  mode: PromptInputMode
   agents: AgentDefinition[]
-  setSuggestionsState: (
-    f: (previousSuggestionsState: {
-      suggestions: SuggestionItem[]
-      selectedSuggestion: number
-      commandArgumentHint?: string
-    }) => {
-      suggestions: SuggestionItem[]
-      selectedSuggestion: number
-      commandArgumentHint?: string
-    },
-  ) => void
-  suggestionsState: {
-    suggestions: SuggestionItem[]
-    selectedSuggestion: number
-    commandArgumentHint?: string
-  }
+  /** Palette-owned suggestion state; the host reads the same store. */
+  store: CommandPaletteStore
   suppressSuggestions?: boolean
   markAccepted: () => void
   onModeChange?: (mode: PromptInputMode) => void
+  /** Every non-prop read the palette makes — see panels/commandPalette/dataSources.ts. */
+  dataSources: TypeaheadDataSources
 }
 
 type UseTypeaheadResult = {
-  suggestions: SuggestionItem[]
-  selectedSuggestion: number
-  suggestionType: SuggestionType
+  suggestionsState: CommandPaletteState
   maxColumnWidth?: number
-  commandArgumentHint?: string
-  inlineGhostText?: InlineGhostText
   handleKeyDown: (e: KeyboardEvent) => void
-}
-
-/**
- * Extract search token from a completion token by removing @ prefix and quotes
- * @param completionToken The completion token
- * @returns The search token with @ and quotes removed
- */
-export function extractSearchToken(completionToken: {
-  token: string
-  isQuoted?: boolean
-}): string {
-  if (completionToken.isQuoted) {
-    // Remove @" prefix and optional closing "
-    return completionToken.token.slice(2).replace(/"$/, '')
-  } else if (completionToken.token.startsWith('@')) {
-    return completionToken.token.substring(1)
-  } else {
-    return completionToken.token
-  }
-}
-
-/**
- * Format a replacement value with proper @ prefix and quotes based on context
- * @param options Configuration for formatting
- * @param options.displayText The text to display
- * @param options.mode The current mode (bash or prompt)
- * @param options.hasAtPrefix Whether the original token has @ prefix
- * @param options.needsQuotes Whether the text needs quotes (contains spaces)
- * @param options.isQuoted Whether the original token was already quoted (user typed @"...)
- * @param options.isComplete Whether this is a complete suggestion (adds trailing space)
- * @returns The formatted replacement value
- */
-export function formatReplacementValue(options: {
-  displayText: string
-  mode: string
-  hasAtPrefix: boolean
-  needsQuotes: boolean
-  isQuoted?: boolean
-  isComplete: boolean
-}): string {
-  const { displayText, mode, hasAtPrefix, needsQuotes, isQuoted, isComplete } =
-    options
-  const space = isComplete ? ' ' : ''
-
-  if (isQuoted || needsQuotes) {
-    // Use quoted format
-    return mode === 'bash'
-      ? `"${displayText}"${space}`
-      : `@"${displayText}"${space}`
-  } else if (hasAtPrefix) {
-    return mode === 'bash'
-      ? `${displayText}${space}`
-      : `@${displayText}${space}`
-  } else {
-    return displayText
-  }
-}
-
-/**
- * Apply a shell completion suggestion by replacing the current word
- */
-export function applyShellSuggestion(
-  suggestion: SuggestionItem,
-  input: string,
-  cursorOffset: number,
-  onInputChange: (value: string) => void,
-  setCursorOffset: (offset: number) => void,
-  completionType: ShellCompletionType | undefined,
-): void {
-  const beforeCursor = input.slice(0, cursorOffset)
-  const lastSpaceIndex = beforeCursor.lastIndexOf(' ')
-  const wordStart = lastSpaceIndex + 1
-
-  // Prepare the replacement text based on completion type
-  let replacementText: string
-  if (completionType === 'variable') {
-    replacementText = '$' + suggestion.displayText + ' '
-  } else if (completionType === 'command') {
-    replacementText = suggestion.displayText + ' '
-  } else {
-    replacementText = suggestion.displayText
-  }
-
-  const newInput =
-    input.slice(0, wordStart) + replacementText + input.slice(cursorOffset)
-
-  onInputChange(newInput)
-  setCursorOffset(wordStart + replacementText.length)
 }
 
 const DM_MEMBER_RE = /(^|\s)@[\w-]*$/
@@ -306,116 +197,6 @@ async function generateBashSuggestions(
   }
 }
 
-/**
- * Apply a directory/path completion suggestion to the input
- * Always adds @ prefix since we're replacing the entire token (including any existing @)
- *
- * @param input The current input text
- * @param suggestionId The ID of the suggestion to apply
- * @param tokenStartPos The start position of the token being replaced
- * @param tokenLength The length of the token being replaced
- * @param isDirectory Whether the suggestion is a directory (adds / suffix) or file (adds space)
- * @returns Object with the new input text and cursor position
- */
-export function applyDirectorySuggestion(
-  input: string,
-  suggestionId: string,
-  tokenStartPos: number,
-  tokenLength: number,
-  isDirectory: boolean,
-): { newInput: string; cursorPos: number } {
-  const suffix = isDirectory ? '/' : ' '
-  const before = input.slice(0, tokenStartPos)
-  const after = input.slice(tokenStartPos + tokenLength)
-  // Always add @ prefix - if token already has it, we're replacing
-  // the whole token (including @) with @suggestion.id
-  const replacement = '@' + suggestionId + suffix
-  const newInput = before + replacement + after
-
-  return {
-    newInput,
-    cursorPos: before.length + replacement.length,
-  }
-}
-
-/**
- * Extract a completable token at the cursor position
- * @param text The input text
- * @param cursorPos The cursor position
- * @param includeAtSymbol Whether to consider @ symbol as part of the token
- * @returns The completable token and its start position, or null if not found
- */
-export function extractCompletionToken(
-  text: string,
-  cursorPos: number,
-  includeAtSymbol = false,
-): { token: string; startPos: number; isQuoted?: boolean } | null {
-  // Empty input check
-  if (!text) return null
-
-  // Get text up to cursor
-  const textBeforeCursor = text.substring(0, cursorPos)
-
-  // Check for quoted @ mention first (e.g., @"my file with spaces")
-  if (includeAtSymbol) {
-    const quotedAtRegex = /@"([^"]*)"?$/
-    const quotedMatch = textBeforeCursor.match(quotedAtRegex)
-    if (quotedMatch && quotedMatch.index !== undefined) {
-      // Include any remaining quoted content after cursor until closing quote or end
-      const textAfterCursor = text.substring(cursorPos)
-      const afterQuotedMatch = textAfterCursor.match(/^[^"]*"?/)
-      const quotedSuffix = afterQuotedMatch ? afterQuotedMatch[0] : ''
-
-      return {
-        token: quotedMatch[0] + quotedSuffix,
-        startPos: quotedMatch.index,
-        isQuoted: true,
-      }
-    }
-  }
-
-  // Fast path for @ tokens: use lastIndexOf to avoid expensive $ anchor scan
-  if (includeAtSymbol) {
-    const atIdx = textBeforeCursor.lastIndexOf('@')
-    if (
-      atIdx >= 0 &&
-      (atIdx === 0 || /\s/.test(textBeforeCursor[atIdx - 1]!))
-    ) {
-      const fromAt = textBeforeCursor.substring(atIdx)
-      const atHeadMatch = fromAt.match(AT_TOKEN_HEAD_RE)
-      if (atHeadMatch && atHeadMatch[0].length === fromAt.length) {
-        const textAfterCursor = text.substring(cursorPos)
-        const afterMatch = textAfterCursor.match(PATH_CHAR_HEAD_RE)
-        const tokenSuffix = afterMatch ? afterMatch[0] : ''
-        return {
-          token: atHeadMatch[0] + tokenSuffix,
-          startPos: atIdx,
-          isQuoted: false,
-        }
-      }
-    }
-  }
-
-  // Non-@ token or cursor outside @ token — use $ anchor on (short) tail
-  const tokenRegex = includeAtSymbol ? TOKEN_WITH_AT_RE : TOKEN_WITHOUT_AT_RE
-  const match = textBeforeCursor.match(tokenRegex)
-  if (!match || match.index === undefined) {
-    return null
-  }
-
-  // Check if cursor is in the MIDDLE of a token (more word characters after cursor)
-  // If so, extend the token to include all characters until whitespace or end of string
-  const textAfterCursor = text.substring(cursorPos)
-  const afterMatch = textAfterCursor.match(PATH_CHAR_HEAD_RE)
-  const tokenSuffix = afterMatch ? afterMatch[0] : ''
-
-  return {
-    token: match[0] + tokenSuffix,
-    startPos: match.index,
-    isQuoted: false,
-  }
-}
-
 function extractCommandNameAndArgs(value: string): {
   commandName: string
   args: string
@@ -448,6 +229,31 @@ function hasCommandWithArguments(
 /**
  * Hook for handling typeahead functionality for both commands and file paths
  */
+
+/**
+ * The prompt-mode mid-input slash-command ghost text, computed purely from
+ * the input. Hosts merge this with the store's bash-mode ghost text to get
+ * the effective ghost text to render (mirrors the engine's internal merge).
+ */
+export function computeSyncPromptGhostText(
+  input: string,
+  cursorOffset: number,
+  mode: PromptInputMode,
+  commands: Command[],
+  suppressSuggestions?: boolean,
+): InlineGhostText | undefined {
+  if (mode !== 'prompt' || suppressSuggestions) return undefined
+  const midInputCommand = findMidInputSlashCommand(input, cursorOffset)
+  if (!midInputCommand) return undefined
+  const match = getBestCommandMatch(midInputCommand.partialCommand, commands)
+  if (!match) return undefined
+  return {
+    text: match.suffix,
+    fullCommand: match.fullCommand,
+    insertPosition:
+      midInputCommand.startPos + 1 + midInputCommand.partialCommand.length,
+  }
+}
 export function useTypeahead({
   commands,
   onInputChange,
@@ -457,13 +263,16 @@ export function useTypeahead({
   cursorOffset,
   mode,
   agents,
-  setSuggestionsState,
-  suggestionsState: { suggestions, selectedSuggestion, commandArgumentHint },
+  store,
   suppressSuggestions = false,
   markAccepted,
   onModeChange,
+  dataSources,
 }: Props): UseTypeaheadResult {
-  const { addNotification } = useNotifications()
+  // Palette state from the store — same-commit fan-out to every subscriber
+  // (this engine, the CommandPalette wrapper, and the host's render reads).
+  const suggestionsState = useSyncExternalStore(store.subscribe, store.getState)
+  const { suggestions, selectedSuggestion } = suggestionsState
   const thinkingToggleShortcut = useShortcutDisplay(
     'chat:thinkingToggle',
     'Chat',
@@ -484,37 +293,39 @@ export function useTypeahead({
   const [maxColumnWidth, setMaxColumnWidth] = useState<number | undefined>(
     undefined,
   )
-  const mcpResources = useAppState(s => s.mcp.resources)
-  const store = useAppStateStore()
-  const promptSuggestion = useAppState(s => s.promptSuggestion)
+  const mcpResources = dataSources.mcpResources
+  const promptSuggestion = dataSources.promptSuggestion
+  // Call-time access to the data sources' imperative methods. Never in dep
+  // arrays, so callback identity stays stable; reads are always current.
+  const dataSourcesRef = useRef(dataSources)
+  dataSourcesRef.current = dataSources
   // PromptInput hides suggestion ghost text in agent view — mirror that
   // gate here so Tab/rightArrow can't accept what isn't displayed.
-  const isViewingAgent = useAppState(s => !!s.viewingAgentTaskId)
+  const isViewingAgent = dataSources.isViewingAgentTask
 
   // Access keybinding context to check for pending chord sequences
   const keybindingContext = useOptionalKeybindingContext()
 
-  // State for inline ghost text (bash history completion - async)
-  const [inlineGhostText, setInlineGhostText] = useState<
-    InlineGhostText | undefined
-  >(undefined)
+  // Inline ghost text (bash history completion - async) lives in the
+  // palette store; the raw value is only meaningful in bash mode.
+  const inlineGhostText = suggestionsState.inlineGhostText
 
   // Synchronous ghost text for prompt mode mid-input slash commands.
   // Computed during render via useMemo to eliminate the one-frame flicker
   // that occurs when using useState + useEffect (effect runs after render).
-  const syncPromptGhostText = useMemo((): InlineGhostText | undefined => {
-    if (mode !== 'prompt' || suppressSuggestions) return undefined
-    const midInputCommand = findMidInputSlashCommand(input, cursorOffset)
-    if (!midInputCommand) return undefined
-    const match = getBestCommandMatch(midInputCommand.partialCommand, commands)
-    if (!match) return undefined
-    return {
-      text: match.suffix,
-      fullCommand: match.fullCommand,
-      insertPosition:
-        midInputCommand.startPos + 1 + midInputCommand.partialCommand.length,
-    }
-  }, [input, cursorOffset, mode, commands, suppressSuggestions])
+  // Exported as computeSyncPromptGhostText so hosts can render the merged
+  // ghost text (prompt sync ghost vs the store's bash ghost) themselves.
+  const syncPromptGhostText = useMemo(
+    (): InlineGhostText | undefined =>
+      computeSyncPromptGhostText(
+        input,
+        cursorOffset,
+        mode,
+        commands,
+        suppressSuggestions,
+      ),
+    [input, cursorOffset, mode, commands, suppressSuggestions],
+  )
 
   // Merged ghost text: prompt mode uses synchronous useMemo, bash mode uses async useState
   const effectiveGhostText = suppressSuggestions
@@ -546,15 +357,18 @@ export function useTypeahead({
 
   // Clear all suggestions
   const clearSuggestions = useCallback(() => {
-    setSuggestionsState(() => ({
+    store.setState(prev => ({
+      ...prev,
       commandArgumentHint: undefined,
       suggestions: [],
       selectedSuggestion: -1,
     }))
     setSuggestionType('none')
     setMaxColumnWidth(undefined)
-    setInlineGhostText(undefined)
-  }, [setSuggestionsState])
+    store.setState(prev =>
+      prev.inlineGhostText ? { ...prev, inlineGhostText: undefined } : prev,
+    )
+  }, [store])
 
   // Expensive async operation to fetch file/resource suggestions
   const fetchFileSuggestions = useCallback(
@@ -572,7 +386,8 @@ export function useTypeahead({
       }
       if (combinedItems.length === 0) {
         // Inline clearSuggestions logic to avoid needing debouncedFetchFileSuggestions
-        setSuggestionsState(() => ({
+        store.setState(prev => ({
+          ...prev,
           commandArgumentHint: undefined,
           suggestions: [],
           selectedSuggestion: -1,
@@ -581,7 +396,7 @@ export function useTypeahead({
         setMaxColumnWidth(undefined)
         return
       }
-      setSuggestionsState(prev => ({
+      store.setState(prev => ({
         commandArgumentHint: undefined,
         suggestions: combinedItems,
         selectedSuggestion: getPreservedSelection(
@@ -593,13 +408,7 @@ export function useTypeahead({
       setSuggestionType(combinedItems.length > 0 ? 'file' : 'none')
       setMaxColumnWidth(undefined) // No fixed width for file suggestions
     },
-    [
-      mcpResources,
-      setSuggestionsState,
-      setSuggestionType,
-      setMaxColumnWidth,
-      agents,
-    ],
+    [mcpResources, store, setSuggestionType, setMaxColumnWidth, agents],
   )
 
   // Pre-warm the file index on mount so the first @-mention doesn't block.
@@ -611,16 +420,12 @@ export function useTypeahead({
   // search so partial upgrades to full. Clears the token ref so the same
   // query isn't discarded as stale.
   //
-  // Skipped under NODE_ENV=test: REPL-mounting tests would spawn git ls-files
-  // against the real CI workspace (270k+ files on Windows runners), and the
-  // background build outlives the test — its setImmediate chain leaks into
-  // subsequent tests in the shard. The subscriber still registers so
+  // The data source owns the NODE_ENV=test gate (see
+  // useAppStateTypeaheadDataSources) — the subscriber still registers so
   // fileSuggestions tests that trigger a refresh directly work correctly.
   useEffect(() => {
-    if (('production' as string) !== 'test') {
-      startBackgroundCacheRefresh()
-    }
-    return onIndexBuildComplete(() => {
+    dataSourcesRef.current.startFileIndexRefresh()
+    return dataSourcesRef.current.onFileIndexBuildComplete(() => {
       const token = latestSearchTokenRef.current
       if (token !== null) {
         latestSearchTokenRef.current = null
@@ -642,11 +447,11 @@ export function useTypeahead({
     async (partial: string): Promise<void> => {
       latestSlackTokenRef.current = partial
       const channels = await getSlackChannelSuggestions(
-        store.getState().mcp.clients,
+        dataSourcesRef.current.getMcpClients(),
         partial,
       )
       if (latestSlackTokenRef.current !== partial) return
-      setSuggestionsState(prev => ({
+      store.setState(prev => ({
         commandArgumentHint: undefined,
         suggestions: channels,
         selectedSuggestion: getPreservedSelection(
@@ -658,8 +463,8 @@ export function useTypeahead({
       setSuggestionType(channels.length > 0 ? 'slack-channel' : 'none')
       setMaxColumnWidth(undefined)
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- store is a stable context ref
-    [setSuggestionsState],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- data sources read via ref at call-time
+    [store],
   )
 
   // First keystroke after # needs the MCP round-trip; subsequent keystrokes
@@ -670,7 +475,7 @@ export function useTypeahead({
   )
 
   // Handle immediate suggestion logic (cheap operations)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: store is a stable context ref, read imperatively at call-time
+  // biome-ignore lint/correctness/useExhaustiveDependencies: data sources read via ref at call-time
   const updateSuggestions = useCallback(
     async (value: string, inputCursorOffset?: number): Promise<void> => {
       // Use provided cursor offset or fall back to ref (avoids dependency on cursorOffset)
@@ -697,7 +502,8 @@ export function useTypeahead({
           )
           if (match) {
             // Clear dropdown suggestions when showing ghost text
-            setSuggestionsState(() => ({
+            store.setState(prev => ({
+              ...prev,
               commandArgumentHint: undefined,
               suggestions: [],
               selectedSuggestion: -1,
@@ -718,13 +524,17 @@ export function useTypeahead({
           return
         }
         if (historyMatch) {
-          setInlineGhostText({
-            text: historyMatch.suffix,
-            fullCommand: historyMatch.fullCommand,
-            insertPosition: value.length,
-          })
+          store.setState(prev => ({
+            ...prev,
+            inlineGhostText: {
+              text: historyMatch.suffix,
+              fullCommand: historyMatch.fullCommand,
+              insertPosition: value.length,
+            },
+          }))
           // Clear dropdown suggestions when showing ghost text
-          setSuggestionsState(() => ({
+          store.setState(prev => ({
+            ...prev,
             commandArgumentHint: undefined,
             suggestions: [],
             selectedSuggestion: -1,
@@ -734,7 +544,11 @@ export function useTypeahead({
           return
         } else {
           // No history match, clear ghost text
-          setInlineGhostText(undefined)
+          store.setState(prev =>
+            prev.inlineGhostText
+              ? { ...prev, inlineGhostText: undefined }
+              : prev,
+          )
         }
       }
 
@@ -747,14 +561,15 @@ export function useTypeahead({
           : null
       if (atMatch) {
         const partialName = (atMatch[2] ?? '').toLowerCase()
-        // Imperative read — reading at call-time fixes staleness for
-        // named subagents added mid-session.
-        const state = store.getState()
+        // Call-time read through the data sources — reading at call-time
+        // fixes staleness for named subagents added mid-session.
         const members: SuggestionItem[] = []
 
-        for (const [name, agentId] of state.agentNameRegistry) {
+        for (const {
+          name,
+          status,
+        } of dataSourcesRef.current.getAgentDirectMessages()) {
           if (!name.toLowerCase().startsWith(partialName)) continue
-          const status = state.tasks[agentId]?.status
           members.push({
             id: `dm-${name}`,
             displayText: `@${name}`,
@@ -764,7 +579,7 @@ export function useTypeahead({
 
         if (members.length > 0) {
           debouncedFetchFileSuggestions.cancel()
-          setSuggestionsState(prev => ({
+          store.setState(prev => ({
             commandArgumentHint: undefined,
             suggestions: members,
             selectedSuggestion: getPreservedSelection(
@@ -784,7 +599,7 @@ export function useTypeahead({
         const hashMatch = value
           .substring(0, effectiveCursorOffset)
           .match(HASH_CHANNEL_RE)
-        if (hashMatch && hasSlackMcpServer(store.getState().mcp.clients)) {
+        if (hashMatch && dataSourcesRef.current.hasSlackMcpServer()) {
           debouncedFetchSlackChannels(hashMatch[2]!)
           return
         } else if (suggestionType === 'slack-channel') {
@@ -833,7 +648,7 @@ export function useTypeahead({
 
           const dirSuggestions = await getDirectoryCompletions(args)
           if (dirSuggestions.length > 0) {
-            setSuggestionsState(prev => ({
+            store.setState(prev => ({
               suggestions: dirSuggestions,
               selectedSuggestion: getPreservedSelection(
                 prev.suggestions,
@@ -862,22 +677,18 @@ export function useTypeahead({
           const { args } = parsedCommand
 
           // Get custom title suggestions using partial match
-          const matches = await searchSessionsByCustomTitle(args, {
-            limit: 10,
-          })
+          const matches =
+            await dataSourcesRef.current.searchSessionTitleSuggestions(args)
 
-          const suggestions = matches.map(log => {
-            const sessionId = getSessionIdFromLog(log)
-            return {
-              id: `resume-title-${sessionId}`,
-              displayText: log.customTitle!,
-              description: formatLogMetadata(log),
-              metadata: { sessionId },
-            }
-          })
+          const suggestions = matches.map(m => ({
+            id: `resume-title-${m.sessionId}`,
+            displayText: m.customTitle!,
+            description: m.metadataLine,
+            metadata: { sessionId: m.sessionId },
+          }))
 
           if (suggestions.length > 0) {
-            setSuggestionsState(prev => ({
+            store.setState(prev => ({
               suggestions,
               selectedSuggestion: getPreservedSelection(
                 prev.suggestions,
@@ -945,7 +756,8 @@ export function useTypeahead({
                   typedArgs,
                 )
               }
-              setSuggestionsState(() => ({
+              store.setState(prev => ({
+                ...prev,
                 commandArgumentHint,
                 suggestions: [],
                 selectedSuggestion: -1,
@@ -961,7 +773,8 @@ export function useTypeahead({
         }
 
         const commandItems = generateCommandSuggestions(value, commands)
-        setSuggestionsState(() => ({
+        store.setState(prev => ({
+          ...prev,
           commandArgumentHint,
           suggestions: commandItems,
           selectedSuggestion: commandItems.length > 0 ? 0 : -1,
@@ -987,7 +800,7 @@ export function useTypeahead({
       ) {
         // If we have a command with arguments (no trailing space), clear any stale hint
         // This prevents the hint from flashing when transitioning between states
-        setSuggestionsState(prev =>
+        store.setState(prev =>
           prev.commandArgumentHint
             ? { ...prev, commandArgumentHint: undefined }
             : prev,
@@ -1040,7 +853,7 @@ export function useTypeahead({
               return
             }
             if (pathSuggestions.length > 0) {
-              setSuggestionsState(prev => ({
+              store.setState(prev => ({
                 suggestions: pathSuggestions,
                 selectedSuggestion: getPreservedSelection(
                   prev.suggestions,
@@ -1100,7 +913,7 @@ export function useTypeahead({
     [
       suggestionType,
       commands,
-      setSuggestionsState,
+      store,
       clearSuggestions,
       debouncedFetchFileSuggestions,
       debouncedFetchSlackChannels,
@@ -1142,7 +955,9 @@ export function useTypeahead({
         // Replace the input with the full command from history
         onInputChange(effectiveGhostText.fullCommand)
         setCursorOffset(effectiveGhostText.fullCommand.length)
-        setInlineGhostText(undefined)
+        store.setState(prev =>
+          prev.inlineGhostText ? { ...prev, inlineGhostText: undefined } : prev,
+        )
         return
       }
 
@@ -1223,7 +1038,7 @@ export function useTypeahead({
               suggestion.metadata.type === 'directory'
             ) {
               // For directories, fetch new suggestions for the updated path
-              setSuggestionsState(prev => ({
+              store.setState(prev => ({
                 ...prev,
                 commandArgumentHint: undefined,
               }))
@@ -1261,7 +1076,7 @@ export function useTypeahead({
 
               if (isDir) {
                 // For directories, fetch new suggestions for the updated path
-                setSuggestionsState(prev => ({
+                store.setState(prev => ({
                   ...prev,
                   commandArgumentHint: undefined,
                 }))
@@ -1459,7 +1274,7 @@ export function useTypeahead({
 
       if (suggestionItems.length > 0) {
         // Multiple suggestions or not bash mode: show list
-        setSuggestionsState(prev => ({
+        store.setState(prev => ({
           commandArgumentHint: undefined,
           suggestions: suggestionItems,
           selectedSuggestion: getPreservedSelection(
@@ -1486,7 +1301,7 @@ export function useTypeahead({
     cursorOffset,
     updateSuggestions,
     mcpResources,
-    setSuggestionsState,
+    store,
     agents,
     debouncedFetchFileSuggestions,
     debouncedFetchSlackChannels,
@@ -1692,25 +1507,25 @@ export function useTypeahead({
 
   // Handler for autocomplete:previous - selects previous suggestion
   const handleAutocompletePrevious = useCallback(() => {
-    setSuggestionsState(prev => ({
+    store.setState(prev => ({
       ...prev,
       selectedSuggestion:
         prev.selectedSuggestion <= 0
           ? suggestions.length - 1
           : prev.selectedSuggestion - 1,
     }))
-  }, [suggestions.length, setSuggestionsState])
+  }, [suggestions.length, store])
 
   // Handler for autocomplete:next - selects next suggestion
   const handleAutocompleteNext = useCallback(() => {
-    setSuggestionsState(prev => ({
+    store.setState(prev => ({
       ...prev,
       selectedSuggestion:
         prev.selectedSuggestion >= suggestions.length - 1
           ? 0
           : prev.selectedSuggestion + 1,
     }))
-  }, [suggestions.length, setSuggestionsState])
+  }, [suggestions.length, store])
 
   // Autocomplete context keybindings - only active when suggestions are visible
   const autocompleteHandlers = useMemo(
@@ -1795,7 +1610,7 @@ export function useTypeahead({
       // Remind user about thinking toggle shortcut if empty input
       if (input.trim() === '') {
         e.preventDefault()
-        addNotification({
+        dataSourcesRef.current.addNotification({
           key: 'thinking-toggle-hint',
           jsx: (
             <Text dimColor>
@@ -1842,12 +1657,8 @@ export function useTypeahead({
   // useInput listeners (submit, BaseTextInput) never see it.
 
   return {
-    suggestions,
-    selectedSuggestion,
-    suggestionType,
+    suggestionsState,
     maxColumnWidth,
-    commandArgumentHint,
-    inlineGhostText: effectiveGhostText,
     handleKeyDown,
   }
 }

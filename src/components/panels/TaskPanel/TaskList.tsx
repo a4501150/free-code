@@ -1,17 +1,22 @@
 import figures from 'figures'
 import * as React from 'react'
-import { useTerminalSize } from '../hooks/useTerminalSize.js'
-import { Box, Text } from '../ink.js'
-import { count } from '../utils/array.js'
-import { truncateToWidth } from '../utils/format.js'
-import type { Task } from '../utils/tasks.js'
-import type { Theme } from '../utils/theme.js'
+import { useTerminalSize } from '../../../hooks/useTerminalSize.js'
+import { Box, Text } from '../../../ink.js'
+import { count } from '../../../utils/array.js'
+import { truncateToWidth } from '../../../utils/format.js'
+import type { Task } from '../../../utils/tasks.js'
+import type { Theme } from '../../../utils/theme.js'
 
 type Props = {
   tasks: Task[]
   isStandalone?: boolean
 }
 
+/**
+ * Host-agnostic planning-task panel: renders a `Task[]` with neutral props
+ * (no store access — hosts own which list they pass). Mounted by the classic
+ * REPL through the host adapters in `components/TaskLivePanel.tsx`.
+ */
 const RECENT_COMPLETED_TTL_MS = 30_000
 
 function byIdAsc(a: Task, b: Task): number {
@@ -23,7 +28,7 @@ function byIdAsc(a: Task, b: Task): number {
   return a.id.localeCompare(b.id)
 }
 
-export function TaskListV2({
+export function TaskList({
   tasks,
   isStandalone = false,
 }: Props): React.ReactNode {

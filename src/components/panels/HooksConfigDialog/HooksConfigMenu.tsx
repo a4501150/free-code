@@ -1,0 +1,296 @@
+/**
+ * Host-agnostic read-only browser for configured hooks.
+ *
+ * Users can drill into each hook event, see configured matchers and hooks
+ * (of any type: command, prompt, agent, http), and view individual hook
+ * details. To add or modify hooks, users should edit freecode.json directly
+ * or ask Claude — the menu directs them there.
+ *
+ * The menu is read-only because the old editing UI only supported
+ * command-type hooks and duplicating the freecode.json editing surface
+ * in-menu for all four types would be a maintenance burden.
+ *
+ * Renders from neutral props: the combined tool-name pool and the
+ * event/matcher-grouped hook snapshot come in as data; the REPL host
+ * adapter (components/hooks/HooksConfigMenu.tsx) reads the store and
+ * passes them down.
+ */
+import * as React from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import type { HookEvent } from 'src/structuredProtocol/index.js'
+import type { CommandResultDisplay } from '../../../commands.js'
+import { Box, Text } from '../../../ink.js'
+import { useKeybinding } from '../../../keybindings/useKeybinding.js'
+import {
+  getHookEventMetadata,
+  getHooksForMatcher,
+  getMatcherMetadata,
+  getSortedMatchersForEvent,
+} from '../../../utils/hooks/hooksConfigManager.js'
+import type { IndividualHookConfig } from '../../../utils/hooks/hooksSettings.js'
+import { getSettings_DEPRECATED } from '../../../utils/settings/settings.js'
+import { plural } from '../../../utils/stringUtils.js'
+import { Dialog } from '../../design-system/Dialog.js'
+import { SelectEventMode } from '../../hooks/SelectEventMode.js'
+import { SelectHookMode } from '../../hooks/SelectHookMode.js'
+import { SelectMatcherMode } from '../../hooks/SelectMatcherMode.js'
+import { ViewHookMode } from '../../hooks/ViewHookMode.js'
+
+export type HooksConfigMenuDialogProps = {
+  /**
+   * Every tool name hook matchers can reference: the stable tool pool
+   * merged with MCP tools, in the order the host wants them listed.
+   */
+  combinedToolNames: string[]
+  /**
+   * Hooks from all sources grouped by event and matcher. A host snapshot
+   * taken at render time — the menu is read-only, so it never updates.
+   */
+  hooksByEventAndMatcher: Record<
+    HookEvent,
+    Record<string, IndividualHookConfig[]>
+  >
+  onExit: (
+    result?: string,
+    options?: { display?: CommandResultDisplay },
+  ) => void
+}
+
+type ModeState =
+  | { mode: 'select-event' }
+  | { mode: 'select-matcher'; event: HookEvent }
+  | { mode: 'select-hook'; event: HookEvent; matcher: string }
+  | { mode: 'view-hook'; event: HookEvent; hook: IndividualHookConfig }
+
+export function HooksConfigMenu({
+  combinedToolNames,
+  hooksByEventAndMatcher,
+  onExit,
+}: HooksConfigMenuDialogProps): React.ReactNode {
+  const [modeState, setModeState] = useState<ModeState>({
+    mode: 'select-event',
+  })
+  // Extract commonly used values from modeState for convenience
+  const mode = modeState.mode
+  const selectedEvent = 'event' in modeState ? modeState.event : 'PreToolUse'
+  const selectedMatcher = 'matcher' in modeState ? modeState.matcher : null
+
+  const sortedMatchersForSelectedEvent = useMemo(
+    () => getSortedMatchersForEvent(hooksByEventAndMatcher, selectedEvent),
+    [hooksByEventAndMatcher, selectedEvent],
+  )
+
+  const hooksForSelectedMatcher = useMemo(
+    () =>
+      getHooksForMatcher(
+        hooksByEventAndMatcher,
+        selectedEvent,
+        selectedMatcher,
+      ),
+    [hooksByEventAndMatcher, selectedEvent, selectedMatcher],
+  )
+
+  // Handler for exiting the dialog
+  const handleExit = useCallback(() => {
+    onExit('Hooks dialog dismissed', { display: 'system' })
+  }, [onExit])
+
+  // Escape handling for select-event mode - exit the menu
+  useKeybinding('confirm:no', handleExit, {
+    context: 'Confirmation',
+    isActive: mode === 'select-event',
+  })
+
+  // Escape handling for select-matcher mode - go to select-event
+  useKeybinding(
+    'confirm:no',
+    () => {
+      setModeState({ mode: 'select-event' })
+    },
+    {
+      context: 'Confirmation',
+      isActive: mode === 'select-matcher',
+    },
+  )
+
+  // Escape handling for select-hook mode - go to select-matcher or select-event
+  useKeybinding(
+    'confirm:no',
+    () => {
+      if ('event' in modeState) {
+        if (
+          getMatcherMetadata(modeState.event, combinedToolNames) !== undefined
+        ) {
+          setModeState({ mode: 'select-matcher', event: modeState.event })
+        } else {
+          setModeState({ mode: 'select-event' })
+        }
+      }
+    },
+    {
+      context: 'Confirmation',
+      isActive: mode === 'select-hook',
+    },
+  )
+
+  // Escape handling for view-hook mode - go to select-hook
+  useKeybinding(
+    'confirm:no',
+    () => {
+      if (modeState.mode === 'view-hook') {
+        const { event, hook } = modeState
+        setModeState({
+          mode: 'select-hook',
+          event,
+          matcher: hook.matcher || '',
+        })
+      }
+    },
+    {
+      context: 'Confirmation',
+      isActive: mode === 'view-hook',
+    },
+  )
+
+  const hookEventMetadata = getHookEventMetadata(combinedToolNames)
+
+  // Check if hooks are disabled
+  const settings = getSettings_DEPRECATED()
+  const hooksDisabled = settings?.disableAllHooks === true
+
+  // Count hooks per event for the event-selection view, and the total.
+  const { hooksByEvent, totalHooksCount } = useMemo(() => {
+    const byEvent: Partial<Record<HookEvent, number>> = {}
+    let total = 0
+    for (const [event, matchers] of Object.entries(hooksByEventAndMatcher)) {
+      const eventCount = Object.values(matchers).reduce(
+        (sum, hooks) => sum + hooks.length,
+        0,
+      )
+      byEvent[event as HookEvent] = eventCount
+      total += eventCount
+    }
+    return { hooksByEvent: byEvent, totalHooksCount: total }
+  }, [hooksByEventAndMatcher])
+
+  // If hooks are disabled, show an informational screen.
+  // The menu is read-only, so we don't offer a re-enable button —
+  // users can edit freecode.json or ask Claude instead.
+  if (hooksDisabled) {
+    return (
+      <Dialog
+        title="Hook Configuration - Disabled"
+        onCancel={handleExit}
+        inputGuide={() => <Text>Esc to close</Text>}
+      >
+        <Box flexDirection="column" gap={1}>
+          <Box flexDirection="column">
+            <Text>
+              All hooks are currently <Text bold>disabled</Text>. You have{' '}
+              <Text bold>{totalHooksCount}</Text> configured{' '}
+              {plural(totalHooksCount, 'hook')} that{' '}
+              {plural(totalHooksCount, 'is', 'are')} not running.
+            </Text>
+            <Box marginTop={1}>
+              <Text dimColor>When hooks are disabled:</Text>
+            </Box>
+            <Text dimColor>· No hook commands will execute</Text>
+            <Text dimColor>· StatusLine will not be displayed</Text>
+            <Text dimColor>
+              · Tool operations will proceed without hook validation
+            </Text>
+          </Box>
+          <Text dimColor>
+            To re-enable hooks, remove &quot;disableAllHooks&quot; from
+            freecode.json or ask Claude.
+          </Text>
+        </Box>
+      </Dialog>
+    )
+  }
+
+  switch (modeState.mode) {
+    case 'select-event':
+      return (
+        <SelectEventMode
+          hookEventMetadata={hookEventMetadata}
+          hooksByEvent={hooksByEvent}
+          totalHooksCount={totalHooksCount}
+          onSelectEvent={event => {
+            if (getMatcherMetadata(event, combinedToolNames) !== undefined) {
+              setModeState({ mode: 'select-matcher', event })
+            } else {
+              setModeState({ mode: 'select-hook', event, matcher: '' })
+            }
+          }}
+          onCancel={handleExit}
+        />
+      )
+    case 'select-matcher':
+      return (
+        <SelectMatcherMode
+          selectedEvent={modeState.event}
+          matchersForSelectedEvent={sortedMatchersForSelectedEvent}
+          hooksByEventAndMatcher={hooksByEventAndMatcher}
+          eventDescription={hookEventMetadata[modeState.event].description}
+          onSelect={matcher => {
+            setModeState({
+              mode: 'select-hook',
+              event: modeState.event,
+              matcher,
+            })
+          }}
+          onCancel={() => {
+            setModeState({ mode: 'select-event' })
+          }}
+        />
+      )
+    case 'select-hook':
+      return (
+        <SelectHookMode
+          selectedEvent={modeState.event}
+          selectedMatcher={modeState.matcher}
+          hooksForSelectedMatcher={hooksForSelectedMatcher}
+          hookEventMetadata={hookEventMetadata[modeState.event]}
+          onSelect={hook => {
+            setModeState({
+              mode: 'view-hook',
+              event: modeState.event,
+              hook,
+            })
+          }}
+          onCancel={() => {
+            // Go back to matcher selection or event selection
+            if (
+              getMatcherMetadata(modeState.event, combinedToolNames) !==
+              undefined
+            ) {
+              setModeState({
+                mode: 'select-matcher',
+                event: modeState.event,
+              })
+            } else {
+              setModeState({ mode: 'select-event' })
+            }
+          }}
+        />
+      )
+    case 'view-hook':
+      return (
+        <ViewHookMode
+          selectedHook={modeState.hook}
+          eventSupportsMatcher={
+            getMatcherMetadata(modeState.event, combinedToolNames) !== undefined
+          }
+          onCancel={() => {
+            const { event, hook } = modeState
+            setModeState({
+              mode: 'select-hook',
+              event,
+              matcher: hook.matcher || '',
+            })
+          }}
+        />
+      )
+  }
+}

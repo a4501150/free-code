@@ -25,8 +25,8 @@ import {
 } from '../cost-tracker.js'
 import { useMainLoopModel } from '../hooks/useMainLoopModel.js'
 import { type ReadonlySettings, useSettings } from '../hooks/useSettings.js'
-import { Ansi, Box, Text } from '../ink.js'
 import { getRawUtilization } from '../services/claudeAiLimits.js'
+import { StatusLinePanel } from './panels/StatusLinePanel.js'
 import type { Message } from '../types/message.js'
 import type { StatusLineCommandInput } from '../types/statusLine.js'
 import type { VimMode } from '../types/textInputTypes.js'
@@ -445,21 +445,8 @@ function StatusLineInner({
       ? (settings.statusLine.padding ?? 0)
       : 0
 
-  // StatusLine must have stable height — the footer is flexShrink:0 so a
-  // 0→1 row change when the command finishes steals a row from ScrollBox and
-  // shifts content. Reserve the row while loading (same trick as
-  // PromptInputFooterLeftSide).
-  return (
-    <Box paddingX={paddingX} gap={2}>
-      {statusLineText ? (
-        <Text wrap="truncate">
-          <Ansi>{statusLineText}</Ansi>
-        </Text>
-      ) : (
-        <Text> </Text>
-      )}
-    </Box>
-  )
+  // Height stability contract lives on StatusLinePanel — see its doc comment.
+  return <StatusLinePanel text={statusLineText} paddingX={paddingX} />
 }
 
 // Parent (PromptInputFooter) re-renders on every setMessages, but StatusLine's

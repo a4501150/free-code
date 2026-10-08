@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { memo, type ReactNode, useMemo, useRef } from 'react'
 import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
-import { useSetPromptOverlay } from '../../context/promptOverlayContext.js'
 import { useSettings } from '../../hooks/useSettings.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { Box, Text } from '../../ink.js'
@@ -19,7 +18,6 @@ import {
   statusLineShouldDisplay,
 } from '../StatusLine.js'
 import { PromptInputFooterLeftSide } from './PromptInputFooterLeftSide.js'
-import type { SuggestionItem } from './PromptInputFooterSuggestions.js'
 import { PromptInputHelpMenu } from './PromptInputHelpMenu.js'
 
 type Props = {
@@ -29,9 +27,6 @@ type Props = {
   }
   vimMode: VimMode | undefined
   mode: PromptInputMode
-  suggestions: SuggestionItem[]
-  selectedSuggestion: number
-  maxColumnWidth?: number
   toolPermissionContext: ToolPermissionContext
   helpOpen: boolean
   suppressHint: boolean
@@ -59,9 +54,6 @@ function PromptInputFooter({
   exitMessage,
   vimMode,
   mode,
-  suggestions,
-  selectedSuggestion,
-  maxColumnWidth,
   toolPermissionContext,
   helpOpen,
   suppressHint: suppressHintFromProps,
@@ -102,15 +94,6 @@ function PromptInputFooter({
   // Hide `? for shortcuts` if the user has a custom status line, or during ctrl-r
   const suppressHint =
     suppressHintFromProps || statusLineShouldDisplay(settings) || isSearching
-  // Suggestions portal to FullscreenLayout — see promptOverlayContext.tsx
-  const overlayData = useMemo(
-    () =>
-      suggestions.length
-        ? { suggestions, selectedSuggestion, maxColumnWidth }
-        : null,
-    [suggestions, selectedSuggestion, maxColumnWidth],
-  )
-  useSetPromptOverlay(overlayData)
 
   if (helpOpen) {
     return (

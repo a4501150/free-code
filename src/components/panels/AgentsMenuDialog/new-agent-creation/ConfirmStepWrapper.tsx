@@ -1,29 +1,44 @@
+/**
+ * Host-agnostic confirm step of the create-agent wizard: saves the
+ * finalized agent to disk and reports the creation through onAgentCreated
+ * so the host can update its agent-definitions state. The REPL host
+ * adapter (components/agents/new-agent-creation/wizard-steps/
+ * ConfirmStepWrapper.tsx) wires the callback to AppState.
+ */
+
 import chalk from 'chalk'
 import React, { type ReactNode, useCallback, useState } from 'react'
-import { useSetAppState } from 'src/state/AppState.js'
 import type { Tools } from '../../../../Tool.js'
 import type { AgentDefinition } from '../../../../tools/AgentTool/loadAgentsDir.js'
-import { getActiveAgentsFromList } from '../../../../tools/AgentTool/loadAgentsDir.js'
 import { editFileInEditor } from '../../../../utils/promptEditor.js'
 import { useWizard } from '../../../wizard/index.js'
-import { getNewAgentFilePath, saveAgentToFile } from '../../agentFileUtils.js'
-import type { AgentWizardData } from '../types.js'
-import { ConfirmStep } from './ConfirmStep.js'
+import {
+  getNewAgentFilePath,
+  saveAgentToFile,
+} from '../../../agents/agentFileUtils.js'
+import type { AgentWizardData } from '../../../agents/new-agent-creation/types.js'
+import { ConfirmStep } from '../../../agents/new-agent-creation/wizard-steps/ConfirmStep.js'
 
-type Props = {
+export type ConfirmStepWrapperDialogProps = {
   tools: Tools
   existingAgents: AgentDefinition[]
   onComplete: (message: string) => void
+  /**
+   * Host-side write-back invoked with the wizard's finalized agent after
+   * its file has been saved: the host appends the agent to its
+   * agent-definitions state.
+   */
+  onAgentCreated: (agent: AgentDefinition) => void
 }
 
 export function ConfirmStepWrapper({
   tools,
   existingAgents,
   onComplete,
-}: Props): ReactNode {
+  onAgentCreated,
+}: ConfirmStepWrapperDialogProps): ReactNode {
   const { wizardData } = useWizard<AgentWizardData>()
   const [saveError, setSaveError] = useState<string | null>(null)
-  const setAppState = useSetAppState()
 
   const saveAgent = useCallback(
     async (openInEditor: boolean): Promise<void> => {
@@ -44,21 +59,7 @@ export function ConfirmStepWrapper({
           wizardData.finalAgent.memory,
         )
 
-        setAppState(state => {
-          if (!wizardData.finalAgent) return state
-
-          const allAgents = state.agentDefinitions.allAgents.concat(
-            wizardData.finalAgent,
-          )
-          return {
-            ...state,
-            agentDefinitions: {
-              ...state.agentDefinitions,
-              activeAgents: getActiveAgentsFromList(allAgents),
-              allAgents,
-            },
-          }
-        })
+        onAgentCreated(wizardData.finalAgent)
 
         if (openInEditor) {
           const filePath = getNewAgentFilePath({
@@ -79,7 +80,7 @@ export function ConfirmStepWrapper({
         )
       }
     },
-    [wizardData, onComplete, setAppState],
+    [wizardData, onComplete, onAgentCreated],
   )
 
   const handleSave = useCallback(() => saveAgent(false), [saveAgent])

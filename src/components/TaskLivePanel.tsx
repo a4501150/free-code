@@ -5,7 +5,13 @@ import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
 import { useAppState } from '../state/AppState.js'
 import type { Task } from '../utils/tasks.js'
 import { MessageResponse } from './MessageResponse.js'
-import { TaskListV2 } from './TaskListV2.js'
+import { TaskList } from './panels/TaskPanel/TaskList.js'
+
+/**
+ * REPL host adapters for the planning-task panel (panels/TaskPanel): these
+ * own the store reads (AppState, TasksV2 fs store, subagent lists) and
+ * transcript framing, and pass a plain `Task[]` into the neutral panel.
+ */
 
 /**
  * True while the panel is showing the MAIN session's list and every task is
@@ -45,7 +51,7 @@ export function useTaskPanelCompletedHold(): boolean {
  * so the log-update shift fast path scrolls instead of repainting
  * (tests/e2e/thinking-swap-repaint.test.ts guards this).
  *
- * Item updates reconcile in place (TaskListV2 keys rows by task.id), and
+ * Item updates reconcile in place (TaskList keys rows by task.id), and
  * because the spinner now stays mounted for the whole busy stretch
  * (1d8a197), the block is only ever removed and re-inserted as a whole at
  * genuine turn boundaries — which is what justified extracting this panel
@@ -55,7 +61,7 @@ export function TaskPanelRows({ tasks }: { tasks: Task[] }): React.ReactNode {
   return (
     <Box width="100%" flexDirection="column">
       <MessageResponse>
-        <TaskListV2 tasks={tasks} />
+        <TaskList tasks={tasks} />
       </MessageResponse>
     </Box>
   )
@@ -93,5 +99,5 @@ export function TaskIdlePanel(): React.ReactNode {
   if (expandedView !== 'tasks' || !tasksV2 || tasksV2.length === 0) {
     return null
   }
-  return <TaskListV2 tasks={tasksV2} isStandalone />
+  return <TaskList tasks={tasksV2} isStandalone />
 }

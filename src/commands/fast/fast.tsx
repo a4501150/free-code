@@ -1,13 +1,10 @@
 import * as React from 'react'
-import { useState } from 'react'
 import type {
   CommandResultDisplay,
   LocalJSXCommandContext,
 } from '../../commands.js'
-import { Dialog } from '../../components/design-system/Dialog.js'
-import { FastIcon, getFastIconString } from '../../components/FastIcon.js'
-import { Box, Link, Text } from '../../ink.js'
-import { useKeybindings } from '../../keybindings/useKeybinding.js'
+import { FastModePicker as FastModePickerPanel } from '../../components/panels/FastModeDialog/FastModePicker.js'
+import { getFastIconString } from '../../components/FastIcon.js'
 import { useAppState, useSetAppState } from '../../state/AppState.js'
 import type { AppState } from '../../state/AppStateStore.js'
 import type { LocalJSXCommandOnDone } from '../../types/command.js'
@@ -15,17 +12,12 @@ import {
   clearFastModeCooldown,
   FAST_MODE_MODEL_DISPLAY,
   getFastModeModel,
-  getFastModeRuntimeState,
   getFastModeUnavailableReason,
   isFastModeEnabled,
   isFastModeSupportedByModel,
   prefetchFastModeStatus,
 } from '../../utils/fastMode.js'
-import { formatDuration } from '../../utils/format.js'
-import {
-  formatModelPricing,
-  getModelPricingString,
-} from '../../utils/modelCost.js'
+import { getModelPricingString } from '../../utils/modelCost.js'
 import { getMainLoopModel } from '../../utils/model/model.js'
 import { updateSettingsForSource } from '../../utils/settings/settings.js'
 
@@ -54,6 +46,11 @@ function applyFastMode(
   }
 }
 
+/**
+ * REPL host adapter for the fast mode picker: reads the model and fast mode
+ * flag from the app store and wires the store writes behind typed callbacks
+ * for the host-agnostic panel.
+ */
 export function FastModePicker({
   onDone,
   unavailableReason,
@@ -67,123 +64,17 @@ export function FastModePicker({
   const model = useAppState(s => s.mainLoopModel)
   const initialFastMode = useAppState(s => s.fastMode)
   const setAppState = useSetAppState()
-  const [enableFastMode, setEnableFastMode] = useState(initialFastMode ?? false)
-  const runtimeState = getFastModeRuntimeState()
-  const isCooldown = runtimeState.status === 'cooldown'
-  const isUnavailable = unavailableReason !== null
-  const pricing =
-    getModelPricingString(getMainLoopModel()) ?? 'pricing unavailable'
-
-  function handleConfirm(): void {
-    if (isUnavailable) return
-    applyFastMode(enableFastMode, setAppState)
-    if (enableFastMode) {
-      const fastIcon = getFastIconString(enableFastMode)
-      const modelUpdated = !isFastModeSupportedByModel(model)
-        ? ` · model set to ${FAST_MODE_MODEL_DISPLAY}`
-        : ''
-      onDone(`${fastIcon} Fast mode ON${modelUpdated} · ${pricing}`)
-    } else {
-      setAppState(prev => ({ ...prev, fastMode: false }))
-      onDone(`Fast mode OFF`)
-    }
-  }
-
-  function handleCancel(): void {
-    if (isUnavailable) {
-      // Ensure fast mode is off if the org has disabled it
-      if (initialFastMode) {
-        applyFastMode(false, setAppState)
-      }
-      onDone('Fast mode OFF', { display: 'system' })
-      return
-    }
-    const message = initialFastMode
-      ? `${getFastIconString()} Kept Fast mode ON`
-      : `Kept Fast mode OFF`
-    onDone(message, { display: 'system' })
-  }
-
-  function handleToggle(): void {
-    if (isUnavailable) return
-    setEnableFastMode(prev => !prev)
-  }
-
-  useKeybindings(
-    {
-      'confirm:yes': handleConfirm,
-      'confirm:nextField': handleToggle,
-      'confirm:next': handleToggle,
-      'confirm:previous': handleToggle,
-      'confirm:cycleMode': handleToggle,
-      'confirm:toggle': handleToggle,
-    },
-    { context: 'Confirmation' },
-  )
-
-  const title = (
-    <Text>
-      <FastIcon cooldown={isCooldown} /> Fast mode (research preview)
-    </Text>
-  )
-
   return (
-    <Dialog
-      title={title}
-      subtitle={`High-speed mode for ${FAST_MODE_MODEL_DISPLAY}. Billed as extra usage at a premium rate. Separate rate limits apply.`}
-      onCancel={handleCancel}
-      color="fastMode"
-      inputGuide={exitState =>
-        exitState.pending ? (
-          <Text>Press {exitState.keyName} again to exit</Text>
-        ) : isUnavailable ? (
-          <Text>Esc to cancel</Text>
-        ) : (
-          <Text>Tab to toggle · Enter to confirm · Esc to cancel</Text>
-        )
+    <FastModePickerPanel
+      onDone={onDone}
+      unavailableReason={unavailableReason}
+      model={model}
+      initialFastMode={initialFastMode}
+      onApplyFastMode={(enable: boolean) => applyFastMode(enable, setAppState)}
+      onSetFastModeOff={() =>
+        setAppState(prev => ({ ...prev, fastMode: false }))
       }
-    >
-      {unavailableReason ? (
-        <Box marginLeft={2}>
-          <Text color="error">{unavailableReason}</Text>
-        </Box>
-      ) : (
-        <>
-          <Box flexDirection="column" gap={0} marginLeft={2}>
-            <Box flexDirection="row" gap={2}>
-              <Text bold>Fast mode</Text>
-              <Text
-                color={enableFastMode ? 'fastMode' : undefined}
-                bold={enableFastMode}
-              >
-                {enableFastMode ? 'ON ' : 'OFF'}
-              </Text>
-              <Text dimColor>{pricing}</Text>
-            </Box>
-          </Box>
-
-          {isCooldown && runtimeState.status === 'cooldown' && (
-            <Box marginLeft={2}>
-              <Text color="warning">
-                {runtimeState.reason === 'overloaded'
-                  ? 'Fast mode overloaded and is temporarily unavailable'
-                  : "You've hit your fast limit"}
-                {' · resets in '}
-                {formatDuration(runtimeState.resetAt - Date.now(), {
-                  hideTrailingZeros: true,
-                })}
-              </Text>
-            </Box>
-          )}
-        </>
-      )}
-      <Text dimColor>
-        Learn more:{' '}
-        <Link url="https://code.claude.com/docs/en/fast-mode">
-          https://code.claude.com/docs/en/fast-mode
-        </Link>
-      </Text>
-    </Dialog>
+    />
   )
 }
 

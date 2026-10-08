@@ -4,7 +4,11 @@ import { Box } from '../../ink.js'
 import { PromptDialog } from '../hooks/PromptDialog.js'
 import { ElicitationDialog } from '../mcp/ElicitationDialog.js'
 import { IdeOnboardingDialog } from '../IdeOnboardingDialog.js'
+import type { ToolJSXState } from '../../hooks/repl/useReplToolJSX.js'
 import type { PromptRequest, PromptResponse } from '../../types/hooks.js'
+import type { ElicitationRequestEvent } from '../../services/mcp/elicitationHandler.js'
+import type { AppState } from '../../state/AppStateStore.js'
+import type { IDEExtensionInstallationStatus } from '../../utils/ide.js'
 
 export function ReplDialogLayer({
   focusedInputDialog,
@@ -22,7 +26,7 @@ export function ReplDialogLayer({
   toolJsxCentered,
 }: {
   focusedInputDialog: string | undefined
-  setAppState: (fn: (prev: any) => any) => void
+  setAppState: (fn: (prev: AppState) => AppState) => void
   promptQueue: Array<{
     request: PromptRequest
     title: string
@@ -41,14 +45,14 @@ export function ReplDialogLayer({
       }>
     >
   >
-  elicitation: any
+  elicitation: { queue: ElicitationRequestEvent[] }
   showIdeOnboarding: boolean
   setShowIdeOnboarding: (v: boolean) => void
-  ideInstallationStatus: any
+  ideInstallationStatus: IDEExtensionInstallationStatus | null
   exitFlow: React.ReactNode
   mrRender: () => React.ReactNode
   permissionStickyFooter: React.ReactNode | null
-  toolJSX: any
+  toolJSX: ToolJSXState
   toolJsxCentered: boolean
 }): React.ReactNode {
   return (
