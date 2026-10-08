@@ -883,6 +883,17 @@ function renderNodeToOutput(
         scrollTop = clamped
 
         if (content && contentYoga) {
+          // A child removed from the scroll content leaves surviving
+          // siblings' cached yoga-local tops stale: their actual tops shift,
+          // but when the scroll compensates (sticky follow on shrink) every
+          // child's ABSOLUTE position is unchanged, they all blit-skip in
+          // renderNodeToOutput (which doesn't refresh cached.top), and the
+          // cull loop below then trusts the stale top — a still-visible
+          // child can be culled and its rows lost. pendingClears are never
+          // otherwise read for the content wrapper (it doesn't pass through
+          // renderNodeToOutput), so consume the signal here and force fresh
+          // yoga reads for this frame.
+          const contentHadRemoval = pendingClears.delete(content)
           // Compute content wrapper's absolute render position with scroll
           // offset applied, then render its children with culling.
           const contentX = x + contentYoga.getComputedLeft()
@@ -985,6 +996,7 @@ function renderNodeToOutput(
               edgeBottom + 1 - contentY,
               boxBackgroundColor,
               true,
+              contentHadRemoval,
             )
             output.unclip()
 
@@ -1024,7 +1036,12 @@ function renderNodeToOutput(
               for (const childNode of content.childNodes) {
                 const childElem = childNode as DOMElement
                 const isDirty = dirtyChildren.has(childNode)
-                if (!isDirty && cumHeightShift === 0) {
+                // contentHadRemoval: a removed sibling shifted this child's
+                // yogaTop without marking it dirty — cached.y is stale, so
+                // the fine-grained check below must run instead of the
+                // early continue (which assumes cumHeightShift===0 ⇒
+                // unchanged position, and removals never increment it).
+                if (!isDirty && cumHeightShift === 0 && !contentHadRemoval) {
                   if (nodeCache.has(childElem)) continue
                   // Uncached = culled last frame, now re-entering. blit
                   // never painted it → fall through to yoga + render.
@@ -1133,6 +1150,7 @@ function renderNodeToOutput(
                 shiftedBottom - contentY,
                 boxBackgroundColor,
                 true,
+                contentHadRemoval,
               )
               output.unclip()
             }
@@ -1175,6 +1193,8 @@ function renderNodeToOutput(
               scrollTop,
               scrollTop + innerHeight,
               boxBackgroundColor,
+              false,
+              contentHadRemoval,
             )
           }
           nodeCache.set(content, {
@@ -1421,6 +1441,10 @@ function renderScrolledChildren(
   // the blit+shift put stable rows in next.screen so stale cache is
   // never read. Avoids walking O(total_children * subtree_depth) per frame.
   preserveCulledCache = false,
+  // A child of `node` was removed this frame: surviving siblings' cached
+  // tops are stale (see the ScrollBox branch). Skip the cached-top
+  // shortcut and read fresh yoga positions.
+  parentHadRemoval = false,
 ): void {
   let seenDirtyChild = false
   // Track cumulative height shift of dirty children iterated so far. When
@@ -1441,7 +1465,8 @@ function renderScrolledChildren(
       if (
         cached?.top !== undefined &&
         !childElem.dirty &&
-        cumHeightShift === 0
+        cumHeightShift === 0 &&
+        !parentHadRemoval
       ) {
         top = cached.top
         height = cached.height
