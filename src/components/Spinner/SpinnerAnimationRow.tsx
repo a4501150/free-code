@@ -175,9 +175,43 @@ export function SpinnerAnimationRow({
     : leaderTokens
   const tokenCount = formatNumber(totalTokens)
   const isLocalAgentView = !!viewedLocalAgent
+
+  // === Token rate (tok/s, main session only) ===
+  // Average output rate between the first and last streamed token of the
+  // turn. lastAt only advances on raw arrival, so the rate stops decaying
+  // while streaming pauses (e.g. during tool use). State is left untouched
+  // while viewing a local agent so switching back doesn't reset the window.
+  const tokenRateRef = useRef({ firstAt: 0, lastAt: 0, lastRaw: 0 })
+  if (!isLocalAgentView) {
+    if (currentResponseLength === 0) {
+      const rate = tokenRateRef.current
+      rate.firstAt = 0
+      rate.lastAt = 0
+      rate.lastRaw = 0
+    } else {
+      const rate = tokenRateRef.current
+      if (rate.firstAt === 0) {
+        rate.firstAt = now
+        rate.lastAt = now
+        rate.lastRaw = currentResponseLength
+      } else if (currentResponseLength !== rate.lastRaw) {
+        rate.lastRaw = currentResponseLength
+        rate.lastAt = now
+      }
+    }
+  }
+  const rate = tokenRateRef.current
+  const streamSec =
+    rate.lastAt > rate.firstAt ? (rate.lastAt - rate.firstAt) / 1000 : 0
+  const tokenRateText =
+    !isLocalAgentView && streamSec >= 1 && totalTokens > 0
+      ? `${formatNumber(Math.round(totalTokens / streamSec))} tok/s`
+      : null
+
+  const tokensLabel = `${tokenCount} tokens${tokenRateText ? ` · ${tokenRateText}` : ''}`
   const tokensText = isLocalAgentView
-    ? `${tokenCount} tokens`
-    : `${figures.arrowDown} ${tokenCount} tokens`
+    ? tokensLabel
+    : `${figures.arrowDown} ${tokensLabel}`
   const tokensWidth = stringWidth(tokensText)
 
   // === Thinking text (may shrink to fit) ===
@@ -269,7 +303,7 @@ export function SpinnerAnimationRow({
       ? [
           <Box flexDirection="row" key="tokens">
             {!isLocalAgentView && <SpinnerModeGlyph mode={mode} />}
-            <Text dimColor>{tokenCount} tokens</Text>
+            <Text dimColor>{tokensLabel}</Text>
           </Box>,
         ]
       : []),
