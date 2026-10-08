@@ -52,6 +52,7 @@ import { Dialog } from '../../design-system/Dialog.js'
 import { Select } from '../../CustomSelect/index.js'
 import { LanguagePicker } from '../../LanguagePicker.js'
 import { MCPSettings as MCPSettingsPanel } from '../MCPDialog/MCPSettings.js'
+import { type Setting, buildSettingsRows } from './settingsRows.js'
 import type { McpActions } from '../../../services/mcp/mcpActions.js'
 import type {
   MCPServerConnection,
@@ -167,37 +168,6 @@ export type Props = {
    */
   onRevertAppState: () => void
 }
-
-type SettingBase =
-  | {
-      id: string
-      label: string
-    }
-  | {
-      id: string
-      label: React.ReactNode
-      searchText: string
-    }
-
-type Setting =
-  | (SettingBase & {
-      value: boolean
-      onChange(value: boolean): void
-      type: 'boolean'
-    })
-  | (SettingBase & {
-      value: string
-      options: string[]
-      onChange(value: string): void
-      type: 'enum'
-    })
-  | (SettingBase & {
-      // For enums that are set by a custom component, we don't need to pass options,
-      // but we still need a value to display in the top-level config menu
-      value: string
-      onChange(value: string): void
-      type: 'managedEnum'
-    })
 
 type SubMenu =
   | 'Theme'
@@ -465,6 +435,7 @@ export function Config({
     // Global settings
     {
       id: 'autoCompactEnabled',
+      category: 'contextSession' as const,
       label: 'Auto-compact',
       value: autoCompactEnabled,
       type: 'boolean' as const,
@@ -475,6 +446,7 @@ export function Config({
     },
     {
       id: 'autoCompactPercentage',
+      category: 'contextSession' as const,
       label: 'Auto-compact percentage',
       value: `${autoCompactPercentage}%`,
       type: 'managedEnum' as const,
@@ -482,6 +454,7 @@ export function Config({
     },
     {
       id: 'autoCompactBuffer',
+      category: 'contextSession' as const,
       label: 'Auto-compact buffer',
       value: `${formatTokenCount(autoCompactBuffer)} tokens`,
       type: 'managedEnum' as const,
@@ -489,6 +462,7 @@ export function Config({
     },
     {
       id: 'spinnerTipsEnabled',
+      category: 'general' as const,
       label: 'Show tips',
       value: settingsData?.spinnerTipsEnabled ?? true,
       type: 'boolean' as const,
@@ -505,6 +479,7 @@ export function Config({
     },
     {
       id: 'prefersReducedMotion',
+      category: 'general' as const,
       label: 'Reduce motion',
       value: settingsData?.prefersReducedMotion ?? false,
       type: 'boolean' as const,
@@ -522,6 +497,7 @@ export function Config({
     },
     {
       id: 'thinkingEnabled',
+      category: 'modelReasoning' as const,
       label: 'Thinking mode',
       value: thinkingEnabled ?? true,
       type: 'boolean' as const,
@@ -534,6 +510,7 @@ export function Config({
     },
     {
       id: 'mcpServers',
+      category: 'integrations' as const,
       label: 'MCP servers',
       value: mcpServersSummary,
       type: 'managedEnum' as const,
@@ -544,6 +521,7 @@ export function Config({
       ? [
           {
             id: 'fastMode',
+            category: 'modelReasoning' as const,
             label: `Fast mode (${FAST_MODE_MODEL_DISPLAY} only)`,
             value: !!isFastMode,
             type: 'boolean' as const,
@@ -573,6 +551,7 @@ export function Config({
     ...[
       {
         id: 'promptSuggestionEnabled',
+        category: 'inputFiles' as const,
         label: 'Prompt suggestions',
         value: promptSuggestionEnabled,
         type: 'boolean' as const,
@@ -586,6 +565,7 @@ export function Config({
     ],
     {
       id: 'destructiveCommandWarning',
+      category: 'permissionsSafety' as const,
       label: 'Destructive command warnings',
       value: settingsData?.destructiveCommandWarning ?? true,
       type: 'boolean' as const,
@@ -601,6 +581,7 @@ export function Config({
     },
     {
       id: 'autoMode',
+      category: 'modelReasoning' as const,
       label: 'Auto mode',
       value: settingsData?.autoMode?.enabled ?? true,
       type: 'boolean' as const,
@@ -616,6 +597,7 @@ export function Config({
     },
     {
       id: 'streamingToolExecution',
+      category: 'modelReasoning' as const,
       label: 'Streaming tool execution',
       value: settingsData?.streamingToolExecution ?? true,
       type: 'boolean' as const,
@@ -631,6 +613,7 @@ export function Config({
     },
     {
       id: 'sessionMemory',
+      category: 'contextSession' as const,
       label: 'Session memory',
       value: settingsData?.sessionMemory ?? false,
       type: 'boolean' as const,
@@ -646,6 +629,7 @@ export function Config({
     },
     {
       id: 'planModeInterviewPhase',
+      category: 'modelReasoning' as const,
       label: 'Plan mode interview',
       value: settingsData?.planModeInterviewPhase ?? false,
       type: 'boolean' as const,
@@ -661,6 +645,7 @@ export function Config({
     },
     {
       id: 'verificationNudge',
+      category: 'modelReasoning' as const,
       label: 'Verification nudge',
       value: settingsData?.verificationNudge ?? true,
       type: 'boolean' as const,
@@ -676,6 +661,7 @@ export function Config({
     },
     {
       id: 'contentReplacementState',
+      category: 'contextSession' as const,
       label: 'Tool result compression',
       value: settingsData?.contentReplacementState ?? false,
       type: 'boolean' as const,
@@ -691,6 +677,7 @@ export function Config({
     },
     {
       id: 'crossProjectResume',
+      category: 'contextSession' as const,
       label: 'Cross-project resume',
       value: settingsData?.crossProjectResume ?? false,
       type: 'boolean' as const,
@@ -706,6 +693,7 @@ export function Config({
     },
     {
       id: 'alwaysDebugLog',
+      category: 'advanced' as const,
       label: 'Always write debug logs',
       value: settingsData?.alwaysDebugLog ?? false,
       type: 'boolean' as const,
@@ -721,6 +709,7 @@ export function Config({
     },
     {
       id: 'memoryUsageIndicator',
+      category: 'appearance' as const,
       label: 'Memory usage indicator',
       value: settingsData?.memoryUsageIndicator ?? false,
       type: 'boolean' as const,
@@ -736,6 +725,7 @@ export function Config({
     },
     {
       id: 'shellSessionId',
+      category: 'advanced' as const,
       label: 'Shell session ID',
       value: settingsData?.shellSessionId ?? false,
       type: 'boolean' as const,
@@ -751,6 +741,7 @@ export function Config({
     },
     {
       id: 'numericEffort',
+      category: 'modelReasoning' as const,
       label: 'Numeric effort values',
       value: settingsData?.numericEffort ?? false,
       type: 'boolean' as const,
@@ -766,6 +757,7 @@ export function Config({
     },
     {
       id: 'mockRateLimits',
+      category: 'advanced' as const,
       label: 'Mock rate limit testing',
       value: settingsData?.mockRateLimits ?? false,
       type: 'boolean' as const,
@@ -781,6 +773,7 @@ export function Config({
     },
     {
       id: 'errorLogSink',
+      category: 'advanced' as const,
       label: 'Error log sink',
       value: settingsData?.errorLogSink ?? false,
       type: 'boolean' as const,
@@ -796,6 +789,7 @@ export function Config({
     },
     {
       id: 'speculationEnabled',
+      category: 'modelReasoning' as const,
       label: 'Speculative execution',
       value: settingsData?.speculationEnabled ?? false,
       type: 'boolean' as const,
@@ -805,6 +799,7 @@ export function Config({
     },
     {
       id: 'fileCheckpointingEnabled',
+      category: 'permissionsSafety' as const,
       label: 'Rewind code (checkpoints)',
       value: settingsData?.fileCheckpointingEnabled ?? true,
       type: 'boolean' as const,
@@ -814,6 +809,7 @@ export function Config({
     },
     {
       id: 'verbose',
+      category: 'general' as const,
       label: 'Verbose output',
       value: verbose,
       type: 'boolean',
@@ -821,6 +817,7 @@ export function Config({
     },
     {
       id: 'terminalProgressBarEnabled',
+      category: 'appearance' as const,
       label: 'Terminal progress bar',
       value: settingsData?.terminalProgressBarEnabled ?? true,
       type: 'boolean' as const,
@@ -830,6 +827,7 @@ export function Config({
     },
     {
       id: 'showStatusInTerminalTab',
+      category: 'appearance' as const,
       label: 'Show status in terminal tab',
       value: settingsData?.showStatusInTerminalTab ?? false,
       type: 'boolean' as const,
@@ -839,6 +837,7 @@ export function Config({
     },
     {
       id: 'showTurnDuration',
+      category: 'appearance' as const,
       label: 'Show turn duration',
       value: settingsData?.showTurnDuration ?? true,
       type: 'boolean' as const,
@@ -848,6 +847,7 @@ export function Config({
     },
     {
       id: 'showInjectedContext',
+      category: 'contextSession' as const,
       label: 'Show injected context',
       value: settingsData?.showInjectedContext ?? true,
       type: 'boolean' as const,
@@ -863,6 +863,7 @@ export function Config({
     },
     {
       id: 'defaultPermissionMode',
+      category: 'permissionsSafety' as const,
       label: 'Default permission mode',
       value: settingsData?.permissions?.defaultMode || 'default',
       options: (() => {
@@ -918,6 +919,7 @@ export function Config({
     },
     {
       id: 'useAutoModeDuringPlan',
+      category: 'modelReasoning' as const,
       label: 'Use auto mode during plan',
       value:
         (settingsData as { useAutoModeDuringPlan?: boolean } | undefined)
@@ -945,6 +947,7 @@ export function Config({
     },
     {
       id: 'respectGitignore',
+      category: 'inputFiles' as const,
       label: 'Respect .gitignore in file picker',
       value: settingsData?.respectGitignore ?? true,
       type: 'boolean' as const,
@@ -954,6 +957,7 @@ export function Config({
     },
     {
       id: 'copyFullResponse',
+      category: 'inputFiles' as const,
       label: 'Always copy full response (skip /copy picker)',
       value: settingsData?.copyFullResponse ?? false,
       type: 'boolean' as const,
@@ -963,6 +967,7 @@ export function Config({
     },
     {
       id: 'copyOnSelect',
+      category: 'inputFiles' as const,
       label: 'Copy on select',
       value: settingsData?.copyOnSelect ?? true,
       type: 'boolean' as const,
@@ -974,6 +979,7 @@ export function Config({
     autoUpdaterDisabledReason
       ? {
           id: 'autoUpdatesChannel',
+          category: 'integrations' as const,
           label: 'Auto-update channel',
           value: 'disabled',
           type: 'managedEnum' as const,
@@ -981,6 +987,7 @@ export function Config({
         }
       : {
           id: 'autoUpdatesChannel',
+          category: 'integrations' as const,
           label: 'Auto-update channel',
           value: settingsData?.autoUpdatesChannel ?? 'latest',
           type: 'managedEnum' as const,
@@ -990,6 +997,7 @@ export function Config({
         },
     {
       id: 'theme',
+      category: 'appearance' as const,
       label: 'Theme',
       value: themeSetting,
       type: 'managedEnum',
@@ -997,6 +1005,7 @@ export function Config({
     },
     {
       id: 'notifChannel',
+      category: 'notifications' as const,
       label: 'Local notifications',
       value: settingsData?.preferredNotifChannel ?? 'auto',
       options: [
@@ -1018,6 +1027,7 @@ export function Config({
     },
     {
       id: 'taskCompleteNotifEnabled',
+      category: 'notifications' as const,
       label: 'Push when idle',
       value: settingsData?.taskCompleteNotifEnabled ?? false,
       type: 'boolean' as const,
@@ -1027,6 +1037,7 @@ export function Config({
     },
     {
       id: 'inputNeededNotifEnabled',
+      category: 'notifications' as const,
       label: 'Push when input needed',
       value: settingsData?.inputNeededNotifEnabled ?? false,
       type: 'boolean' as const,
@@ -1036,6 +1047,7 @@ export function Config({
     },
     {
       id: 'agentPushNotifEnabled',
+      category: 'notifications' as const,
       label: 'Push when Claude decides',
       value: settingsData?.agentPushNotifEnabled ?? false,
       type: 'boolean' as const,
@@ -1045,6 +1057,7 @@ export function Config({
     },
     {
       id: 'scheduledTasksEnabled',
+      category: 'notifications' as const,
       label: 'Scheduled tasks',
       value: settingsData?.scheduledTasksEnabled ?? true,
       type: 'boolean' as const,
@@ -1054,6 +1067,7 @@ export function Config({
     },
     {
       id: 'coordinatorMode',
+      category: 'advanced' as const,
       label: 'Coordinator mode',
       value: settingsData?.coordinatorMode ?? false,
       type: 'boolean' as const,
@@ -1063,6 +1077,7 @@ export function Config({
     },
     {
       id: 'assistantEnabled',
+      category: 'integrations' as const,
       label: 'Assistant session (webui)',
       value: settingsData?.assistant?.enabled ?? true,
       type: 'boolean' as const,
@@ -1074,6 +1089,7 @@ export function Config({
     },
     {
       id: 'messageActionsEnabled',
+      category: 'integrations' as const,
       label: 'Message actions',
       value: settingsData?.messageActionsEnabled ?? true,
       type: 'boolean' as const,
@@ -1083,6 +1099,7 @@ export function Config({
     },
     {
       id: 'backgroundTasksEnabled',
+      category: 'integrations' as const,
       label: 'Background tasks',
       value: settingsData?.backgroundTasksEnabled ?? true,
       type: 'boolean' as const,
@@ -1092,6 +1109,7 @@ export function Config({
     },
     {
       id: 'unattendedRetry',
+      category: 'advanced' as const,
       label: 'Unattended retry',
       value: settingsData?.unattendedRetry ?? false,
       type: 'boolean' as const,
@@ -1101,6 +1119,7 @@ export function Config({
     },
     {
       id: 'streamlinedOutput',
+      category: 'contextSession' as const,
       label: 'Streamlined output',
       value: settingsData?.streamlinedOutput ?? false,
       type: 'boolean' as const,
@@ -1110,6 +1129,7 @@ export function Config({
     },
     {
       id: 'briefAttachmentUpload',
+      category: 'inputFiles' as const,
       label: 'Brief attachment upload',
       value: settingsData?.briefAttachmentUpload ?? false,
       type: 'boolean' as const,
@@ -1121,6 +1141,7 @@ export function Config({
       ? [
           {
             id: 'defaultView',
+            category: 'appearance' as const,
             label: 'What you see by default',
             // 'default' means the setting is unset — currently resolves to
             // transcript (main.tsx falls through when defaultView !== 'chat').
@@ -1158,6 +1179,7 @@ export function Config({
       : []),
     {
       id: 'language',
+      category: 'general' as const,
       label: 'Language',
       value: currentLanguage ?? 'Default (English)',
       type: 'managedEnum' as const,
@@ -1165,6 +1187,7 @@ export function Config({
     },
     {
       id: 'editorMode',
+      category: 'general' as const,
       label: 'Editor mode',
       value: settingsData?.editorMode ?? 'normal',
       options: ['normal', 'vim'],
@@ -1177,6 +1200,7 @@ export function Config({
     },
     {
       id: 'prStatusFooterEnabled',
+      category: 'integrations' as const,
       label: 'Show PR status footer',
       value: settingsData?.prStatusFooterEnabled ?? true,
       type: 'boolean' as const,
@@ -1186,6 +1210,7 @@ export function Config({
     },
     {
       id: 'model',
+      category: 'modelReasoning' as const,
       label: 'Model',
       value: mainLoopModel === null ? 'Default (recommended)' : mainLoopModel,
       type: 'managedEnum' as const,
@@ -1195,6 +1220,7 @@ export function Config({
       ? [
           {
             id: 'diffTool',
+            category: 'integrations' as const,
             label: 'Diff tool',
             value: settingsData?.diffTool ?? 'auto',
             options: ['terminal', 'auto'],
@@ -1211,6 +1237,7 @@ export function Config({
       ? [
           {
             id: 'autoConnectIde',
+            category: 'integrations' as const,
             label: 'Auto-connect to IDE (external terminal)',
             value: settingsData?.autoConnectIde ?? false,
             type: 'boolean' as const,
@@ -1224,6 +1251,7 @@ export function Config({
       ? [
           {
             id: 'autoInstallIdeExtension',
+            category: 'integrations' as const,
             label: 'Auto-install IDE extension',
             value: settingsData?.autoInstallIdeExtension ?? true,
             type: 'boolean' as const,
@@ -1237,6 +1265,7 @@ export function Config({
       ? [
           {
             id: 'showExternalIncludesDialog',
+            category: 'inputFiles' as const,
             label: 'External CLAUDE.md includes',
             value: (() => {
               const projectConfig = getCurrentProjectConfig()
@@ -1255,34 +1284,47 @@ export function Config({
       : []),
   ]
 
-  // Filter settings based on search query
-  const filteredSettingsItems = React.useMemo(() => {
-    if (!searchQuery) return settingsItems
-    const lowerQuery = searchQuery.toLowerCase()
-    return settingsItems.filter(setting => {
-      if (setting.id.toLowerCase().includes(lowerQuery)) return true
-      const searchableText =
-        'searchText' in setting ? setting.searchText : setting.label
-      return searchableText.toLowerCase().includes(lowerQuery)
-    })
-  }, [settingsItems, searchQuery])
+  // Section rows: category header + that category's (matching) settings
+  const settingsRows = React.useMemo(
+    () => buildSettingsRows(settingsItems, searchQuery),
+    [settingsItems, searchQuery],
+  )
+  const firstSettingIndex = React.useMemo(
+    () => settingsRows.findIndex(row => row.kind === 'setting'),
+    [settingsRows],
+  )
 
-  // Adjust selected index when filtered list shrinks, and keep the selected
-  // item visible when maxVisible changes (e.g., terminal resize).
+  // Adjust selected index when the row list shrinks, keep the selected
+  // row visible when maxVisible changes (e.g., terminal resize), and snap
+  // the selection off a header row if a filter/resize landed it there.
   React.useEffect(() => {
-    if (selectedIndex >= filteredSettingsItems.length) {
-      const newIndex = Math.max(0, filteredSettingsItems.length - 1)
+    if (settingsRows.length === 0) return
+    const clampToSettingRow = (index: number): number => {
+      const newIndex = Math.min(Math.max(0, index), settingsRows.length - 1)
+      if (settingsRows[newIndex]!.kind !== 'header') return newIndex
+      let fwd = newIndex + 1
+      while (
+        fwd < settingsRows.length &&
+        settingsRows[fwd]!.kind === 'header'
+      ) {
+        fwd++
+      }
+      return fwd < settingsRows.length ? fwd : Math.max(0, firstSettingIndex)
+    }
+    if (selectedIndex >= settingsRows.length) {
+      const newIndex = clampToSettingRow(settingsRows.length - 1)
       setSelectedIndex(newIndex)
       setScrollOffset(Math.max(0, newIndex - maxVisible + 1))
       return
     }
+    const newIndex = clampToSettingRow(selectedIndex)
+    if (newIndex !== selectedIndex) setSelectedIndex(newIndex)
     setScrollOffset(prev => {
-      if (selectedIndex < prev) return selectedIndex
-      if (selectedIndex >= prev + maxVisible)
-        return selectedIndex - maxVisible + 1
+      if (newIndex < prev) return newIndex
+      if (newIndex >= prev + maxVisible) return newIndex - maxVisible + 1
       return prev
     })
-  }, [filteredSettingsItems.length, selectedIndex, maxVisible])
+  }, [settingsRows, selectedIndex, maxVisible, firstSettingIndex])
 
   // Keep the selected item visible within the scroll window.
   // Called synchronously from navigation handlers to avoid a render frame
@@ -1601,10 +1643,11 @@ export function Config({
   // Settings navigation and toggle actions via configurable keybindings.
   // Only active when not in search mode and no submenu is open.
   const toggleSetting = useCallback(() => {
-    const setting = filteredSettingsItems[selectedIndex]
-    if (!setting || !setting.onChange) {
+    const row = settingsRows[selectedIndex]
+    if (!row || row.kind === 'header' || !row.setting.onChange) {
       return
     }
+    const setting = row.setting
 
     if (setting.type === 'boolean') {
       isDirty.current = true
@@ -1702,7 +1745,7 @@ export function Config({
     }
   }, [
     autoUpdaterDisabledReason,
-    filteredSettingsItems,
+    settingsRows,
     selectedIndex,
     settingsData?.autoUpdatesChannel,
     autoCompactPercentage,
@@ -1712,10 +1755,16 @@ export function Config({
 
   const moveSelection = (delta: -1 | 1): void => {
     setShowThinkingWarning(false)
-    const newIndex = Math.max(
-      0,
-      Math.min(filteredSettingsItems.length - 1, selectedIndex + delta),
-    )
+    // Skip over category header rows — they are never selectable.
+    let newIndex = selectedIndex + delta
+    while (
+      newIndex >= 0 &&
+      newIndex < settingsRows.length &&
+      settingsRows[newIndex]!.kind === 'header'
+    ) {
+      newIndex += delta
+    }
+    if (newIndex < 0 || newIndex >= settingsRows.length) return
     setSelectedIndex(newIndex)
     adjustScrollOffset(newIndex)
   }
@@ -1723,10 +1772,11 @@ export function Config({
   useKeybindings(
     {
       'select:previous': () => {
-        if (selectedIndex === 0) {
-          // ↑ at top enters search mode so users can type-to-filter after
-          // reaching the list boundary. Wheel-up (scroll:lineUp) clamps
-          // instead — overshoot shouldn't move focus away from the list.
+        if (selectedIndex <= firstSettingIndex) {
+          // ↑ at the first setting row enters search mode so users can
+          // type-to-filter after reaching the list boundary. Wheel-up
+          // (scroll:lineUp) clamps instead — overshoot shouldn't move focus
+          // away from the list.
           setShowThinkingWarning(false)
           setIsSearchMode(true)
           setScrollOffset(0)
@@ -1778,7 +1828,7 @@ export function Config({
         if (e.key === 'return' || e.key === 'down' || e.key === 'wheeldown') {
           e.preventDefault()
           setIsSearchMode(false)
-          setSelectedIndex(0)
+          setSelectedIndex(firstSettingIndex)
           setScrollOffset(0)
         }
         return
@@ -2122,7 +2172,7 @@ export function Config({
             placeholder="Search settings…"
           />
           <Box flexDirection="column">
-            {filteredSettingsItems.length === 0 ? (
+            {settingsRows.length === 0 ? (
               <Text dimColor italic>
                 No settings match &quot;{searchQuery}&quot;
               </Text>
@@ -2133,10 +2183,22 @@ export function Config({
                     {figures.arrowUp} {scrollOffset} more above
                   </Text>
                 )}
-                {filteredSettingsItems
+                {settingsRows
                   .slice(scrollOffset, scrollOffset + maxVisible)
-                  .map((setting, i) => {
+                  .map((row, i) => {
                     const actualIndex = scrollOffset + i
+
+                    if (row.kind === 'header') {
+                      return (
+                        <Box key={row.id} marginTop={i === 0 ? 0 : 1}>
+                          <Text dimColor bold>
+                            {row.label}
+                          </Text>
+                        </Box>
+                      )
+                    }
+
+                    const setting = row.setting
                     const isSelected =
                       actualIndex === selectedIndex &&
                       !headerFocused &&
@@ -2220,11 +2282,10 @@ export function Config({
                       </React.Fragment>
                     )
                   })}
-                {scrollOffset + maxVisible < filteredSettingsItems.length && (
+                {scrollOffset + maxVisible < settingsRows.length && (
                   <Text dimColor>
                     {figures.arrowDown}{' '}
-                    {filteredSettingsItems.length - scrollOffset - maxVisible}{' '}
-                    more below
+                    {settingsRows.length - scrollOffset - maxVisible} more below
                   </Text>
                 )}
               </>
