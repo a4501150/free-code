@@ -3,12 +3,11 @@
  * task store, wires the static Task.kill dispatch, and delegates rendering
  * to the host-agnostic panels/BackgroundTasksDialog component. Both mounts
  * (the /tasks command and the REPL's Shift+Down path) go through this
- * adapter, keeping their existing props.
+ * adapter.
  */
 
 import * as React from 'react'
 import { useAppState, useSetAppState } from 'src/state/AppState.js'
-import type { ToolUseContext } from 'src/Tool.js'
 import { DreamTask } from 'src/tasks/DreamTask/DreamTask.js'
 import { LocalAgentTask } from 'src/tasks/LocalAgentTask/LocalAgentTask.js'
 import { LocalShellTask } from 'src/tasks/LocalShellTask/LocalShellTask.js'
@@ -24,8 +23,6 @@ type Props = {
     result?: string,
     options?: { display?: CommandResultDisplay },
   ) => void
-  /** Accepted for mount-contract compatibility; the panel no longer uses it. */
-  toolUseContext: ToolUseContext
   initialDetailTaskId?: string
 }
 

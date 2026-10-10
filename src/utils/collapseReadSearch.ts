@@ -9,6 +9,7 @@ import { TASK_CREATE_TOOL_NAME } from '../tools/TaskCreateTool/constants.js'
 import { TASK_GET_TOOL_NAME } from '../tools/TaskGetTool/constants.js'
 import { TASK_LIST_TOOL_NAME } from '../tools/TaskListTool/constants.js'
 import { TASK_UPDATE_TOOL_NAME } from '../tools/TaskUpdateTool/constants.js'
+import { truncate } from './truncate.js'
 import {
   type BranchAction,
   type CommitKind,
@@ -130,9 +131,7 @@ function commandAsHint(command: string): string {
       .map(l => l.replace(/\s+/g, ' ').trim())
       .filter(l => l !== '')
       .join('\n')
-  return cleaned.length > MAX_HINT_CHARS
-    ? cleaned.slice(0, MAX_HINT_CHARS - 1) + '…'
-    : cleaned
+  return truncate(cleaned, MAX_HINT_CHARS)
 }
 
 /**

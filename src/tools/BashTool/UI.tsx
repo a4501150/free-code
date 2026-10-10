@@ -3,6 +3,10 @@ import * as React from 'react'
 import { KeyboardShortcutHint } from '../../components/design-system/KeyboardShortcutHint.js'
 import { FallbackToolUseErrorMessage } from '../../components/FallbackToolUseErrorMessage.js'
 import { MessageResponse } from '../../components/MessageResponse.js'
+import {
+  MAX_COMMAND_DISPLAY_CHARS,
+  truncateCommandForDisplay,
+} from '../../components/shell/CommandPreview.js'
 import { ShellProgressMessage } from '../../components/shell/ShellProgressMessage.js'
 import { Box, Text } from '../../ink.js'
 import { useKeybinding } from '../../keybindings/useKeybinding.js'
@@ -19,14 +23,30 @@ import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { env } from '../../utils/env.js'
 import { getDisplayPath } from '../../utils/file.js'
 import type { ThemeName } from '../../utils/theme.js'
+import { truncate } from '../../utils/truncate.js'
 import type { BashProgress, BashToolInput, Out } from './BashTool.js'
 import BashToolResultMessage from './BashToolResultMessage.js'
 import { extractBashCommentLabel } from './commentLabel.js'
 import { parseSedEditCommand } from './sedEditParser.js'
 
-// Constants for command display
-const MAX_COMMAND_DISPLAY_LINES = 2
-const MAX_COMMAND_DISPLAY_CHARS = 160
+// Show the background hint / progress UI after this many ms (shared by the
+// Bash and Agent tools' mid-flight display)
+export const PROGRESS_THRESHOLD_MS = 2000
+
+/** setToolJSX args for showing the background hint (Bash and Agent tools). */
+export function backgroundHintToolJSX(): {
+  jsx: React.ReactElement
+  shouldHidePromptInput: false
+  shouldContinueAnimation: true
+  showSpinner: true
+} {
+  return {
+    jsx: <BackgroundHint />,
+    shouldHidePromptInput: false,
+    shouldContinueAnimation: true,
+    showSpinner: true,
+  }
+}
 
 // Simple component to show background hint and handle ctrl+b
 // When ctrl+b is pressed, backgrounds ALL running foreground commands
@@ -99,32 +119,14 @@ export function renderToolUseMessage(
   }
 
   if (!verbose) {
-    const lines = command.split('\n')
-
     const label = extractBashCommentLabel(command)
     if (label) {
-      return label.length > MAX_COMMAND_DISPLAY_CHARS
-        ? label.slice(0, MAX_COMMAND_DISPLAY_CHARS) + '…'
-        : label
+      return truncate(label, MAX_COMMAND_DISPLAY_CHARS)
     }
 
-    const needsLineTruncation = lines.length > MAX_COMMAND_DISPLAY_LINES
-    const needsCharTruncation = command.length > MAX_COMMAND_DISPLAY_CHARS
-
-    if (needsLineTruncation || needsCharTruncation) {
-      let truncated = command
-
-      // First truncate by lines if needed
-      if (needsLineTruncation) {
-        truncated = lines.slice(0, MAX_COMMAND_DISPLAY_LINES).join('\n')
-      }
-
-      // Then truncate by chars if still too long
-      if (truncated.length > MAX_COMMAND_DISPLAY_CHARS) {
-        truncated = truncated.slice(0, MAX_COMMAND_DISPLAY_CHARS)
-      }
-
-      return <Text>{truncated.trim()}…</Text>
+    const preview = truncateCommandForDisplay(command)
+    if (preview !== null) {
+      return <Text>{preview}</Text>
     }
   }
 

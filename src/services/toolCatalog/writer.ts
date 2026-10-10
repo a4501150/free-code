@@ -38,6 +38,13 @@ export type CatalogServerSnapshot = {
   file: string
   toolCount: number
   hash: string
+  /**
+   * Cheap input digest (tool names, schemas, descriptions) used to skip
+   * re-rendering a server whose inputs are unchanged. The manifest hash is
+   * verified against the file on disk, so a deleted or edited file still
+   * forces a re-render. Absent in states written before digests existed.
+   */
+  digest?: string
 }
 
 export type CatalogManifest = {
@@ -411,11 +418,35 @@ function serverFileName(serverName: string): string {
   return `${normalizeNameForMCP(serverName)}.ts`
 }
 
+// Cheap per-server input digest: names, raw schemas, descriptions, flags.
+// Substitutes for re-rendering when the inputs are unchanged — MCP tools
+// carry their raw JSON schema (inputJSONSchema), so this skips the TS
+// codegen, the string assembly, and the content hash of the full module.
+async function computeServerDigest(
+  description: string,
+  tools: Tool[],
+): Promise<string> {
+  const h = createHash('sha256')
+  h.update(description)
+  for (const tool of [...tools].sort((a, b) => a.name.localeCompare(b.name))) {
+    h.update(tool.name)
+    h.update('\0')
+    h.update(JSON.stringify(inputSchemaOf(tool) ?? null))
+    h.update('\0')
+    h.update(await toolDescription(tool))
+    h.update('\0')
+    h.update(annotationLines(tool).join(','))
+    h.update('\0')
+  }
+  return h.digest('hex').slice(0, 16)
+}
+
 async function renderCatalog(
   mcpTools: Tool[],
   lazyBuiltInTools: Tool[],
   serverDescriptions: Map<string, string>,
   dir: string,
+  previous: CatalogManifest | null,
 ): Promise<{
   files: RenderedFile[]
   servers: CatalogManifest['servers']
@@ -432,20 +463,48 @@ async function renderCatalog(
 
   const servers: CatalogManifest['servers'] = []
   const files: RenderedFile[] = []
+  const previousByServer = new Map(
+    (previous?.servers ?? []).map(s => [s.name, s]),
+  )
   for (const [serverName, tools] of [...byServer.entries()].sort()) {
-    const content = await renderModule(
-      serverDescriptions.get(serverName) ?? null,
-      tools,
-      tool => catalogExportName(tool.name, serverName),
-    )
+    const description = serverDescriptions.get(serverName) ?? ''
+    const digest = await computeServerDigest(description, tools)
     const file = join(SERVERS_DIR, serverFileName(serverName))
+    const prev = previousByServer.get(serverName)
+    if (prev?.digest === digest && prev.description === description) {
+      // Digest says inputs are unchanged; the stored content hash checked
+      // against the file on disk says the bytes are still there untouched.
+      try {
+        const onDisk = await readFile(join(dir, file), 'utf8')
+        if (
+          createHash('sha256').update(onDisk).digest('hex').slice(0, 16) ===
+          prev.hash
+        ) {
+          servers.push({
+            name: serverName,
+            description,
+            file,
+            toolCount: tools.length,
+            hash: prev.hash,
+            digest,
+          })
+          continue
+        }
+      } catch {
+        // Missing/unreadable file: fall through and re-render.
+      }
+    }
+    const content = await renderModule(description || null, tools, tool =>
+      catalogExportName(tool.name, serverName),
+    )
     files.push({ path: join(dir, file), content })
     servers.push({
       name: serverName,
-      description: serverDescriptions.get(serverName) ?? '',
+      description,
       file,
       toolCount: tools.length,
       hash: createHash('sha256').update(content).digest('hex').slice(0, 16),
+      digest,
     })
   }
   servers.sort((a, b) => a.name.localeCompare(b.name))
@@ -485,7 +544,8 @@ function sameSnapshot(
       s.description === servers[i].description &&
       s.file === servers[i].file &&
       s.toolCount === servers[i].toolCount &&
-      s.hash === servers[i].hash,
+      s.hash === servers[i].hash &&
+      (s.digest ?? '') === (servers[i].digest ?? ''),
   )
 }
 
@@ -532,14 +592,15 @@ export async function writeToolCatalog(opts: {
 }): Promise<CatalogWriteResult> {
   const dir = opts.catalogDir ?? toolCatalogDir()
   const statePath = opts.statePath ?? toolCatalogStatePath()
+  const previous = await readToolCatalogState(statePath)
   const { files, servers, builtins } = await renderCatalog(
     opts.mcpTools,
     opts.lazyBuiltInTools,
     opts.serverDescriptions,
     dir,
+    previous,
   )
 
-  const previous = await readToolCatalogState(statePath)
   if (previous && sameSnapshot(previous, servers, builtins)) {
     return { manifest: previous, wrote: false }
   }

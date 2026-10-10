@@ -64,7 +64,7 @@ import type { SetAppState } from '../../utils/messageQueueManager.js'
 import type { LocalAgentTaskState } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 
 export function useReplSubmission(deps: {
-  // All dependencies from REPL closure
+  // All dependencies from REPL closure, in one flat bag
   initialMessage: any
   isLoading: boolean
   setMessages: (action: React.SetStateAction<MessageType[]>) => void
@@ -72,39 +72,36 @@ export function useReplSubmission(deps: {
   onQuery: any
   mainLoopModel: string
   repinScroll: () => void
-  onSubmit_deps: {
-    queryGuard: any
-    isExternalLoading: boolean
-    inputMode: PromptInputMode
-    commands: Command[]
-    setInputValue: (value: string) => void
-    setInputMode: (mode: PromptInputMode) => void
-    setPastedContents: React.Dispatch<
-      React.SetStateAction<Record<number, PastedContent>>
-    >
-    setSubmitCount: React.Dispatch<React.SetStateAction<number>>
-    setIDESelection: (sel: any) => void
-    setToolJSX: (args: any) => void
-    getToolUseContext: any
-    messagesRef: React.RefObject<MessageType[]>
-    pastedContents: Record<number, PastedContent>
-    ideSelection: any
-    setUserInputOnProcessing: (input: string | undefined) => void
-    setAbortController: (controller: AbortController | null) => void
-    abortController: AbortController | null
-    addNotification: (n: any) => void
-    stashedPrompt: any
-    setStashedPrompt: (p: any) => void
-    onBeforeQuery: any
-    canUseTool: any
-    awaitPendingHooks: () => Promise<void>
-    inputValueRef: React.RefObject<string>
-    streamModeRef: React.RefObject<any>
-    hasInterruptibleToolInProgressRef: { current: boolean }
-    readFileState: React.RefObject<any>
-    resetTimingRefs: () => void
-    tipPickedThisTurnRef: React.RefObject<boolean>
-  }
+  // Submit-callback dependencies (referenced as d.<field> in deps arrays)
+  queryGuard: any
+  isExternalLoading: boolean
+  inputMode: PromptInputMode
+  commands: Command[]
+  setInputValue: (value: string) => void
+  setInputMode: (mode: PromptInputMode) => void
+  setPastedContents: React.Dispatch<
+    React.SetStateAction<Record<number, PastedContent>>
+  >
+  setSubmitCount: React.Dispatch<React.SetStateAction<number>>
+  setIDESelection: (sel: any) => void
+  setToolJSX: (args: any) => void
+  getToolUseContext: any
+  messagesRef: React.RefObject<MessageType[]>
+  pastedContents: Record<number, PastedContent>
+  ideSelection: any
+  setUserInputOnProcessing: (input: string | undefined) => void
+  abortController: AbortController | null
+  addNotification: (n: any) => void
+  stashedPrompt: any
+  setStashedPrompt: (p: any) => void
+  onBeforeQuery: any
+  canUseTool: any
+  awaitPendingHooks: () => Promise<void>
+  inputValueRef: React.RefObject<string>
+  streamModeRef: React.RefObject<any>
+  hasInterruptibleToolInProgressRef: { current: boolean }
+  resetTimingRefs: () => void
+  tipPickedThisTurnRef: React.RefObject<boolean>
   store: any
   readFileState: React.RefObject<any>
   loadedNestedMemoryPathsRef: React.RefObject<Set<string>>
@@ -116,6 +113,7 @@ export function useReplSubmission(deps: {
   bashToolsProcessedIdx: React.RefObject<number>
   setAbortController: (controller: AbortController | null) => void
 }) {
+  const d = deps
   const {
     initialMessage,
     isLoading,
@@ -124,7 +122,6 @@ export function useReplSubmission(deps: {
     onQuery,
     mainLoopModel,
     repinScroll,
-    onSubmit_deps: d,
     store,
     readFileState,
     loadedNestedMemoryPathsRef,

@@ -152,8 +152,14 @@ export function formatTokens(count: number): string {
   return formatNumber(count).replace('.0', '')
 }
 
-export function formatTokensPerSecond(tokensPerSecond: number): string {
-  return `${tokensPerSecond.toFixed(1)} tok/s`
+export function formatTokensPerSecond(
+  tokensPerSecond: number,
+  { compact = false }: { compact?: boolean } = {},
+): string {
+  // compact: abbreviated magnitudes (1.2k tok/s) for width-constrained rows
+  return compact
+    ? `${formatNumber(Math.round(tokensPerSecond))} tok/s`
+    : `${tokensPerSecond.toFixed(1)} tok/s`
 }
 
 type RelativeTimeStyle = 'long' | 'short' | 'narrow'

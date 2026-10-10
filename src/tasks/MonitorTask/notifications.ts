@@ -19,22 +19,14 @@
  * attaches the queue bridge, the per-line disk-output hook and the
  * AppState status mirror (see taskState.ts) to a MonitorManager.
  */
-import {
-  MONITOR_OUTPUT_TAG,
-  OUTPUT_FILE_TAG,
-  STATUS_TAG,
-  SUMMARY_TAG,
-  TASK_ID_TAG,
-  TASK_NOTIFICATION_TAG,
-  TASK_TYPE_TAG,
-} from '../../constants/xml.js'
+import { MONITOR_OUTPUT_TAG, TASK_TYPE_TAG } from '../../constants/xml.js'
 import type { SetAppState } from '../../Task.js'
 import type { Monitor, MonitorManager } from '../../utils/monitors.js'
 import {
   enqueuePendingNotification,
   peek,
 } from '../../utils/messageQueueManager.js'
-import { getTaskOutputPath } from '../../utils/task/diskOutput.js'
+import { renderTaskNotificationBlock } from '../../utils/task/notification.js'
 import {
   appendMonitorOutputLine,
   mirrorMonitorStatus,
@@ -81,20 +73,15 @@ function renderMonitorSection({ monitor, output }: NoticeEntry): string {
   const lines = output.length > 0 ? output : ['(no output)']
   const outputText = lines.map(l => `  ${l}`).join('\n')
   const status = monitorStatusToTaskStatus(monitor)
-  // <status> only on terminal transitions: a present <status> is the
-  // terminal signal for print.ts and structured consumers, and 'running'
-  // is not a status they understand.
-  const statusLine =
-    status === 'running' ? '' : `\n<${STATUS_TAG}>${status}</${STATUS_TAG}>`
-  return `<${TASK_NOTIFICATION_TAG}>
-<${TASK_ID_TAG}>${monitor.id}</${TASK_ID_TAG}>
-<${TASK_TYPE_TAG}>monitor</${TASK_TYPE_TAG}>
-<${OUTPUT_FILE_TAG}>${getTaskOutputPath(monitor.id)}</${OUTPUT_FILE_TAG}>${statusLine}
-<${SUMMARY_TAG}>${monitorSummaryText(monitor)}</${SUMMARY_TAG}>
-<${MONITOR_OUTPUT_TAG}>
-${outputText}
-</${MONITOR_OUTPUT_TAG}>
-</${TASK_NOTIFICATION_TAG}>`
+  return renderTaskNotificationBlock({
+    taskId: monitor.id,
+    // <status> only on terminal transitions: 'running' is not a status
+    // print.ts and structured consumers understand.
+    ...(status === 'running' ? {} : { status }),
+    taskType: 'monitor',
+    summary: monitorSummaryText(monitor),
+    extraSections: `\n<${MONITOR_OUTPUT_TAG}>\n${outputText}\n</${MONITOR_OUTPUT_TAG}>`,
+  })
 }
 
 /** Build the full notice text for a set of monitors. Pure and exported for

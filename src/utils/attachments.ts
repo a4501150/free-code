@@ -1040,23 +1040,9 @@ export async function getAttachments(
 }
 
 async function maybe<A>(label: string, f: () => Promise<A[]>): Promise<A[]> {
-  const startTime = Date.now()
   try {
-    const result = await f()
-    const duration = Date.now() - startTime
-    // Log only 5% of events to reduce volume
-    if (Math.random() < 0.05) {
-      // jsonStringify(undefined) returns undefined, so .length would throw
-      const attachmentSizeBytes = result
-        .filter(a => a !== undefined && a !== null)
-        .reduce((total, attachment) => {
-          return total + jsonStringify(attachment).length
-        }, 0)
-    }
-    return result
+    return await f()
   } catch (e) {
-    const duration = Date.now() - startTime
-    // Log only 5% of events to reduce volume
     logError(e)
     // For Ant users, log the full error to help with debugging
     logAntError(`Attachment error in ${label}`, e)

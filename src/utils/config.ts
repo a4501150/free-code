@@ -68,6 +68,10 @@ export type ProjectConfig = {
   lastLinesRemoved?: number
   lastSessionId?: string
   lastModelAPIDurationMs?: Record<string, number>
+  lastModelDecodeStats?: Record<
+    string,
+    { decodeMs: number; outputTokens: number }
+  >
   lastModelUsage?: Record<
     string,
     {

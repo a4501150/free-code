@@ -570,8 +570,7 @@ export function REPL({
   const { addNotification, removeNotification } = useNotifications()
   useBuddyNotification()
 
-  // eslint-disable-next-line prefer-const
-  let trySuggestBgPRIntercept = SUGGEST_BG_PR_NOOP
+  const trySuggestBgPRIntercept = SUGGEST_BG_PR_NOOP
 
   const mcpClients = useMergedClients(initialMcpClients, mcp.clients)
 
@@ -720,6 +719,8 @@ export function REPL({
     showStreamingText,
     responseLengthRef,
     setResponseLength,
+    apiMetricsRef,
+    onApiMetrics,
     spinnerMessage,
     setSpinnerMessage,
     spinnerColor,
@@ -1225,6 +1226,7 @@ export function REPL({
       setStreamingText,
       setResponseLength,
       onStreamingText,
+      onApiMetrics,
       setSpinnerMessage,
       setSpinnerColor,
       setSpinnerShimmerColor,
@@ -1272,37 +1274,33 @@ export function REPL({
       onQuery,
       mainLoopModel,
       repinScroll,
-      onSubmit_deps: {
-        queryGuard,
-        isExternalLoading,
-        inputMode,
-        commands,
-        setInputValue,
-        setInputMode,
-        setPastedContents,
-        setSubmitCount,
-        setIDESelection,
-        setToolJSX,
-        getToolUseContext,
-        messagesRef,
-        pastedContents,
-        ideSelection,
-        setUserInputOnProcessing,
-        setAbortController,
-        abortController,
-        addNotification,
-        stashedPrompt,
-        setStashedPrompt,
-        onBeforeQuery,
-        canUseTool,
-        awaitPendingHooks,
-        inputValueRef,
-        streamModeRef,
-        hasInterruptibleToolInProgressRef,
-        readFileState,
-        resetTimingRefs,
-        tipPickedThisTurnRef,
-      },
+      queryGuard,
+      isExternalLoading,
+      inputMode,
+      commands,
+      setInputValue,
+      setInputMode,
+      setPastedContents,
+      setSubmitCount,
+      setIDESelection,
+      setToolJSX,
+      getToolUseContext,
+      messagesRef,
+      pastedContents,
+      ideSelection,
+      setUserInputOnProcessing,
+      abortController,
+      addNotification,
+      stashedPrompt,
+      setStashedPrompt,
+      onBeforeQuery,
+      canUseTool,
+      awaitPendingHooks,
+      inputValueRef,
+      streamModeRef,
+      hasInterruptibleToolInProgressRef,
+      resetTimingRefs,
+      tipPickedThisTurnRef,
       store,
       readFileState,
       loadedNestedMemoryPathsRef,
@@ -1951,12 +1949,6 @@ export function REPL({
   ) : showBashesDialogInModal ? (
     <BackgroundTasksDialog
       onDone={() => setShowBashesDialog(false)}
-      toolUseContext={getToolUseContext(
-        messages,
-        [],
-        new AbortController(),
-        mainLoopModel,
-      )}
       initialDetailTaskId={
         typeof showBashesDialog === 'string' ? showBashesDialog : undefined
       }
@@ -2090,6 +2082,7 @@ export function REPL({
                   mode={streamMode}
                   spinnerTip={spinnerTip}
                   responseLengthRef={responseLengthRef}
+                  apiMetricsRef={apiMetricsRef}
                   spinnerSuffix={stopHookSpinnerSuffix}
                   verbose={verbose}
                   loadingStartTimeRef={loadingStartTimeRef}

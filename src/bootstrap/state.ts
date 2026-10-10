@@ -66,8 +66,16 @@ type State = {
   hasUnknownModelCost: boolean
   cwd: string
   modelUsage: { [modelName: string]: ModelUsage }
-  /** Per-model sum of successful API call durations (ms), for tok/s stats. */
+  /** Per-model sum of successful API call durations (ms), for duration stats. */
   modelAPIDurationMs: { [modelName: string]: number }
+  /**
+   * Per-model decode-window samples (time after the first token) and the
+   * output tokens generated in them, for tok/s stats. Prefill and queue time
+   * stay out of the denominator, so cache-hit requests don't inflate the rate.
+   */
+  modelDecodeStats: {
+    [modelName: string]: { decodeMs: number; outputTokens: number }
+  }
   mainLoopModelOverride: ModelSetting | undefined
   initialMainLoopModel: ModelSetting
   isInteractive: boolean
@@ -247,6 +255,7 @@ function getInitialState(): State {
     cwd: resolvedCwd,
     modelUsage: {},
     modelAPIDurationMs: {},
+    modelDecodeStats: {},
     mainLoopModelOverride: undefined,
     initialMainLoopModel: null,
     isInteractive: false,
@@ -483,6 +492,29 @@ export function addToModelAPIDurationState(
 
 export function getModelAPIDurationMs(): { [modelName: string]: number } {
   return STATE.modelAPIDurationMs
+}
+
+/**
+ * Record one successful streaming call's decode window (duration minus
+ * time-to-first-token) and the output tokens it produced. Keyed like
+ * modelUsage so per-model tok/s pairs tokens against decode time only.
+ */
+export function addModelDecodeSampleState(
+  model: string,
+  decodeMs: number,
+  outputTokens: number,
+): void {
+  const prev = STATE.modelDecodeStats[model] ?? { decodeMs: 0, outputTokens: 0 }
+  STATE.modelDecodeStats[model] = {
+    decodeMs: prev.decodeMs + decodeMs,
+    outputTokens: prev.outputTokens + outputTokens,
+  }
+}
+
+export function getModelDecodeStats(): {
+  [modelName: string]: { decodeMs: number; outputTokens: number }
+} {
+  return STATE.modelDecodeStats
 }
 
 export function resetTotalDurationStateAndCost_FOR_TESTS_ONLY(): void {
@@ -798,6 +830,7 @@ export function resetCostState(): void {
   STATE.hasUnknownModelCost = false
   STATE.modelUsage = {}
   STATE.modelAPIDurationMs = {}
+  STATE.modelDecodeStats = {}
   STATE.promptId = null
 }
 
@@ -815,6 +848,7 @@ export function setCostStateForRestore({
   lastDuration,
   modelUsage,
   modelAPIDurationMs,
+  modelDecodeStats,
 }: {
   totalCostUSD: number
   totalAPIDuration: number
@@ -825,6 +859,9 @@ export function setCostStateForRestore({
   lastDuration: number | undefined
   modelUsage: { [modelName: string]: ModelUsage } | undefined
   modelAPIDurationMs?: { [modelName: string]: number }
+  modelDecodeStats?: {
+    [modelName: string]: { decodeMs: number; outputTokens: number }
+  }
 }): void {
   STATE.totalCostUSD = totalCostUSD
   STATE.totalAPIDuration = totalAPIDuration
@@ -839,6 +876,9 @@ export function setCostStateForRestore({
   }
   if (modelAPIDurationMs) {
     STATE.modelAPIDurationMs = modelAPIDurationMs
+  }
+  if (modelDecodeStats) {
+    STATE.modelDecodeStats = modelDecodeStats
   }
 
   // Adjust startTime to make wall duration accumulate

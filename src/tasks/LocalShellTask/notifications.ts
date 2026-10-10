@@ -3,20 +3,12 @@
 // pulling React/Ink into its module graph (same rationale as guards.ts /
 // killShellTasks.ts).
 
-import {
-  OUTPUT_FILE_TAG,
-  STATUS_TAG,
-  SUMMARY_TAG,
-  TASK_ID_TAG,
-  TASK_NOTIFICATION_TAG,
-  TOOL_USE_ID_TAG,
-} from '../../constants/xml.js'
 import { abortSpeculation } from '../../services/PromptSuggestion/speculation.js'
 import type { SetAppState } from '../../Task.js'
 import type { AgentId } from '../../types/ids.js'
 import { enqueuePendingNotification } from '../../utils/messageQueueManager.js'
-import { getTaskOutputPath } from '../../utils/task/diskOutput.js'
 import { updateTaskState } from '../../utils/task/framework.js'
+import { renderTaskNotificationBlock } from '../../utils/task/notification.js'
 import { escapeXml } from '../../utils/xml.js'
 import type { BashTaskKind } from './guards.js'
 
@@ -67,16 +59,12 @@ export function enqueueShellNotification(
       break
   }
 
-  const outputPath = getTaskOutputPath(taskId)
-  const toolUseIdLine = toolUseId
-    ? `\n<${TOOL_USE_ID_TAG}>${toolUseId}</${TOOL_USE_ID_TAG}>`
-    : ''
-  const message = `<${TASK_NOTIFICATION_TAG}>
-<${TASK_ID_TAG}>${taskId}</${TASK_ID_TAG}>${toolUseIdLine}
-<${OUTPUT_FILE_TAG}>${outputPath}</${OUTPUT_FILE_TAG}>
-<${STATUS_TAG}>${status}</${STATUS_TAG}>
-<${SUMMARY_TAG}>${escapeXml(summary)}</${SUMMARY_TAG}>
-</${TASK_NOTIFICATION_TAG}>`
+  const message = renderTaskNotificationBlock({
+    taskId,
+    status,
+    summary: escapeXml(summary),
+    ...(toolUseId !== undefined ? { toolUseId } : {}),
+  })
 
   enqueuePendingNotification({
     value: message,

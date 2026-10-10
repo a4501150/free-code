@@ -2667,6 +2667,15 @@ export type StreamingThinking = {
 const SUBAGENT_TYPE_RE = /"subagent_type"\s*:\s*"([^"]+)"/
 
 /**
+ * Per-request stream metrics published at message_start: seq advances for
+ * every streamed API request, and baseline is the accumulated response
+ * length when the request began — together they let consumers (the spinner
+ * token-rate window) isolate each request's decode span from turn-cumulative
+ * counters.
+ */
+export type StreamApiMetrics = { seq: number; baseline: number }
+
+/**
  * Handles messages from a stream, updating response length for deltas and appending completed messages
  */
 export function handleMessageFromStream(
@@ -2845,8 +2854,11 @@ export function handleMessageFromStream(
             }
             const newUnparsed = element.unparsedToolInput + delta
             let contentBlock = element.contentBlock
+            // Scan only the agent tool's input: an unanchored regex over the
+            // whole growing JSON would run per-delta for every tool block.
             if (
               element.contentBlock.type === 'tool_use' &&
+              element.contentBlock.name === AGENT_TOOL_NAME &&
               !(element.contentBlock.input as Record<string, unknown>)
                 .subagent_type
             ) {

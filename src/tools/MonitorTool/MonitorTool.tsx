@@ -56,15 +56,23 @@ const outputSchema = z.object({
 type OutputSchema = typeof outputSchema
 export type MonitorOut = z.infer<typeof outputSchema>
 
+/** Display label for a monitor: the caller's description, else the command. */
+function monitorLabel(input: {
+  description?: string
+  command?: string
+}): string {
+  return (
+    input.description ?? truncate(input.command ?? '', TOOL_SUMMARY_MAX_LENGTH)
+  )
+}
+
 export const MonitorTool = buildTool({
   renderPermissionRequest: () => MonitorPermissionRequest,
 
   name: MONITOR_TOOL_NAME,
   maxResultSizeChars: 30_000,
-  async description({ description, command }) {
-    return (
-      description || `Monitor ${truncate(command, TOOL_SUMMARY_MAX_LENGTH)}`
-    )
+  async description(input) {
+    return `Monitor ${monitorLabel(input)}`
   },
   async prompt() {
     return getMonitorPrompt()

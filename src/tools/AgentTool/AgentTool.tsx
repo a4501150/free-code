@@ -1,5 +1,10 @@
 import * as React from 'react'
-import { buildTool, type ToolDef, toolMatchesName } from 'src/Tool.js'
+import {
+  buildTool,
+  type ToolDef,
+  toolMatchesName,
+  type ToolUseContext,
+} from 'src/Tool.js'
 import type {
   Message as MessageType,
   NormalizedUserMessage,
@@ -68,7 +73,7 @@ import {
   removeAgentWorktree,
 } from '../../utils/worktree.js'
 import { BASH_TOOL_NAME } from '../BashTool/toolName.js'
-import { BackgroundHint } from '../BashTool/UI.js'
+import { backgroundHintToolJSX, PROGRESS_THRESHOLD_MS } from '../BashTool/UI.js'
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../SendMessageTool/constants.js'
 import { setAgentColor } from './agentColorManager.js'
@@ -113,9 +118,6 @@ import {
   userFacingNameBackgroundColor,
 } from './UI.js'
 
-// Progress display constants (for showing background hint)
-const PROGRESS_THRESHOLD_MS = 2000 // Show background hint after 2 seconds
-
 // Check if background tasks are disabled at module load time (settings are
 // snapshot-cached; the schema must be defined at module load)
 const isBackgroundTasksDisabled = !isBackgroundTasksEnabled()
@@ -124,8 +126,6 @@ const isBackgroundTasksDisabled = !isBackgroundTasksEnabled()
 function getAutoBackgroundMs(): number {
   return getInitialSettings().autoBackgroundTasksEnabled === true ? 120_000 : 0
 }
-
-// Multi-agent type constants are defined inline inside gated blocks to enable dead code elimination
 
 const baseInputSchema = z.object({
   description: z
@@ -198,7 +198,7 @@ type AgentToolInput = z.infer<typeof baseInputSchema> & {
   cwd?: string
 }
 
-// Output schema - multi-agent spawned schema added dynamically at runtime when enabled
+// Output schema
 export const outputSchema = (() => {
   const syncOutputSchema = agentToolResultSchema.extend({
     status: z.literal('completed'),
@@ -229,7 +229,47 @@ type OutputSchema = typeof outputSchema
 type Output = z.input<OutputSchema>
 
 // Output type used by call() result mapping and the progress/UI renderers.
-type InternalOutput = Output
+/**
+ * Shared async_launched result: computed identically for agents launched
+ * async from the start and sync agents backgrounded mid-flight.
+ */
+function asyncLaunchResult(
+  toolUseContext: ToolUseContext,
+  agentId: string,
+  description: string,
+  prompt: string,
+) {
+  const canReadOutputFile = toolUseContext.options.tools.some(
+    t =>
+      toolMatchesName(t, FILE_READ_TOOL_NAME) ||
+      toolMatchesName(t, BASH_TOOL_NAME),
+  )
+  return {
+    data: {
+      isAsync: true as const,
+      status: 'async_launched' as const,
+      agentId,
+      description,
+      prompt,
+      outputFile: getTaskOutputPath(agentId),
+      canReadOutputFile,
+    },
+  }
+}
+
+/** MCP server names present in a tool list (names look like mcp__server__tool). */
+function serverNamesWithTools(tools: readonly { name?: string }[]): string[] {
+  const servers: string[] = []
+  for (const tool of tools) {
+    if (tool.name?.startsWith('mcp__')) {
+      const serverName = tool.name.split('__')[1]
+      if (serverName && !servers.includes(serverName)) {
+        servers.push(serverName)
+      }
+    }
+  }
+  return servers
+}
 
 import type { AgentToolProgress, ShellProgress } from '../../types/tools.js'
 // AgentTool forwards both its own progress events and shell progress
@@ -241,16 +281,7 @@ export const AgentTool = buildTool({
     const toolPermissionContext = await getToolPermissionContext()
 
     // Get MCP servers that have tools available
-    const mcpServersWithTools: string[] = []
-    for (const tool of tools) {
-      if (tool.name?.startsWith('mcp__')) {
-        const parts = tool.name.split('__')
-        const serverName = parts[1]
-        if (serverName && !mcpServersWithTools.includes(serverName)) {
-          mcpServersWithTools.push(serverName)
-        }
-      }
-    }
+    const mcpServersWithTools = serverNamesWithTools(tools)
 
     // Filter agents: first by MCP requirements, then by permission rules
     const agentsWithMcpRequirementsMet = filterAgentsByMcpRequirements(
@@ -341,8 +372,6 @@ export const AgentTool = buildTool({
     }
     const selectedAgent: AgentDefinition = found
 
-    // Capture for type narrowing — `let selectedAgent` prevents TS from
-    // narrowing property types across the if-else assignment above.
     const requiredMcpServers = selectedAgent.requiredMcpServers
 
     // Check if required MCP servers have tools available
@@ -392,17 +421,7 @@ export const AgentTool = buildTool({
       }
 
       // Get servers that actually have tools (meaning they're connected AND authenticated)
-      const serversWithTools: string[] = []
-      for (const tool of currentAppState.mcp.tools) {
-        if (tool.name?.startsWith('mcp__')) {
-          // Extract server name from tool name (format: mcp__serverName__toolName)
-          const parts = tool.name.split('__')
-          const serverName = parts[1]
-          if (serverName && !serversWithTools.includes(serverName)) {
-            serversWithTools.push(serverName)
-          }
-        }
-      }
+      const serversWithTools = serverNamesWithTools(currentAppState.mcp.tools)
 
       if (!hasRequiredMcpServers(selectedAgent, serversWithTools)) {
         const missing = requiredMcpServers.filter(
@@ -687,22 +706,12 @@ export const AgentTool = buildTool({
         ),
       )
 
-      const canReadOutputFile = toolUseContext.options.tools.some(
-        t =>
-          toolMatchesName(t, FILE_READ_TOOL_NAME) ||
-          toolMatchesName(t, BASH_TOOL_NAME),
+      return asyncLaunchResult(
+        toolUseContext,
+        agentBackgroundTask.agentId,
+        description,
+        prompt,
       )
-      return {
-        data: {
-          isAsync: true as const,
-          status: 'async_launched' as const,
-          agentId: agentBackgroundTask.agentId,
-          description: description,
-          prompt: prompt,
-          outputFile: getTaskOutputPath(agentBackgroundTask.agentId),
-          canReadOutputFile,
-        },
-      }
     } else {
       // Create an explicit agentId for sync agents
       const syncAgentId = asAgentId(earlyAgentId)
@@ -846,12 +855,7 @@ export const AgentTool = buildTool({
                 toolUseContext.setToolJSX
               ) {
                 backgroundHintShown = true
-                toolUseContext.setToolJSX({
-                  jsx: <BackgroundHint />,
-                  shouldHidePromptInput: false,
-                  shouldContinueAnimation: true,
-                  showSpinner: true,
-                })
+                toolUseContext.setToolJSX(backgroundHintToolJSX())
               }
 
               // Race between next message and background signal
@@ -1099,22 +1103,12 @@ export const AgentTool = buildTool({
                   })
 
                   // Return async_launched result immediately
-                  const canReadOutputFile = toolUseContext.options.tools.some(
-                    t =>
-                      toolMatchesName(t, FILE_READ_TOOL_NAME) ||
-                      toolMatchesName(t, BASH_TOOL_NAME),
+                  return asyncLaunchResult(
+                    toolUseContext,
+                    backgroundedTaskId,
+                    description,
+                    prompt,
                   )
-                  return {
-                    data: {
-                      isAsync: true as const,
-                      status: 'async_launched' as const,
-                      agentId: backgroundedTaskId,
-                      description: description,
-                      prompt: prompt,
-                      outputFile: getTaskOutputPath(backgroundedTaskId),
-                      canReadOutputFile,
-                    },
-                  }
                 }
               }
 
@@ -1448,27 +1442,6 @@ export const AgentTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(data, toolUseID) {
-    const internalData = data as InternalOutput
-    if (
-      'status' in internalData &&
-      (internalData.status as string) === 'remote_launched'
-    ) {
-      const r = internalData as unknown as {
-        taskId: string
-        sessionUrl: string
-        outputFile: string
-      }
-      return {
-        tool_use_id: toolUseID,
-        type: 'tool_result',
-        content: [
-          {
-            type: 'text',
-            text: `Remote agent launched in CCR.\ntaskId: ${r.taskId}\nsession_url: ${r.sessionUrl}\noutput_file: ${r.outputFile}\nThe agent is running remotely; its final report will be delivered to you as a system notification in a later turn — sleeping or polling does not change when it arrives.\nBriefly tell the user what you launched and end your response.`,
-          },
-        ],
-      }
-    }
     if (data.status === 'async_launched') {
       const sendMsgHint = isCoordinatorMode()
         ? ` Use ${SEND_MESSAGE_TOOL_NAME} with to: '${data.agentId}' to continue this agent.`

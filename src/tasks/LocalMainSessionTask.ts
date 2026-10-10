@@ -11,14 +11,6 @@
 
 import type { UUID } from 'crypto'
 import { randomBytes } from 'crypto'
-import {
-  OUTPUT_FILE_TAG,
-  STATUS_TAG,
-  SUMMARY_TAG,
-  TASK_ID_TAG,
-  TASK_NOTIFICATION_TAG,
-  TOOL_USE_ID_TAG,
-} from '../constants/xml.js'
 import { type QueryParams, query } from '../query.js'
 import { roughTokenCountEstimation } from '../services/tokenEstimation.js'
 import type { SetAppState } from '../Task.js'
@@ -46,10 +38,10 @@ import {
 } from '../utils/sessionStorage.js'
 import {
   evictTaskOutput,
-  getTaskOutputPath,
   initTaskOutputAsSymlink,
 } from '../utils/task/diskOutput.js'
 import { registerTask, updateTaskState } from '../utils/task/framework.js'
+import { renderTaskNotificationBlock } from '../utils/task/notification.js'
 import type { LocalAgentTaskState } from './LocalAgentTask/LocalAgentTask.js'
 
 // Main session tasks use LocalAgentTaskState with agentType='main-session'
@@ -248,17 +240,12 @@ function enqueueMainSessionNotification(
       ? `Background session "${description}" completed`
       : `Background session "${description}" failed`
 
-  const toolUseIdLine = toolUseId
-    ? `\n<${TOOL_USE_ID_TAG}>${toolUseId}</${TOOL_USE_ID_TAG}>`
-    : ''
-
-  const outputPath = getTaskOutputPath(taskId)
-  const message = `<${TASK_NOTIFICATION_TAG}>
-<${TASK_ID_TAG}>${taskId}</${TASK_ID_TAG}>${toolUseIdLine}
-<${OUTPUT_FILE_TAG}>${outputPath}</${OUTPUT_FILE_TAG}>
-<${STATUS_TAG}>${status}</${STATUS_TAG}>
-<${SUMMARY_TAG}>${summary}</${SUMMARY_TAG}>
-</${TASK_NOTIFICATION_TAG}>`
+  const message = renderTaskNotificationBlock({
+    taskId,
+    status,
+    summary,
+    ...(toolUseId !== undefined ? { toolUseId } : {}),
+  })
 
   enqueuePendingNotification({ value: message, mode: 'task-notification' })
 }

@@ -8,7 +8,9 @@ import {
   formatDuration,
   formatNumber,
   formatSecondsShort,
+  formatTokensPerSecond,
 } from '../../utils/format.js'
+import type { StreamApiMetrics } from '../../utils/messages.js'
 import type { Theme } from '../../utils/theme.js'
 import { Byline } from '../design-system/Byline.js'
 import { GlimmerMessage } from './GlimmerMessage.js'
@@ -35,6 +37,8 @@ export type SpinnerAnimationRowProps = {
   reducedMotion: boolean
   hasActiveTools: boolean
   responseLengthRef: React.RefObject<number>
+  /** Per-request decode-window bounds published at message_start. */
+  apiMetricsRef: React.RefObject<StreamApiMetrics>
 
   // Message (stable within a turn)
   message: string
@@ -75,6 +79,7 @@ export function SpinnerAnimationRow({
   reducedMotion,
   hasActiveTools,
   responseLengthRef,
+  apiMetricsRef,
   message,
   messageColor,
   shimmerColor,
@@ -176,24 +181,47 @@ export function SpinnerAnimationRow({
   const tokenCount = formatNumber(totalTokens)
   const isLocalAgentView = !!viewedLocalAgent
 
-  // === Token rate (tok/s, main session only) ===
-  // Average output rate between the first and last streamed token of the
-  // turn. lastAt only advances on raw arrival, so the rate stops decaying
-  // while streaming pauses (e.g. during tool use). State is left untouched
-  // while viewing a local agent so switching back doesn't reset the window.
-  const tokenRateRef = useRef({ firstAt: 0, lastAt: 0, lastRaw: 0 })
+  // === Token rate (decode-only tok/s, main session only) ===
+  // Decode time only: each API request in the turn contributes its own
+  // first-token→last-token window, closed when the next request's
+  // message_start arrives (per StreamApiMetrics.seq) — prefill and
+  // inter-request gaps never enter the denominator. Completed windows
+  // accumulate into doneMs; the open window adds live.
+  const tokenRateRef = useRef({
+    seq: 0,
+    baseline: 0,
+    firstAt: 0,
+    lastAt: 0,
+    lastRaw: 0,
+    doneMs: 0,
+  })
   if (!isLocalAgentView) {
+    const rate = tokenRateRef.current
+    const metrics = apiMetricsRef.current
     if (currentResponseLength === 0) {
-      const rate = tokenRateRef.current
+      rate.seq = metrics.seq
+      rate.baseline = 0
       rate.firstAt = 0
       rate.lastAt = 0
       rate.lastRaw = 0
+      rate.doneMs = 0
     } else {
-      const rate = tokenRateRef.current
+      if (metrics.seq !== rate.seq) {
+        if (rate.firstAt !== 0) {
+          rate.doneMs += rate.lastAt - rate.firstAt
+        }
+        rate.seq = metrics.seq
+        rate.baseline = metrics.baseline
+        rate.firstAt = 0
+        rate.lastAt = 0
+        rate.lastRaw = metrics.baseline
+      }
       if (rate.firstAt === 0) {
-        rate.firstAt = now
-        rate.lastAt = now
-        rate.lastRaw = currentResponseLength
+        if (currentResponseLength > rate.baseline) {
+          rate.firstAt = now
+          rate.lastAt = now
+          rate.lastRaw = currentResponseLength
+        }
       } else if (currentResponseLength !== rate.lastRaw) {
         rate.lastRaw = currentResponseLength
         rate.lastAt = now
@@ -201,11 +229,12 @@ export function SpinnerAnimationRow({
     }
   }
   const rate = tokenRateRef.current
-  const streamSec =
-    rate.lastAt > rate.firstAt ? (rate.lastAt - rate.firstAt) / 1000 : 0
+  const decodeMs =
+    rate.doneMs + (rate.firstAt !== 0 ? rate.lastAt - rate.firstAt : 0)
+  const streamSec = decodeMs / 1000
   const tokenRateText =
     !isLocalAgentView && streamSec >= 1 && totalTokens > 0
-      ? `${formatNumber(Math.round(totalTokens / streamSec))} tok/s`
+      ? formatTokensPerSecond(totalTokens / streamSec, { compact: true })
       : null
 
   const tokensLabel = `${tokenCount} tokens${tokenRateText ? ` · ${tokenRateText}` : ''}`

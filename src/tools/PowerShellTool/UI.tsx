@@ -3,6 +3,7 @@ import * as React from 'react'
 import { KeyboardShortcutHint } from '../../components/design-system/KeyboardShortcutHint.js'
 import { FallbackToolUseErrorMessage } from '../../components/FallbackToolUseErrorMessage.js'
 import { MessageResponse } from '../../components/MessageResponse.js'
+import { truncateCommandForDisplay } from '../../components/shell/CommandPreview.js'
 import { OutputLine } from '../../components/shell/OutputLine.js'
 import { ShellProgressMessage } from '../../components/shell/ShellProgressMessage.js'
 import { ShellTimeDisplay } from '../../components/shell/ShellTimeDisplay.js'
@@ -14,10 +15,6 @@ import { BACKGROUND_TASK_NUDGE } from '../../utils/task/backgroundNudge.js'
 import type { ThemeName } from '../../utils/theme.js'
 import type { Out, PowerShellToolInput } from './PowerShellTool.js'
 
-// Constants for command display
-const MAX_COMMAND_DISPLAY_LINES = 2
-const MAX_COMMAND_DISPLAY_CHARS = 160
-
 export function renderToolUseMessage(
   input: Partial<PowerShellToolInput>,
   { verbose, theme: _theme }: { verbose: boolean; theme: ThemeName },
@@ -27,30 +24,14 @@ export function renderToolUseMessage(
     return null
   }
 
-  const displayCommand = command
-
   if (!verbose) {
-    const lines = displayCommand.split('\n')
-    const needsLineTruncation = lines.length > MAX_COMMAND_DISPLAY_LINES
-    const needsCharTruncation =
-      displayCommand.length > MAX_COMMAND_DISPLAY_CHARS
-
-    if (needsLineTruncation || needsCharTruncation) {
-      let truncated = displayCommand
-
-      if (needsLineTruncation) {
-        truncated = lines.slice(0, MAX_COMMAND_DISPLAY_LINES).join('\n')
-      }
-
-      if (truncated.length > MAX_COMMAND_DISPLAY_CHARS) {
-        truncated = truncated.slice(0, MAX_COMMAND_DISPLAY_CHARS)
-      }
-
-      return <Text>{truncated.trim()}…</Text>
+    const preview = truncateCommandForDisplay(command)
+    if (preview !== null) {
+      return <Text>{preview}</Text>
     }
   }
 
-  return displayCommand
+  return command
 }
 
 export function renderToolUseProgressMessage(

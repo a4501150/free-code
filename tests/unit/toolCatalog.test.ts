@@ -78,6 +78,7 @@ describe('tool catalog writer', () => {
         file: 'servers/srv.ts',
         toolCount: 1,
         hash: result.manifest.servers[0]!.hash,
+        digest: expect.any(String),
       },
     ])
     const file = await readFile(join(dir, 'servers', 'srv.ts'), 'utf8')

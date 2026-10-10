@@ -5,6 +5,7 @@ import {
   addToTotalLinesChanged,
   getCostCounter,
   getModelAPIDurationMs,
+  getModelDecodeStats,
   getModelUsage,
   getSdkBetas,
   getSessionId,
@@ -81,6 +82,9 @@ type StoredCostState = {
   lastDuration: number | undefined
   modelUsage: { [modelName: string]: ModelUsage } | undefined
   modelAPIDurationMs?: { [modelName: string]: number }
+  modelDecodeStats?: {
+    [modelName: string]: { decodeMs: number; outputTokens: number }
+  }
 }
 
 /**
@@ -122,6 +126,13 @@ export function getStoredSessionCosts(
     modelAPIDurationMs: projectConfig.lastModelAPIDurationMs && {
       ...projectConfig.lastModelAPIDurationMs,
     },
+    modelDecodeStats:
+      projectConfig.lastModelDecodeStats &&
+      Object.fromEntries(
+        Object.entries(projectConfig.lastModelDecodeStats).map(
+          ([model, stats]) => [model, { ...stats }],
+        ),
+      ),
     totalToolDuration: projectConfig.lastToolDuration ?? 0,
     totalLinesAdded: projectConfig.lastLinesAdded ?? 0,
     totalLinesRemoved: projectConfig.lastLinesRemoved ?? 0,
@@ -155,6 +166,12 @@ export function saveCurrentSessionCosts(): void {
     lastAPIDuration: getTotalAPIDuration(),
     lastAPIDurationWithoutRetries: getTotalAPIDurationWithoutRetries(),
     lastModelAPIDurationMs: { ...getModelAPIDurationMs() },
+    lastModelDecodeStats: Object.fromEntries(
+      Object.entries(getModelDecodeStats()).map(([model, stats]) => [
+        model,
+        { ...stats },
+      ]),
+    ),
     lastToolDuration: getTotalToolDuration(),
     lastDuration: getTotalDuration(),
     lastLinesAdded: getTotalLinesAdded(),
@@ -183,42 +200,39 @@ function formatCost(cost: number, maxDecimalPlaces: number = 4): string {
 export type ModelThroughput = {
   model: string
   outputTokens: number
-  apiDurationMs: number
+  decodeMs: number
   tokensPerSecond: number
 }
 
 /**
- * Per-model output speed: output tokens ÷ successful API time. Retry time
- * is excluded (durations are recorded per successful call), so this is
- * generation speed, not wall-clock responsiveness. A stream aborted after
- * its usage delta contributes tokens but no time, which can inflate the
- * speed for a model that also has completed calls.
+ * Per-model decode speed: output tokens ÷ time after the first token.
+ * Prefill and queue time stay out of the denominator, so cache-hit
+ * requests don't inflate the rate and slow cold prefills don't deflate
+ * it. Only streaming calls with a recorded first-token time contribute,
+ * so a model whose calls were all non-streaming or aborted shows no row.
  */
 export function getModelThroughputs(): ModelThroughput[] {
-  const durations = getModelAPIDurationMs()
-  return Object.entries(getModelUsage())
-    .filter(([model]) => (durations[model] ?? 0) > 0)
-    .map(([model, usage]) => {
-      const apiDurationMs = durations[model]!
-      return {
-        model,
-        outputTokens: usage.outputTokens,
-        apiDurationMs,
-        tokensPerSecond: (usage.outputTokens * 1000) / apiDurationMs,
-      }
-    })
-    .sort((a, b) => b.apiDurationMs - a.apiDurationMs)
+  const decodeStats = getModelDecodeStats()
+  return Object.entries(decodeStats)
+    .filter(([, stats]) => stats.decodeMs > 0 && stats.outputTokens > 0)
+    .map(([model, stats]) => ({
+      model,
+      outputTokens: getModelUsage()[model]?.outputTokens ?? stats.outputTokens,
+      decodeMs: stats.decodeMs,
+      tokensPerSecond: (stats.outputTokens * 1000) / stats.decodeMs,
+    }))
+    .sort((a, b) => b.decodeMs - a.decodeMs)
 }
 
-/** Session-average output speed, or undefined if no API call finished yet. */
+/** Session-average decode speed, or undefined if no streaming call finished yet. */
 export function getAverageOutputTokensPerSecond(): number | undefined {
-  const throughputs = getModelThroughputs()
-  const tokens = sumBy(throughputs, 'outputTokens')
-  const ms = sumBy(throughputs, 'apiDurationMs')
+  const decodeStats = Object.values(getModelDecodeStats())
+  const tokens = sumBy(decodeStats, 'outputTokens')
+  const ms = sumBy(decodeStats, 'decodeMs')
   return ms > 0 ? (tokens * 1000) / ms : undefined
 }
 
-const AVG_SPEED_SUFFIX = ' avg (successful API calls)'
+const AVG_SPEED_SUFFIX = ' avg (decode, successful streaming calls)'
 
 /** Session-average speed, phrased identically in /cost text and the stats panel. */
 export function formatAverageOutputSpeed(): string | undefined {
@@ -236,12 +250,23 @@ function formatModelUsage(): string {
 
   // Accumulate usage by short name
   const usageByShortName: { [shortName: string]: ModelUsage } = {}
-  const durationsByShortName: { [shortName: string]: number } = {}
-  const apiDurations = getModelAPIDurationMs()
+  const decodeStatsByShortName: {
+    [shortName: string]: { decodeMs: number; outputTokens: number }
+  } = {}
+  const decodeStats = getModelDecodeStats()
   for (const [model, usage] of Object.entries(modelUsageMap)) {
     const shortName = getPublicModelDisplayName(model) || model
-    durationsByShortName[shortName] =
-      (durationsByShortName[shortName] ?? 0) + (apiDurations[model] ?? 0)
+    const decode = decodeStats[model]
+    if (decode) {
+      const prev = decodeStatsByShortName[shortName] ?? {
+        decodeMs: 0,
+        outputTokens: 0,
+      }
+      decodeStatsByShortName[shortName] = {
+        decodeMs: prev.decodeMs + decode.decodeMs,
+        outputTokens: prev.outputTokens + decode.outputTokens,
+      }
+    }
     if (!usageByShortName[shortName]) {
       usageByShortName[shortName] = {
         inputTokens: 0,
@@ -267,7 +292,7 @@ function formatModelUsage(): string {
   for (const [shortName, usage] of Object.entries(usageByShortName)) {
     // Use human-readable display name when available
     const displayName = renderModelName(shortName)
-    const durationMs = durationsByShortName[shortName] ?? 0
+    const decode = decodeStatsByShortName[shortName]
     const usageString =
       `  ${formatNumber(usage.inputTokens)} input, ` +
       `${formatNumber(usage.outputTokens)} output, ` +
@@ -276,8 +301,8 @@ function formatModelUsage(): string {
       (usage.webSearchRequests > 0
         ? `, ${formatNumber(usage.webSearchRequests)} web search`
         : '') +
-      (durationMs > 0 && usage.outputTokens > 0
-        ? `, ${formatTokensPerSecond((usage.outputTokens * 1000) / durationMs)}`
+      (decode && decode.decodeMs > 0 && decode.outputTokens > 0
+        ? `, ${formatTokensPerSecond((decode.outputTokens * 1000) / decode.decodeMs)}`
         : '') +
       ` (${formatCost(usage.costUSD)})`
     result += `\n` + `${displayName}:`.padStart(21) + usageString

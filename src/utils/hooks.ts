@@ -125,7 +125,7 @@ import { logError } from './log.js'
 import { createCombinedAbortSignal } from './combinedAbortSignal.js'
 import { createAbortController } from './abortController.js'
 import { createFileStateCacheWithSizeLimit } from './fileStateCache.js'
-import { getTools } from '../tools.js'
+import { assembleToolPool } from '../tools/AgentTool/assembleToolPool.js'
 import { getMainLoopModel } from './model/model.js'
 import { getDefaultAppState } from '../state/AppStateStore.js'
 import type { PermissionResult } from './permissions/PermissionResult.js'
@@ -1345,6 +1345,25 @@ export async function execCommandHook(
  *   - Regex pattern (e.g., '^Write.*', '.*', '^(Write|Edit)$')
  * @returns true if the query matches the pattern
  */
+// Hook definitions are static for a session, so compiled matchers are cached;
+// null caches an invalid pattern so it is not recompiled (and re-thrown) per event.
+const compiledHookMatchers = new Map<string, RegExp | null>()
+
+function getCompiledMatcher(matcher: string): RegExp | null {
+  const cached = compiledHookMatchers.get(matcher)
+  if (cached !== undefined) {
+    return cached
+  }
+  let regex: RegExp | null
+  try {
+    regex = new RegExp(matcher)
+  } catch {
+    regex = null
+  }
+  compiledHookMatchers.set(matcher, regex)
+  return regex
+}
+
 function matchesPattern(matchQuery: string, matcher: string): boolean {
   if (!matcher || matcher === '*') {
     return true
@@ -1363,23 +1382,21 @@ function matchesPattern(matchQuery: string, matcher: string): boolean {
   }
 
   // Otherwise treat as regex
-  try {
-    const regex = new RegExp(matcher)
-    if (regex.test(matchQuery)) {
-      return true
-    }
-    // Also test against legacy names so patterns like "^Task$" still match
-    for (const legacyName of getLegacyToolNames(matchQuery)) {
-      if (regex.test(legacyName)) {
-        return true
-      }
-    }
-    return false
-  } catch {
-    // If the regex is invalid, log error and return false
+  const regex = getCompiledMatcher(matcher)
+  if (!regex) {
     logForDebugging(`Invalid regex pattern in hook matcher: ${matcher}`)
     return false
   }
+  if (regex.test(matchQuery)) {
+    return true
+  }
+  // Also test against legacy names so patterns like "^Task$" still match
+  for (const legacyName of getLegacyToolNames(matchQuery)) {
+    if (regex.test(legacyName)) {
+      return true
+    }
+  }
+  return false
 }
 
 type IfConditionMatcher = (ifCondition: string) => boolean
@@ -3353,7 +3370,7 @@ function buildOutsideReplHookContext(appState: AppState): ToolUseContext {
     abortController: createAbortController(),
     options: {
       commands: appState.mcp.commands,
-      tools: [...getTools(toolPermissionContext), ...appState.mcp.tools],
+      tools: assembleToolPool(toolPermissionContext, appState.mcp.tools),
       mainLoopModel: getMainLoopModel(),
       thinkingConfig: { type: 'disabled' },
       mcpClients: appState.mcp.clients,

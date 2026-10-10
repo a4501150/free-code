@@ -103,6 +103,7 @@ export function useReplQueryExecution({
   setStreamingText,
   setResponseLength,
   onStreamingText,
+  onApiMetrics,
   setSpinnerMessage,
   setSpinnerColor,
   setSpinnerShimmerColor,
@@ -148,6 +149,7 @@ export function useReplQueryExecution({
   setStreamingText: (text: string | null) => void
   setResponseLength: (f: (prev: number) => number) => void
   onStreamingText: (f: (current: string | null) => string | null) => void
+  onApiMetrics: () => void
   setSpinnerMessage: (msg: string | null) => void
   setSpinnerColor: (color: any) => void
   setSpinnerShimmerColor: (color: any) => void
@@ -242,13 +244,14 @@ export function useReplQueryExecution({
           void removeTranscriptMessage(tombstonedMessage.uuid)
         },
         setStreamingThinking,
-        undefined,
+        onApiMetrics,
         onStreamingText,
       )
     },
     [
       setMessages,
       setResponseLength,
+      onApiMetrics,
       setStreamMode,
       setStreamingToolUses,
       setStreamingThinking,

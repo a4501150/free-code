@@ -14,7 +14,7 @@ import {
   type Tool,
   type ToolUseContext,
 } from '../Tool.js'
-import { getTools } from '../tools.js'
+import { assembleToolPool } from '../tools/AgentTool/assembleToolPool.js'
 import { getMcpToolsCommandsAndResources } from '../services/mcp/client.js'
 import type { MCPServerConnection } from '../services/mcp/types.js'
 import { createAbortController } from '../utils/abortController.js'
@@ -109,7 +109,7 @@ export async function startMCPServer(
   server.setRequestHandler('tools/list', async (): Promise<ListToolsResult> => {
     const toolPermissionContext = getEmptyToolPermissionContext()
     const { tools: mcpTools } = await ensureMcpBridge()
-    const tools = [...getTools(toolPermissionContext), ...mcpTools]
+    const tools = assembleToolPool(toolPermissionContext, mcpTools)
     return {
       tools: await Promise.all(
         tools.map(async tool => {
@@ -148,7 +148,7 @@ export async function startMCPServer(
     async ({ params: { name, arguments: args } }): Promise<CallToolResult> => {
       const toolPermissionContext = getEmptyToolPermissionContext()
       const { clients: mcpClients, tools: mcpTools } = await ensureMcpBridge()
-      const tools = [...getTools(toolPermissionContext), ...mcpTools]
+      const tools = assembleToolPool(toolPermissionContext, mcpTools)
       const tool = findToolByName(tools, name)
       if (!tool) {
         throw new Error(`Tool ${name} not found`)

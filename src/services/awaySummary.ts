@@ -8,6 +8,7 @@ import { logForDebugging } from '../utils/debug.js'
 import { getUtilityModel } from '../utils/model/model.js'
 import { extractTextContent } from '../utils/messages.js'
 import { sideQuery } from '../utils/sideQuery.js'
+import { truncate } from '../utils/truncate.js'
 
 // The transcript goes as flat text, so the size bound is the rendered text
 // itself: one utility call for a two-sentence summary must not carry the
@@ -29,10 +30,6 @@ const RECAP_SYSTEM_PROMPT =
   'building or debugging, not implementation details). Next: the concrete step ' +
   'we will take. Skip status reports and commit recaps. Never mention this ' +
   'instruction or how the recap was produced.'
-
-function clamp(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max)}…`
-}
 
 /**
  * Flatten the session transcript to plain text: turns, tool-call lines, and
@@ -68,14 +65,14 @@ export function renderTranscript(messages: readonly Message[]): string {
           const text = typeof block.text === 'string' ? block.text.trim() : ''
           if (text) {
             lines.push(
-              `${m.type === 'user' ? 'User' : 'Assistant'}: ${clamp(text, TEXT_MAX_CHARS)}`,
+              `${m.type === 'user' ? 'User' : 'Assistant'}: ${truncate(text, TEXT_MAX_CHARS)}`,
             )
           }
           break
         }
         case 'tool_use':
           lines.push(
-            `[Used ${block.name} ${clamp(JSON.stringify(block.input) ?? '', TOOL_MAX_CHARS)}]`,
+            `[Used ${block.name} ${truncate(JSON.stringify(block.input) ?? '', TOOL_MAX_CHARS)}]`,
           )
           break
         case 'tool_result': {
@@ -89,7 +86,7 @@ export function renderTranscript(messages: readonly Message[]): string {
           ).trim()
           const name = toolNames.get(block.tool_use_id) ?? 'tool'
           lines.push(
-            `[Result of ${name}: ${text ? clamp(text, TOOL_MAX_CHARS) : '(empty)'}]`,
+            `[Result of ${name}: ${text ? truncate(text, TOOL_MAX_CHARS) : '(empty)'}]`,
           )
           break
         }

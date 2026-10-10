@@ -31,6 +31,7 @@ function makeProps() {
     totalPausedMsRef: { current: 0 },
     pauseStartTimeRef: { current: null },
     responseLengthRef: { current: 400 },
+    apiMetricsRef: { current: { seq: 0, baseline: 0 } },
     spinnerTip: 'Do the thing',
     overrideMessage: 'Reading',
     verbose: false,

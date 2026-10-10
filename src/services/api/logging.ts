@@ -1,6 +1,7 @@
 import type { DomainStopReason, DomainUsage } from '../../types/domain.js'
 import { DomainTransportError } from './domain-errors.js'
 import {
+  addModelDecodeSampleState,
   addToModelAPIDurationState,
   addToTotalDurationState,
   consumePostCompaction,
@@ -422,6 +423,15 @@ export function logAPISuccessAndDuration({
   // Must be keyed with the same string addToTotalSessionCost uses for
   // modelUsage, or per-model tok/s mispairs tokens against time.
   addToModelAPIDurationState(preNormalizedModel, durationMs)
+  // Decode-only sample: wall time minus time-to-first-token. Non-streaming
+  // calls have no separable decode window and stay out of the tok/s stats.
+  if (ttftMs !== null && durationMs > ttftMs && usage.output_tokens > 0) {
+    addModelDecodeSampleState(
+      preNormalizedModel,
+      durationMs - ttftMs,
+      usage.output_tokens,
+    )
+  }
 
   logAPISuccess({
     model,

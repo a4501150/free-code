@@ -1,11 +1,5 @@
 import { getSdkAgentProgressSummariesEnabled } from '../../bootstrap/state.js'
 import {
-  OUTPUT_FILE_TAG,
-  STATUS_TAG,
-  SUMMARY_TAG,
-  TASK_ID_TAG,
-  TASK_NOTIFICATION_TAG,
-  TOOL_USE_ID_TAG,
   WORKTREE_BRANCH_TAG,
   WORKTREE_PATH_TAG,
   WORKTREE_TAG,
@@ -33,7 +27,6 @@ import type { StreamingThinking } from '../../utils/messages.js'
 import { getAgentTranscriptPath } from '../../utils/sessionStorage.js'
 import {
   evictTaskOutput,
-  getTaskOutputPath,
   initTaskOutputAsSymlink,
 } from '../../utils/task/diskOutput.js'
 import {
@@ -41,6 +34,7 @@ import {
   registerTask,
   updateTaskState,
 } from '../../utils/task/framework.js'
+import { renderTaskNotificationBlock } from '../../utils/task/notification.js'
 import { emitTaskProgress } from '../../utils/task/structuredProgress.js'
 import type { TaskState } from '../types.js'
 
@@ -407,10 +401,6 @@ export function enqueueAgentNotification({
         ? `Agent "${description}" failed: ${error || 'Unknown error'}`
         : `Agent "${description}" was stopped`
 
-  const outputPath = getTaskOutputPath(taskId)
-  const toolUseIdLine = toolUseId
-    ? `\n<${TOOL_USE_ID_TAG}>${toolUseId}</${TOOL_USE_ID_TAG}>`
-    : ''
   const resultSection = finalMessage ? `\n<result>${finalMessage}</result>` : ''
   const usageSection = usage
     ? `\n<usage><total_tokens>${usage.totalTokens}</total_tokens><tool_uses>${usage.toolUses}</tool_uses><duration_ms>${usage.durationMs}</duration_ms></usage>`
@@ -419,12 +409,13 @@ export function enqueueAgentNotification({
     ? `\n<${WORKTREE_TAG}><${WORKTREE_PATH_TAG}>${worktreePath}</${WORKTREE_PATH_TAG}>${worktreeBranch ? `<${WORKTREE_BRANCH_TAG}>${worktreeBranch}</${WORKTREE_BRANCH_TAG}>` : ''}</${WORKTREE_TAG}>`
     : ''
 
-  const message = `<${TASK_NOTIFICATION_TAG}>
-<${TASK_ID_TAG}>${taskId}</${TASK_ID_TAG}>${toolUseIdLine}
-<${OUTPUT_FILE_TAG}>${outputPath}</${OUTPUT_FILE_TAG}>
-<${STATUS_TAG}>${status}</${STATUS_TAG}>
-<${SUMMARY_TAG}>${summary}</${SUMMARY_TAG}>${resultSection}${usageSection}${worktreeSection}
-</${TASK_NOTIFICATION_TAG}>`
+  const message = renderTaskNotificationBlock({
+    taskId,
+    status,
+    summary,
+    ...(toolUseId !== undefined ? { toolUseId } : {}),
+    extraSections: `${resultSection}${usageSection}${worktreeSection}`,
+  })
 
   enqueuePendingNotification({
     value: message,

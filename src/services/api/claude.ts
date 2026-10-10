@@ -656,14 +656,8 @@ export async function* queryModelWithStreaming({
 /**
  * Per-attempt timeout for non-streaming fallback requests, in milliseconds.
  * Reads API_TIMEOUT_MS when set so slow backends and the streaming path
- * share the same ceiling.
- *
- * Remote sessions default to 120s to stay under CCR's container idle-kill
- * (~5min) so a hung fallback to a wedged backend surfaces a clean
- * DomainConnectionTimeoutError instead of stalling past SIGKILL.
- *
- * Otherwise defaults to 300s — long enough for slow backends without
- * approaching the API's 10-minute non-streaming boundary.
+ * share the same ceiling. Defaults to 300s — long enough for slow backends
+ * without approaching the API's 10-minute non-streaming boundary.
  */
 function getNonstreamingFallbackTimeoutMs(): number {
   const override = parseInt(process.env.API_TIMEOUT_MS || '', 10)
@@ -1904,6 +1898,37 @@ async function* queryModel(
       break
     }
   } catch (errorFromRetry) {
+    // Shared terminal error reporting for both failure paths: unwrap the
+    // retry wrapper, record quota status, log the API error, and hand back
+    // the classified error so the caller can abort or yield it.
+    const reportQueryError = (rawError: unknown) => {
+      let error = rawError
+      let errorModel = options.model
+      if (rawError instanceof CannotRetryError) {
+        error = rawError.originalError
+        errorModel = rawError.retryContext.model
+      }
+      extractQuotaStatusFromRetryError(error)
+      logAPIError({
+        error,
+        model: errorModel,
+        messageCount: messagesForAPI.length,
+        messageTokens: tokenCountFromLastAPIResponse(messagesForAPI),
+        durationMs: Date.now() - start,
+        durationMsIncludingRetries: Date.now() - startIncludingRetries,
+        attempt: attemptNumber,
+        requestId: streamRequestId || getRetryErrorRequestId(error),
+        clientRequestId,
+        didFallBackToNonStreaming,
+        queryTracking: options.queryTracking,
+        querySource: options.querySource,
+        llmSpan,
+        fastMode: isFastModeRequest,
+        previousRequestId,
+      })
+      return { error, errorModel }
+    }
+
     // Check if this is a 404 error during stream creation that should trigger
     // non-streaming fallback. This handles gateways that return 404 for streaming
     // endpoints but work fine with non-streaming. Before v2.1.8, BetaMessageStream
@@ -1983,34 +2008,7 @@ async function* queryModel(
           { level: 'error' },
         )
 
-        let error = fallbackError
-        let errorModel = options.model
-        if (fallbackError instanceof CannotRetryError) {
-          error = fallbackError.originalError
-          errorModel = fallbackError.retryContext.model
-        }
-
-        extractQuotaStatusFromRetryError(error)
-
-        const requestId = streamRequestId || getRetryErrorRequestId(error)
-
-        logAPIError({
-          error,
-          model: errorModel,
-          messageCount: messagesForAPI.length,
-          messageTokens: tokenCountFromLastAPIResponse(messagesForAPI),
-          durationMs: Date.now() - start,
-          durationMsIncludingRetries: Date.now() - startIncludingRetries,
-          attempt: attemptNumber,
-          requestId,
-          clientRequestId,
-          didFallBackToNonStreaming,
-          queryTracking: options.queryTracking,
-          querySource: options.querySource,
-          llmSpan,
-          fastMode: isFastModeRequest,
-          previousRequestId,
-        })
+        const { error, errorModel } = reportQueryError(fallbackError)
 
         if (error instanceof DomainUserAbortError) {
           releaseStreamResources()
@@ -2030,36 +2028,7 @@ async function* queryModel(
         level: 'error',
       })
 
-      let error = errorFromRetry
-      let errorModel = options.model
-      if (errorFromRetry instanceof CannotRetryError) {
-        error = errorFromRetry.originalError
-        errorModel = errorFromRetry.retryContext.model
-      }
-
-      // Extract quota status from error headers if it's a rate limit error
-      extractQuotaStatusFromRetryError(error)
-
-      // Extract requestId from stream, error header, or error body
-      const requestId = streamRequestId || getRetryErrorRequestId(error)
-
-      logAPIError({
-        error,
-        model: errorModel,
-        messageCount: messagesForAPI.length,
-        messageTokens: tokenCountFromLastAPIResponse(messagesForAPI),
-        durationMs: Date.now() - start,
-        durationMsIncludingRetries: Date.now() - startIncludingRetries,
-        attempt: attemptNumber,
-        requestId,
-        clientRequestId,
-        didFallBackToNonStreaming,
-        queryTracking: options.queryTracking,
-        querySource: options.querySource,
-        llmSpan,
-        fastMode: isFastModeRequest,
-        previousRequestId,
-      })
+      const { error, errorModel } = reportQueryError(errorFromRetry)
 
       // Don't yield an assistant error message for user aborts
       // The interruption message is handled in query.ts
@@ -2327,56 +2296,21 @@ export function buildSystemPromptBlocks(
 
 type HaikuOptions = Omit<Options, 'model' | 'getToolPermissionContext'>
 
-export async function queryHaiku({
-  systemPrompt = asSystemPrompt([]),
-  userPrompt,
-  outputFormat,
-  signal,
-  options,
-}: {
+/**
+ * Side query on the configured utility model (the name predates the model
+ * being configurable) through the same pipeline as queryWithModel.
+ */
+export function queryHaiku(params: {
   systemPrompt: SystemPrompt
   userPrompt: string
   outputFormat?: Record<string, unknown>
   signal: AbortSignal
   options: HaikuOptions
 }): Promise<AssistantMessage> {
-  const result = await withVCR(
-    [
-      createUserMessage({
-        content: systemPrompt.map(text => ({ type: 'text', text })),
-      }),
-      createUserMessage({
-        content: userPrompt,
-      }),
-    ],
-    async () => {
-      const messages = [
-        createUserMessage({
-          content: userPrompt,
-        }),
-      ]
-
-      const result = await queryModelWithoutStreaming({
-        messages,
-        systemPrompt,
-        thinkingConfig: { type: 'disabled' },
-        tools: [],
-        signal,
-        options: {
-          ...options,
-          model: getUtilityModel(),
-          enablePromptCaching: options.enablePromptCaching ?? false,
-          outputFormat,
-          async getToolPermissionContext() {
-            return getEmptyToolPermissionContext()
-          },
-        },
-      })
-      return [result]
-    },
-  )
-  // We don't use streaming for Haiku so this is safe
-  return result[0]! as AssistantMessage
+  return queryWithModel({
+    ...params,
+    options: { ...params.options, model: getUtilityModel() },
+  })
 }
 
 type QueryWithModelOptions = Omit<Options, 'getToolPermissionContext'>

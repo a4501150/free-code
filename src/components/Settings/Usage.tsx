@@ -187,7 +187,7 @@ function SessionSection(): React.ReactNode {
             <Text dimColor>
               {`${formatTokensPerSecond(throughput.tokensPerSecond)} · ${formatNumber(
                 throughput.outputTokens,
-              )} out in ${formatDuration(throughput.apiDurationMs)}`}
+              )} out decoded in ${formatDuration(throughput.decodeMs)}`}
             </Text>
           }
         />

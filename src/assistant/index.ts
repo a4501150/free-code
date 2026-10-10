@@ -59,12 +59,18 @@ export function markAssistantForced(): void {
 
 // The attachment getter rebuilds the block on every tool-loop iteration:
 // key the persona read on the file's stat so steady state costs one stat and
-// no read, and operate directly — the catch is the existence check.
+// no read, and operate directly — the catch is the existence check. The
+// resolved path is memoized too, so the path resolver's existsSync calls stop
+// repeating once the file is found; a failed stat re-arms it (the file may be
+// created later).
 let personaCache: { path: string; statKey: string; text: string } | null = null
+let resolvedPersonaPath: string | null = null
 
-function readAssistantPersona(mdPath: string): string | null {
+function readAssistantPersona(): string | null {
+  const mdPath = resolvedPersonaPath ?? getAssistantMdPath()
   try {
     const stat = statSync(mdPath)
+    resolvedPersonaPath = mdPath
     const statKey = `${stat.mtimeMs}:${stat.size}`
     if (
       personaCache &&
@@ -77,7 +83,9 @@ function readAssistantPersona(mdPath: string): string | null {
     personaCache = { path: mdPath, statKey, text }
     return text
   } catch {
-    // Missing or unreadable persona file: identity line only.
+    // Missing or unreadable persona file: identity line only. Re-arm path
+    // resolution so a file created later is picked up.
+    resolvedPersonaPath = null
     return null
   }
 }
@@ -100,7 +108,7 @@ export function buildAssistantModeBlock(
     const identity = name
       ? `You are running in assistant mode as ${name}.`
       : 'You are running in assistant mode.'
-    const persona = readAssistantPersona(getAssistantMdPath()) ?? identity
+    const persona = readAssistantPersona() ?? identity
     sections.push(
       `# Assistant Mode\n\n${persona}\n\n` +
         `## Working autonomously\n\n` +

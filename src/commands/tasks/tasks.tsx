@@ -5,7 +5,7 @@ import type { LocalJSXCommandOnDone } from '../../types/command.js'
 
 export async function call(
   onDone: LocalJSXCommandOnDone,
-  context: LocalJSXCommandContext,
+  _context: LocalJSXCommandContext,
 ): Promise<React.ReactNode> {
-  return <BackgroundTasksDialog toolUseContext={context} onDone={onDone} />
+  return <BackgroundTasksDialog onDone={onDone} />
 }

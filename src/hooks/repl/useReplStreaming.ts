@@ -9,6 +9,7 @@ import type { SpinnerMode } from '../../components/Spinner.js'
 import type {
   StreamingToolUse,
   StreamingThinking,
+  StreamApiMetrics,
 } from '../../utils/messages.js'
 import type {
   Message as MessageType,
@@ -66,24 +67,97 @@ export function useReplStreaming({
     }
   }, [streamingThinking])
 
-  const [streamingText, setStreamingText] = useState<string | null>(null)
+  const [streamingText, setStreamingTextState] = useState<string | null>(null)
   const showStreamingText = !reducedMotion && !hasCursorUpViewportYankBug()
+
+  // Text deltas arrive per token; each state set re-renders the streaming
+  // subtree and copies the whole growing string. Pure appends are coalesced
+  // into a ~20fps flush; clears/replacements (which the transcript-message
+  // transition depends on) still land synchronously.
+  const STREAMING_TEXT_FLUSH_MS = 50
+  const streamingTextRef = useRef<string | null>(null)
+  const pendingTextRef = useRef<string | null | undefined>(undefined)
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const setStreamingText = useCallback((text: string | null) => {
+    if (flushTimerRef.current !== null) {
+      clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
+    }
+    pendingTextRef.current = undefined
+    streamingTextRef.current = text
+    setStreamingTextState(text)
+  }, [])
+
+  const flushStreamingText = useCallback(() => {
+    if (flushTimerRef.current !== null) {
+      clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
+    }
+    const next = pendingTextRef.current
+    pendingTextRef.current = undefined
+    if (next === undefined || next === streamingTextRef.current) return
+    streamingTextRef.current = next
+    setStreamingTextState(next)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current !== null) {
+        clearTimeout(flushTimerRef.current)
+      }
+    }
+  }, [])
+
   const onStreamingText = useCallback(
     (f: (current: string | null) => string | null) => {
       if (!showStreamingText) return
-      setStreamingText(f)
+      const current = pendingTextRef.current ?? streamingTextRef.current
+      const next = f(current)
+      if (
+        current !== null &&
+        typeof next === 'string' &&
+        next.startsWith(current)
+      ) {
+        // Pure append — queue it and schedule the throttled flush.
+        pendingTextRef.current = next
+        if (flushTimerRef.current === null) {
+          flushTimerRef.current = setTimeout(
+            flushStreamingText,
+            STREAMING_TEXT_FLUSH_MS,
+          )
+        }
+        return
+      }
+      // Clear or replacement (message boundary / reset): must land now so
+      // the streaming text and the finalized message swap in one render.
+      setStreamingText(next)
     },
-    [showStreamingText],
+    [showStreamingText, flushStreamingText, setStreamingText],
   )
 
-  const visibleStreamingText =
-    streamingText && showStreamingText
-      ? streamingText.substring(0, streamingText.lastIndexOf('\n') + 1) || null
-      : null
+  const visibleStreamingText = useMemo(
+    () =>
+      streamingText && showStreamingText
+        ? streamingText.substring(0, streamingText.lastIndexOf('\n') + 1) ||
+          null
+        : null,
+    [streamingText, showStreamingText],
+  )
 
   const responseLengthRef = useRef(0)
   const setResponseLength = useCallback((f: (prev: number) => number) => {
     responseLengthRef.current = f(responseLengthRef.current)
+  }, [])
+
+  // Published to the spinner at each streamed request's message_start so it
+  // can bound a per-request decode window (see StreamApiMetrics).
+  const apiMetricsRef = useRef<StreamApiMetrics>({ seq: 0, baseline: 0 })
+  const onApiMetrics = useCallback(() => {
+    apiMetricsRef.current = {
+      seq: apiMetricsRef.current.seq + 1,
+      baseline: responseLengthRef.current,
+    }
   }, [])
 
   const [spinnerMessage, setSpinnerMessage] = useState<string | null>(null)
@@ -221,6 +295,8 @@ export function useReplStreaming({
     showStreamingText,
     responseLengthRef,
     setResponseLength,
+    apiMetricsRef,
+    onApiMetrics,
     spinnerMessage,
     setSpinnerMessage,
     spinnerColor,

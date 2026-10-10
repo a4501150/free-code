@@ -57,18 +57,18 @@ import { activityManager } from '../utils/activityManager.js'
 import { getSpinnerVerbs } from '../constants/spinnerVerbs.js'
 import { MessageResponse } from './MessageResponse.js'
 import { TaskPanelRows } from './TaskLivePanel.js'
-import { useSubagentTasksV2, useTasksV2 } from '../hooks/useTasksV2.js'
+import { useTasksV2 } from '../hooks/useTasksV2.js'
+import { useViewedTaskList } from '../hooks/useViewedTaskList.js'
 import type { Task } from '../utils/tasks.js'
 import { useAppState } from '../state/AppState.js'
 import { useTerminalSize } from '../hooks/useTerminalSize.js'
 import { getDefaultCharacters, type SpinnerMode } from './Spinner/index.js'
 import { SpinnerAnimationRow } from './Spinner/SpinnerAnimationRow.js'
 import { useSettings } from '../hooks/useSettings.js'
-import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
 import { isBackgroundTask } from '../tasks/types.js'
 import { getEffortSuffix } from '../utils/effort.js'
 import { getMainLoopModel } from '../utils/model/model.js'
-import type { StreamingThinking } from '../utils/messages.js'
+import type { StreamingThinking, StreamApiMetrics } from '../utils/messages.js'
 import { TEARDROP_ASTERISK } from '../constants/figures.js'
 
 import { useAnimationFrame } from '../ink.js'
@@ -90,6 +90,8 @@ type Props = {
   pauseStartTimeRef: React.RefObject<number | null>
   spinnerTip?: string
   responseLengthRef: React.RefObject<number>
+  /** Per-request decode-window bounds published at message_start. */
+  apiMetricsRef: React.RefObject<StreamApiMetrics>
   overrideColor?: keyof Theme | null
   overrideShimmerColor?: keyof Theme | null
   overrideMessage?: string | null
@@ -146,6 +148,7 @@ function SpinnerWithVerbInner({
   pauseStartTimeRef,
   spinnerTip,
   responseLengthRef,
+  apiMetricsRef,
   overrideColor,
   overrideShimmerColor,
   overrideMessage,
@@ -164,27 +167,10 @@ function SpinnerWithVerbInner({
   // (frame, glimmer, stalled intensity, token counter, thinking shimmer,
   // elapsed-time timer) are computed inside the child.
 
-  const tasks = useAppState(s => s.tasks)
-  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const expandedView = useAppState(s => s.expandedView)
   const showExpandedTodos = expandedView === 'tasks'
-  // Get viewed local agent (coordinator panel subagent).
-  const viewedLocalAgent = viewingAgentTaskId
-    ? (() => {
-        const t = tasks[viewingAgentTaskId]
-        return isLocalAgentTask(t) ? t : undefined
-      })()
-    : undefined
   const { columns } = useTerminalSize()
-  const mainTasksV2 = useTasksV2()
-  const subagentTasksV2 = useSubagentTasksV2(viewingAgentTaskId)
-  // Viewing a local agent shows that agent's own list — a viewing context
-  // must never borrow the main session's list (the main session's todos would
-  // render as the agent's). Concurrent agents legitimately share
-  // the leader's list, so the fallback stays for non-local-agent views.
-  const tasksV2 = viewedLocalAgent
-    ? subagentTasksV2
-    : (subagentTasksV2 ?? mainTasksV2)
+  const { viewedLocalAgent, tasksV2 } = useViewedTaskList()
 
   // Compaction UI is per-VIEW: inside an agent's transcript view every effect
   // (progress bar, blue hook color, panel stand-down) comes from that agent's
@@ -336,6 +322,7 @@ function SpinnerWithVerbInner({
           reducedMotion={reducedMotion}
           hasActiveTools={hasActiveTools}
           responseLengthRef={responseLengthRef}
+          apiMetricsRef={apiMetricsRef}
           message={message}
           messageColor={messageColor}
           shimmerColor={shimmerColor}
@@ -482,21 +469,16 @@ function BriefSpinner({
     count(Object.values(s.tasks), isBackgroundTask),
   )
 
-  const showConnWarning = false
-  const connText = ''
-
   // Dots padded to a fixed 3 columns so the right-aligned count doesn't
   // jitter as the cycle advances.
   const dotFrame = Math.floor(time / 300) % 3
   const dots = reducedMotion ? '…  ' : '.'.repeat(dotFrame + 1).padEnd(3)
 
-  // Shimmer: reverse-sweep highlight across the verb. Skip for connection
-  // warnings (shimmer reads as "working"; Reconnecting/Disconnected is not).
+  // Shimmer: reverse-sweep highlight across the verb.
   const verbWidth = useMemo(() => stringWidth(verb), [verb])
-  const glimmerIndex =
-    reducedMotion || showConnWarning
-      ? -100
-      : computeGlimmerIndex(Math.floor(time / SHIMMER_INTERVAL_MS), verbWidth)
+  const glimmerIndex = reducedMotion
+    ? -100
+    : computeGlimmerIndex(Math.floor(time / SHIMMER_INTERVAL_MS), verbWidth)
   const { before, shimmer, after } = computeShimmerSegments(verb, glimmerIndex)
 
   const { columns } = useTerminalSize()
@@ -504,22 +486,16 @@ function BriefSpinner({
   // Manual right-align via space padding — flexGrow spacers inside
   // FullscreenLayout's `main` slot don't resolve a width and caused the
   // diff engine to miss dot-frame updates.
-  const leftWidth = (showConnWarning ? stringWidth(connText) : verbWidth) + 3
+  const leftWidth = verbWidth + 3
   const pad = Math.max(1, columns - 2 - leftWidth - stringWidth(rightText))
 
   return (
     <Box flexDirection="column" width="100%" alignItems="flex-start">
       <Box flexDirection="row" width="100%" marginTop={1} paddingLeft={2}>
-        {showConnWarning ? (
-          <Text color="error">{connText + dots}</Text>
-        ) : (
-          <>
-            {before ? <Text dimColor>{before}</Text> : null}
-            {shimmer ? <Text>{shimmer}</Text> : null}
-            {after ? <Text dimColor>{after}</Text> : null}
-            <Text dimColor>{dots}</Text>
-          </>
-        )}
+        {before ? <Text dimColor>{before}</Text> : null}
+        {shimmer ? <Text>{shimmer}</Text> : null}
+        {after ? <Text dimColor>{after}</Text> : null}
+        <Text dimColor>{dots}</Text>
         {rightText ? (
           <>
             <Text>{' '.repeat(pad)}</Text>
@@ -542,27 +518,16 @@ export function BriefIdleStatus(): React.ReactNode {
   )
   const { columns } = useTerminalSize()
 
-  const showConnWarning = false
-  const connText = ''
-  const leftText = showConnWarning ? connText : ''
   const rightText = runningCount > 0 ? `${runningCount} in background` : ''
 
-  if (!leftText && !rightText) return <Box height={2} />
+  if (!rightText) return <Box height={2} />
 
-  const pad = Math.max(
-    1,
-    columns - 2 - stringWidth(leftText) - stringWidth(rightText),
-  )
+  const pad = Math.max(1, columns - 2 - stringWidth(rightText))
   return (
     <Box marginTop={1} paddingLeft={2}>
       <Text>
-        {leftText ? <Text color="error">{leftText}</Text> : null}
-        {rightText ? (
-          <>
-            <Text>{' '.repeat(pad)}</Text>
-            <Text color="subtle">{rightText}</Text>
-          </>
-        ) : null}
+        <Text>{' '.repeat(pad)}</Text>
+        <Text color="subtle">{rightText}</Text>
       </Text>
     </Box>
   )

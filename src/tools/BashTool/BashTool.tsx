@@ -30,7 +30,6 @@ import type { AgentId } from '../../types/ids.js'
 import type { AssistantMessage } from '../../types/message.js'
 import { parseForSecurity } from '../../utils/bash/ast.js'
 import { splitCommandWithOperators } from '../../utils/bash/commands.js'
-import { detectCodeIndexingFromCommand } from '../../utils/codeIndexing.js'
 import { getCwd } from '../../utils/cwd.js'
 import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import { isENOENT, ShellError } from '../../utils/errors.js'
@@ -85,7 +84,8 @@ import { checkReadOnlyConstraints } from './readOnlyValidation.js'
 import { parseSedEditCommand } from './sedEditParser.js'
 import { BASH_TOOL_NAME } from './toolName.js'
 import {
-  BackgroundHint,
+  backgroundHintToolJSX,
+  PROGRESS_THRESHOLD_MS,
   renderToolResultMessage,
   renderToolUseErrorMessage,
   renderToolUseMessage,
@@ -102,8 +102,6 @@ import {
 
 const EOL = '\n'
 
-// Progress display constants
-const PROGRESS_THRESHOLD_MS = 2000 // Show progress after 2 seconds
 // In assistant mode, blocking bash auto-backgrounds after this many ms in the main agent
 const ASSISTANT_BLOCKING_BUDGET_MS = 15_000
 
@@ -883,11 +881,6 @@ export const BashTool = buildTool({
       }
     }
 
-    const commandType = input.command.split(' ')[0]
-
-    // Log code indexing tool usage
-    const codeIndexingTool = detectCodeIndexingFromCommand(input.command)
-
     let strippedStdout = stripEmptyLines(stdout)
 
     let isImage = isImageOutput(strippedStdout)
@@ -1054,11 +1047,24 @@ async function* runShellCommand({
     return handle.taskId
   }
 
-  // Helper to start backgrounding with optional logging
-  function startBackgrounding(
-    eventName: string,
-    backgroundFn?: (shellId: string) => void,
-  ): void {
+  // Result shape reported when a command transitions to the background:
+  // no output yet, success so far, and the task id carrying future output.
+  function backgroundedResult(
+    backgroundTaskId: string,
+    extra?: Partial<ExecResult>,
+  ): ExecResult {
+    return {
+      stdout: '',
+      stderr: '',
+      code: 0,
+      interrupted: false,
+      backgroundTaskId,
+      ...extra,
+    }
+  }
+
+  // Helper to start backgrounding
+  function startBackgrounding(backgroundFn?: (shellId: string) => void): void {
     // If a foreground task is already registered (via registerForeground in the
     // progress loop), background it in-place instead of re-spawning. Re-spawning
     // would overwrite tasks[taskId], emit a duplicate task_started SDK event,
@@ -1106,10 +1112,7 @@ async function* runShellCommand({
   // Only background commands that are allowed to be auto-backgrounded (not sleep, etc.)
   if (shellCommand.onTimeout && shouldAutoBackground) {
     shellCommand.onTimeout(backgroundFn => {
-      startBackgrounding(
-        'tengu_bash_command_timeout_backgrounded',
-        backgroundFn,
-      )
+      startBackgrounding(backgroundFn)
     })
   }
 
@@ -1128,7 +1131,7 @@ async function* runShellCommand({
         backgroundShellId === undefined
       ) {
         assistantAutoBackgrounded = true
-        startBackgrounding('tengu_bash_command_assistant_auto_backgrounded')
+        startBackgrounding()
       }
     }, ASSISTANT_BLOCKING_BUDGET_MS).unref()
   }
@@ -1140,13 +1143,7 @@ async function* runShellCommand({
   if (run_in_background === true && !isBackgroundTasksDisabled) {
     const shellId = await spawnBackgroundTask()
 
-    return {
-      stdout: '',
-      stderr: '',
-      code: 0,
-      interrupted: false,
-      backgroundTaskId: shellId,
-    }
+    return backgroundedResult(shellId)
   }
 
   // Wait for the initial threshold before showing progress
@@ -1172,14 +1169,9 @@ async function* runShellCommand({
     }
 
     if (backgroundShellId) {
-      return {
-        stdout: '',
-        stderr: '',
-        code: 0,
-        interrupted: false,
-        backgroundTaskId: backgroundShellId,
+      return backgroundedResult(backgroundShellId, {
         assistantAutoBackgrounded,
-      }
+      })
     }
   }
 
@@ -1234,28 +1226,18 @@ async function* runShellCommand({
 
       // Check if command was backgrounded (either via old mechanism or new backgroundAll)
       if (backgroundShellId) {
-        return {
-          stdout: '',
-          stderr: '',
-          code: 0,
-          interrupted: false,
-          backgroundTaskId: backgroundShellId,
+        return backgroundedResult(backgroundShellId, {
           assistantAutoBackgrounded,
-        }
+        })
       }
 
       // Check if this foreground task was backgrounded via backgroundAll()
       if (foregroundTaskId) {
         // shellCommand.status becomes 'backgrounded' when background() is called
         if (shellCommand.status === 'backgrounded') {
-          return {
-            stdout: '',
-            stderr: '',
-            code: 0,
-            interrupted: false,
-            backgroundTaskId: foregroundTaskId,
+          return backgroundedResult(foregroundTaskId, {
             backgroundedByUser: true,
-          }
+          })
         }
       }
 
@@ -1285,12 +1267,7 @@ async function* runShellCommand({
           )
         }
 
-        setToolJSX({
-          jsx: <BackgroundHint />,
-          shouldHidePromptInput: false,
-          shouldContinueAnimation: true,
-          showSpinner: true,
-        })
+        setToolJSX(backgroundHintToolJSX())
       }
       yield {
         type: 'progress',

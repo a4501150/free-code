@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { Box } from '../ink.js'
-import { useSubagentTasksV2, useTasksV2 } from '../hooks/useTasksV2.js'
-import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
+import { useTasksV2 } from '../hooks/useTasksV2.js'
+import { useViewedTaskList } from '../hooks/useViewedTaskList.js'
 import { useAppState } from '../state/AppState.js'
 import type { Task } from '../utils/tasks.js'
 import { MessageResponse } from './MessageResponse.js'
@@ -77,24 +77,12 @@ export function TaskPanelRows({ tasks }: { tasks: Task[] }): React.ReactNode {
  * when the store's all-completed reset collapses expandedView, both render
  * nothing in the same update.
  *
- * Uses the same viewed-list selection as SpinnerWithVerbInner: viewing a
- * local agent shows that agent's own list, never the main session's.
+ * Uses the shared useViewedTaskList selection: viewing a local agent shows
+ * that agent's own list, never the main session's.
  */
 export function TaskIdlePanel(): React.ReactNode {
-  const tasks = useAppState(s => s.tasks)
-  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const expandedView = useAppState(s => s.expandedView)
-  const viewedLocalAgent = viewingAgentTaskId
-    ? (() => {
-        const t = tasks[viewingAgentTaskId]
-        return isLocalAgentTask(t) ? t : undefined
-      })()
-    : undefined
-  const mainTasksV2 = useTasksV2()
-  const subagentTasksV2 = useSubagentTasksV2(viewingAgentTaskId)
-  const tasksV2 = viewedLocalAgent
-    ? subagentTasksV2
-    : (subagentTasksV2 ?? mainTasksV2)
+  const { tasksV2 } = useViewedTaskList()
 
   if (expandedView !== 'tasks' || !tasksV2 || tasksV2.length === 0) {
     return null
