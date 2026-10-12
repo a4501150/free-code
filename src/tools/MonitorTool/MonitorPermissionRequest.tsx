@@ -12,12 +12,11 @@
  *    dialog returns its updatedInput derived from the NARROWED input, so
  *    `onAllow` is wrapped to re-merge the Monitor-only keys — without the
  *    merge, call() sees notify_interval missing and fails.
- * 2. Saved rules are Bash(prefix) rules. That is the only rule shape that
- *    can ever match a future Monitor call: MonitorTool.checkPermissions
- *    delegates to bashToolHasPermission, whose rule matching is keyed to
- *    the Bash tool name. A Monitor-scoped content rule would silently
- *    never match (and the whole-tool Monitor rule the generic fallback
- *    would save is a far broader grant than per-prefix rules).
+ * 2. Saved rules are Bash(prefix) rules. MonitorTool delegates its whole
+ *    permission pipeline to Bash, including rule matching (content rules
+ *    are keyed to the Bash name, and permissionRuleToolName makes bare
+ *    Bash allow/deny/ask rules cover Monitor too). A Monitor-scoped rule
+ *    would silently never match.
  */
 import * as React from 'react'
 import { BashPermissionRequest } from '../../components/permissions/BashPermissionRequest/BashPermissionRequest.js'

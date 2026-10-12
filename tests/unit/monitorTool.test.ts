@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
 import { getEmptyToolPermissionContext } from '../../src/Tool.js'
+import type { ToolPermissionContext } from '../../src/Tool.js'
+import { toolAlwaysAllowedRule } from '../../src/utils/permissions/permissions.js'
 import { MonitorTool } from '../../src/tools/MonitorTool/MonitorTool.js'
 import type { MonitorToolInput } from '../../src/tools/MonitorTool/MonitorTool.js'
 
@@ -31,6 +33,29 @@ describe('MonitorTool.checkPermissions', () => {
     } else {
       throw new Error('allow decision must carry updatedInput')
     }
+  })
+})
+
+describe('MonitorTool permission rule delegation', () => {
+  // permissionRuleToolName makes rules match under the Bash name: Monitor
+  // is a facade over Bash permissions, so an allowlisted Bash covers it
+  // and a Monitor-scoped rule matches nothing.
+  const contextWithAllow = (allow: string[]) =>
+    ({
+      ...getEmptyToolPermissionContext(),
+      alwaysAllowRules: { userSettings: allow },
+    }) as ToolPermissionContext
+
+  test('a bare Bash allow rule covers Monitor', () => {
+    expect(
+      toolAlwaysAllowedRule(contextWithAllow(['Bash']), MonitorTool),
+    ).not.toBeNull()
+  })
+
+  test('a bare Monitor rule matches nothing', () => {
+    expect(
+      toolAlwaysAllowedRule(contextWithAllow(['Monitor']), MonitorTool),
+    ).toBeNull()
   })
 })
 

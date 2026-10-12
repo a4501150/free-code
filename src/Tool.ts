@@ -469,6 +469,15 @@ export type Tool<
    * or unprefixed (CLAUDE_AGENT_SDK_MCP_NO_PREFIX mode).
    */
   mcpInfo?: { serverName: string; toolName: string }
+  /**
+   * Tool name that permission rules match against instead of this tool's
+   * own name. For facade tools that delegate their entire permission
+   * pipeline to another tool (Monitor → Bash): bare allow/deny/ask rules
+   * and content rules under that name apply here too, so an allowlisted
+   * delegate needs no dedicated entry. This tool's own name then matches
+   * no rules.
+   */
+  permissionRuleToolName?: string
   readonly name: string
   /**
    * Maximum size in characters for tool result before it gets persisted to disk.

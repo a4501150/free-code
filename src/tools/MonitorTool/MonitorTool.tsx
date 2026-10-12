@@ -16,6 +16,7 @@ import { TOOL_SUMMARY_MAX_LENGTH } from '../../constants/toolLimits.js'
 import { truncate } from '../../utils/format.js'
 import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../BackgroundTaskStopTool/prompt.js'
 import { bashToolHasPermission } from '../BashTool/bashPermissions.js'
+import { BASH_TOOL_NAME } from '../BashTool/toolName.js'
 import type { ValidationResult } from '../../Tool.js'
 import { MONITOR_TOOL_NAME } from './toolName.js'
 import { getMonitorPrompt } from './prompt.js'
@@ -70,6 +71,10 @@ export const MonitorTool = buildTool({
   renderPermissionRequest: () => MonitorPermissionRequest,
 
   name: MONITOR_TOOL_NAME,
+  // Monitor is a model-facing facade over Bash permissions: rules match
+  // under the Bash name, so an allowlisted Bash covers monitors and a
+  // bare "Monitor" rule matches nothing.
+  permissionRuleToolName: BASH_TOOL_NAME,
   maxResultSizeChars: 30_000,
   async description(input) {
     return `Monitor ${monitorLabel(input)}`

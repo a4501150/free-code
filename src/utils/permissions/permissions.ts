@@ -209,7 +209,7 @@ export function getAskRules(context: ToolPermissionContext): PermissionRule[] {
  * This also matches MCP tools with a server name, e.g. the rule "mcp__server1"
  */
 function toolMatchesRule(
-  tool: Pick<Tool, 'name' | 'mcpInfo'>,
+  tool: Pick<Tool, 'name' | 'mcpInfo' | 'permissionRuleToolName'>,
   rule: PermissionRule,
 ): boolean {
   // Rule must not have content to match the entire tool
@@ -247,7 +247,7 @@ function toolMatchesRule(
  */
 export function toolAlwaysAllowedRule(
   context: ToolPermissionContext,
-  tool: Pick<Tool, 'name' | 'mcpInfo'>,
+  tool: Pick<Tool, 'name' | 'mcpInfo' | 'permissionRuleToolName'>,
 ): PermissionRule | null {
   return (
     getAllowRules(context).find(rule => toolMatchesRule(tool, rule)) || null
@@ -259,7 +259,7 @@ export function toolAlwaysAllowedRule(
  */
 export function getDenyRuleForTool(
   context: ToolPermissionContext,
-  tool: Pick<Tool, 'name' | 'mcpInfo'>,
+  tool: Pick<Tool, 'name' | 'mcpInfo' | 'permissionRuleToolName'>,
 ): PermissionRule | null {
   return getDenyRules(context).find(rule => toolMatchesRule(tool, rule)) || null
 }
@@ -269,7 +269,7 @@ export function getDenyRuleForTool(
  */
 export function getAskRuleForTool(
   context: ToolPermissionContext,
-  tool: Pick<Tool, 'name' | 'mcpInfo'>,
+  tool: Pick<Tool, 'name' | 'mcpInfo' | 'permissionRuleToolName'>,
 ): PermissionRule | null {
   return getAskRules(context).find(rule => toolMatchesRule(tool, rule)) || null
 }

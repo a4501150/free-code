@@ -73,15 +73,21 @@ export function buildMcpToolName(serverName: string, toolName: string): string {
 }
 
 /**
- * Returns the name to use for permission rule matching.
- * For MCP tools, uses the fully qualified mcp__server__tool name so that
- * deny rules targeting builtins (e.g., "Write") don't match unprefixed MCP
- * replacements that share the same display name. Falls back to `tool.name`.
+ * Returns the name to use for permission rule matching. A tool declaring
+ * `permissionRuleToolName` (facade tools, e.g. Monitor → Bash) matches rules
+ * under the delegate's name. For MCP tools, uses the fully qualified
+ * mcp__server__tool name so that deny rules targeting builtins (e.g.,
+ * "Write") don't match unprefixed MCP replacements that share the same
+ * display name. Falls back to `tool.name`.
  */
 export function getToolNameForPermissionCheck(tool: {
   name: string
   mcpInfo?: { serverName: string; toolName: string }
+  permissionRuleToolName?: string
 }): string {
+  if (tool.permissionRuleToolName !== undefined) {
+    return tool.permissionRuleToolName
+  }
   return tool.mcpInfo
     ? buildMcpToolName(tool.mcpInfo.serverName, tool.mcpInfo.toolName)
     : tool.name
