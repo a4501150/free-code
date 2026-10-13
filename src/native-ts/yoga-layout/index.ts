@@ -521,15 +521,13 @@ export class Node {
   _lOutW = NaN
   _lOutH = NaN
   _hasL = false
-  _mW = NaN
-  _mH = NaN
-  _mWM: MeasureMode = 0
-  _mHM: MeasureMode = 0
-  _mOW = NaN
-  _mOH = NaN
-  _mOutW = NaN
-  _mOutH = NaN
-  _hasM = false
+  // No measure-mode single slot: the 4-slot ring below is scanned FIRST
+  // on every measure call and fully dominates it (counter bench on the
+  // streaming-scroll workload: 8653 ring hits, 0 single-slot hits — the
+  // single slot only ever served entries the ring had evicted, which
+  // needs >4 thrashing measure input combos between repeats). The
+  // LAYOUT single slot above earns its keep (100% of layout hits) and
+  // stays.
   // Cached computeFlexBasis result. For clean children, basis only depends
   // on the container's inner dimensions — if those haven't changed, skip the
   // layoutNode(performLayout=false) recursion entirely. This is the hot path
@@ -689,7 +687,6 @@ export class Node {
   // isDirty_ = true (reset) or set it themselves (recovery walk).
   private clearCacheBookkeeping(): void {
     this._hasL = false
-    this._hasM = false
     this._cN = 0
     this._cWr = 0
     this._cGen = -1
@@ -1350,8 +1347,8 @@ function cacheWrite(
   node._cGen = _generation
 }
 
-// Store computed layout.width/height into the single-slot cache output fields.
-// _hasL/_hasM inputs are committed at the TOP of layoutNode (before compute);
+// Store computed layout.width/height into the layout single-slot outputs.
+// _hasL inputs are committed at the TOP of layoutNode (before compute);
 // outputs must be committed HERE (after compute) so a cache hit can restore
 // the correct dimensions. Without this, a _hasL hit returns whatever
 // layout.width/height was left by the last call — which may be the intrinsic
@@ -1364,9 +1361,6 @@ function commitCacheOutputs(node: Node, performLayout: boolean): void {
     node._lOutH = node.layout.height
     node._defW = node.layout.width
     node._defH = node.layout.height
-  } else {
-    node._mOutW = node.layout.width
-    node._mOutH = node.layout.height
   }
 }
 
@@ -1383,12 +1377,21 @@ let _yogaMeasureCalls = 0
 let _yogaMeasureCacheHits = 0
 let _yogaCacheHits = 0
 let _yogaLiveNodes = 0
+// Hit-source breakdown for the layout caches — how much each layer earns
+// (the single-slot-vs-ring decision was made with these). Cumulative;
+// reset via resetYogaHitSourceCounters for benches.
+let _yogaSlotLHits = 0
+let _yogaRingLHits = 0
+let _yogaRingMHits = 0
 export function getYogaCounters(): {
   visited: number
   measured: number
   measureCacheHits: number
   cacheHits: number
   live: number
+  slotLHits: number
+  ringLHits: number
+  ringMHits: number
 } {
   return {
     visited: _yogaNodesVisited,
@@ -1396,7 +1399,15 @@ export function getYogaCounters(): {
     measureCacheHits: _yogaMeasureCacheHits,
     cacheHits: _yogaCacheHits,
     live: _yogaLiveNodes,
+    slotLHits: _yogaSlotLHits,
+    ringLHits: _yogaRingLHits,
+    ringMHits: _yogaRingMHits,
   }
+}
+export function resetYogaHitSourceCounters(): void {
+  _yogaSlotLHits = 0
+  _yogaRingLHits = 0
+  _yogaRingMHits = 0
 }
 
 function layoutNode(
@@ -1461,6 +1472,7 @@ function layoutNode(
       sameFloat(node._lOH, keyOH)
     ) {
       _yogaCacheHits++
+      _yogaSlotLHits++
       if (YOGA_AUDIT) auditLayoutHits.set(node, `L@${_generation}`)
       layout.width = node._lOutW
       layout.height = node._lOutH
@@ -1506,6 +1518,8 @@ function layoutNode(
           layout.width = node._cOut![i * 2]!
           layout.height = node._cOut![i * 2 + 1]!
           _yogaCacheHits++
+          if (performLayout) _yogaRingLHits++
+          else _yogaRingMHits++
           if (YOGA_AUDIT) auditLayoutHits.set(node, `C@${_generation}`)
           // Layout-pass ring hit — same serve-commit as the _hasL hit
           // above. Measure-mode entries are only reachable from measure
@@ -1534,23 +1548,6 @@ function layoutNode(
         }
       }
     }
-    if (
-      !node.isDirty_ &&
-      !performLayout &&
-      node._hasM &&
-      node._mWM === widthMode &&
-      node._mHM === heightMode &&
-      sameFloat(node._mW, availableWidth) &&
-      sameFloat(node._mH, availableHeight) &&
-      sameFloat(node._mOW, keyOW) &&
-      sameFloat(node._mOH, keyOH)
-    ) {
-      layout.width = node._mOutW
-      layout.height = node._mOutH
-      _yogaCacheHits++
-      if (YOGA_AUDIT) auditLayoutHits.set(node, `M@${_generation}`)
-      return
-    }
   }
   // Commit cache inputs up front so every return path leaves a valid entry.
   // Only clear isDirty_ on the LAYOUT pass — the measure pass (computeFlexBasis
@@ -1561,40 +1558,32 @@ function layoutNode(
   // and sticky-scroll never follows new content. A dirty node's _hasL entry is
   // stale by definition — invalidate it so the layout pass recomputes.
   const wasDirty = node.isDirty_
-  if (performLayout) {
-    node._lW = availableWidth
-    node._lH = availableHeight
-    node._lWM = widthMode
-    node._lHM = heightMode
-    node._lOW = keyOW
-    node._lOH = keyOH
-    node._lFW = forceWidth
-    node._lFH = forceHeight
-    node._hasL = true
-    node.isDirty_ = false
-    // Previous approach cleared _cN here to prevent stale pre-dirty entries
-    // from hitting (long-continuous blank-screen bug). Now replaced by
-    // generation stamping: the cache check requires sameGen || !isDirty_, so
-    // previous-generation entries from a dirty node can't hit. Clearing here
-    // would wipe fresh same-generation entries from an earlier measure call,
-    // forcing recompute on the layout call.
-    if (wasDirty) node._hasM = false
-  } else {
-    node._mW = availableWidth
-    node._mH = availableHeight
-    node._mWM = widthMode
-    node._mHM = heightMode
-    node._mOW = keyOW
-    node._mOH = keyOH
-    node._hasM = true
-    // Don't clear isDirty_. For DIRTY nodes, invalidate _hasL so the upcoming
-    // performLayout=true call recomputes with the new child set (otherwise
-    // sticky-scroll never follows new content — the bug from 4557bc9f9c).
-    // Clean nodes keep _hasL: their layout from the previous generation is
-    // still valid, they're only here because an ancestor is dirty and called
-    // with different inputs than cached.
-    if (wasDirty) node._hasL = false
-  }
+    if (performLayout) {
+      node._lW = availableWidth
+      node._lH = availableHeight
+      node._lWM = widthMode
+      node._lHM = heightMode
+      node._lOW = keyOW
+      node._lOH = keyOH
+      node._lFW = forceWidth
+      node._lFH = forceHeight
+      node._hasL = true
+      node.isDirty_ = false
+      // Previous approach cleared _cN here to prevent stale pre-dirty entries
+      // from hitting (long-continuous blank-screen bug). Now replaced by
+      // generation stamping: the cache check requires sameGen || !isDirty_, so
+      // previous-generation entries from a dirty node can't hit. Clearing here
+      // would wipe fresh same-generation entries from an earlier measure call,
+      // forcing recompute on the layout call.
+    } else {
+      // Don't clear isDirty_. For DIRTY nodes, invalidate _hasL so the upcoming
+      // performLayout=true call recomputes with the new child set (otherwise
+      // sticky-scroll never follows new content — the bug from 4557bc9f9c).
+      // Clean nodes keep _hasL: their layout from the previous generation is
+      // still valid, they're only here because an ancestor is dirty and called
+      // with different inputs than cached.
+      if (wasDirty) node._hasL = false
+    }
 
   // Resolve padding/border/margin against ownerWidth (yoga uses ownerWidth for %)
   // Write directly into the pre-allocated layout arrays — avoids 3 allocs per
@@ -2939,7 +2928,6 @@ function zeroLayoutRecursive(node: Node): void {
     // during hide so sameGen is false on unhide.
     c.isDirty_ = true
     c._hasL = false
-    c._hasM = false
     // The mf-ring's stated invariant is "cleared by markDirty; entries
     // only trusted on clean nodes" — this path bypasses markDirty, so a
     // hidden text leaf's pre-hide measure entries would serve on unhide
