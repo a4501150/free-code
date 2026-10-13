@@ -794,12 +794,17 @@ export default class Ink {
         this.rootNode,
         frame.screen,
         this.stylePool,
+        32,
       )
       if (shiftedBeforeCheck) markLayoutShifted()
       if (mismatches.length > 0) {
         const first = mismatches[0] as (typeof mismatches)[0] & {
           frameRow?: string
           referenceRow?: string
+          context?: string
+          mismatchRows?: number
+          fullFrame?: string
+          fullReference?: string
         }
         logForDebugging(
           `[RENDER-CHECK] ${mismatches.length}+ cells diverge from ` +
@@ -811,9 +816,15 @@ export default class Ink {
               )
               .join(' ') +
             (first.frameRow
-              ? `\n  first-mismatch row ${first.row}:\n` +
+              ? `\n  first-mismatch row ${first.row} (${first.mismatchRows ?? '?'} mismatching rows, owner ${dom
+                  .findOwnerChainAtRow(this.rootNode, first.row)
+                  .join(' → ')}):\n` +
                 `  frame:     ${first.frameRow}\n` +
-                `  reference: ${first.referenceRow}`
+                `  reference: ${first.referenceRow}` +
+                (first.context ? `\n  ${first.context}` : '') +
+                (first.fullFrame
+                  ? `\n  === FULL FRAME ===\n${first.fullFrame}\n  === FULL REFERENCE ===\n${first.fullReference}`
+                  : '')
               : ''),
           { level: 'warn' },
         )

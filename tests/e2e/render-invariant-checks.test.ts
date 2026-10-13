@@ -15,23 +15,24 @@
  * (Shift+Down → background-tasks detail → Esc) and the focusedInputDialog
  * slot (double-Esc Rewind overlay → Esc), with text in the prompt.
  *
- * GATED (FREECODE_INVARIANT_E2E=1): the checks currently DO report two
- * signatures on main, both tied to the real transcript's virtual scroll
- * (they do NOT reproduce in the simpler in-process harness,
- * tests/unit/inkStreamingInvariants.test.tsx):
- *   1. LAYOUT-CHECK: a streaming message box (Box/ThemedBox/REPL, h=4)
- *      and its SpinnerWithVerbInner (h=3) overlap by 3 rows during
- *      scroll-content growth — beyond the 2-cell grid cover-rounding
- *      tolerance, so real displacement, consistent with the documented
- *      useVirtualScroll one-frame window lag.
- *   2. RENDER-CHECK: the frame's screen missing the spinner row and
- *      the top transcript row that a cache-free reference render
- *      produces — the viewport's edge rows, i.e. the same lag window.
+ * UNGATED: the two signatures this test was originally gated on are
+ * fixed (and pinned in-process by tests/unit/inkVirtualScrollInvariants
+ * .test.tsx and tests/unit/inkModalOverlayInvariants.test.tsx):
+ *   1. LAYOUT-CHECK spacer/spinner overlap — yoga-port cache layers
+ *      serving stale sizes (per-slot ring generation stamps + layout-hit
+ *      serve-commits + clean-resize ring wipes).
+ *   2. RENDER-CHECK dialog-window blanks — four overlay×scroll bugs:
+ *      the reference render consuming the absoluteRects rotation
+ *      (starving pass-3's shift-ghost repair), the fromAbsolute clear's
+ *      blanket blit exclusion blanking the overlay's own clean children
+ *      and the scroll content under a transparent overlay, and clean
+ *      scroll children under an overlay blitting the overlay's stale
+ *      pixels (shrink-tail ghosts).
  * (Cover-rounding overlaps of ≤2 cells are tolerated by the checker:
  * yoga's fractional layouts expand rects to floor(top)..ceil(bottom),
  * so fractionally-spaced siblings legitimately share cells.)
- * Flip the gate on once the virtual-scroll lag window is fixed; the
- * assertion is then the regression net for this whole bug class.
+ * This is the regression net for the whole bug class — flip to skipIf
+ * only if a new signature needs investigation, and document it here.
  */
 import {
   describe,
@@ -71,7 +72,7 @@ describe('render invariant checks', () => {
     server.stop()
   })
 
-  bunTest.skipIf(!process.env.FREECODE_INVARIANT_E2E)(
+  bunTest(
     'dialog round-trips produce no layout or render violations',
     async () => {
       const debugFile = join(

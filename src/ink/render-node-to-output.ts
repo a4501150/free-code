@@ -78,7 +78,20 @@ export function setReferenceRender(on: boolean): void {
 }
 
 export function resetScrollHint(): void {
+  // Only clears the hint — NOT the absoluteRects rotation. The rotation
+  // must run exactly once per REAL frame (renderer.ts start); the
+  // render-check reference render also calls this between real frames,
+  // and consuming the rotation there would starve the next real
+  // frame's pass-3 overlay repair (shifted absolute pixels left as
+  // ghosts).
   scrollHint = null
+}
+
+// Rotate the absolute-overlay rect list. Called at the START of every
+// REAL frame (renderer.ts): the rects recorded by the previous real
+// frame become absoluteRectsPrev, consumed by the scroll fast path's
+// third-pass repair.
+export function rotateAbsoluteRects(): void {
   absoluteRectsPrev = absoluteRectsCur
   absoluteRectsCur = []
 }
@@ -538,7 +551,16 @@ function renderNodeToOutput(
           width: Math.floor(cached.width),
           height: Math.floor(cached.height),
         },
-        node.style.position === 'absolute',
+        // The fromAbsolute flag makes output.get() exclude every blit
+        // inside the cleared rect — necessary ONLY when the node's fresh
+        // paint no longer covers the old rect (moved/shrunk), because
+        // then a sibling's clean blit could restore the node's stale
+        // pixels where its new paint won't overwrite them. On a mere
+        // content change (same rect) the fresh paint lands after every
+        // blit, so the blanket exclusion only blanks legitimate blits
+        // underneath a transparent overlay — the scroll content under
+        // an absolute modal loses its clean children's blits for a frame.
+        node.style.position === 'absolute' && positionChanged,
       )
     }
     // A remounted node can cover terminal cells that are blank in both screen
@@ -1373,7 +1395,20 @@ function renderNodeToOutput(
           // on the assumption that plain-space fill + unchanged children =
           // valid composite, but children CAN reposition (ScrollBox remeasure
           // on re-render → /permissions body blanked on Down arrow, #25436).
-          ownBackgroundColor || node.style.opaque ? undefined : prevScreen,
+          // A DIRTY absolute overlay also disables child blit: its own
+          // fromAbsolute clear makes output.get() exclude every blit inside
+          // its rect (so normal-flow siblings can't restore its stale
+          // pixels) — but that exclusion also catches the overlay's OWN
+          // clean children, whose blitted ops get skipped and leave blank
+          // rows. Forcing the whole overlay subtree to full-render when the
+          // overlay itself is dirty keeps its clean rows painted (they were
+          // blit-excluded anyway, so this only trades a no-op skip for a
+          // real render).
+          ownBackgroundColor ||
+            node.style.opaque ||
+            (node.style.position === 'absolute' && node.dirty)
+            ? undefined
+            : prevScreen,
           boxBackgroundColor,
         )
       }
@@ -1628,10 +1663,31 @@ function renderScrolledChildren(
       }
     }
     const wasDirty = childElem.dirty
+    // A clean child whose rows sit under an absolute overlay must WRITE,
+    // not blit: its blit copies prevScreen's composite, which includes the
+    // overlay's OLD pixels — cells the overlay's fresh paint no longer
+    // covers (a shrunk overlay text) would keep the overlay's stale tail
+    // (the "tick 90" ghost: '9' from the new text + '0' restored from the
+    // old). Writing reproduces the child's own cells exactly; the overlay
+    // repaints over them afterwards in DOM order.
+    let underOverlay = false
+    if (prevScreen && !wasDirty && absoluteRectsPrev.length > 0 && cy) {
+      const childTopAbs = offsetY + cy.getComputedTop()
+      const childBottomAbs = childTopAbs + cy.getComputedHeight()
+      for (const r of absoluteRectsPrev) {
+        if (childBottomAbs > r.y && childTopAbs < r.y + r.height) {
+          underOverlay = true
+          break
+        }
+      }
+    }
     renderNodeToOutput(childElem, output, {
       offsetX,
       offsetY,
-      prevScreen: hasRemovedChild || seenDirtyChild ? undefined : prevScreen,
+      prevScreen:
+        hasRemovedChild || seenDirtyChild || underOverlay
+          ? undefined
+          : prevScreen,
       inheritedBackgroundColor,
     })
     if (wasDirty) {

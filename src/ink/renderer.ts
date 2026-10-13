@@ -9,6 +9,7 @@ import renderNodeToOutput, {
   resetLayoutShifted,
   resetScrollDrainNode,
   resetScrollHint,
+  rotateAbsoluteRects,
 } from './render-node-to-output.js'
 import { createScreen, type StylePool } from './screen.js'
 
@@ -119,6 +120,7 @@ export default function createRenderer(
 
     resetLayoutShifted()
     resetScrollHint()
+    rotateAbsoluteRects()
     resetScrollDrainNode()
 
     // prevFrameContaminated: selection overlay mutated the returned screen

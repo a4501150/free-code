@@ -106,11 +106,14 @@ export function diffFrameAgainstReference(
   }
   // Row context for the first mismatched row — the deciding evidence
   // between a real hole (frame row blank/corrupt) and a one-row shift
-  // or mid-drain transient (frame content offset from reference).
+  // or mid-drain transient (frame content offset from reference). Also
+  // dumps the two rows on each side: a whole-block shift shows the same
+  // content one row off; a lone hole is bounded by intact rows.
   if (firstRow >= 0) {
-    const rowText = (screen: Screen) => {
+    const rowText = (screen: Screen, row: number) => {
+      if (row < 0 || row >= screen.height) return '(off-screen)'
       let out = ''
-      const base = firstRow * screen.width
+      const base = row * screen.width
       for (let c = 0; c < Math.min(60, screen.width); c++) {
         const cell = cellAtIndex(screen, base + c)
         out += cell.char === ' ' || !cell.char ? '·' : cell.char
@@ -118,12 +121,46 @@ export function diffFrameAgainstReference(
       return out
     }
     const first = mismatches[0]!
-    ;(
-      first as RenderMismatch & { frameRow?: string; referenceRow?: string }
-    ).frameRow = rowText(frameScreen)
-    ;(
-      first as RenderMismatch & { frameRow?: string; referenceRow?: string }
-    ).referenceRow = rowText(rendered)
+    const withRows = first as RenderMismatch & {
+      frameRow?: string
+      referenceRow?: string
+      context?: string
+      fullFrame?: string
+      fullReference?: string
+    }
+    withRows.frameRow = rowText(frameScreen, firstRow)
+    withRows.referenceRow = rowText(rendered, firstRow)
+    // Complete both screens on the first mismatching frame — the
+    // per-frame contexts above cannot show a whole-screen shift vs a
+    // local hole.
+    const fullScreen = (screen: Screen): string => {
+      const rows: string[] = []
+      for (let r = 0; r < screen.height; r++) {
+        let out = ''
+        const base = r * screen.width
+        for (let c = 0; c < Math.min(70, screen.width); c++) {
+          const cell = cellAtIndex(screen, base + c)
+          out += cell.char === ' ' || !cell.char ? '·' : cell.char
+        }
+        rows.push(out)
+      }
+      return rows.join('\n')
+    }
+    withRows.fullFrame = fullScreen(frameScreen)
+    withRows.fullReference = fullScreen(rendered)
+    // All diverging rows (bounded): each with both buffers' text, so a
+    // shift vs a hole vs a stale-region overlap is readable at a glance.
+    const divergingRows = [...new Set(mismatches.map(m => m.row))]
+    withRows.context = divergingRows
+      .slice(0, 12)
+      .map(
+        r => `row ${r}: F=${rowText(frameScreen, r)} R=${rowText(rendered, r)}`,
+      )
+      .join('\n  ')
+    // Mismatch row spread: how many DISTINCT rows diverge (bounds the
+    // damage without logging every cell).
+    ;(first as RenderMismatch & { mismatchRows?: number }).mismatchRows =
+      divergingRows.length
   }
   return mismatches
 }
