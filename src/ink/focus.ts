@@ -70,8 +70,7 @@ export class FocusManager {
     // Remove the node, any descendants, and hidden (unfocusable) entries
     // from the stack
     this.focusStack = this.focusStack.filter(
-      n =>
-        n !== node && isInTree(n, root) && !isHiddenFromLayout(n),
+      n => n !== node && isInTree(n, root) && !isHiddenFromLayout(n),
     )
 
     // Drop a registered default target that left the tree — the host's

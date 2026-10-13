@@ -365,8 +365,12 @@ export default class Output {
           // happens here so erase respects the clip stack exactly like
           // a write at the same stream position.
           const clip = clips.at(-1)
-          const { x: regionX, y: regionY, width: regionWidth, height: regionHeight } =
-            operation.region
+          const {
+            x: regionX,
+            y: regionY,
+            width: regionWidth,
+            height: regionHeight,
+          } = operation.region
           const startX = Math.max(regionX, clip?.x1 ?? 0)
           const startY = Math.max(regionY, clip?.y1 ?? 0)
           const maxX = Math.min(regionX + regionWidth, clip?.x2 ?? Infinity)

@@ -70,7 +70,10 @@ function App({ suspend, tick }: { suspend: boolean; tick: number }) {
   )
 }
 
-function collectElements(node: DOMElement, out: DOMElement[] = []): DOMElement[] {
+function collectElements(
+  node: DOMElement,
+  out: DOMElement[] = [],
+): DOMElement[] {
   out.push(node)
   for (const c of node.childNodes) {
     if (c.nodeName !== '#text') collectElements(c as DOMElement, out)
@@ -119,7 +122,9 @@ describe('suspense hide/unhide lifecycle', () => {
     try {
       // -- Locate the actors by content.
       const els = collectElements(root)
-      const outsideBox = els.find(e => subtreeText(e) === 'outside focus target')!
+      const outsideBox = els.find(
+        e => subtreeText(e) === 'outside focus target',
+      )!
       expect(outsideBox).toBeDefined()
       const panelText = (e: DOMElement) => subtreeText(e)
       const panelBox = els.find(

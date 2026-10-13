@@ -403,9 +403,7 @@ const reconciler = createReconciler<
     // style-level display:none stays hidden through a Suspense
     // hide/unhide cycle; unspecified display is Flex (yoga default).
     node.yogaNode?.setDisplay(
-      node.style.display === 'none'
-        ? LayoutDisplay.None
-        : LayoutDisplay.Flex,
+      node.style.display === 'none' ? LayoutDisplay.None : LayoutDisplay.Flex,
     )
     markDirty(node)
   },

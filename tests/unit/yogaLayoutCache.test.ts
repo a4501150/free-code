@@ -18,7 +18,11 @@
  */
 import { describe, expect, test } from 'bun:test'
 
-import Yoga, { Align, FlexDirection, MeasureMode } from '../../src/native-ts/yoga-layout/index.js'
+import Yoga, {
+  Align,
+  FlexDirection,
+  MeasureMode,
+} from '../../src/native-ts/yoga-layout/index.js'
 
 type YogaNode = ReturnType<typeof Yoga.Node.create>
 
