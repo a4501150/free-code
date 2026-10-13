@@ -28,6 +28,8 @@ import {
   INPUT_PRIORITY_WINDOW_MS,
 } from './constants.js'
 import * as dom from './dom.js'
+import type { DOMElement } from './dom.js'
+import { LayoutDisplay } from './layout/node.js'
 import { KeyboardEvent } from './events/keyboard-event.js'
 import { FocusManager } from './focus.js'
 import { emptyFrame, type Frame, type FrameEvent } from './frame.js'
@@ -527,8 +529,57 @@ export default class Ink {
         this.layoutCheckAnnounced = true
         logForDebugging('[LAYOUT-CHECK] enabled', { level: 'info' })
       }
-      for (const violation of checkLayoutInvariants(this.rootNode)) {
+      const violations = checkLayoutInvariants(this.rootNode)
+      for (const violation of violations) {
         logForDebugging(`[LAYOUT-CHECK] ${violation}`, { level: 'warn' })
+      }
+      // One-shot probe on violation (FREECODE_LAYOUT_PROBE=1): re-layout
+      // the SAME tree cache-free and re-check. If the overlap disappears,
+      // calculateLayout served a stale cached rect (mixed-geometry class);
+      // if it persists, the geometry is legitimately produced and the
+      // checker's model needs revisiting. The re-layout leaves the tree in
+      // the fully-recomputed state, which the next onRender paints.
+      if (violations.length > 0 && process.env.FREECODE_LAYOUT_PROBE === '1') {
+        try {
+          // Geometry snapshot before the relayout — the nodes that MOVE
+          // when the cache is wiped are exactly the ones whose cached
+          // rects the pass served stale.
+          const before = new Map<DOMElement, [number, number]>()
+          const snap = (node: DOMElement): void => {
+            const y = node.yogaNode
+            if (y && y.getDisplay() !== LayoutDisplay.None) {
+              before.set(node, [y.getComputedTop(), y.getComputedHeight()])
+            }
+            for (const c of node.childNodes ?? []) {
+              if (c.nodeName !== '#text') snap(c as DOMElement)
+            }
+          }
+          snap(this.rootNode)
+          root.clearLayoutCacheRecursive()
+          root.calculateLayout(this.terminalColumns)
+          const after = checkLayoutInvariants(this.rootNode)
+          const moved: string[] = []
+          for (const [node, [top, height]] of before) {
+            const y = node.yogaNode
+            if (!y) continue
+            if (
+              y.getComputedTop() !== top ||
+              y.getComputedHeight() !== height
+            ) {
+              const chain = node.debugOwnerChain
+              moved.push(
+                `${node.nodeName}<${chain && chain.length > 0 ? chain.slice(0, 3).join('/') : '-'}> ${top}→${y.getComputedTop()} h ${height}→${y.getComputedHeight()}`,
+              )
+              if (moved.length >= 10) break
+            }
+          }
+          logForDebugging(
+            `[LAYOUT-CHECK] probe: ${after.length === 0 ? 'CLEAN after cache-free relayout' : `PERSISTS (${after.length}) after cache-free relayout`}; moved: ${moved.join(' | ') || 'none'}`,
+            { level: 'warn' },
+          )
+        } catch (err) {
+          logError(err)
+        }
       }
     }
   }

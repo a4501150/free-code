@@ -96,6 +96,9 @@ describe('render invariant checks', () => {
           // violation names the components involved.
           FREECODE_LAYOUT_CHECK: '1',
           FREECODE_RENDER_CHECK: '1',
+          // On each layout violation, re-layout cache-free and log whether
+          // the overlap persists — classifies stale-cache vs legitimate.
+          FREECODE_LAYOUT_PROBE: '1',
           CLAUDE_CODE_DEBUG_REPAINTS: '1',
         },
         settings: {
@@ -225,7 +228,8 @@ describe('render invariant checks', () => {
 
         const isViolation = (l: string) =>
           (l.includes('[LAYOUT-CHECK]') || l.includes('[RENDER-CHECK]')) &&
-          !l.includes('enabled')
+          !l.includes('enabled') &&
+          !l.includes('probe:')
         const preexisting = debug
           .slice(0, debugOffset)
           .split('\n')
@@ -244,6 +248,10 @@ describe('render invariant checks', () => {
           console.log(`=== VIOLATIONS in dialog window ===`)
           for (const l of violations.slice(0, 40)) console.log(l.slice(0, 400))
         }
+        // Probe verdicts (cache-free relayout after each layout violation)
+        // — printed wherever they occurred, not gated by the offset.
+        const probeLines = debug.split('\n').filter(l => l.includes('probe:'))
+        for (const l of probeLines.slice(0, 10)) console.log(l.slice(0, 400))
         expect(violations).toEqual([])
       } finally {
         await session.stop()

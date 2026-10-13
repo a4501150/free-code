@@ -21,6 +21,12 @@
  *      (margins above the spinner, vacated rows) — ghosts like the
  *      double spinner text during streaming and the double-`)` byline.
  *      A gap sweep now blanks uncovered stable rows.
+ *   3. A clean EMPTY box (flexGrow spacer, no bg/border/children)
+ *      blit-restored its rect, which fractional cover-rounding shares
+ *      with the spinner's row. When the spinner text shrank
+ *      (Pondering…→Ebbing…), the restored old tail survived the
+ *      damage-only clear — trailing-fragment ghosts like the double-`)`
+ *      byline on glyph-only churn. Paints-nothing boxes no longer blit.
  * Growth phases: batch arrivals (whole items appended) then
  * line-by-line streaming of the tail item, with the spinner glyph
  * churning every frame.
@@ -76,7 +82,15 @@ function VList({
     <>
       <Box ref={spacerRef} height={topSpacer} flexShrink={0} />
       {items.slice(start, end).map((it, i) => (
-        <Box key={it.key} ref={measureRef(it.key)} flexDirection="column">
+        <Box
+          key={it.key}
+          ref={measureRef(it.key)}
+          flexDirection="column"
+          // Inter-item margin, like MessageRow's addMargin — margins feed
+          // the wrapper's flex-basis/free-space math during the stretch
+          // transition.
+          marginTop={i === 0 ? undefined : 1}
+        >
           {it.lines.map((l, j) => (
             <Text key={j}>{l}</Text>
           ))}
@@ -202,29 +216,30 @@ describe('virtual scroll streaming invariants', () => {
       const TICKS = 120
       for (let tick = 1; tick <= TICKS; tick++) {
         if (tick <= 40) {
-          // Phase A — batch arrivals crossing the viewport boundary:
-          // 10-line items appended one per frame (like the e2e's
-          // filler messages landing turn by turn).
+          // Phase A — small arrivals crossing the viewport boundary
+          // gradually: 3-line items appended one per frame.
           items = [
             ...items,
             {
               key: `batch-${tick}`,
-              lines: Array.from({ length: 10 }, (_, j) =>
+              lines: Array.from({ length: 3 }, (_, j) =>
                 line(`Batch${tick}`, j),
               ),
             },
           ]
         } else if (tick <= 100) {
-          // Phase B — streaming: the tail item grows a line per frame,
-          // each growth frame FOLLOWED by a glyph-only settle frame
-          // (the real spinner animates on a 50ms clock independent of
-          // SSE growth, and useVirtualScroll's measured-height spacer
-          // updates land on their own frame after growth).
+          // Phase B — streaming: the tail item grows 2 lines per frame
+          // (streams arrive in multi-row chunks), each growth frame
+          // followed by a glyph-only settle frame.
           items = items.map((it, i) =>
             i === items.length - 1
               ? {
                   ...it,
-                  lines: [...it.lines, `Stream line ${tick}: arriving prose`],
+                  lines: [
+                    ...it.lines,
+                    `Stream line ${tick}a: arriving prose`,
+                    `Stream line ${tick}b: arriving prose`,
+                  ],
                 }
               : it,
           )

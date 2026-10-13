@@ -472,9 +472,26 @@ function renderNodeToOutput(
     // Check if we can skip this subtree (clean node with unchanged layout).
     // Blit cells from previous screen instead of re-rendering.
     const cached = nodeCache.get(node)
+    // A node that paints nothing (childless box: no background, no
+    // opacity fill, no border) must not blit-restore its rect. Its
+    // prev-frame contribution is empty, so the blit can only copy
+    // pixels of OTHER nodes — fractional cover-rounding legitimately
+    // overlaps sibling rects (an empty flexGrow spacer sharing the
+    // spinner's bottom row). When that sibling re-renders with
+    // SHORTER text, the restored old tail survives: the sibling's
+    // output.clear is damage-only and cannot zero cells the blit
+    // already wrote. That's the stale spinner/byline-tail family
+    // (double `)`, trailing verb fragments).
+    const paintsNothing =
+      node.nodeName === 'ink-box' &&
+      node.childNodes.length === 0 &&
+      node.style.backgroundColor === undefined &&
+      node.style.opaque !== true &&
+      !node.style.borderStyle
     if (
       !node.dirty &&
       !skipSelfBlit &&
+      !paintsNothing &&
       node.pendingScrollDelta === undefined &&
       cached &&
       cached.x === x &&
