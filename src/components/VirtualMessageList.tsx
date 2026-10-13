@@ -954,7 +954,18 @@ function StickyTracker({
   // (setStickyPrompt fired a fresh {text,scrollTo} per-frame). The scrollTo
   // closure still captures the current estimate; it just doesn't need to
   // re-fire when only estimate moved.
-  const lastIdx = useRef(-1)
+  // Initial -2 (never a real idx; -1 means "no prompt"): on mount with
+  // idx=-1 the dedup must NOT skip — a stale sticky from a previous
+  // tracker session has to be cleared, and -1 === -1 would swallow it.
+  const lastIdx = useRef(-2)
+
+  // Clear the sticky on unmount — the tracker owns the sticky's
+  // lifetime. Without this, unmounting the transcript (dialog flip,
+  // view swap) leaves the last prompt pinned in the chrome header.
+  // setStickyPrompt is a useState setter (stable identity), so this
+  // cleanup runs only on unmount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => setStickyPrompt(null), [])
 
   // setStickyPrompt effect FIRST — must see pending.idx before the
   // correction effect below clears it. On the estimate-fallback path, the

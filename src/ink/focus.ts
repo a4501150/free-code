@@ -67,9 +67,11 @@ export class FocusManager {
    * the removed subtree. Dispatches blur and restores focus from stack.
    */
   handleNodeRemoved(node: DOMElement, root: DOMElement): void {
-    // Remove the node and any descendants from the stack
+    // Remove the node, any descendants, and hidden (unfocusable) entries
+    // from the stack
     this.focusStack = this.focusStack.filter(
-      n => n !== node && isInTree(n, root),
+      n =>
+        n !== node && isInTree(n, root) && !isHiddenFromLayout(n),
     )
 
     // Drop a registered default target that left the tree — the host's
@@ -95,9 +97,35 @@ export class FocusManager {
     // Restore focus to the most recent still-mounted element
     while (this.focusStack.length > 0) {
       const candidate = this.focusStack.pop()!
-      if (isInTree(candidate, root)) {
+      if (isInTree(candidate, root) && !isHiddenFromLayout(candidate)) {
         this.activeElement = candidate
         this.dispatchFocusEvent(candidate, new FocusEvent('focus', removed))
+        return
+      }
+    }
+  }
+
+  /**
+   * Called by the reconciler when Suspense hides a subtree
+   * (hideInstance). If the activeElement is inside it, blur and restore
+   * from the stack — otherwise key events keep routing into a node the
+   * renderer skips, invisible to the user.
+   */
+  handleNodeHidden(node: DOMElement, root: DOMElement): void {
+    if (!this.activeElement) return
+    let current: DOMElement | undefined = this.activeElement
+    while (current && current !== node) current = current.parentNode
+    if (!current) return
+
+    const hidden = this.activeElement
+    this.activeElement = null
+    this.dispatchFocusEvent(hidden, new FocusEvent('blur', null))
+
+    while (this.focusStack.length > 0) {
+      const candidate = this.focusStack.pop()!
+      if (isInTree(candidate, root) && !isHiddenFromLayout(candidate)) {
+        this.activeElement = candidate
+        this.dispatchFocusEvent(candidate, new FocusEvent('focus', hidden))
         return
       }
     }
@@ -160,6 +188,9 @@ function collectTabbable(root: DOMElement): DOMElement[] {
 }
 
 function walkTree(node: DOMElement, result: DOMElement[]): void {
+  // Skip Suspense-hidden and display:none subtrees — Tab cycling must
+  // not land focus on a node the renderer never paints.
+  if (isHiddenFromLayout(node)) return
   const tabIndex = node.attributes['tabIndex']
   if (typeof tabIndex === 'number' && tabIndex >= 0) {
     result.push(node)
@@ -170,6 +201,15 @@ function walkTree(node: DOMElement, result: DOMElement[]): void {
       walkTree(child, result)
     }
   }
+}
+
+/**
+ * A node is focusable only while visible: not Suspense-hidden
+ * (hideInstance) and not style display:none. Both leave the node
+ * attached but unpainted.
+ */
+function isHiddenFromLayout(node: DOMElement): boolean {
+  return node.isHidden === true || node.style.display === 'none'
 }
 
 function isInTree(node: DOMElement, root: DOMElement): boolean {

@@ -391,10 +391,22 @@ const reconciler = createReconciler<
     node.isHidden = true
     node.yogaNode?.setDisplay(LayoutDisplay.None)
     markDirty(node)
+    // If the focused node is inside this subtree, blur it now — key
+    // events must not keep routing into an unpainted node until the
+    // next Tab press.
+    const root = getRootNode(node)
+    root.focusManager!.handleNodeHidden(node, root)
   },
   unhideInstance(node) {
     node.isHidden = false
-    node.yogaNode?.setDisplay(LayoutDisplay.Flex)
+    // Restore from the node's own style, not a hardcoded Flex — a
+    // style-level display:none stays hidden through a Suspense
+    // hide/unhide cycle; unspecified display is Flex (yoga default).
+    node.yogaNode?.setDisplay(
+      node.style.display === 'none'
+        ? LayoutDisplay.None
+        : LayoutDisplay.Flex,
+    )
     markDirty(node)
   },
   appendInitialChild: appendChildNode,
