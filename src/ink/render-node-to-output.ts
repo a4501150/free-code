@@ -33,9 +33,18 @@ function isXtermJsHost(): boolean {
 // shift layout → narrow damage bounds → O(changed cells) diff instead of
 // O(rows×cols).
 let layoutShifted = false
+// Set during React commit (e.g. a modal flipping in FullscreenLayout) — the
+// per-frame reset at render start would otherwise erase it before
+// didLayoutShift() is read later in the same frame. Survives one reset.
+let layoutShiftPending = false
 
 export function resetLayoutShifted(): void {
-  layoutShifted = false
+  layoutShifted = layoutShiftPending
+  layoutShiftPending = false
+}
+
+export function markLayoutShifted(): void {
+  layoutShiftPending = true
 }
 
 export function didLayoutShift(): boolean {

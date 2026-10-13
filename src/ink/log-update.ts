@@ -5,6 +5,7 @@ import {
 } from '@alcalzone/ansi-tokenize'
 import { logForDebugging } from '../utils/debug.js'
 import type { Diff, FlickerReason, Frame } from './frame.js'
+import { didLayoutShift } from './render-node-to-output.js'
 import type { Point } from './layout/geometry.js'
 import {
   type Cell,
@@ -167,6 +168,9 @@ export class LogUpdate {
         bottom < next.screen.height
       ) {
         shiftRows(prev.screen, top, bottom, delta)
+        logForDebugging(
+          `scroll-hint top=${top} bottom=${bottom} delta=${delta}`,
+        )
         scrollPatch = [
           {
             type: 'stdout',
@@ -225,6 +229,7 @@ export class LogUpdate {
     // into scrollback and the region scroll can't reach it).
     let shiftScrollPatch: Diff = []
     if (
+      !didLayoutShift() &&
       scrollPatch.length === 0 &&
       prev.screen.height === next.screen.height &&
       (altScreen
