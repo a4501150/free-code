@@ -5,7 +5,7 @@ import {
 } from '@alcalzone/ansi-tokenize'
 import { logForDebugging } from '../utils/debug.js'
 import type { Diff, FlickerReason, Frame } from './frame.js'
-import { didLayoutShift } from './render-node-to-output.js'
+import { didFlipShift } from './render-node-to-output.js'
 import type { Point } from './layout/geometry.js'
 import {
   type Cell,
@@ -229,7 +229,13 @@ export class LogUpdate {
     // into scrollback and the region scroll can't reach it).
     let shiftScrollPatch: Diff = []
     if (
-      !didLayoutShift() &&
+      // Flip frames only (didFlipShift): a modal flip's prevScreen holds
+      // the modal's pixels, which a hardware region scroll would
+      // displace — suppress. Ordinary layoutShifted frames (sticky
+      // streaming growth) MUST keep this fast path; gating on
+      // didLayoutShift() here killed every region scroll during
+      // streaming (edit-inflight e2e).
+      !didFlipShift() &&
       scrollPatch.length === 0 &&
       prev.screen.height === next.screen.height &&
       (altScreen

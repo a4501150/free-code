@@ -36,10 +36,18 @@ let layoutShifted = false
 // per-frame reset at render start would otherwise erase it before
 // didLayoutShift() is read later in the same frame. Survives one reset.
 let layoutShiftPending = false
+// True only on the frame that consumes a markLayoutShifted() (a modal
+// flip). Distinct from layoutShifted, which ordinary streaming-growth
+// frames also set (children move as content grows) — the DECSTBM gate
+// in log-update must suppress ONLY flip frames, or the region-scroll
+// fast path dies on the sticky-streaming frames it exists for (the
+// edit-inflight e2e regression).
+let flipShifted = false
 
 export function resetLayoutShifted(): void {
-  layoutShifted = layoutShiftPending
+  flipShifted = layoutShiftPending
   layoutShiftPending = false
+  layoutShifted = flipShifted
 }
 
 export function markLayoutShifted(): void {
@@ -48,6 +56,17 @@ export function markLayoutShifted(): void {
 
 export function didLayoutShift(): boolean {
   return layoutShifted
+}
+
+/**
+ * True only when THIS frame consumes a markLayoutShifted() — a modal
+ * flip, where prevScreen holds the modal's pixels and a hardware
+ * region scroll would displace them. The narrower companion of
+ * didLayoutShift(): ordinary frames where layout merely moved (sticky
+ * streaming growth) keep the DECSTBM fast path.
+ */
+export function didFlipShift(): boolean {
+  return flipShifted
 }
 
 // DECSTBM scroll optimization hint. When a ScrollBox's scrollTop changes
