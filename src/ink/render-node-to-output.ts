@@ -152,6 +152,22 @@ export function getScrollDrainNode(): DOMElement | null {
   return scrollDrainNode
 }
 
+// Hits on the pass-2 per-child blit (sticky-constant clean child under
+// middle growth). Test-only observability: the path is a performance
+// optimization over a correct full re-render, so invariant diffs can't
+// distinguish it — tests assert the counter to pin that it fires.
+// The reference render bypasses the fast path entirely, so it never
+// inflates this.
+let pass2ChildBlitHits = 0
+
+export function getPass2ChildBlitHits(): number {
+  return pass2ChildBlitHits
+}
+
+export function resetPass2ChildBlitHits(): void {
+  pass2ChildBlitHits = 0
+}
+
 // At-bottom follow scroll event this frame. When streaming content
 // triggers scrollTop = maxScroll, the ScrollBox records the delta +
 // viewport bounds here. ink.tsx consumes it post-render to translate any active
@@ -1210,6 +1226,67 @@ function renderNodeToOutput(
                     childCached &&
                     Math.floor(childCached.y) - delta === screenY
                   ) {
+                    continue
+                  }
+                  // Sticky-constant clean child (middle growth + sticky
+                  // follow): its pixels in prevScreen at screenY are
+                  // exactly right — the region shift moved them to
+                  // screenY-delta wrongly. Restore with an erase+blit
+                  // instead of a full subtree re-render; since the
+                  // child's absolute position is unchanged, every
+                  // descendant's cache entry also stays valid. Guards:
+                  //   - screen y constant: cached.y === screenY. cached.y
+                  //     is written only by actual paints, so this is "was
+                  //     painted at these rows last frame and belongs
+                  //     there again".
+                  //   - own size unchanged: cached.height === childH
+                  //     (same last-paint semantics).
+                  //   Together these prove the prevScreen band
+                  //   [screenY, screenY+childH) holds exactly this
+                  //   child's current pixels. NOT usable as a guard:
+                  //   cached.top — renderScrolledChildren eagerly
+                  //   refreshes it in place during pass-1 culling, so by
+                  //   the time pass 2 reads it, it already holds THIS
+                  //   frame's top; and cumHeightShift runs hot (it
+                  //   counts uncached dirty children at full height).
+                  //   - band entirely in stable rows: children touching
+                  //     the edge band were painted by pass 1 (with
+                  //     background fill); a blit here would fight it.
+                  if (
+                    childCached &&
+                    prevScreen &&
+                    Math.floor(childCached.y) === screenY &&
+                    childCached.height === childH &&
+                    (childBottom <= edgeTopLocal ||
+                      childTop >= edgeBottomLocal)
+                  ) {
+                    const screenBottom = Math.min(
+                      Math.floor(contentY + childBottom),
+                      Math.floor((y1 ?? y) + padTop + innerHeight),
+                    )
+                    if (screenY < screenBottom) {
+                      pass2ChildBlitHits++
+                      output.erase({
+                        x: Math.floor(x),
+                        y: screenY,
+                        width: w,
+                        height: screenBottom - screenY,
+                      })
+                      output.blit(
+                        prevScreen,
+                        Math.floor(childCached.x),
+                        screenY,
+                        Math.floor(childCached.width),
+                        screenBottom - screenY,
+                      )
+                      nodeCache.set(childElem, {
+                        x: childCached.x,
+                        y: screenY,
+                        width: childCached.width,
+                        height: childH,
+                        top: childTop,
+                      })
+                    }
                     continue
                   }
                 }

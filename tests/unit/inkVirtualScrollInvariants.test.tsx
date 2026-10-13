@@ -43,6 +43,10 @@ import { renderSync } from '../../src/ink/root.js'
 import instances from '../../src/ink/instances.js'
 import { checkLayoutInvariants } from '../../src/ink/layout-check.js'
 import { diffFrameAgainstReference } from '../../src/ink/render-check.js'
+import {
+  getPass2ChildBlitHits,
+  resetPass2ChildBlitHits,
+} from '../../src/ink/render-node-to-output.js'
 import type { DOMElement } from '../../src/ink/dom.js'
 
 // e2e pane geometry: 158x40.
@@ -291,6 +295,107 @@ describe('virtual scroll streaming invariants', () => {
       )
       for (const l of layoutViolations.slice(0, 5)) console.log(`L: ${l}`)
       for (const r of renderDivergences.slice(0, 5)) console.log(`R: ${r}`)
+      expect(layoutViolations.length).toBe(0)
+      expect(renderDivergences.length).toBe(0)
+    } finally {
+      instance.unmount()
+      instance.cleanup()
+    }
+  })
+
+  // Middle growth + sticky follow: the growth lands at a fixed mid-screen
+  // row (an item well above the tail grows, everything below it stays at
+  // constant screen rows). This is the pass-2 case-2 workload — clean
+  // children BELOW the growth point whose content-relative top shifts by
+  // the growth while their screen position is constant. The scroll
+  // fast-path repair restores them via erase+blit from prevScreen
+  // (per-child blit) instead of a full subtree re-render; the hit counter
+  // pins that the blit path actually fires, and the render check pins
+  // that what it paints is cell-exact.
+  test('middle growth with sticky follow keeps frame clean', () => {
+    const stdout = fakeStdout()
+    // Seed OVERFLOWING (24 items, ~60 rows over the 39-row viewport) so
+    // the list is bottom-sticky-pinned from tick 1 — no boundary
+    // transition, pure steady-state middle growth.
+    const GROW_IDX = 18 // 5 clean items (19..23) below it stay visible
+    let items: Item[] = Array.from({ length: 24 }, (_, i) => ({
+      key: `mid-${i}`,
+      lines: Array.from({ length: 2 + (i % 2) }, (_, j) => line(`Mid${i}`, j)),
+    }))
+    const instance = renderSync(<App items={items} tick={0} />, {
+      stdout,
+      patchConsole: false,
+      exitOnCtrlC: false,
+    })
+    const ink = instances.get(stdout) as unknown as {
+      rootNode: DOMElement
+      frontFrame: { screen: Parameters<typeof diffFrameAgainstReference>[1] }
+      stylePool: Parameters<typeof diffFrameAgainstReference>[2]
+    }
+    const layoutViolations: string[] = []
+    const renderDivergences: string[] = []
+    resetPass2ChildBlitHits()
+    try {
+      const TICKS = 40
+      for (let tick = 1; tick <= TICKS; tick++) {
+        // The middle item grows 2 lines per frame; the appended lines
+        // land at its bottom edge — a constant mid-screen row, since
+        // sticky scroll advances by exactly the growth.
+        items = items.map((it, i) =>
+          i === GROW_IDX
+            ? {
+                ...it,
+                lines: [
+                  ...it.lines,
+                  `Middle line ${tick}a: inserted prose`,
+                  `Middle line ${tick}b: inserted prose`,
+                ],
+              }
+            : it,
+        )
+        const frames: Array<() => void> = [
+          () => instance.rerender(<App items={items} tick={tick} />),
+          // Settle frame: glyph-only churn, heightCache catches up to
+          // the growth (virtual-scroll offsets rebuild) — same pattern
+          // as the tail-growth test's Phase B.
+          (): void =>
+            instance.rerender(<App items={items} tick={tick + 500} />),
+        ]
+        for (const frame of frames) {
+          frame()
+          const found = checkLayoutInvariants(ink.rootNode)
+          if (found.length > 0)
+            layoutViolations.push(`tick ${tick}: ${found[0]}`)
+          const mismatches = diffFrameAgainstReference(
+            ink.rootNode,
+            ink.frontFrame.screen,
+            ink.stylePool,
+          )
+          if (mismatches.length > 0) {
+            renderDivergences.push(
+              `tick ${tick}: ${mismatches
+                .slice(0, 4)
+                .map(
+                  m =>
+                    `(${m.row},${m.col})${JSON.stringify(m.frameChar)}vs${JSON.stringify(m.referenceChar)}`,
+                )
+                .join(' ')}`,
+            )
+          }
+        }
+      }
+      const blitHits = getPass2ChildBlitHits()
+      console.log(
+        `middle growth: layout violations at ${layoutViolations.length}/${TICKS} ticks; blit hits ${blitHits}`,
+      )
+      console.log(
+        `render divergences at ${renderDivergences.length}/${TICKS} ticks; first: ${renderDivergences[0] ?? 'none'}`,
+      )
+      for (const l of layoutViolations.slice(0, 5)) console.log(`L: ${l}`)
+      for (const r of renderDivergences.slice(0, 5)) console.log(`R: ${r}`)
+      // The per-child blit must fire: at least one sticky-constant
+      // clean child per growth frame (5 candidates below GROW_IDX).
+      expect(blitHits).toBeGreaterThanOrEqual(TICKS)
       expect(layoutViolations.length).toBe(0)
       expect(renderDivergences.length).toBe(0)
     } finally {
