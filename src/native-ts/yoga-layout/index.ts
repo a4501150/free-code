@@ -557,6 +557,16 @@ export class Node {
   // _cIn (aW,aH,wM,hM,oW,oH,fW,fH) and [i*2, i*2+2) in _cOut (w,h).
   _cIn: Float64Array | null = null
   _cOut: Float64Array | null = null
+  // Per-slot generation of each ring entry (parallel to _cIn/_cOut). The
+  // per-node _cGen says when the ring was LAST written — it cannot tell
+  // WHICH entries predate a dirty: a same-generation measure write bumps
+  // _cGen and launders older, pre-change entries past the wasDirty clear,
+  // and a dirty node's ring scan can then hit them. Per-slot stamps make
+  // both paths exact: the wasDirty write drops entries from earlier
+  // generations (they predate the tree change — mutations only happen
+  // between calculateLayout calls), and a dirty node's scan only takes
+  // entries written this generation.
+  _cSlotGen: Int32Array | null = null
   _cGen = -1
   _cN = 0
   _cWr = 0
@@ -575,11 +585,15 @@ export class Node {
   _mfC: Float64Array | null = null
   _mfN = 0
   _mfWr = 0
-  // Definitive dimensions — the size from this node's last performLayout=
-  // true compute. Measure passes (computeFlexBasis) legitimately overwrite
-  // layout.width/height with intrinsic results; when the node is clean and
-  // every ancestor cache-hits, no definitive pass re-runs for it that
-  // generation, so layout.width keeps the intrinsic and the renderer paints
+  // Definitive dimensions — the size from this node's last LAYOUT-mode
+  // serve (full performLayout=true compute, or a layout-pass cache hit —
+  // hits commit their restored size so the restore below stays
+  // consistent for flex-resolved children whose size changes with the
+  // parent's free space). Measure passes (computeFlexBasis) legitimately
+  // overwrite layout.width/height with intrinsic results; when the node
+  // is clean and every ancestor cache-hits, no definitive pass re-runs
+  // for it that generation, so layout.width keeps the intrinsic and the
+  // renderer paints
   // the wrong size. calculateLayout restores these over layout.width/height
   // before rounding. NaN = never definitively laid out (fresh, or zeroed by
   // a hide) — the restore walk leaves the current value alone.
@@ -673,6 +687,7 @@ export class Node {
     this._cN = 0
     this._cWr = 0
     this._cGen = -1
+    if (this._cSlotGen) this._cSlotGen.fill(-1)
     this._mfN = 0
     this._mfWr = 0
     this._fbGen = -1
@@ -1092,6 +1107,7 @@ export class Node {
     _yogaMeasureCalls = 0
     _yogaCacheHits = 0
     _generation++
+    if (YOGA_AUDIT) auditFlexCalls.clear()
     const w = ownerWidth === undefined ? NaN : ownerWidth
     const h = ownerHeight === undefined ? NaN : ownerHeight
     layoutNode(
@@ -1120,6 +1136,7 @@ export class Node {
     this.layout.top = mar[EDGE_TOP] + (isDefined(posT) ? posT : 0)
     restoreDefinitiveDimensions(this)
     roundLayout(this, this.config.pointScaleFactor, 0, 0)
+    if (YOGA_AUDIT) auditFlexResolution(this, _generation)
   }
 }
 
@@ -1140,6 +1157,105 @@ function restoreDefinitiveDimensions(node: Node): void {
 
 const DEFAULT_CONFIG = createConfig()
 
+// -- Flex-resolution audit (FREECODE_YOGA_AUDIT=1)
+// When a flexGrow child ends up sized wrong (the streaming spacer/spinner
+// overlap class — the spacer keeps a stale free-space share because some
+// sibling's CACHED flex basis no longer matches its real size), the bad
+// value was served from one of the cache paths below. The audit stamps
+// every basis/layout cache HIT with the generation, then after each
+// calculateLayout verifies: (a) each sole-flexGrow child's resolved size
+// against the free space its parent's final geometry implies, and
+// (b) each auto-height child's cached basis against its final size.
+// Mismatches append a line with every sibling's cache state; ink.tsx
+// drains them into the debug log. Env-gated so prod pays one boolean
+// read per hit site.
+const YOGA_AUDIT = process.env.FREECODE_YOGA_AUDIT === '1'
+const auditBasisHits = new Map<Node, number>()
+const auditLayoutHits = new Map<Node, string>()
+// Per-generation layoutNode call log for flexGrow nodes — dumped when
+// the post-layout audit finds one mis-sized, so the input sequence that
+// produced the stale size is visible.
+const auditFlexCalls = new Map<Node, string[]>()
+const auditLines: string[] = []
+export function drainYogaAudit(): string[] {
+  return auditLines.splice(0)
+}
+
+function auditFlexResolution(root: Node, generation: number): void {
+  walk(root)
+  return
+
+  function walk(p: Node): void {
+    const row = isRow(p.style.flexDirection)
+    // Edge arrays are [left, top, right, bottom].
+    const pad = p.layout.padding
+    const bd = p.layout.border
+    const innerMain = row
+      ? p.layout.width - bd[0] - bd[2] - pad[0] - pad[2]
+      : p.layout.height - bd[1] - bd[3] - pad[1] - pad[3]
+    const mainOf = (n: Node): number => {
+      const m = n.layout.margin
+      return row ? n.layout.width + m[0] + m[2] : n.layout.height + m[1] + m[3]
+    }
+    const vis = p.children.filter(c => c.style.display !== Display.None)
+    const grow = vis.filter(c => c.style.flexGrow > 0)
+    if (grow.length === 1 && isDefined(innerMain)) {
+      const c = grow[0]!
+      const others = vis.filter(s => s !== c)
+      const expected = innerMain - others.reduce((s, n) => s + mainOf(n), 0)
+      const actual = row ? c.layout.width : c.layout.height
+      // Only "grew beyond its share" is suspicious: the child received
+      // notably MORE than the free space its siblings' final sizes leave,
+      // and notably more than its basis (a flexShrink=0 child pinned at
+      // an oversized basis legally overflows; rounding/min-height hides
+      // in the epsilon).
+      if (
+        actual - expected > 1.5 &&
+        actual - c._flexBasis > 1.5 &&
+        isDefined(c._flexBasis)
+      ) {
+        const calls = auditFlexCalls.get(c) ?? []
+        const parentCalls = auditFlexCalls.get(p) ?? []
+        // Ancestor call logs — the skip that strands the subtree can be
+        // any number of levels above (container clean-hit never calls
+        // the wrapper, etc.).
+        let anc = p.parent
+        const ancLogs: string[] = []
+        while (anc && ancLogs.length < 4) {
+          const l = auditFlexCalls.get(anc)
+          if (l && l.length > 1) ancLogs.push(l.join(' | '))
+          anc = anc.parent
+        }
+        auditLines.push(
+          `[YOGA-AUDIT] gen ${generation}: flexGrow node sized ${actual.toFixed(2)} but free space implies ${expected.toFixed(2)} (parent inner ${innerMain.toFixed(2)}); calls: ${calls.join(' | ')}; parentCalls: ${parentCalls.join(' | ')}; ancCalls: ${ancLogs.join(' // ')}; children: ` +
+            vis
+              .map(
+                s =>
+                  `{h=${s.layout.height.toFixed(1)} basis=${s._flexBasis.toFixed(1)} fbGen=${s._fbGen} cGen=${s._cGen} dirty=${s.isDirty_}${auditBasisHits.has(s) ? ` basisHit@${auditBasisHits.get(s)}` : ''}${auditLayoutHits.has(s) ? ` layoutHit=${auditLayoutHits.get(s)}` : ''}}`,
+              )
+              .join(' '),
+        )
+      }
+    }
+    for (const s of vis) {
+      // Auto-height, non-flex children: basis is their measured border-box
+      // size, so a cached basis that diverges from the final size is the
+      // stale entry that skewed free space.
+      if (
+        s.style.height === undefined &&
+        s.style.flexGrow === 0 &&
+        isDefined(s._flexBasis) &&
+        Math.abs(s._flexBasis - s.layout.height) > 0.01
+      ) {
+        auditLines.push(
+          `[YOGA-AUDIT] gen ${generation}: auto-height child basis=${s._flexBasis.toFixed(1)} != final h=${s.layout.height.toFixed(1)} (fbGen=${s._fbGen} cGen=${s._cGen} dirty=${s.isDirty_}${auditBasisHits.has(s) ? ` basisHit@${auditBasisHits.get(s)}` : ''}${auditLayoutHits.has(s) ? ` layoutHit=${auditLayoutHits.get(s)}` : ''})`,
+        )
+      }
+    }
+    for (const c of vis) walk(c)
+  }
+}
+
 const CACHE_SLOTS = 4
 // Measure-ring slots (official 277 Pc): one flex pass re-measures a leaf at a
 // handful of bounds per axis pair; 4 covers it without eviction pressure.
@@ -1159,16 +1275,37 @@ function cacheWrite(
   if (!node._cIn) {
     node._cIn = new Float64Array(CACHE_SLOTS * 8)
     node._cOut = new Float64Array(CACHE_SLOTS * 2)
+    node._cSlotGen = new Int32Array(CACHE_SLOTS).fill(-1)
   }
-  // First write after a dirty clears stale entries from before the dirty.
-  // _cGen < _generation means entries are from a previous calculateLayout;
-  // if wasDirty, the subtree changed since then → old dimensions invalid.
-  // Clean nodes' old entries stay — same subtree → same result for same
-  // inputs, so cross-generation caching works (the scroll hot path where
-  // 499 clean messages cache-hit while one dirty leaf recomputes).
-  if (wasDirty && node._cGen !== _generation) {
-    node._cN = 0
-    node._cWr = 0
+  // First write after a dirty drops entries from BEFORE the dirty. Tree
+  // mutations only happen between calculateLayout calls, so every entry
+  // stamped with an earlier generation predates the change that dirtied
+  // this node — its subtree snapshot is stale. Entries stamped THIS
+  // generation were written after the change (e.g. this pass's measure
+  // cascade through a dirty node) and stay. The old whole-ring
+  // `_cGen !== _generation` check had a hole: a same-generation measure
+  // write bumped the per-node stamp and laundered older entries past
+  // this clear — a stale pre-change entry then served the final layout
+  // pass, which skipped the subtree and stranded flexGrow children at
+  // transient sizes (the streaming spacer/spinner overlap). Clean nodes'
+  // old entries stay — same subtree → same result for same inputs — so
+  // cross-generation caching works (the scroll hot path where 499 clean
+  // messages cache-hit while one dirty leaf recomputes).
+  if (wasDirty) {
+    const gens = node._cSlotGen!
+    let w = 0
+    for (let r = 0; r < node._cN; r++) {
+      if (gens[r] === _generation) {
+        if (w !== r) {
+          node._cIn!.copyWithin(w * 8, r * 8, r * 8 + 8)
+          node._cOut!.copyWithin(w * 2, r * 2, r * 2 + 2)
+          gens[w] = _generation
+        }
+        w++
+      }
+    }
+    node._cN = w
+    node._cWr = w
   }
   // LRU write index wraps; _cN stays at CACHE_SLOTS so the read scan always
   // checks all populated slots (not just those since last wrap).
@@ -1186,6 +1323,7 @@ function cacheWrite(
   cIn[o + 7] = fH ? 1 : 0
   node._cOut![i * 2] = node.layout.width
   node._cOut![i * 2 + 1] = node.layout.height
+  node._cSlotGen![i] = _generation
   node._cGen = _generation
 }
 
@@ -1253,6 +1391,20 @@ function layoutNode(
   forceHeight = false,
 ): void {
   _yogaNodesVisited++
+  if (YOGA_AUDIT) {
+    const isGrow = node.style.flexGrow > 0
+    if (isGrow || node.children.some(c => c.style.flexGrow > 0)) {
+      let log = auditFlexCalls.get(node)
+      if (!log || log[0] !== `g${_generation}`) {
+        log = [`g${_generation}`]
+        auditFlexCalls.set(node, log)
+      }
+      if (log.length < 16)
+        log.push(
+          `${isGrow ? 'S' : 'P'}p${performLayout ? 1 : 0} aH=${availableHeight} hM=${heightMode} dirty=${node.isDirty_}`,
+        )
+    }
+  }
   const style = node.style
   const layout = node.layout
   // Cache-key owner dims: NaN-masked when this node's style can't observe
@@ -1286,8 +1438,18 @@ function layoutNode(
       sameFloat(node._lOH, keyOH)
     ) {
       _yogaCacheHits++
+      if (YOGA_AUDIT) auditLayoutHits.set(node, `L@${_generation}`)
       layout.width = node._lOutW
       layout.height = node._lOutH
+      // Commit the served size: _defW/_defH must track the last
+      // LAYOUT-mode serve, not just the last full compute. The
+      // end-of-generation restore re-applies _defH to skipped nodes —
+      // for flex-resolved children (size chosen by the parent's free
+      // space, not their own subtree) a hit's freshly-resolved size IS
+      // the current truth, and leaving _defH at a pre-change value made
+      // every skip-generation restore pin the child back to a stale
+      // size (the streaming spacer/spinner overlap).
+      if (performLayout) commitCacheOutputs(node, true)
       return
     }
     // Multi-entry cache: scan for matching inputs, restore cached w/h on hit.
@@ -1302,6 +1464,11 @@ function layoutNode(
     if (node._cN > 0 && (sameGen || !node.isDirty_)) {
       const cIn = node._cIn!
       for (let i = 0; i < node._cN; i++) {
+        // Dirty node: only entries written THIS generation are valid —
+        // they were computed after the change that dirtied it (the
+        // per-node sameGen gate can't tell which slots predate the
+        // change once any later write bumped _cGen).
+        if (node.isDirty_ && node._cSlotGen![i] !== _generation) continue
         const o = i * 8
         if (
           cIn[o + 2] === widthMode &&
@@ -1316,6 +1483,12 @@ function layoutNode(
           layout.width = node._cOut![i * 2]!
           layout.height = node._cOut![i * 2 + 1]!
           _yogaCacheHits++
+          if (YOGA_AUDIT) auditLayoutHits.set(node, `C@${_generation}`)
+          // Layout-pass ring hit — same serve-commit as the _hasL hit
+          // above. Measure-mode entries are only reachable from measure
+          // calls (mode-keyed), which must NOT pollute the definitive
+          // dims with intrinsics.
+          if (performLayout) commitCacheOutputs(node, true)
           return
         }
       }
@@ -1334,6 +1507,7 @@ function layoutNode(
       layout.width = node._mOutW
       layout.height = node._mOutH
       _yogaCacheHits++
+      if (YOGA_AUDIT) auditLayoutHits.set(node, `M@${_generation}`)
       return
     }
   }
@@ -1845,6 +2019,28 @@ function layoutNode(
     ownerWidth,
     ownerHeight,
   )
+  // A CLEAN node whose layout pass RESIZED it also mutated descendants —
+  // the flex resolution above re-sized its flexGrow children (e.g. the
+  // REPL spacer), and STEP 5 repositions the subtree. Every OTHER cache
+  // entry this node holds was written while the subtree was in the old
+  // state; a future hit on one of them would restore this node's own
+  // dims but skip the subtree, leaving descendants stranded at the
+  // transient sizes. Seen as the streaming spacer/spinner overlap: a
+  // viewport oscillation (33→36→33, pill mount/unmount) laid the clean
+  // content wrapper out at 36 (spacer grew 1→4), then the next
+  // generation hit the stale 33-entry and never re-resolved the spacer.
+  // Wipe the ring; the cacheWrite below re-adds the entry for THIS call.
+  // Dirty nodes already had their ring cleared on first write, and this
+  // recompute is the fresh state. Measure passes are exempt: their
+  // entries are mode-keyed so layout calls never hit them, and their
+  // descendant churn is healed by restoreDefinitiveDimensions at
+  // generation end.
+  if (performLayout && !wasDirty && node._cN > 0) {
+    if (node._defW !== node.layout.width || node._defH !== node.layout.height) {
+      node._cN = 0
+      node._cWr = 0
+    }
+  }
   commitCacheOutputs(node, performLayout)
   // Write cache even for dirty nodes — fresh-mounted items during virtual scroll
   cacheWrite(
@@ -2346,6 +2542,7 @@ function computeFlexBasis(
     sameFloat(child._fbAvailMain, availableMain) &&
     sameFloat(child._fbAvailCross, availableCross)
   ) {
+    if (YOGA_AUDIT) auditBasisHits.set(child, _generation)
     return child._fbBasis
   }
   const cs = child.style
@@ -2542,6 +2739,14 @@ function resolveFlexibleLengths(
       }
     }
     if (!anyFrozen) break
+  }
+  if (YOGA_AUDIT) {
+    for (const c of children) {
+      if (c.style.flexGrow <= 0) continue
+      const log = auditFlexCalls.get(c)
+      if (log && log[0] === `g${_generation}` && log.length < 16)
+        log.push(`R=${c._mainSize.toFixed(1)}`)
+    }
   }
 }
 

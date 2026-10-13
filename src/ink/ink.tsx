@@ -12,7 +12,10 @@ import type { FiberRoot } from 'react-reconciler'
 import { ConcurrentRoot } from 'react-reconciler/constants.js'
 import { onExit } from 'signal-exit'
 import { flushInteractionTime } from 'src/bootstrap/state.js'
-import { getYogaCounters } from 'src/native-ts/yoga-layout/index.js'
+import {
+  drainYogaAudit,
+  getYogaCounters,
+} from 'src/native-ts/yoga-layout/index.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logError } from 'src/utils/log.js'
 import { format } from 'util'
@@ -517,6 +520,14 @@ export default class Ink {
       logError(err)
       root.clearLayoutCacheRecursive()
       layout()
+    }
+    // Port-level audit lines (FREECODE_YOGA_AUDIT=1): flexGrow children
+    // sized wrong / auto-height children with stale cached flex bases.
+    // The yoga port stays dependency-free, so it buffers these and we
+    // route them through the debug logger here.
+    if (process.env.FREECODE_YOGA_AUDIT === '1') {
+      for (const line of drainYogaAudit())
+        logForDebugging(line, { level: 'warn' })
     }
     // Env-gated sanity check (FREECODE_LAYOUT_CHECK=1): overlapping
     // non-absolute siblings mean calculateLayout served a stale cached

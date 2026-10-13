@@ -99,6 +99,10 @@ describe('render invariant checks', () => {
           // On each layout violation, re-layout cache-free and log whether
           // the overlap persists — classifies stale-cache vs legitimate.
           FREECODE_LAYOUT_PROBE: '1',
+          // Port-level audit: when a flexGrow child gets a stale free-space
+          // share (the streaming spacer/spinner overlap), dump every
+          // sibling's cache state to name the serving path.
+          FREECODE_YOGA_AUDIT: '1',
           CLAUDE_CODE_DEBUG_REPAINTS: '1',
         },
         settings: {
@@ -220,6 +224,7 @@ describe('render invariant checks', () => {
         // Let the last frames flush to the debug file.
         await new Promise(r => setTimeout(r, 2000))
         const debug = await readDebug()
+        console.log(`debug file: ${debugFile}`)
 
         // Positive control: both checks must have announced themselves —
         // otherwise "no violations" would pass vacuously.
@@ -252,6 +257,11 @@ describe('render invariant checks', () => {
         // — printed wherever they occurred, not gated by the offset.
         const probeLines = debug.split('\n').filter(l => l.includes('probe:'))
         for (const l of probeLines.slice(0, 10)) console.log(l.slice(0, 400))
+        // Yoga-port audit lines (flexGrow mis-sizing + stale flex bases).
+        const auditLines = debug
+          .split('\n')
+          .filter(l => l.includes('YOGA-AUDIT'))
+        for (const l of auditLines.slice(0, 10)) console.log(l.slice(0, 600))
         expect(violations).toEqual([])
       } finally {
         await session.stop()
