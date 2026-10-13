@@ -729,6 +729,40 @@ export default class Ink {
     )
   }
 
+  /**
+   * Cancel a pending drain tick. Call when any render is about to run
+   * (that render handles the drain and re-schedules if still pending)
+   * and on unmount/shutdown so nothing fires into a dead instance.
+   */
+  private clearDrainTimer(): void {
+    if (this.drainTimer !== null) {
+      clearTimeout(this.drainTimer)
+      this.drainTimer = null
+    }
+  }
+
+  /**
+   * Schedule the next frame to continue draining a ScrollBox's
+   * pendingScrollDelta. Plain timeout, NOT scheduleRender(): the pacer
+   * measures from lastFrameAt, which this frame just stamped, so it
+   * would arm a full-interval trailing timer and slow drain frames to
+   * 60fps. If a wheel event arrives first, its scheduleRender path fires
+   * a render which clears this timer at the top of onRender — no
+   * double.
+   *
+   * Drain frames are cheap (DECSTBM + ~10 patches, ~200 bytes) so run
+   * at the quarter interval (~250fps, setTimeout practical floor) for
+   * max scroll speed — INPUT_PRIORITY_FRAME_MS, the same cadence as
+   * typing-priority frames. Regular renders stay at FRAME_INTERVAL_MS
+   * via the pacer.
+   */
+  private scheduleDrainFrame(): void {
+    this.drainTimer = setTimeout(
+      () => this.onRender(),
+      INPUT_PRIORITY_FRAME_MS,
+    )
+  }
+
   onRender() {
     // Entering a render — from ANY path (paced microtask/timer, the drain
     // timer, the test immediate path, unmount's synchronous call) —
@@ -745,10 +779,7 @@ export default class Ink {
     // Entering a render cancels any pending drain tick — this render will
     // handle the drain (and re-schedule below if needed). Prevents a
     // wheel-event-triggered render AND a drain-timer render both firing.
-    if (this.drainTimer !== null) {
-      clearTimeout(this.drainTimer)
-      this.drainTimer = null
-    }
+    this.clearDrainTimer()
 
     // Flush deferred interaction-time update before rendering so we call
     // Date.now() at most once per frame instead of once per keypress.
@@ -1186,23 +1217,9 @@ export default class Ink {
     // invalidatePrevFrame()/resize kicks, keeping them one-shot.
     this.prevFrameContaminated = overlayChanged
 
-    // A ScrollBox has pendingScrollDelta left to drain — schedule the next
-    // frame. Plain timeout, NOT scheduleRender(): the pacer measures from
-    // lastFrameAt, which this frame just stamped, so it would arm a
-    // full-interval trailing timer and slow drain frames to 60fps. The
-    // timeout below keeps drain at its own faster cadence. If a wheel
-    // event arrives first, its scheduleRender path fires a render which
-    // clears this timer at the top of onRender — no double.
-    //
-    // Drain frames are cheap (DECSTBM + ~10 patches, ~200 bytes) so run at
-    // quarter interval (~250fps, setTimeout practical floor) for max scroll
-    // speed. Regular renders stay at FRAME_INTERVAL_MS via the pacer.
-    if (frame.scrollDrainPending) {
-      this.drainTimer = setTimeout(
-        () => this.onRender(),
-        FRAME_INTERVAL_MS >> 2,
-      )
-    }
+    // A ScrollBox has pendingScrollDelta left to drain — schedule the
+    // next frame at the drain cadence (see scheduleDrainFrame).
+    if (frame.scrollDrainPending) this.scheduleDrainFrame()
 
     const yogaMs = getLastYogaMs()
     const commitMs = getLastCommitMs()
@@ -1465,10 +1482,7 @@ export default class Ink {
     // Cancel any pending paced/drain render so nothing fires between
     // cleanupTerminalModes() and process.exit() writing to main screen.
     this.cancelScheduledRender()
-    if (this.drainTimer !== null) {
-      clearTimeout(this.drainTimer)
-      this.drainTimer = null
-    }
+    this.clearDrainTimer()
     // Restore stdin from raw mode. unmount() used to do this via React
     // unmount (App.componentWillUnmount → handleSetRawMode(false)) but we're
     // short-circuiting that path. Must use this.options.stdin — NOT
@@ -2165,10 +2179,7 @@ export default class Ink {
 
     // Cancel any pending paced renders to prevent accessing freed Yoga nodes
     this.cancelScheduledRender()
-    if (this.drainTimer !== null) {
-      clearTimeout(this.drainTimer)
-      this.drainTimer = null
-    }
+    this.clearDrainTimer()
 
     ;(reconciler as any).updateContainerSync(null, this.container, null, noop)
     ;(reconciler as any).flushSyncWork()
