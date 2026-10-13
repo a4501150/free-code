@@ -62,13 +62,24 @@ export function useRegisterOverlay(id: string, enabled = true): void {
   // shrinks the Ink-managed region on unmount; the blit fast path can
   // copy stale cells from the overlay's previous frame into rows the
   // shorter layout no longer reaches, leaving a ghost title/divider.
+  // Also wipe yoga's layout cache, but only for modal overlays: overlays
+  // that replace the input block (QuickOpen, FuzzyPicker) leave the bottom
+  // slot's subtree cache-cold for their lifetime, so the unmount frame can
+  // otherwise mix the overlay-open scroll height with pre-overlay
+  // bottom-slot rows (see Ink.invalidateLayoutCache). Non-modal overlays
+  // (autocomplete) float absolutely-positioned over unchanged layout, so
+  // their frequent dismissals skip the full layout recompute.
   // useLayoutEffect so cleanup runs synchronously before the microtask-
   // deferred onRender (scheduleRender queues a microtask from
   // resetAfterCommit; passive-effect cleanup would land after it).
   useLayoutEffect(() => {
     if (!enabled) return
-    return () => instances.get(process.stdout)?.invalidatePrevFrame()
-  }, [enabled])
+    return () => {
+      const ink = instances.get(process.stdout)
+      ink?.invalidatePrevFrame()
+      if (!NON_MODAL_OVERLAYS.has(id)) ink?.invalidateLayoutCache()
+    }
+  }, [id, enabled])
 }
 
 /**

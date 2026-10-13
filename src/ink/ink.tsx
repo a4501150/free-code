@@ -207,6 +207,10 @@ export default class Ink {
   // synchronously; onRender computes once per frame when true. Multiple
   // commits in one frame window collapse to one calculateLayout pass.
   private layoutStale = false
+  // Set by invalidateLayoutCache(): the next computeLayout wipes yoga's
+  // internal layout cache first (clearLayoutCacheRecursive) so no node
+  // gets served a stale cached height from before a modal flip.
+  private layoutCacheDirty = false
   private lastYogaCounters: {
     ms: number
     visited: number
@@ -483,8 +487,11 @@ export default class Ink {
       return
     }
     const root = this.rootNode.yogaNode
+    const full = this.layoutCacheDirty
+    this.layoutCacheDirty = false
     const layout = () => {
       const t0 = performance.now()
+      if (full) root.clearLayoutCacheRecursive()
       root.setWidth(this.terminalColumns)
       root.calculateLayout(this.terminalColumns)
       const ms = performance.now() - t0
@@ -1162,6 +1169,25 @@ export default class Ink {
    */
   invalidatePrevFrame(): void {
     this.prevFrameContaminated = true
+  }
+
+  /**
+   * Drop yoga's internal layout cache so the next computeLayout fully
+   * recomputes every node. Call from a useLayoutEffect when a tall
+   * bottom-anchored modal unmounts: while such a modal is open the
+   * bottom slot collapses (its subtree renders null, so its yoga nodes
+   * stop being re-laid-out and go cache-cold), and the modal's own
+   * unmount can leave yoga serving stale cached heights — a close frame
+   * where the scroll container still clips at the modal-open (taller)
+   * viewport while the remounted input block renders at its pre-modal
+   * rows. Both subtrees paint, overlapping on the bottom rows; the next
+   * frame recomputes and repairs it (the transient "transcript text on
+   * the input row" flash). invalidateNodeCache covers ink's render cache
+   * but not yoga's — this closes that gap. One-shot, consumed by the
+   * next computeLayout regardless of how many commits collapse into it.
+   */
+  invalidateLayoutCache(): void {
+    this.layoutCacheDirty = true
   }
 
   /**

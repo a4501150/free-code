@@ -368,13 +368,20 @@ export function FullscreenLayout({
   // A modal flip invalidates every cached layout rect (see
   // invalidateNodeCache): the modal paints over transcript rows in the
   // shared screen buffer, so nodes covered while it was open would blit
-  // the modal's own pixels as their content on the close frame.
+  // the modal's own pixels as their content on the close frame. It also
+  // wipes yoga's internal layout cache (invalidateLayoutCache): while the
+  // modal is open the bottom slot renders null and its subtree goes
+  // cache-cold, so the flip's unmount can otherwise leave the close frame
+  // with a scroll container still clipped at the modal-open (taller)
+  // viewport — transcript text then paints over the input rows for one
+  // frame (see invalidateLayoutCache docstring).
   const hadModalRef = useRef<boolean>(modal != null)
   useLayoutEffect(() => {
     const hasModal = modal != null
     if (hadModalRef.current !== hasModal) {
       hadModalRef.current = hasModal
       invalidateNodeCache()
+      instances.get(process.stdout)?.invalidateLayoutCache()
       markLayoutShifted()
     }
   }, [modal])
