@@ -240,6 +240,12 @@ describe('render-cache diagnostics', () => {
     const overlapping = makeTree(false, 26)
     expect(checkLayoutInvariants(overlapping).length).toBe(1)
 
+    // Cover rounding: yoga's fractional layouts expand rects to
+    // floor(top)..ceil(bottom), so adjacent siblings may share up to 2
+    // cells legitimately (flexShrink squeeze) — tolerated.
+    const coverRounded = makeTree(false, 28)
+    expect(checkLayoutInvariants(coverRounded)).toEqual([])
+
     // Absolute second sibling: overlap is by design, no violation.
     const absoluteOverlay = makeTree(true, 26)
     expect(checkLayoutInvariants(absoluteOverlay)).toEqual([])

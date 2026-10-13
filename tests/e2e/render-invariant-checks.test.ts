@@ -15,17 +15,23 @@
  * (Shift+Down → background-tasks detail → Esc) and the focusedInputDialog
  * slot (double-Esc Rewind overlay → Esc), with text in the prompt.
  *
- * GATED (FREECODE_INVARIANT_E2E=1): the checks currently DO report
- * violations on main, in two reproducible signatures:
+ * GATED (FREECODE_INVARIANT_E2E=1): the checks currently DO report two
+ * signatures on main, both tied to the real transcript's virtual scroll
+ * (they do NOT reproduce in the simpler in-process harness,
+ * tests/unit/inkStreamingInvariants.test.tsx):
  *   1. LAYOUT-CHECK: a streaming message box (Box/ThemedBox/REPL, h=4)
- *      and its SpinnerWithVerbInner (h=3) laid out at the SAME content
- *      y during scroll-content growth — a live instance of the
- *      stale-yoga-geometry class the monitor-detail leak belonged to.
- *   2. RENDER-CHECK: the frame's screen missing spinner-row and top-row
- *      transcript cells that a cache-free reference render produces
- *      (incremental buffer diverging from the tree).
- * Flip the gate on once those are fixed; the assertion is then the
- * regression net for this whole bug class.
+ *      and its SpinnerWithVerbInner (h=3) overlap by 3 rows during
+ *      scroll-content growth — beyond the 2-cell grid cover-rounding
+ *      tolerance, so real displacement, consistent with the documented
+ *      useVirtualScroll one-frame window lag.
+ *   2. RENDER-CHECK: the frame's screen missing the spinner row and
+ *      the top transcript row that a cache-free reference render
+ *      produces — the viewport's edge rows, i.e. the same lag window.
+ * (Cover-rounding overlaps of ≤2 cells are tolerated by the checker:
+ * yoga's fractional layouts expand rects to floor(top)..ceil(bottom),
+ * so fractionally-spaced siblings legitimately share cells.)
+ * Flip the gate on once the virtual-scroll lag window is fixed; the
+ * assertion is then the regression net for this whole bug class.
  */
 import {
   describe,
@@ -170,12 +176,23 @@ describe('render invariant checks', () => {
         let debugOffset = (await readDebug()).length
 
         // focusedInputDialog flip: double-Esc opens the Rewind overlay
-        // (message selector — only reachable with an EMPTY input), Esc
-        // closes it. Runs before the typed-text step for that reason.
-        await session.sendSpecialKey('Escape')
-        await new Promise(r => setTimeout(r, 300))
-        await session.sendSpecialKey('Escape')
-        await session.waitForText('Rewind', 30_000)
+        // (message selector — only reachable with an EMPTY input and NOT
+        // loading), Esc closes it. Retry the double-press: monitor
+        // notifications landing mid-settle can transiently re-enter a
+        // loading state that swallows the first attempt.
+        let rewindOpen = false
+        for (let attempt = 0; attempt < 3 && !rewindOpen; attempt++) {
+          await session.sendSpecialKey('Escape')
+          await new Promise(r => setTimeout(r, 300))
+          await session.sendSpecialKey('Escape')
+          try {
+            await session.waitForText('Rewind', 10_000)
+            rewindOpen = true
+          } catch {
+            await new Promise(r => setTimeout(r, 2000))
+          }
+        }
+        expect(rewindOpen).toBe(true)
         await new Promise(r => setTimeout(r, 1000))
         await session.sendSpecialKey('Escape')
         await new Promise(r => setTimeout(r, 1000))

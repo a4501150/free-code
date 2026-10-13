@@ -776,135 +776,147 @@ function renderNodeToOutput(
         // → firstVisible wrong. Also: SCROLL_MIN_PER_FRAME=4 with snap-at-1
         // ping-ponged forever at delta=2. Smooth needs drain-end notify
         // plumbing; shipping instant first. stickyScroll overrides.
-        if (node.scrollAnchor) {
-          const anchorTop = node.scrollAnchor.el.yogaNode?.getComputedTop()
-          if (anchorTop != null) {
-            node.scrollTop = anchorTop + node.scrollAnchor.offset
+        // Reference renders (render-check.ts) paint the CURRENT scroll
+        // state without advancing it: the real frame already ran the
+        // anchor/follow/drain logic below, and re-running it here would
+        // double-drain pendingScrollDelta (the reference would render one
+        // drain step further than the frame it's diffed against) and
+        // clobber followScroll with a delta ink.tsx hasn't consumed yet.
+        let scrollTop: number
+        if (referenceRender) {
+          scrollTop = node.scrollTop ?? 0
+        } else {
+          if (node.scrollAnchor) {
+            const anchorTop = node.scrollAnchor.el.yogaNode?.getComputedTop()
+            if (anchorTop != null) {
+              node.scrollTop = anchorTop + node.scrollAnchor.offset
+              node.pendingScrollDelta = undefined
+            }
+            node.scrollAnchor = undefined
+          }
+          // At-bottom follow. Positional: if scrollTop was at (or past) the
+          // previous max, pin to the new max. Scroll away → stop following;
+          // scroll back (or scrollToBottom/sticky attr) → resume. The sticky
+          // flag is OR'd in for cold start (scrollTop=0 before first layout)
+          // and scrollToBottom-from-far-away (flag set before scrollTop moves)
+          // — the imperative field takes precedence over the attribute so
+          // scrollTo/scrollBy can break stickiness. pendingDelta<0 guard:
+          // don't cancel an in-flight scroll-up when content races in.
+          // Capture scrollTop before follow so ink.tsx can translate any
+          // active text selection by the same delta (native terminal behavior:
+          // view keeps scrolling, highlight walks up with the text).
+          const scrollTopBeforeFollow = node.scrollTop ?? 0
+          const sticky =
+            node.stickyScroll ?? Boolean(node.attributes['stickyScroll'])
+          const prevMaxScroll = Math.max(0, prevScrollHeight - prevInnerHeight)
+          // Positional check only valid when content grew — virtualization can
+          // transiently SHRINK scrollHeight (tail unmount + stale heightCache
+          // spacer) making scrollTop >= prevMaxScroll true by artifact, not
+          // because the user was at bottom.
+          const grew = scrollHeight >= prevScrollHeight
+          const atBottom =
+            sticky || (grew && scrollTopBeforeFollow >= prevMaxScroll)
+          if (atBottom && (node.pendingScrollDelta ?? 0) >= 0) {
+            node.scrollTop = maxScroll
+            node.pendingScrollDelta = undefined
+            // Sync flag so useVirtualScroll's isSticky() agrees with positional
+            // state — sticky-broken-but-at-bottom (wheel tremor, click-select
+            // at max) otherwise leaves useVirtualScroll's clamp holding the
+            // viewport short of new streaming content. scrollTo/scrollBy set
+            // false; this restores true, same as scrollToBottom() would.
+            // Only restore when (a) positionally at bottom and (b) the flag
+            // was explicitly broken (===false) by scrollTo/scrollBy. When
+            // undefined (never set by user action) leave it alone — setting it
+            // would make the sticky flag sticky-by-default and lock out
+            // direct scrollTop writes (e.g. the alt-screen-perf test).
+            if (
+              node.stickyScroll === false &&
+              scrollTopBeforeFollow >= prevMaxScroll
+            ) {
+              node.stickyScroll = true
+              node.scrollFollowBaseline = undefined
+              // Tell React-land: this is the one sticky transition that doesn't
+              // go through ScrollBox's imperative API, and scroll-derived
+              // chrome (the jump-to-bottom pill) can't see it otherwise.
+              // Microtask, so the listeners' React updates land after this
+              // frame instead of re-entering it.
+              const notifyScroll = node.notifyScrollListeners
+              if (notifyScroll) queueMicrotask(notifyScroll)
+            }
+          }
+          const followDelta = (node.scrollTop ?? 0) - scrollTopBeforeFollow
+          if (followDelta > 0) {
+            const vpTop = node.scrollViewportTop ?? 0
+            followScroll = {
+              delta: followDelta,
+              viewportTop: vpTop,
+              viewportBottom: vpTop + innerHeight - 1,
+            }
+          }
+          // Drain pendingScrollDelta. Native terminals (proportional burst
+          // events) use proportional drain; xterm.js (VS Code, sparse events +
+          // app-side accel curve) uses adaptive small-step drain. isXtermJs()
+          // depends on the async XTVERSION probe, but by the time this runs
+          // (pendingScrollDelta is only set by wheel events, >>50ms after
+          // startup) the probe has resolved — same timing guarantee the
+          // wheel-accel curve relies on.
+          let cur = node.scrollTop ?? 0
+          const pending = node.pendingScrollDelta
+          const cMin = node.scrollClampMin
+          const cMax = node.scrollClampMax
+          const haveClamp = cMin !== undefined && cMax !== undefined
+
+          if (pending !== undefined && pending !== 0) {
+            // Drain continues even past the clamp — the render-clamp below
+            // holds the VISUAL at the mounted edge regardless. Hard-stopping
+            // here caused stop-start jutter: drain hits edge → pause → React
+            // commits → clamp widens → drain resumes → edge again. Letting
+            // scrollTop advance smoothly while the clamp lags gives continuous
+            // visual scroll at React's commit rate (the clamp catches up each
+            // commit). But THROTTLE the drain when already past the clamp so
+            // scrollTop doesn't race 5000 rows ahead of the mounted range
+            // (slide-cap would then take 200 commits to catch up = long
+            // perceived stall at the edge). Past-clamp drain caps at ~4 rows/
+            // frame, roughly matching React's slide rate so the gap stays
+            // bounded and catch-up is quick once input stops.
+            const pastClamp =
+              haveClamp &&
+              ((pending < 0 && cur < cMin) || (pending > 0 && cur > cMax))
+            const eff = pastClamp ? Math.min(4, innerHeight >> 3) : innerHeight
+            cur += isXtermJsHost()
+              ? drainAdaptive(node, pending, eff)
+              : drainProportional(node, pending, eff)
+          } else if (pending === 0) {
+            // Opposite scrollBy calls cancelled to zero — clear so we don't
+            // schedule an infinite loop of no-op drain frames.
             node.pendingScrollDelta = undefined
           }
-          node.scrollAnchor = undefined
+          scrollTop = Math.max(0, Math.min(cur, maxScroll))
+          // Virtual-scroll clamp: if scrollTop raced past the currently-mounted
+          // range (burst PageUp before React re-renders), render at the EDGE of
+          // the mounted children instead of blank spacer. Do NOT write back to
+          // node.scrollTop — the clamped value is for this paint only; the real
+          // scrollTop stays so React's next commit sees the target and mounts
+          // the right range. Not scheduling scrollDrainNode here keeps the
+          // clamp passive — React's commit → resetAfterCommit → onRender will
+          // paint again with fresh bounds.
+          // Bound the clamp to [0, maxScroll]. Stale clamp bounds from
+          // useVirtualScroll's useLayoutEffect (which clears clamps when
+          // sticky) can arrive one frame late — resetAfterCommit fires
+          // onRender before React's layout effects drain. Without the
+          // maxScroll cap, a stale cMin from a pre-/clear scroll position
+          // forces scrollTop far past the now-tiny content → blank screen.
+          const clamped = haveClamp
+            ? Math.min(Math.max(cMin, Math.min(scrollTop, cMax)), maxScroll)
+            : scrollTop
+          node.scrollTop = scrollTop
+          // Clamp hitting top/bottom consumes any remainder. Set drainPending
+          // only after clamp so a wasted no-op frame isn't scheduled.
+          if (scrollTop !== cur) node.pendingScrollDelta = undefined
+          if (!referenceRender && node.pendingScrollDelta !== undefined)
+            scrollDrainNode = node
+          scrollTop = clamped
         }
-        // At-bottom follow. Positional: if scrollTop was at (or past) the
-        // previous max, pin to the new max. Scroll away → stop following;
-        // scroll back (or scrollToBottom/sticky attr) → resume. The sticky
-        // flag is OR'd in for cold start (scrollTop=0 before first layout)
-        // and scrollToBottom-from-far-away (flag set before scrollTop moves)
-        // — the imperative field takes precedence over the attribute so
-        // scrollTo/scrollBy can break stickiness. pendingDelta<0 guard:
-        // don't cancel an in-flight scroll-up when content races in.
-        // Capture scrollTop before follow so ink.tsx can translate any
-        // active text selection by the same delta (native terminal behavior:
-        // view keeps scrolling, highlight walks up with the text).
-        const scrollTopBeforeFollow = node.scrollTop ?? 0
-        const sticky =
-          node.stickyScroll ?? Boolean(node.attributes['stickyScroll'])
-        const prevMaxScroll = Math.max(0, prevScrollHeight - prevInnerHeight)
-        // Positional check only valid when content grew — virtualization can
-        // transiently SHRINK scrollHeight (tail unmount + stale heightCache
-        // spacer) making scrollTop >= prevMaxScroll true by artifact, not
-        // because the user was at bottom.
-        const grew = scrollHeight >= prevScrollHeight
-        const atBottom =
-          sticky || (grew && scrollTopBeforeFollow >= prevMaxScroll)
-        if (atBottom && (node.pendingScrollDelta ?? 0) >= 0) {
-          node.scrollTop = maxScroll
-          node.pendingScrollDelta = undefined
-          // Sync flag so useVirtualScroll's isSticky() agrees with positional
-          // state — sticky-broken-but-at-bottom (wheel tremor, click-select
-          // at max) otherwise leaves useVirtualScroll's clamp holding the
-          // viewport short of new streaming content. scrollTo/scrollBy set
-          // false; this restores true, same as scrollToBottom() would.
-          // Only restore when (a) positionally at bottom and (b) the flag
-          // was explicitly broken (===false) by scrollTo/scrollBy. When
-          // undefined (never set by user action) leave it alone — setting it
-          // would make the sticky flag sticky-by-default and lock out
-          // direct scrollTop writes (e.g. the alt-screen-perf test).
-          if (
-            node.stickyScroll === false &&
-            scrollTopBeforeFollow >= prevMaxScroll
-          ) {
-            node.stickyScroll = true
-            node.scrollFollowBaseline = undefined
-            // Tell React-land: this is the one sticky transition that doesn't
-            // go through ScrollBox's imperative API, and scroll-derived
-            // chrome (the jump-to-bottom pill) can't see it otherwise.
-            // Microtask, so the listeners' React updates land after this
-            // frame instead of re-entering it.
-            const notifyScroll = node.notifyScrollListeners
-            if (notifyScroll) queueMicrotask(notifyScroll)
-          }
-        }
-        const followDelta = (node.scrollTop ?? 0) - scrollTopBeforeFollow
-        if (followDelta > 0) {
-          const vpTop = node.scrollViewportTop ?? 0
-          followScroll = {
-            delta: followDelta,
-            viewportTop: vpTop,
-            viewportBottom: vpTop + innerHeight - 1,
-          }
-        }
-        // Drain pendingScrollDelta. Native terminals (proportional burst
-        // events) use proportional drain; xterm.js (VS Code, sparse events +
-        // app-side accel curve) uses adaptive small-step drain. isXtermJs()
-        // depends on the async XTVERSION probe, but by the time this runs
-        // (pendingScrollDelta is only set by wheel events, >>50ms after
-        // startup) the probe has resolved — same timing guarantee the
-        // wheel-accel curve relies on.
-        let cur = node.scrollTop ?? 0
-        const pending = node.pendingScrollDelta
-        const cMin = node.scrollClampMin
-        const cMax = node.scrollClampMax
-        const haveClamp = cMin !== undefined && cMax !== undefined
-        if (pending !== undefined && pending !== 0) {
-          // Drain continues even past the clamp — the render-clamp below
-          // holds the VISUAL at the mounted edge regardless. Hard-stopping
-          // here caused stop-start jutter: drain hits edge → pause → React
-          // commits → clamp widens → drain resumes → edge again. Letting
-          // scrollTop advance smoothly while the clamp lags gives continuous
-          // visual scroll at React's commit rate (the clamp catches up each
-          // commit). But THROTTLE the drain when already past the clamp so
-          // scrollTop doesn't race 5000 rows ahead of the mounted range
-          // (slide-cap would then take 200 commits to catch up = long
-          // perceived stall at the edge). Past-clamp drain caps at ~4 rows/
-          // frame, roughly matching React's slide rate so the gap stays
-          // bounded and catch-up is quick once input stops.
-          const pastClamp =
-            haveClamp &&
-            ((pending < 0 && cur < cMin) || (pending > 0 && cur > cMax))
-          const eff = pastClamp ? Math.min(4, innerHeight >> 3) : innerHeight
-          cur += isXtermJsHost()
-            ? drainAdaptive(node, pending, eff)
-            : drainProportional(node, pending, eff)
-        } else if (pending === 0) {
-          // Opposite scrollBy calls cancelled to zero — clear so we don't
-          // schedule an infinite loop of no-op drain frames.
-          node.pendingScrollDelta = undefined
-        }
-        let scrollTop = Math.max(0, Math.min(cur, maxScroll))
-        // Virtual-scroll clamp: if scrollTop raced past the currently-mounted
-        // range (burst PageUp before React re-renders), render at the EDGE of
-        // the mounted children instead of blank spacer. Do NOT write back to
-        // node.scrollTop — the clamped value is for this paint only; the real
-        // scrollTop stays so React's next commit sees the target and mounts
-        // the right range. Not scheduling scrollDrainNode here keeps the
-        // clamp passive — React's commit → resetAfterCommit → onRender will
-        // paint again with fresh bounds.
-        // Bound the clamp to [0, maxScroll]. Stale clamp bounds from
-        // useVirtualScroll's useLayoutEffect (which clears clamps when
-        // sticky) can arrive one frame late — resetAfterCommit fires
-        // onRender before React's layout effects drain. Without the
-        // maxScroll cap, a stale cMin from a pre-/clear scroll position
-        // forces scrollTop far past the now-tiny content → blank screen.
-        const clamped = haveClamp
-          ? Math.min(Math.max(cMin, Math.min(scrollTop, cMax)), maxScroll)
-          : scrollTop
-        node.scrollTop = scrollTop
-        // Clamp hitting top/bottom consumes any remainder. Set drainPending
-        // only after clamp so a wasted no-op frame isn't scheduled.
-        if (scrollTop !== cur) node.pendingScrollDelta = undefined
-        if (!referenceRender && node.pendingScrollDelta !== undefined)
-          scrollDrainNode = node
-        scrollTop = clamped
 
         if (content && contentYoga) {
           // A child removed from the scroll content leaves surviving

@@ -19,9 +19,13 @@
 import type { DOMElement } from './dom.js'
 import { LayoutDisplay } from './layout/node.js'
 
-// Subpixel yoga results floor/ceil differently across siblings; require a
-// real overlap (>0.5 cells in BOTH dimensions) before reporting.
-const EPSILON = 0.5
+// Yoga layouts are fractional; a rounding pass expands each node's rect
+// to floor(top)..ceil(bottom) so its span is fully covered on the cell
+// grid. Adjacent fractionally-positioned siblings (flexShrink squeeze
+// distributes e.g. 20/21-row children) legitimately share up to 2 cells
+// this way — that's the cover expansion, not displacement. Only overlaps
+// LARGER than cover rounding can explain are violations.
+const COVER_ROUNDING_TOLERANCE = 2
 
 export function isLayoutCheckEnabled(): boolean {
   // Read per call, no memoize: unit tests share one process and toggle
@@ -87,7 +91,10 @@ export function checkLayoutInvariants(root: DOMElement): string[] {
         const overlapH =
           Math.min(a.rect.y + a.rect.height, b.rect.y + b.rect.height) -
           Math.max(a.rect.y, b.rect.y)
-        if (overlapW > EPSILON && overlapH > EPSILON) {
+        if (
+          overlapW > COVER_ROUNDING_TOLERANCE &&
+          overlapH > COVER_ROUNDING_TOLERANCE
+        ) {
           violations.push(
             `${describe(node)}: non-absolute siblings overlap ` +
               `[${describe(a.node)} x=${a.rect.x.toFixed(1)} y=${a.rect.y.toFixed(1)} ` +
