@@ -1257,8 +1257,7 @@ function renderNodeToOutput(
                     prevScreen &&
                     Math.floor(childCached.y) === screenY &&
                     childCached.height === childH &&
-                    (childBottom <= edgeTopLocal ||
-                      childTop >= edgeBottomLocal)
+                    (childBottom <= edgeTopLocal || childTop >= edgeBottomLocal)
                   ) {
                     const screenBottom = Math.min(
                       Math.floor(contentY + childBottom),
