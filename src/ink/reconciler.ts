@@ -100,6 +100,14 @@ const cleanupYogaNode = (node: DOMElement | TextNode): void => {
     // accessing freed WASM memory during concurrent operations
     clearYogaNodeReferences(node)
     yogaNode.freeRecursive()
+    return
+  }
+  // Yoga-less wrappers (ink-virtual-text, ink-link, ink-progress) can
+  // still hold yoga-backed children; free each subtree they own instead
+  // of skipping the whole removal (the port's live-node count and any
+  // future global registry would under-count otherwise).
+  if ('childNodes' in node) {
+    for (const child of node.childNodes) cleanupYogaNode(child)
   }
 }
 
@@ -197,7 +205,7 @@ let _createCount = 0
 let _prepareAt = 0
 // --- END ---
 
-// --- SCROLL PROFILING (bench/scroll-e2e.sh reads via getLastYogaMs) ---
+// --- SCROLL PROFILING (ink.tsx onFrame phases read via getLastYogaMs) ---
 // Set by Ink.computeLayout (invoked from the stale-layout check in onRender);
 // read by onRender for phases.
 let _lastYogaMs = 0

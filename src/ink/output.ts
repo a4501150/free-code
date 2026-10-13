@@ -12,6 +12,7 @@ import { type Rectangle, unionRect } from './layout/geometry.js'
 import {
   blitRegion,
   CellWidth,
+  clearRegion,
   extractHyperlinkFromStyles,
   filterOutHyperlinkStyles,
   forceDiffRegion,
@@ -69,6 +70,7 @@ export type Operation =
   | UnclipOperation
   | BlitOperation
   | ClearOperation
+  | EraseOperation
   | NoSelectOperation
   | ForceRepaintOperation
   | ShiftOperation
@@ -167,6 +169,11 @@ type ClearOperation = {
   fromAbsolute?: boolean
 }
 
+type EraseOperation = {
+  type: 'erase'
+  region: Rectangle
+}
+
 type ForceRepaintOperation = {
   type: 'forceRepaint'
   region: Rectangle
@@ -245,6 +252,20 @@ export default class Output {
    */
   clear(region: Rectangle, fromAbsolute?: boolean): void {
     this.operations.push({ type: 'clear', region, fromAbsolute })
+  }
+
+  /**
+   * Zero a region's cells directly — structurally empty, damage tracked.
+   * The scroll fast path's repair wipes previously used output.write()
+   * with runs of spaces: identical cells, but every row went through
+   * tokenization and grapheme clustering to produce zeros. Unlike clear
+   * (damage-only, relies on diff to repaint), erase changes cells THIS
+   * frame so later ops in the stream (blits of already-shifted content)
+   * can't win back the region. Clip-aware like write: bounded by the
+   * clip active where the erase lands in the op stream.
+   */
+  erase(region: Rectangle): void {
+    this.operations.push({ type: 'erase', region })
   }
 
   forceRepaint(region: Rectangle, fromAbsolute?: boolean): void {
@@ -335,6 +356,25 @@ export default class Output {
         case 'clear':
           // handled in pass 1
           continue
+
+        case 'erase': {
+          // Zero the region's cells now (pass 1 only expands damage for
+          // clear ops — erase must actually write, or a later blit in
+          // this stream could repaint the region with stale pixels).
+          // clearRegion clamps to screen bounds; the clip intersection
+          // happens here so erase respects the clip stack exactly like
+          // a write at the same stream position.
+          const clip = clips.at(-1)
+          const { x: regionX, y: regionY, width: regionWidth, height: regionHeight } =
+            operation.region
+          const startX = Math.max(regionX, clip?.x1 ?? 0)
+          const startY = Math.max(regionY, clip?.y1 ?? 0)
+          const maxX = Math.min(regionX + regionWidth, clip?.x2 ?? Infinity)
+          const maxY = Math.min(regionY + regionHeight, clip?.y2 ?? Infinity)
+          if (startX < maxX && startY < maxY)
+            clearRegion(screen, startX, startY, maxX - startX, maxY - startY)
+          continue
+        }
 
         case 'forceRepaint':
           continue

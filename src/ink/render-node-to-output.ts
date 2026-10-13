@@ -1,5 +1,4 @@
 import indentString from 'indent-string'
-import { logForDebugging } from '../utils/debug.js'
 import { applyTextStyles } from './colorize.js'
 import type { DOMElement } from './dom.js'
 import getMaxWidth from './get-max-width.js'
@@ -584,11 +583,6 @@ function renderNodeToOutput(
         node.style.position === 'absolute',
       )
     }
-    if (node.dirty && Math.floor(y) >= 45 && Math.floor(height) <= 3) {
-      logForDebugging(
-        `dirty-node y=${Math.floor(y)}: type=${node.nodeName} wrap=${node.style.textWrap} cached=${!!cached} x=${Math.floor(x)} w=${Math.floor(width)} h=${Math.floor(height)}${cached ? ` cX=${Math.floor(cached.x)} cY=${Math.floor(cached.y)} cW=${Math.floor(cached.width)}` : ''}`,
-      )
-    }
 
     // Read before deleting — hasRemovedChild disables prevScreen blitting
     // for siblings to prevent stale overflow content from being restored.
@@ -1120,7 +1114,6 @@ function renderNodeToOutput(
             if (dirtyChildren) {
               const edgeTopLocal = edgeTop - contentY
               const edgeBottomLocal = edgeBottom + 1 - contentY
-              const spaces = ' '.repeat(w)
               // Track cumulative height change of children iterated so far.
               // A clean child's yogaTop is unchanged iff this is zero (no
               // sibling above it grew/shrank/mounted). When zero, the skip
@@ -1182,18 +1175,20 @@ function renderNodeToOutput(
                     continue
                   }
                 }
-                // Wipe this child's region with spaces to overwrite stale
-                // blitted content — output.clear() only expands damage and
-                // cannot zero cells that the blit already wrote.
+                // Erase this child's region to overwrite stale blitted
+                // content — clear is damage-only and cannot zero cells
+                // that the blit already wrote this frame.
                 const screenBottom = Math.min(
                   Math.floor(contentY + childBottom),
                   Math.floor((y1 ?? y) + padTop + innerHeight),
                 )
                 if (screenY < screenBottom) {
-                  const fill = Array(screenBottom - screenY)
-                    .fill(spaces)
-                    .join('\n')
-                  output.write(Math.floor(x), screenY, fill)
+                  output.erase({
+                    x: Math.floor(x),
+                    y: screenY,
+                    width: w,
+                    height: screenBottom - screenY,
+                  })
                   output.clip({
                     x1: undefined,
                     x2: undefined,
@@ -1254,10 +1249,12 @@ function renderNodeToOutput(
                   let runStart = -1
                   const flush = (end: number) => {
                     if (runStart < 0) return
-                    const fill = Array(end - runStart)
-                      .fill(spaces)
-                      .join('\n')
-                    output.write(Math.floor(x), runStart, fill)
+                    output.erase({
+                      x: Math.floor(x),
+                      y: runStart,
+                      width: w,
+                      height: end - runStart,
+                    })
                     runStart = -1
                   }
                   for (let r = stableTop; r <= stableBottom; r++) {
@@ -1276,7 +1273,6 @@ function renderNodeToOutput(
             // pixels sit at (rect.y - delta) — neither edge render nor the
             // overlay's own re-render covers them. Wipe and re-render
             // ScrollBox content so the diff writes correct cells.
-            const spaces = absoluteRectsPrev.length ? ' '.repeat(w) : ''
             for (const r of absoluteRectsPrev) {
               if (r.y >= bottom + 1 || r.y + r.height <= top) continue
               const shiftedTop = Math.max(top, Math.floor(r.y) - delta)
@@ -1288,10 +1284,12 @@ function renderNodeToOutput(
               if (shiftedTop >= edgeTop && shiftedBottom <= edgeBottom + 1)
                 continue
               if (shiftedTop >= shiftedBottom) continue
-              const fill = Array(shiftedBottom - shiftedTop)
-                .fill(spaces)
-                .join('\n')
-              output.write(Math.floor(x), shiftedTop, fill)
+              output.erase({
+                x: Math.floor(x),
+                y: shiftedTop,
+                width: w,
+                height: shiftedBottom - shiftedTop,
+              })
               output.clip({
                 x1: undefined,
                 x2: undefined,
@@ -1455,8 +1453,8 @@ function renderNodeToOutput(
 // AFTER a dirty/removed sibling can contain stale overflow in prevScreen.
 // Disable blit for siblings after a dirty child — but still pass prevScreen
 // TO the dirty child itself so its clean descendants can blit. The dirty
-// child's own blit check already fails (node.dirty=true at line 216), so
-// passing prevScreen only benefits its subtree.
+// child's own blit check already fails (the node.dirty gate in the
+// clean-subtree blit path), so passing prevScreen only benefits its subtree.
 // For removed children we don't know their original position, so
 // conservatively disable blit for all.
 //
