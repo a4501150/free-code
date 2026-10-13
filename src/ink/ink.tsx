@@ -55,7 +55,6 @@ import reconciler, {
 import renderNodeToOutput, {
   consumeFollowScroll,
   didLayoutShift,
-  markLayoutShifted,
 } from './render-node-to-output.js'
 import { checkLayoutInvariants, isLayoutCheckEnabled } from './layout-check.js'
 import {
@@ -781,22 +780,21 @@ export default class Ink {
     // Differential render check (FREECODE_RENDER_CHECK=1): re-render the
     // tree cache-free and compare — any diverging cell is a stale
     // blit/dirty-miss bug. Runs before the selection/search overlays
-    // mutate frame.screen (they'd be false mismatches), with the layout
-    // shift flag restored so the full-damage logic below still sees this
-    // frame's real verdict. Costs a second full paint, diagnostics only.
+    // mutate frame.screen (they'd be false mismatches). The reference
+    // render restores the real frame's shift flags exactly, so the
+    // full-damage logic below still sees this frame's real verdict.
+    // Costs a second full paint, diagnostics only.
     if (isRenderCheckEnabled()) {
       if (!this.renderCheckAnnounced) {
         this.renderCheckAnnounced = true
         logForDebugging('[RENDER-CHECK] enabled', { level: 'info' })
       }
-      const shiftedBeforeCheck = didLayoutShift()
       const mismatches = diffFrameAgainstReference(
         this.rootNode,
         frame.screen,
         this.stylePool,
         32,
       )
-      if (shiftedBeforeCheck) markLayoutShifted()
       if (mismatches.length > 0) {
         const first = mismatches[0] as (typeof mismatches)[0] & {
           frameRow?: string

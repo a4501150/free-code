@@ -19,10 +19,8 @@
  */
 import Output from './output.js'
 import renderNodeToOutput, {
-  resetLayoutShifted,
-  resetScrollDrainNode,
-  resetScrollHint,
-  setReferenceRender,
+  beginReferenceRender,
+  endReferenceRender,
 } from './render-node-to-output.js'
 import {
   cellAtIndex,
@@ -48,11 +46,11 @@ export type RenderMismatch = {
 /**
  * Render the tree cache-free into a fresh screen and diff against the
  * frame's screen. Returns up to `limit` mismatching cells (there can be
- * many more). Module render state (shift flag, scroll hint, drain node)
- * is reset around the reference render so it doesn't observe or disturb
- * the real frame's bookkeeping — the shift flag is restored by the CALLER
- * via markLayoutShifted() since this module can't read it without another
- * import cycle.
+ * many more). Module render state is snapshotted around the reference
+ * render (beginReferenceRender/endReferenceRender) so the walk neither
+ * observes nor disturbs the real frame's bookkeeping — the real frame's
+ * shift-flag verdicts are restored exactly, for the full-damage decision
+ * and DECSTBM gate that run after this.
  */
 export function diffFrameAgainstReference(
   rootNode: DOMElement,
@@ -73,14 +71,11 @@ export function diffFrameAgainstReference(
     stylePool,
     screen: reference,
   })
-  resetLayoutShifted()
-  resetScrollHint()
-  resetScrollDrainNode()
-  setReferenceRender(true)
+  const shiftFlags = beginReferenceRender()
   try {
     renderNodeToOutput(rootNode, output, { prevScreen: undefined })
   } finally {
-    setReferenceRender(false)
+    endReferenceRender(shiftFlags)
   }
   const rendered = output.get()
 

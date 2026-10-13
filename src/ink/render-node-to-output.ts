@@ -44,12 +44,6 @@ let layoutShiftPending = false
 // edit-inflight e2e regression).
 let flipShifted = false
 
-export function resetLayoutShifted(): void {
-  flipShifted = layoutShiftPending
-  layoutShiftPending = false
-  layoutShifted = flipShifted
-}
-
 export function markLayoutShifted(): void {
   layoutShiftPending = true
 }
@@ -69,6 +63,58 @@ export function didFlipShift(): boolean {
   return flipShifted
 }
 
+/**
+ * Frame-start bookkeeping reset for a REAL frame. The per-frame protocol
+ * lives here, not in the callers: consume the commit-time shift mark
+ * (flip frames start with layoutShifted set), clear the scroll hint,
+ * rotate the absolute-overlay rect list — exactly once per real frame,
+ * see beginReferenceRender — and clear the drain node.
+ */
+export function beginRealFrame(): void {
+  flipShifted = layoutShiftPending
+  layoutShiftPending = false
+  layoutShifted = flipShifted
+  scrollHint = null
+  absoluteRectsPrev = absoluteRectsCur
+  absoluteRectsCur = []
+  scrollDrainNode = null
+}
+
+/** The shift-flag snapshot beginReferenceRender hands to its end pair. */
+export type ShiftFlags = { shifted: boolean; flip: boolean }
+
+/**
+ * Begin a render-check reference render (render-check.ts): snapshot
+ * the shift flags and neutralize shared per-frame bookkeeping so the
+ * reference walk neither observes nor disturbs it. The absoluteRects
+ * rotation is deliberately NOT consumed — it runs once per REAL frame
+ * (beginRealFrame); consuming it here would starve the next real
+ * frame's third-pass overlay repair (shifted absolute pixels left as
+ * ghosts).
+ */
+export function beginReferenceRender(): ShiftFlags {
+  const flags = { shifted: layoutShifted, flip: flipShifted }
+  referenceRender = true
+  layoutShifted = false
+  flipShifted = false
+  scrollHint = null
+  scrollDrainNode = null
+  return flags
+}
+
+/**
+ * End a render-check reference render: restore the REAL frame's shift
+ * flags. The reference walk sets them itself too (its position checks
+ * run in the scratch render); those spurious sets are discarded so the
+ * real frame's full-damage decision and DECSTBM gate see the real
+ * verdict, not the reference walk's.
+ */
+export function endReferenceRender(flags: ShiftFlags): void {
+  referenceRender = false
+  layoutShifted = flags.shifted
+  flipShifted = flags.flip
+}
+
 // DECSTBM scroll optimization hint. When a ScrollBox's scrollTop changes
 // between frames (and nothing else moved), log-update.ts can emit a
 // hardware scroll (DECSTBM + SU/SD) instead of rewriting the whole
@@ -85,34 +131,11 @@ let scrollHint: ScrollHint | null = null
 let absoluteRectsPrev: Rectangle[] = []
 let absoluteRectsCur: Rectangle[] = []
 
-// Set by the render-check reference render (render-check.ts): the walk
-// re-renders the whole tree into a scratch buffer AFTER the real frame,
-// so it must not consume shared bookkeeping the next real frame needs
-// (pendingClears). scrollHint/scrollDrainNode writes are harmless — the
-// renderer resets both at the start of every frame.
+// Set while a render-check reference render is in flight (see
+// beginReferenceRender). Gates bookkeeping writes that must only happen
+// on real frames — e.g. absoluteRectsCur recording — since the reference
+// walk would otherwise consume slots the next real frame needs.
 let referenceRender = false
-export function setReferenceRender(on: boolean): void {
-  referenceRender = on
-}
-
-export function resetScrollHint(): void {
-  // Only clears the hint — NOT the absoluteRects rotation. The rotation
-  // must run exactly once per REAL frame (renderer.ts start); the
-  // render-check reference render also calls this between real frames,
-  // and consuming the rotation there would starve the next real
-  // frame's pass-3 overlay repair (shifted absolute pixels left as
-  // ghosts).
-  scrollHint = null
-}
-
-// Rotate the absolute-overlay rect list. Called at the START of every
-// REAL frame (renderer.ts): the rects recorded by the previous real
-// frame become absoluteRectsPrev, consumed by the scroll fast path's
-// third-pass repair.
-export function rotateAbsoluteRects(): void {
-  absoluteRectsPrev = absoluteRectsCur
-  absoluteRectsCur = []
-}
 
 export function getScrollHint(): ScrollHint | null {
   return scrollHint
@@ -124,10 +147,6 @@ export function getScrollHint(): ScrollHint | null {
 // Without this, after the scrollbox's dirty flag is cleared (line ~721),
 // the next frame blits root and never reaches the scrollbox — drain stalls.
 let scrollDrainNode: DOMElement | null = null
-
-export function resetScrollDrainNode(): void {
-  scrollDrainNode = null
-}
 
 export function getScrollDrainNode(): DOMElement | null {
   return scrollDrainNode
