@@ -26,7 +26,7 @@ const inputSchema = z.strictObject({
   command: z
     .string()
     .describe(
-      'The shell command to run detached as the watch. Poll world state and print only when the verdict changes.',
+      'The shell command to run detached as the watch. Poll world state and print only when the answer changes.',
     ),
   description: z
     .string()
@@ -161,7 +161,7 @@ export const MonitorTool = buildTool({
     { stdout, monitorTaskId }: MonitorOut,
     toolUseID: string,
   ): DomainToolResultBlockParam {
-    const started = `Monitor started with ID: ${monitorTaskId}. It runs detached; whenever the latest output line changes you will get a system task notification in a later turn (at most once per the requested interval) — you do not need to wait or poll. Full output file: ${getTaskOutputPath(monitorTaskId)}. Stop it with ${BACKGROUND_TASK_STOP_TOOL_NAME}.`
+    const started = `Monitor started with ID: ${monitorTaskId}. It runs detached; whenever the latest output line changes you will get a system task notification in a later turn (at most once per the requested interval; exit or error notifies immediately) — you do not need to wait or poll. Full output file, safe to read mid-run: ${getTaskOutputPath(monitorTaskId)}. Stop it with ${BACKGROUND_TASK_STOP_TOOL_NAME}.`
     const content = [stdout.trim(), started].filter(Boolean).join('\n')
     return {
       tool_use_id: toolUseID,
