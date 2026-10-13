@@ -7,11 +7,20 @@
 // and the loader builds the runtime namespace from the live tool pool with the
 // same identifier rules as here.
 //
+// The directory is SHARED across concurrent sessions, so writes are
+// additive: the manifest is the union of the previous manifest (entries whose
+// file on disk still matches its recorded hash) and this session's render. A
+// server this session doesn't render — another project's server, a
+// disconnected one — keeps its file until age GC reaps it (see
+// unionWithPrevious/sweepServerFiles). A session never deletes a server file
+// it merely doesn't know about.
+//
 // Harness state (generation, per-server content hashes) lives in
 // <config-home>/tool-catalog.json — OUTSIDE the model-facing directory, never
 // named in the prompt. Rendering is byte-stable (sorted declarations, no
 // insertion-order leaks), so files are rewritten and the generation bumped
-// only when content changes.
+// only when content changes. Project-scope servers render into a
+// project-keyed directory; see scopes.ts for the split.
 
 import { createHash } from 'crypto'
 import {
@@ -19,6 +28,7 @@ import {
   readFile,
   readdir,
   rename,
+  stat,
   unlink,
   writeFile,
 } from 'fs/promises'
@@ -27,6 +37,7 @@ import type { Tool } from '../../Tool.js'
 import { normalizeNameForMCP } from '../mcp/normalization.js'
 import { getMcpPrefix } from '../mcp/mcpStringUtils.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import * as lockfile from '../../utils/lockfile.js'
 import { zodToJsonSchema } from '../../utils/zodToJsonSchema.js'
 
 const CATALOG_DIR = 'tool-catalog'
@@ -555,24 +566,112 @@ async function writeFileAtomic(path: string, content: string): Promise<void> {
   await rename(tmp, path)
 }
 
-// Files from the pre-code-catalog layout (manifest + JSON schemas) are removed
-// once so the directory holds only TypeScript.
+function hash16(content: string): string {
+  return createHash('sha256').update(content).digest('hex').slice(0, 16)
+}
+
+// A catalog file for a server absent from every live session's config is
+// reaped only after being untouched for this long. The content is docs-only,
+// so a month of grace is cheap insurance against transient pool gaps.
+const GC_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+
+async function isAged(path: string): Promise<boolean> {
+  try {
+    return Date.now() - (await stat(path)).mtimeMs > GC_MAX_AGE_MS
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Merge the previous manifest into the fresh render. An entry survives when
+ * its file on disk still matches its recorded hash — the shared dir is a
+ * union across sessions, so a server this session doesn't render (another
+ * project's server, a disconnected one) keeps its file and manifest entry.
+ * Entries whose file is missing or corrupt are dropped: no file, no entry.
+ * Age GC reaps an intact-but-unrendered entry only when no live session
+ * claims the server and the file has been untouched past GC_MAX_AGE_MS.
+ */
+async function unionWithPrevious(
+  dir: string,
+  rendered: CatalogManifest['servers'],
+  previous: CatalogManifest | null,
+  knownServers: Set<string>,
+): Promise<CatalogManifest['servers']> {
+  if (!previous) return rendered
+  const byName = new Map(rendered.map(s => [s.name, s]))
+  const out = [...rendered]
+  for (const prev of previous.servers) {
+    if (byName.has(prev.name)) continue
+    let intact = false
+    try {
+      const onDisk = await readFile(join(dir, prev.file), 'utf8')
+      intact = hash16(onDisk) === prev.hash
+    } catch {
+      intact = false
+    }
+    if (!intact) continue
+    if (!knownServers.has(prev.name) && (await isAged(join(dir, prev.file)))) {
+      await unlink(join(dir, prev.file)).catch(() => {})
+      continue
+    }
+    out.push(prev)
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name))
+  return out
+}
+
+/**
+ * Sweep the servers dir for files no manifest entry covers: always-legacy
+ * per-server JSON from the pre-code-catalog layout, and .ts files abandoned
+ * with no manifest entry (e.g. a crashed state write) which are reaped only
+ * when unclaimed by this session's config and aged. Files the render covers
+ * are never touched, whatever their mtime.
+ */
+async function sweepServerFiles(
+  dir: string,
+  servers: CatalogManifest['servers'],
+  knownServers: Set<string>,
+): Promise<void> {
+  const expected = new Set(servers.map(s => s.file))
+  const knownFiles = new Set([...knownServers].map(serverFileName))
+  let entries: string[]
+  try {
+    entries = await readdir(join(dir, SERVERS_DIR))
+  } catch {
+    return // dir may not exist yet on first render
+  }
+  for (const name of entries) {
+    if (name.startsWith('.')) continue
+    if (!name.endsWith('.ts') && !name.endsWith('.json')) continue
+    const rel = join(SERVERS_DIR, name)
+    if (expected.has(rel)) continue
+    const path = join(dir, rel)
+    if (name.endsWith('.json')) {
+      await unlink(path).catch(() => {})
+      continue
+    }
+    if (knownFiles.has(name.replace(/\.ts$/, ''))) continue
+    if (!(await isAged(path))) continue
+    await unlink(path).catch(() => {})
+  }
+}
+
+// Files from the pre-code-catalog layout (manifest + JSON schemas) are
+// removed once so the directory holds only TypeScript.
 const LEGACY_ROOT_FILES = ['manifest.json', 'builtins.json']
 
-async function removeUnexpected(
-  dirPath: string,
-  expected: Set<string>,
+async function removeLegacyFiles(
+  dir: string,
+  builtins: string[],
 ): Promise<void> {
-  try {
-    for (const name of await readdir(dirPath)) {
-      if (name.startsWith('.')) continue
-      const matches = name.endsWith('.ts') || name.endsWith('.json')
-      if (matches && !expected.has(name)) {
-        await unlink(join(dirPath, name)).catch(() => {})
-      }
-    }
-  } catch {
-    // dir may not exist yet on first render
+  for (const legacy of LEGACY_ROOT_FILES) {
+    await unlink(join(dir, legacy)).catch(() => {})
+  }
+  // Lazy built-ins ride the process-global lazyTools setting, so there is no
+  // cross-session variance to protect against: an empty render removes it.
+  if (builtins.length === 0) {
+    await unlink(join(dir, 'builtins.ts')).catch(() => {})
   }
 }
 
@@ -589,44 +688,71 @@ export async function writeToolCatalog(opts: {
   catalogDir?: string
   /** Test override; defaults to <config-home>/tool-catalog.json. */
   statePath?: string
+  /**
+   * Server names configured in this session (any connection state). Age GC
+   * never reaps a file for a server some live session still claims.
+   */
+  knownServers?: Set<string>
 }): Promise<CatalogWriteResult> {
   const dir = opts.catalogDir ?? toolCatalogDir()
   const statePath = opts.statePath ?? toolCatalogStatePath()
-  const previous = await readToolCatalogState(statePath)
-  const { files, servers, builtins } = await renderCatalog(
-    opts.mcpTools,
-    opts.lazyBuiltInTools,
-    opts.serverDescriptions,
-    dir,
-    previous,
-  )
+  const knownServers = opts.knownServers ?? new Set<string>()
 
-  if (previous && sameSnapshot(previous, servers, builtins)) {
-    return { manifest: previous, wrote: false }
+  // Best-effort cross-process lock so two sessions never interleave file
+  // writes with the state write. Same unlocked fallback as
+  // saveCurrentProjectConfig: union + atomic writes keep the dir coherent
+  // even when the lock cannot be taken.
+  let release: (() => Promise<void>) | undefined
+  try {
+    release = await lockfile.lock(statePath, {
+      lockfilePath: `${statePath}.lock`,
+      // The state file does not exist yet on a first write.
+      realpath: false,
+      onCompromised: () => undefined,
+    })
+  } catch {
+    // Proceed unlocked.
   }
 
-  await mkdir(join(dir, SERVERS_DIR), { recursive: true })
-  for (const f of files) {
-    await writeFileAtomic(f.path, f.content)
-  }
+  try {
+    const previous = await readToolCatalogState(statePath)
+    const { files, servers, builtins } = await renderCatalog(
+      opts.mcpTools,
+      opts.lazyBuiltInTools,
+      opts.serverDescriptions,
+      dir,
+      previous,
+    )
 
-  for (const legacy of LEGACY_ROOT_FILES) {
-    await unlink(join(dir, legacy)).catch(() => {})
-  }
-  // Remove server files whose server vanished from the pool, plus legacy
-  // per-server JSON from before the code catalog.
-  const expectedServers = new Set(servers.map(s => serverFileName(s.name)))
-  await removeUnexpected(join(dir, SERVERS_DIR), expectedServers)
-  const expectedRoot = new Set(['builtins.ts'])
-  if (builtins.length === 0) expectedRoot.delete('builtins.ts')
-  await removeUnexpected(dir, expectedRoot)
+    // Union first, then sweep — a server this session doesn't render keeps
+    // its file; only aged-out, unclaimed files are reaped.
+    const unioned = await unionWithPrevious(
+      dir,
+      servers,
+      previous,
+      knownServers,
+    )
+    await sweepServerFiles(dir, unioned, knownServers)
+    await removeLegacyFiles(dir, builtins)
 
-  const manifest: CatalogManifest = {
-    generation: (previous?.generation ?? 0) + 1,
-    updated: new Date().toISOString(),
-    servers,
-    builtins,
+    if (previous && sameSnapshot(previous, unioned, builtins)) {
+      return { manifest: previous, wrote: false }
+    }
+
+    await mkdir(join(dir, SERVERS_DIR), { recursive: true })
+    for (const f of files) {
+      await writeFileAtomic(f.path, f.content)
+    }
+
+    const manifest: CatalogManifest = {
+      generation: (previous?.generation ?? 0) + 1,
+      updated: new Date().toISOString(),
+      servers: unioned,
+      builtins,
+    }
+    await writeFileAtomic(statePath, JSON.stringify(manifest, null, 2) + '\n')
+    return { manifest, wrote: true }
+  } finally {
+    await release?.().catch(() => {})
   }
-  await writeFileAtomic(statePath, JSON.stringify(manifest, null, 2) + '\n')
-  return { manifest, wrote: true }
 }

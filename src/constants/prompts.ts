@@ -21,6 +21,8 @@ import {
   mcpToolCatalogDisabled,
 } from '../services/toolCatalog/exposure.js'
 import { toolCatalogDir } from '../services/toolCatalog/writer.js'
+import { projectCatalogDir } from '../services/toolCatalog/scopes.js'
+import { getMcpConfigsByScope } from '../services/mcp/config.js'
 import {
   systemPromptSection,
   resolveSystemPromptSections,
@@ -163,10 +165,18 @@ export async function computeEnvInfo(
       : ''
 
   // Rides with the env facts so the config-home path never enters the tools or
-  // system blocks; see the catalog notes in CLAUDE.md.
-  const catalogLine = mcpToolCatalogDisabled()
-    ? ''
-    : `\nTool catalog directory: ${toolCatalogDir()} (servers/<name>.ts, builtins.ts)`
+  // system blocks; see the catalog notes in CLAUDE.md. Config-derived (not
+  // connection-derived) so the line stays byte-stable within a session.
+  const catalogLine = (() => {
+    if (mcpToolCatalogDisabled()) return ''
+    const hasProjectConfigs =
+      Object.keys(getMcpConfigsByScope('project')).length > 0 ||
+      Object.keys(getMcpConfigsByScope('local')).length > 0
+    const base = `Tool catalog directory: ${toolCatalogDir()} (servers/<name>.ts, builtins.ts)`
+    return hasProjectConfigs
+      ? `\n${base}; project-scope servers: ${projectCatalogDir()}/servers/<name>.ts`
+      : `\n${base}`
+  })()
   return `Here is useful information about the environment you are running in:
 <env>
 Working directory: ${getCwd()}
@@ -211,7 +221,10 @@ export async function computeSimpleEnvInfo(
     `Settings file: ${getFreecodeSettingsFilePath()}`,
     `Model settings file: ${getModelSettingsFilePath()}`,
     !mcpToolCatalogDisabled()
-      ? `Tool catalog directory: ${toolCatalogDir()} (servers/<name>.ts, builtins.ts)`
+      ? Object.keys(getMcpConfigsByScope('project')).length > 0 ||
+        Object.keys(getMcpConfigsByScope('local')).length > 0
+        ? `Tool catalog directory: ${toolCatalogDir()} (servers/<name>.ts, builtins.ts); project-scope servers: ${projectCatalogDir()}/servers/<name>.ts`
+        : `Tool catalog directory: ${toolCatalogDir()} (servers/<name>.ts, builtins.ts)`
       : null,
     // The memory prompt names these instead of interpolating them, so the
     // system prefix stays byte-identical across projects.

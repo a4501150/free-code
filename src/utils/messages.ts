@@ -6,6 +6,8 @@ import type { AgentId } from 'src/types/ids.js'
 import { NO_CONTENT_MESSAGE } from '../constants/messages.js'
 import { companionIntroText } from '../buddy/prompt.js'
 import { toolCatalogDir } from '../services/toolCatalog/writer.js'
+import { projectCatalogDir } from '../services/toolCatalog/scopes.js'
+import { type CatalogAnnouncementServer } from '../utils/attachments.js'
 import { RUN_CODE_TOOL_NAME } from '../services/toolCatalog/exposure.js'
 import { isAutoMemoryEnabled } from '../memdir/paths.js'
 import { getInitialSettings } from './settings/settings.js'
@@ -4040,12 +4042,15 @@ You have exited auto mode. The user may now want to interact more directly. You 
     }
     case 'mcp_tools_delta': {
       const parts: string[] = []
-      const catalog = toolCatalogDir()
       const byName = new Map(attachment.servers.map(s => [s.name, s]))
+      // Which catalog directory holds this server's declarations file.
+      // Absent `catalog` (pre-split announce rows) means the user dir.
+      const dirFor = (s?: CatalogAnnouncementServer): string =>
+        s?.catalog === 'project' ? projectCatalogDir() : toolCatalogDir()
       if (attachment.addedNames.length > 0) {
         const lines = attachment.addedNames.map(name => {
           const s = byName.get(name)
-          return `- ${name}: ${s ? `${s.toolCount} tools (declarations: ${catalog}/${s.file})` : 'no tools'}`
+          return `- ${name}: ${s ? `${s.toolCount} tools (declarations: ${dirFor(s)}/${s.file})` : 'no tools'}`
         })
         parts.push(
           `These tools are deferred to the catalog (call them as functions from a ${RUN_CODE_TOOL_NAME} script; read the declarations first for exact names and argument types):\nMCP servers:\n${lines.join('\n')}`,
@@ -4054,7 +4059,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
       if (attachment.changedNames.length > 0) {
         const lines = attachment.changedNames.map(name => {
           const s = byName.get(name)
-          return `- ${name}${s ? ` (declarations: ${catalog}/${s.file})` : ''}`
+          return `- ${name}${s ? ` (declarations: ${dirFor(s)}/${s.file})` : ''}`
         })
         parts.push(
           `The tool declarations for these deferred MCP servers changed. Re-read their catalog files before calling them:\n${lines.join('\n')}`,

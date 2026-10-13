@@ -72,7 +72,15 @@ import {
 import {
   writeToolCatalog,
   type CatalogServerSnapshot,
+  type CatalogManifest,
 } from '../services/toolCatalog/writer.js'
+import {
+  partitionToolsByCatalogDir,
+  knownServersByCatalogDir,
+  subsetDescriptions,
+  projectCatalogDir,
+  projectCatalogStatePath,
+} from '../services/toolCatalog/scopes.js'
 import {
   isToolExposedToModel,
   mcpToolCatalogDisabled,
@@ -667,7 +675,7 @@ export type Attachment =
       type: 'mcp_tools_delta'
       generation: number
       /** Catalog snapshot at announce time; scanned back to diff changes. */
-      servers: CatalogServerSnapshot[]
+      servers: CatalogAnnouncementServer[]
       addedNames: string[]
       changedNames: string[]
       removedNames: string[]
@@ -1484,6 +1492,15 @@ type CatalogDeltas = {
   mcp: Attachment[]
 }
 
+/**
+ * A server row in an mcp_tools_delta announce. `catalog` says which catalog
+ * directory holds the declarations file; it is absent on rows written by
+ * pre-split harnesses, and renderers default those to the user dir.
+ */
+export type CatalogAnnouncementServer = CatalogServerSnapshot & {
+  catalog?: 'user' | 'project'
+}
+
 // Diff the rendered tool catalog against the last snapshot announced in
 // this transcript (stateless-scan pattern, like mcp_instructions_delta).
 // One scan feeds both carriers: mcp_tools_delta announces MCP servers
@@ -1496,7 +1513,7 @@ type CatalogDeltas = {
 async function computeToolCatalogDeltas(
   toolUseContext: ToolUseContext,
   messages: Message[] | undefined,
-  opts?: { catalogDir?: string; statePath?: string },
+  opts?: CatalogWriteOpts,
 ): Promise<CatalogDeltas> {
   // Kill switch: MCP schemas ride the request again; no catalog to announce.
   if (mcpToolCatalogDisabled()) return { deferred: [], mcp: [] }
@@ -1515,22 +1532,71 @@ async function computeToolCatalogDeltas(
     }
   }
 
-  let manifest
+  // Project-scope servers render into a project-keyed catalog so concurrent
+  // sessions in different projects never fight over one file set; the
+  // user-level catalog holds everything else plus the built-ins.
+  const partition = partitionToolsByCatalogDir(
+    mcpTools,
+    toolUseContext.options.mcpClients,
+  )
+  const known = knownServersByCatalogDir(toolUseContext.options.mcpClients)
+
+  let userManifest: CatalogManifest
+  let projectManifest: CatalogManifest | null = null
   try {
-    manifest = (
+    userManifest = (
       await writeToolCatalog({
-        mcpTools,
+        mcpTools: partition.user,
         lazyBuiltInTools,
-        serverDescriptions,
+        serverDescriptions: subsetDescriptions(
+          serverDescriptions,
+          partition.user,
+        ),
         catalogDir: opts?.catalogDir,
         statePath: opts?.statePath,
+        knownServers: known.user,
       })
     ).manifest
+    if (partition.projectDirActive) {
+      projectManifest = (
+        await writeToolCatalog({
+          mcpTools: partition.project,
+          // Built-ins live in the user-level catalog only.
+          lazyBuiltInTools: [],
+          serverDescriptions: subsetDescriptions(
+            serverDescriptions,
+            partition.project,
+          ),
+          catalogDir: opts?.projectCatalogDir ?? projectCatalogDir(),
+          statePath: opts?.projectStatePath ?? projectCatalogStatePath(),
+          knownServers: known.project,
+        })
+      ).manifest
+    }
   } catch {
     return { deferred: [], mcp: [] }
   }
-  const servers: CatalogServerSnapshot[] = manifest.servers.map(
-    ({ description: _description, ...snap }) => snap,
+
+  // Announce only servers this session can actually call: the runtime
+  // resolves mcp/<server> from the live pool, so a server whose file the
+  // union keeps but whose connection is absent would fail dispatch.
+  const poolServers = new Set(
+    mcpTools
+      .map(tool => tool.mcpInfo?.serverName)
+      .filter((n): n is string => n !== undefined),
+  )
+  const servers: CatalogAnnouncementServer[] = [
+    ...userManifest.servers.map(s => ({ ...s, catalog: 'user' as const })),
+    ...(projectManifest?.servers ?? []).map(s => ({
+      ...s,
+      catalog: 'project' as const,
+    })),
+  ]
+    .filter(s => poolServers.has(s.name))
+    .map(({ description: _description, ...snap }) => snap)
+  const generation = Math.max(
+    userManifest.generation,
+    projectManifest?.generation ?? 0,
   )
 
   // Last row wins, per carrier baseline. Rows from the brief unified-carrier
@@ -1565,9 +1631,9 @@ async function computeToolCatalogDeltas(
   const removedNames = [...prevServers.keys()].filter(
     name => !servers.some(s => s.name === name),
   )
-  const builtinsAdded = manifest.builtins.filter(n => !prevBuiltins.has(n))
+  const builtinsAdded = userManifest.builtins.filter(n => !prevBuiltins.has(n))
   const builtinsRemoved = [...prevBuiltins].filter(
-    n => !manifest.builtins.includes(n),
+    n => !userManifest.builtins.includes(n),
   )
 
   addedNames.sort()
@@ -1581,7 +1647,7 @@ async function computeToolCatalogDeltas(
       : [
           {
             type: 'mcp_tools_delta',
-            generation: manifest.generation,
+            generation,
             servers,
             addedNames,
             changedNames,
@@ -1594,13 +1660,26 @@ async function computeToolCatalogDeltas(
       : [
           {
             type: 'deferred_tools_delta',
-            generation: manifest.generation,
-            builtins: manifest.builtins,
+            generation,
+            builtins: userManifest.builtins,
             builtinsAdded,
             builtinsRemoved,
           },
         ]
   return { deferred, mcp }
+}
+
+/** Catalog directory overrides for the delta pipeline (tests; production
+ * always uses the derived user/project paths). */
+type CatalogWriteOpts = {
+  /** Test override for the user-level catalog dir. */
+  catalogDir?: string
+  /** Test override for the user-level state file. */
+  statePath?: string
+  /** Test override for the project catalog dir. */
+  projectCatalogDir?: string
+  /** Test override for the project state file. */
+  projectStatePath?: string
 }
 
 /** Catalog announce for the deferred built-ins only. Standalone entry point
@@ -1609,7 +1688,7 @@ async function computeToolCatalogDeltas(
 export async function getDeferredToolsDeltaAttachment(
   toolUseContext: ToolUseContext,
   messages: Message[] | undefined,
-  opts?: { catalogDir?: string; statePath?: string },
+  opts?: CatalogWriteOpts,
 ): Promise<Attachment[]> {
   return (await computeToolCatalogDeltas(toolUseContext, messages, opts))
     .deferred
@@ -1620,7 +1699,7 @@ export async function getDeferredToolsDeltaAttachment(
 export async function getMcpToolsDeltaAttachment(
   toolUseContext: ToolUseContext,
   messages: Message[] | undefined,
-  opts?: { catalogDir?: string; statePath?: string },
+  opts?: CatalogWriteOpts,
 ): Promise<Attachment[]> {
   return (await computeToolCatalogDeltas(toolUseContext, messages, opts)).mcp
 }

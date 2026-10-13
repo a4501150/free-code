@@ -5,6 +5,8 @@
  * cleanup (which removes stray .json/.ts) never touches it.
  */
 import { describe, test, expect } from 'bun:test'
+import { createHash } from 'crypto'
+import { existsSync } from 'fs'
 import { mkdtemp, readFile, writeFile, mkdir } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -177,13 +179,15 @@ describe('tool catalog writer', () => {
     expect(second.manifest.servers[0]!.toolCount).toBe(2)
   })
 
-  test('legacy JSON catalog files and vanished server files are removed', async () => {
+  test('legacy JSON catalog files are removed; stray .ts files are kept', async () => {
     const dir = await freshDir()
     await mkdir(join(dir, 'servers'), { recursive: true })
     await writeFile(join(dir, 'manifest.json'), '{}')
     await writeFile(join(dir, 'builtins.json'), '{}')
     await writeFile(join(dir, 'servers', 'gone.json'), '{}')
-    await writeFile(join(dir, 'servers', 'gone.ts'), '// stale\n')
+    // No manifest entry claims gone.ts, but union semantics never delete a
+    // .ts file on age alone — only the age GC does, and this one is fresh.
+    await writeFile(join(dir, 'servers', 'gone.ts'), '// stray\n')
     await writeToolCatalog({
       mcpTools: [fakeMcpTool('mcp__srv__a', 'srv')],
       lazyBuiltInTools: [],
@@ -193,7 +197,72 @@ describe('tool catalog writer', () => {
     })
     const { readdir } = await import('fs/promises')
     expect(await readdir(dir)).toEqual(['servers'])
-    expect(await readdir(join(dir, 'servers'))).toEqual(['srv.ts'])
+    expect(await readdir(join(dir, 'servers'))).toEqual(['gone.ts', 'srv.ts'])
+  })
+
+  test('union: a server missing from the render keeps its file and entry', async () => {
+    const dir = await freshDir()
+    const first = await writeToolCatalog({
+      mcpTools: [fakeMcpTool('mcp__a__x', 'a'), fakeMcpTool('mcp__b__y', 'b')],
+      lazyBuiltInTools: [],
+      serverDescriptions: new Map(),
+      catalogDir: dir,
+      statePath: statePathFor(dir),
+    })
+    expect(first.wrote).toBe(true)
+    // Session two sees only server "a" (e.g. server b is still connecting).
+    const second = await writeToolCatalog({
+      mcpTools: [fakeMcpTool('mcp__a__x', 'a')],
+      lazyBuiltInTools: [],
+      serverDescriptions: new Map(),
+      catalogDir: dir,
+      statePath: statePathFor(dir),
+    })
+    expect(second.manifest.servers.map(s => s.name)).toEqual(['a', 'b'])
+    // b's bytes are untouched, so the entry carries the first generation's
+    // content hash and the file is still on disk.
+    const b = second.manifest.servers.find(s => s.name === 'b')!
+    const onDisk = await readFile(join(dir, b.file), 'utf8')
+    expect(createHash('sha256').update(onDisk).digest('hex').slice(0, 16)).toBe(
+      b.hash,
+    )
+  })
+
+  test('age GC reaps an unrendered server only when unclaimed and old', async () => {
+    const dir = await freshDir()
+    const { utimes } = await import('fs/promises')
+    await writeToolCatalog({
+      mcpTools: [fakeMcpTool('mcp__old__x', 'old')],
+      lazyBuiltInTools: [],
+      serverDescriptions: new Map(),
+      catalogDir: dir,
+      statePath: statePathFor(dir),
+    })
+    const aged = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000)
+    await utimes(join(dir, 'servers', 'old.ts'), aged, aged)
+
+    // Claimed by a live session: kept.
+    const kept = await writeToolCatalog({
+      mcpTools: [fakeMcpTool('mcp__new__x', 'new')],
+      lazyBuiltInTools: [],
+      serverDescriptions: new Map(),
+      catalogDir: dir,
+      statePath: statePathFor(dir),
+      knownServers: new Set(['old', 'new']),
+    })
+    expect(kept.manifest.servers.map(s => s.name)).toEqual(['new', 'old'])
+    expect(existsSync(join(dir, 'servers', 'old.ts'))).toBe(true)
+
+    // Unclaimed and aged: reaped.
+    const reaped = await writeToolCatalog({
+      mcpTools: [fakeMcpTool('mcp__new__x', 'new')],
+      lazyBuiltInTools: [],
+      serverDescriptions: new Map(),
+      catalogDir: dir,
+      statePath: statePathFor(dir),
+    })
+    expect(reaped.manifest.servers.map(s => s.name)).toEqual(['new'])
+    expect(existsSync(join(dir, 'servers', 'old.ts'))).toBe(false)
   })
 })
 

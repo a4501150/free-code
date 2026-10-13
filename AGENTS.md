@@ -38,7 +38,7 @@ commented IN the file that governs them.
 
 - RunCode evaluates model-authored TS with `Bun.Transpiler` `transformSync` + `AsyncFunction` — disk-path `import()` does not exist in the compiled binary, and the `transpile`/`transpileAsync` method names do not exist in our Bun version. The catalog `.ts` files are documentation only: the loader builds runtime namespaces from the live pool with `catalogExportName` (writer). If docs and loader identifier rules drift, script imports fail with confusing "no export" errors.
 - RunCode's `outputSchema` and the bridge's segment builder are a lockstep pair — a schema narrower than what `call()` returns silently drops segments (same failure mode as MCP output schemas).
-- The tool-catalog state file (`<config-home>/tool-catalog.json`) is harness-owned and must never be named in prompts; the model-facing catalog is exactly `servers/*.ts` + `builtins.ts`.
+- The tool-catalog state files are harness-owned and must never be named in prompts; the model-facing catalog is exactly `servers/*.ts` + `builtins.ts`. Project-scope servers (`'project'`/`'local'` config) render into a project-keyed dir `<config-home>/tool-catalog/projects/<key>/` (state: sibling `<key>.json`); everything else plus built-ins stays in `<config-home>/tool-catalog/` (state: `tool-catalog.json`). Catalog dirs are shared across concurrent sessions, so writes are additive: the manifest is a union of the previous manifest and the session's render, a session never deletes a server file it doesn't render, and reaping happens only via 30-day age GC for unclaimed entries. Announces (`mcp_tools_delta`) intersect with the live pool — RunCode dispatch would fail for a server whose file exists but isn't connected.
 
 ## Bash security
 
