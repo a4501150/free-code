@@ -447,12 +447,20 @@ function renderNodeToOutput(
       if (node.dirty) {
         const cached = nodeCache.get(node)
         if (cached) {
-          output.clear({
-            x: Math.floor(cached.x),
-            y: Math.floor(cached.y),
-            width: Math.floor(cached.width),
-            height: Math.floor(cached.height),
-          })
+          // fromAbsolute for hidden overlays: the fresh paint is EMPTY
+          // (nothing renders), so every blit inside the old rect would
+          // restore stale pixels — the exclusion is unconditional here,
+          // unlike the dirty-render clear (see the positionChanged note
+          // at the clear below).
+          output.clear(
+            {
+              x: Math.floor(cached.x),
+              y: Math.floor(cached.y),
+              width: Math.floor(cached.width),
+              height: Math.floor(cached.height),
+            },
+            node.style.position === 'absolute',
+          )
           // Drop descendants' cache too — hideInstance's markDirty walks UP
           // only, so descendants' .dirty stays false. Their nodeCache entries
           // survive with pre-hide rects. On unhide, if position didn't shift,
