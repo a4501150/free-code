@@ -542,6 +542,12 @@ export class Node {
   _fbAvailMain = NaN
   _fbAvailCross = NaN
   _fbCrossMode: MeasureMode = 0
+  // Stretch-alignment the basis was computed under — derived from the
+  // PARENT's alignItems (isStretchAlign), so a parent align-items change
+  // doesn't dirty this node. Part of the fb key: stretch flips the cross
+  // constraint between Exactly and AtMost, which changes text wrapping
+  // and therefore the basis itself.
+  _fbStretch = false
   // Generation at which _fbBasis was written. Dirty nodes from a PREVIOUS
   // generation have stale cache (subtree changed), but within the SAME
   // generation the cache is fresh — the dirty chain's measure→layout
@@ -1107,7 +1113,11 @@ export class Node {
     _yogaMeasureCalls = 0
     _yogaCacheHits = 0
     _generation++
-    if (YOGA_AUDIT) auditFlexCalls.clear()
+    if (YOGA_AUDIT) {
+      auditFlexCalls.clear()
+      auditBasisHits.clear()
+      auditLayoutHits.clear()
+    }
     const w = ownerWidth === undefined ? NaN : ownerWidth
     const h = ownerHeight === undefined ? NaN : ownerHeight
     layoutNode(
@@ -1242,7 +1252,9 @@ function auditFlexResolution(root: Node, generation: number): void {
       // size, so a cached basis that diverges from the final size is the
       // stale entry that skewed free space.
       if (
-        s.style.height === undefined &&
+        s.style.height.unit === Unit.Undefined &&
+        s.style.minHeight.unit === Unit.Undefined &&
+        s.style.maxHeight.unit === Unit.Undefined &&
         s.style.flexGrow === 0 &&
         isDefined(s._flexBasis) &&
         Math.abs(s._flexBasis - s.layout.height) > 0.01
@@ -1270,6 +1282,7 @@ function cacheWrite(
   oH: number,
   fW: boolean,
   fH: boolean,
+  performLayout: boolean,
   wasDirty: boolean,
 ): void {
   if (!node._cIn) {
@@ -1320,7 +1333,17 @@ function cacheWrite(
   cIn[o + 4] = oW
   cIn[o + 5] = oH
   cIn[o + 6] = fW ? 1 : 0
-  cIn[o + 7] = fH ? 1 : 0
+  // performLayout rides in the fH slot as a bit: measure-mode and
+  // layout-mode entries must never serve each other even when the
+  // inputs otherwise match — a layout call hitting a measure entry
+  // returns the intrinsic size AND skips the STEP 5 child-positioning
+  // recursion, stranding children at stale positions. Today the
+  // force-flag convention (flow layout calls set exactly one force
+  // flag, computeFlexBasis measure calls set none) keeps the keys
+  // apart by accident; absolute-child and root layout calls set no
+  // force flags, so the convention is one new call site away from
+  // breaking. Bit layout: 1 = performLayout, 2 = forceHeight.
+  cIn[o + 7] = (fH ? 2 : 0) + (performLayout ? 1 : 0)
   node._cOut![i * 2] = node.layout.width
   node._cOut![i * 2 + 1] = node.layout.height
   node._cSlotGen![i] = _generation
@@ -1474,7 +1497,7 @@ function layoutNode(
           cIn[o + 2] === widthMode &&
           cIn[o + 3] === heightMode &&
           cIn[o + 6] === (forceWidth ? 1 : 0) &&
-          cIn[o + 7] === (forceHeight ? 1 : 0) &&
+          cIn[o + 7] === (forceHeight ? 2 : 0) + (performLayout ? 1 : 0) &&
           sameFloat(cIn[o]!, availableWidth) &&
           sameFloat(cIn[o + 1]!, availableHeight) &&
           sameFloat(cIn[o + 4]!, keyOW) &&
@@ -1488,7 +1511,25 @@ function layoutNode(
           // above. Measure-mode entries are only reachable from measure
           // calls (mode-keyed), which must NOT pollute the definitive
           // dims with intrinsics.
-          if (performLayout) commitCacheOutputs(node, true)
+          if (performLayout) {
+            commitCacheOutputs(node, true)
+            // Re-commit the single-slot INPUTS too: the serve above
+            // overwrote _lOutW/_lOutH with THIS entry's outputs, but
+            // _lW/_lH/… still describe an older call. A later _hasL
+            // check matching those stale inputs would serve the
+            // mismatched outputs (viewport oscillation 40→36→40→36:
+            // gen-2 inputs aH=26 + gen-3 ring-hit output 30 → gen-4
+            // served 30 for the 36-viewport spacer).
+            node._lW = availableWidth
+            node._lH = availableHeight
+            node._lWM = widthMode
+            node._lHM = heightMode
+            node._lOW = keyOW
+            node._lOH = keyOH
+            node._lFW = forceWidth
+            node._lFH = forceHeight
+            node._hasL = true
+          }
           return
         }
       }
@@ -1664,6 +1705,7 @@ function layoutNode(
           keyOH,
           forceWidth,
           forceHeight,
+          performLayout,
           wasDirty,
         )
         return
@@ -1721,6 +1763,7 @@ function layoutNode(
       keyOH,
       forceWidth,
       forceHeight,
+      performLayout,
       wasDirty,
     )
     return
@@ -1752,6 +1795,7 @@ function layoutNode(
       keyOH,
       forceWidth,
       forceHeight,
+      performLayout,
       wasDirty,
     )
     return
@@ -2053,6 +2097,7 @@ function layoutNode(
     keyOH,
     forceWidth,
     forceHeight,
+    performLayout,
     wasDirty,
   )
 
@@ -2516,6 +2561,30 @@ function alignAbsolute(
   }
 }
 
+
+// Single commit point for computeFlexBasis results — one place owns the
+// fb-cache key fields, so a fourth write site can't forget _fbGen or the
+// stretch dependency.
+function storeFlexBasis(
+  child: Node,
+  b: number,
+  ownerWidth: number,
+  ownerHeight: number,
+  availableMain: number,
+  availableCross: number,
+  crossMode: MeasureMode,
+): number {
+  child._fbBasis = b
+  child._fbOwnerW = ownerWidth
+  child._fbOwnerH = ownerHeight
+  child._fbAvailMain = availableMain
+  child._fbAvailCross = availableCross
+  child._fbCrossMode = crossMode
+  child._fbStretch = isStretchAlign(child)
+  child._fbGen = _generation
+  return b
+}
+
 function computeFlexBasis(
   child: Node,
   mainAxis: FlexDirection,
@@ -2551,15 +2620,15 @@ function computeFlexBasis(
   // Explicit flex-basis
   const basis = resolveValue(cs.flexBasis, availableMain)
   if (isDefined(basis)) {
-    const b = Math.max(0, basis)
-    child._fbBasis = b
-    child._fbOwnerW = ownerWidth
-    child._fbOwnerH = ownerHeight
-    child._fbAvailMain = availableMain
-    child._fbAvailCross = availableCross
-    child._fbCrossMode = crossMode
-    child._fbGen = _generation
-    return b
+    return storeFlexBasis(
+      child,
+      Math.max(0, basis),
+      ownerWidth,
+      ownerHeight,
+      availableMain,
+      availableCross,
+      crossMode,
+    )
   }
 
   // Style dimension on main axis
@@ -2567,15 +2636,15 @@ function computeFlexBasis(
   const mainOwner = isMainRow ? ownerWidth : ownerHeight
   const resolved = resolveValue(mainStyleDim, mainOwner)
   if (isDefined(resolved)) {
-    const b = Math.max(0, resolved)
-    child._fbBasis = b
-    child._fbOwnerW = ownerWidth
-    child._fbOwnerH = ownerHeight
-    child._fbAvailMain = availableMain
-    child._fbAvailCross = availableCross
-    child._fbCrossMode = crossMode
-    child._fbGen = _generation
-    return b
+    return storeFlexBasis(
+      child,
+      Math.max(0, resolved),
+      ownerWidth,
+      ownerHeight,
+      availableMain,
+      availableCross,
+      crossMode,
+    )
   }
 
   // Need to measure the child to get its natural size
@@ -2621,15 +2690,15 @@ function computeFlexBasis(
   const mhMode = isMainRow ? crossConstraintMode : mainConstraintMode
 
   layoutNode(child, mw, mh, mwMode, mhMode, ownerWidth, ownerHeight, false)
-  const b = isMainRow ? child.layout.width : child.layout.height
-  child._fbBasis = b
-  child._fbOwnerW = ownerWidth
-  child._fbOwnerH = ownerHeight
-  child._fbAvailMain = availableMain
-  child._fbAvailCross = availableCross
-  child._fbCrossMode = crossMode
-  child._fbGen = _generation
-  return b
+  return storeFlexBasis(
+    child,
+    isMainRow ? child.layout.width : child.layout.height,
+    ownerWidth,
+    ownerHeight,
+    availableMain,
+    availableCross,
+    crossMode,
+  )
 }
 
 function hasMeasureFuncInSubtree(node: Node): boolean {
@@ -2872,6 +2941,12 @@ function zeroLayoutRecursive(node: Node): void {
     c.isDirty_ = true
     c._hasL = false
     c._hasM = false
+    // The mf-ring's stated invariant is "cleared by markDirty; entries
+    // only trusted on clean nodes" — this path bypasses markDirty, so a
+    // hidden text leaf's pre-hide measure entries would serve on unhide
+    // (the mf scan has no isDirty gate).
+    c._mfN = 0
+    c._mfWr = 0
     zeroLayoutRecursive(c)
   }
 }
