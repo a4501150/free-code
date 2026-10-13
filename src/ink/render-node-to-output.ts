@@ -67,6 +67,16 @@ let scrollHint: ScrollHint | null = null
 let absoluteRectsPrev: Rectangle[] = []
 let absoluteRectsCur: Rectangle[] = []
 
+// Set by the render-check reference render (render-check.ts): the walk
+// re-renders the whole tree into a scratch buffer AFTER the real frame,
+// so it must not consume shared bookkeeping the next real frame needs
+// (pendingClears). scrollHint/scrollDrainNode writes are harmless — the
+// renderer resets both at the start of every frame.
+let referenceRender = false
+export function setReferenceRender(on: boolean): void {
+  referenceRender = on
+}
+
 export function resetScrollHint(): void {
   scrollHint = null
   absoluteRectsPrev = absoluteRectsCur
@@ -478,7 +488,7 @@ function renderNodeToOutput(
       const fw = Math.floor(width)
       const fh = Math.floor(height)
       output.blit(prevScreen, fx, fy, fw, fh)
-      if (node.style.position === 'absolute') {
+      if (!referenceRender && node.style.position === 'absolute') {
         absoluteRectsCur.push(cached)
       }
       // Absolute descendants can paint outside this node's layout bounds
@@ -547,7 +557,11 @@ function renderNodeToOutput(
           height: Math.floor(rect.height),
         })
       }
-      pendingClears.delete(node)
+      // Reference renders (render-check.ts) must leave the entries for
+      // the next REAL frame — they describe positions to clear in the
+      // live screen buffer, and the fresh reference buffer needs no
+      // clear anyway.
+      if (!referenceRender) pendingClears.delete(node)
     }
 
     // Yoga squeezed this node to zero height (overflow in a height-constrained
@@ -888,7 +902,8 @@ function renderNodeToOutput(
         // Clamp hitting top/bottom consumes any remainder. Set drainPending
         // only after clamp so a wasted no-op frame isn't scheduled.
         if (scrollTop !== cur) node.pendingScrollDelta = undefined
-        if (node.pendingScrollDelta !== undefined) scrollDrainNode = node
+        if (!referenceRender && node.pendingScrollDelta !== undefined)
+          scrollDrainNode = node
         scrollTop = clamped
 
         if (content && contentYoga) {
@@ -899,10 +914,13 @@ function renderNodeToOutput(
           // renderNodeToOutput (which doesn't refresh cached.top), and the
           // cull loop below then trusts the stale top — a still-visible
           // child can be culled and its rows lost. pendingClears are never
-          // otherwise read for the content wrapper (it doesn't pass through
-          // renderNodeToOutput), so consume the signal here and force fresh
-          // yoga reads for this frame.
-          const contentHadRemoval = pendingClears.delete(content)
+          // otherwise read for the content wrapper (it doesn't pass
+          // through renderNodeToOutput), so consume the signal here and
+          // force fresh yoga reads for this frame. Reference renders
+          // (render-check.ts) only probe — the real frame still needs
+          // the signal.
+          const contentHadRemoval =
+            referenceRender || pendingClears.delete(content)
           // Compute content wrapper's absolute render position with scroll
           // offset applied, then render its children with culling.
           const contentX = x + contentYoga.getComputedLeft()
@@ -930,7 +948,7 @@ function renderNodeToOutput(
               Math.abs(delta) < innerHeight
             ) {
               hint = { top: regionTop, bottom: regionBottom, delta }
-              scrollHint = hint
+              if (!referenceRender) scrollHint = hint
             } else {
               layoutShifted = true
             }
@@ -1281,7 +1299,7 @@ function renderNodeToOutput(
     // Cache layout bounds for dirty tracking
     const rect = { x, y, width, height, top: yogaTop }
     nodeCache.set(node, rect)
-    if (node.style.position === 'absolute') {
+    if (!referenceRender && node.style.position === 'absolute') {
       absoluteRectsCur.push(rect)
     }
     node.dirty = false
@@ -1413,7 +1431,7 @@ function blitEscapingAbsoluteDescendants(
     if (elem.style.position === 'absolute') {
       const cached = nodeCache.get(elem)
       if (cached) {
-        absoluteRectsCur.push(cached)
+        if (!referenceRender) absoluteRectsCur.push(cached)
         const cx = Math.floor(cached.x)
         const cy = Math.floor(cached.y)
         const cw = Math.floor(cached.width)

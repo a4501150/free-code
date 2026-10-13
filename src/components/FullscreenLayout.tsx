@@ -29,8 +29,7 @@ import {
 } from '../context/promptOverlayContext.js'
 import ScrollBox, { type ScrollBoxHandle } from '../ink/components/ScrollBox.js'
 import instances from '../ink/instances.js'
-import { invalidateNodeCache } from '../ink/node-cache.js'
-import { markLayoutShifted } from '../ink/render-node-to-output.js'
+import { useFlipInvalidation } from '../ink/hooks/use-flip-invalidation.js'
 import { Box, Text } from '../ink.js'
 import type { Message } from '../types/message.js'
 import { openBrowser, openPath } from '../utils/browser.js'
@@ -365,26 +364,10 @@ export function FullscreenLayout({
   const pillVisible = useSyncExternalStore(subscribe, () =>
     isJumpToBottomVisible(scrollRef?.current, dividerYRef?.current),
   )
-  // A modal flip invalidates every cached layout rect (see
-  // invalidateNodeCache): the modal paints over transcript rows in the
-  // shared screen buffer, so nodes covered while it was open would blit
-  // the modal's own pixels as their content on the close frame. It also
-  // wipes yoga's internal layout cache (invalidateLayoutCache): while the
-  // modal is open the bottom slot renders null and its subtree goes
-  // cache-cold, so the flip's unmount can otherwise leave the close frame
-  // with a scroll container still clipped at the modal-open (taller)
-  // viewport — transcript text then paints over the input rows for one
-  // frame (see invalidateLayoutCache docstring).
-  const hadModalRef = useRef<boolean>(modal != null)
-  useLayoutEffect(() => {
-    const hasModal = modal != null
-    if (hadModalRef.current !== hasModal) {
-      hadModalRef.current = hasModal
-      invalidateNodeCache()
-      instances.get(process.stdout)?.invalidateLayoutCache()
-      markLayoutShifted()
-    }
-  }, [modal])
+  // A modal flip invalidates every cached layout rect plus yoga's internal
+  // layout cache — see use-flip-invalidation.ts for the stale-cache failure
+  // mode this prevents (the monitor-detail input-row leak).
+  useFlipInvalidation(modal != null)
 
   // Wire up hyperlink click handling — mouse tracking intercepts clicks before
   // the terminal can open OSC 8 links natively.

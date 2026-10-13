@@ -50,7 +50,13 @@ import reconciler, {
 import renderNodeToOutput, {
   consumeFollowScroll,
   didLayoutShift,
+  markLayoutShifted,
 } from './render-node-to-output.js'
+import { checkLayoutInvariants, isLayoutCheckEnabled } from './layout-check.js'
+import {
+  diffFrameAgainstReference,
+  isRenderCheckEnabled,
+} from './render-check.js'
 import {
   applyPositionedHighlight,
   type MatchPosition,
@@ -211,6 +217,10 @@ export default class Ink {
   // internal layout cache first (clearLayoutCacheRecursive) so no node
   // gets served a stale cached height from before a modal flip.
   private layoutCacheDirty = false
+  // One-time "enabled" announcements for the env-gated diagnostics — see
+  // the check blocks in computeLayout/onRender.
+  private layoutCheckAnnounced = false
+  private renderCheckAnnounced = false
   private lastYogaCounters: {
     ms: number
     visited: number
@@ -506,6 +516,21 @@ export default class Ink {
       root.clearLayoutCacheRecursive()
       layout()
     }
+    // Env-gated sanity check (FREECODE_LAYOUT_CHECK=1): overlapping
+    // non-absolute siblings mean calculateLayout served a stale cached
+    // rect somewhere — the mixed-geometry class behind the monitor-detail
+    // leak. Logged, not thrown: the next frame usually repairs itself.
+    // The one-time "enabled" line lets e2e prove the flag reached the
+    // process (an absent log would otherwise pass vacuously).
+    if (isLayoutCheckEnabled()) {
+      if (!this.layoutCheckAnnounced) {
+        this.layoutCheckAnnounced = true
+        logForDebugging('[LAYOUT-CHECK] enabled', { level: 'info' })
+      }
+      for (const violation of checkLayoutInvariants(this.rootNode)) {
+        logForDebugging(`[LAYOUT-CHECK] ${violation}`, { level: 'warn' })
+      }
+    }
   }
 
   private handleResume = () => {
@@ -690,6 +715,48 @@ export default class Ink {
       prevFrameContaminated: this.prevFrameContaminated,
     })
     const rendererMs = performance.now() - renderStart
+
+    // Differential render check (FREECODE_RENDER_CHECK=1): re-render the
+    // tree cache-free and compare — any diverging cell is a stale
+    // blit/dirty-miss bug. Runs before the selection/search overlays
+    // mutate frame.screen (they'd be false mismatches), with the layout
+    // shift flag restored so the full-damage logic below still sees this
+    // frame's real verdict. Costs a second full paint, diagnostics only.
+    if (isRenderCheckEnabled()) {
+      if (!this.renderCheckAnnounced) {
+        this.renderCheckAnnounced = true
+        logForDebugging('[RENDER-CHECK] enabled', { level: 'info' })
+      }
+      const shiftedBeforeCheck = didLayoutShift()
+      const mismatches = diffFrameAgainstReference(
+        this.rootNode,
+        frame.screen,
+        this.stylePool,
+      )
+      if (shiftedBeforeCheck) markLayoutShifted()
+      if (mismatches.length > 0) {
+        const first = mismatches[0] as (typeof mismatches)[0] & {
+          frameRow?: string
+          referenceRow?: string
+        }
+        logForDebugging(
+          `[RENDER-CHECK] ${mismatches.length}+ cells diverge from ` +
+            `cache-free reference render: ` +
+            mismatches
+              .map(
+                m =>
+                  `(${m.row},${m.col}) frame=${JSON.stringify(m.frameChar)} ref=${JSON.stringify(m.referenceChar)}`,
+              )
+              .join(' ') +
+            (first.frameRow
+              ? `\n  first-mismatch row ${first.row}:\n` +
+                `  frame:     ${first.frameRow}\n` +
+                `  reference: ${first.referenceRow}`
+              : ''),
+          { level: 'warn' },
+        )
+      }
+    }
 
     // Sticky/auto-follow scrolled the ScrollBox this frame. Translate the
     // selection by the same delta so the highlight stays anchored to the

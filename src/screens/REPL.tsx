@@ -16,9 +16,7 @@ import { useNotifications } from '../context/notifications.js'
 import { sendNotification } from '../services/notifier.js'
 import { useTerminalNotification } from '../ink/useTerminalNotification.js'
 import { hasCursorUpViewportYankBug } from '../ink/terminal.js'
-import instances from '../ink/instances.js'
-import { invalidateNodeCache } from '../ink/node-cache.js'
-import { markLayoutShifted } from '../ink/render-node-to-output.js'
+import { useFlipInvalidation } from '../ink/hooks/use-flip-invalidation.js'
 import {
   createFileStateCacheWithSizeLimit,
   mergeFileStateCaches,
@@ -1023,18 +1021,9 @@ export function REPL({
   // selector, IDE onboarding) unmounts PromptInput exactly like a modal
   // does, and the permission dialog additionally paints over transcript
   // rows via FullscreenLayout's overlay slot. None of these boundaries
-  // route through the modal flip effect or useRegisterOverlay, so apply
-  // the same cache invalidations here (see FullscreenLayout's modal flip
-  // effect for the stale-cache failure mode this prevents).
-  const hadFocusedDialogRef = React.useRef(focusedInputDialog != null)
-  React.useLayoutEffect(() => {
-    const hasDialog = focusedInputDialog != null
-    if (hadFocusedDialogRef.current === hasDialog) return
-    hadFocusedDialogRef.current = hasDialog
-    invalidateNodeCache()
-    instances.get(process.stdout)?.invalidateLayoutCache()
-    markLayoutShifted()
-  }, [focusedInputDialog])
+  // set the `modal` prop, so apply the same flip invalidations here (see
+  // use-flip-invalidation.ts).
+  useFlipInvalidation(focusedInputDialog != null)
 
   // ── Terminal title (needs isWaitingForApproval from dialogs hook) ──
   const {
