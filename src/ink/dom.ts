@@ -69,6 +69,13 @@ export type DOMElement = {
   // the clamp releases). Undefined = no clamp (sticky-scroll, cold start).
   scrollClampMin?: number
   scrollClampMax?: number
+  // The scrollTop the LAST REAL frame painted at — the post-clamp value,
+  // which can differ from scrollTop while the virtual-scroll render clamp
+  // holds the visual at the mounted edge. The render-check reference render
+  // reads this so it compares against the frame's actual paint position
+  // instead of the unclamped scrollTop (the clamp is intentional, not a
+  // divergence).
+  lastPaintScrollTop?: number
   scrollHeight?: number
   scrollViewportHeight?: number
   scrollViewportTop?: number

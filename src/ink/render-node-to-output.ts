@@ -784,7 +784,11 @@ function renderNodeToOutput(
         // clobber followScroll with a delta ink.tsx hasn't consumed yet.
         let scrollTop: number
         if (referenceRender) {
-          scrollTop = node.scrollTop ?? 0
+          // Paint at the position the REAL frame painted at — the post-clamp
+          // value — not the unclamped scrollTop: the virtual-scroll render
+          // clamp is an intentional paint-time offset, and a reference at a
+          // different scrollTop would mis-report it as divergence.
+          scrollTop = node.lastPaintScrollTop ?? node.scrollTop ?? 0
         } else {
           if (node.scrollAnchor) {
             const anchorTop = node.scrollAnchor.el.yogaNode?.getComputedTop()
@@ -916,6 +920,9 @@ function renderNodeToOutput(
           if (!referenceRender && node.pendingScrollDelta !== undefined)
             scrollDrainNode = node
           scrollTop = clamped
+          // Record the paint position for the render-check reference render
+          // (see the referenceRender branch above).
+          node.lastPaintScrollTop = clamped
         }
 
         if (content && contentYoga) {
@@ -951,8 +958,16 @@ function renderNodeToOutput(
             // and the shift fits within the viewport — otherwise the full
             // rewrite is needed anyway, and layoutShifted stays the fallback.
             const delta = contentCached.y - contentY
-            const regionTop = Math.floor(y + contentYoga.getComputedTop())
-            const regionBottom = regionTop + innerHeight - 1
+            // The shift region spans the container's CLIP rows (y1..y2),
+            // NOT the content wrapper's rows. Translated scroll content
+            // legally paints the padding rows above the wrapper — the
+            // clip allows it, and the full path + reference render both
+            // paint there — so a region starting at the wrapper top
+            // (y + border + padTop) never blits/shifts/edge-clears those
+            // rows: every scrolled fast-path frame leaves the viewport's
+            // top transcript row missing vs a cache-free reference.
+            const regionTop = Math.floor(y1 ?? y)
+            const regionBottom = Math.floor(y2 ?? y + height) - 1
             if (
               cached?.y === y &&
               cached.height === height &&
@@ -1145,6 +1160,64 @@ function renderNodeToOutput(
                     inheritedBackgroundColor: boxBackgroundColor,
                   })
                   output.unclip()
+                }
+              }
+
+              // Gap sweep: the shift moved prev pixels by delta, but rows
+              // covered by NO child this frame (margins between items,
+              // spacer rows, rows vacated by growth) must end blank. No
+              // child paints them and nothing else clears them, so stale
+              // pixels the shift displaced into gap rows survive as ghosts
+              // — stale spinner text beside the live one during streaming,
+              // the double-`)` byline symptom. Children BELOW a growth
+              // point keep their screen position while their old pixels
+              // shift up by delta, so their exposed strip lands in exactly
+              // these rows. Sweep the STABLE rows (the edge clear already
+              // wiped the edge): every row not covered by a child span
+              // gets blanked. Correctly-shifted children are covered by
+              // their own spans; misplaced ones were re-rendered above.
+              {
+                const stableTop = delta > 0 ? top : edgeBottom + 1
+                const stableBottom = delta > 0 ? edgeTop - 1 : bottom
+                if (stableTop <= stableBottom) {
+                  const cover = new Uint8Array(stableBottom - stableTop + 1)
+                  for (const childNode of content.childNodes) {
+                    const cy = (childNode as DOMElement).yogaNode
+                    if (!cy) continue
+                    const cTop = cy.getComputedTop()
+                    const cBottom = cTop + cy.getComputedHeight()
+                    // Only children the cull would PAINT cover rows —
+                    // culled ones (fully outside the viewport window,
+                    // e.g. an item whose bottom lands exactly on
+                    // scrollTop) render nothing, and their stale shifted
+                    // pixels must be swept like any other gap.
+                    if (
+                      cBottom <= scrollTop ||
+                      cTop >= scrollTop + innerHeight
+                    ) {
+                      continue
+                    }
+                    const r0 = Math.max(stableTop, Math.floor(contentY + cTop))
+                    const r1 = Math.min(
+                      stableBottom + 1,
+                      Math.ceil(contentY + cBottom),
+                    )
+                    for (let r = r0; r < r1; r++) cover[r - stableTop] = 1
+                  }
+                  let runStart = -1
+                  const flush = (end: number) => {
+                    if (runStart < 0) return
+                    const fill = Array(end - runStart)
+                      .fill(spaces)
+                      .join('\n')
+                    output.write(Math.floor(x), runStart, fill)
+                    runStart = -1
+                  }
+                  for (let r = stableTop; r <= stableBottom; r++) {
+                    if (cover[r - stableTop]) flush(r)
+                    else if (runStart < 0) runStart = r
+                  }
+                  flush(stableBottom + 1)
                 }
               }
             }
@@ -1505,7 +1578,13 @@ function renderScrolledChildren(
         cached?.top !== undefined &&
         !childElem.dirty &&
         cumHeightShift === 0 &&
-        !parentHadRemoval
+        !parentHadRemoval &&
+        // Reference renders (render-check.ts) must not take the cached-top
+        // shortcut: the real frame already consumed dirty flags, so every
+        // child looks clean here and the shortcut would render children at
+        // the PREVIOUS frame's cached tops — a stale-position reference
+        // that mis-attributes the real frame's divergence (or masks one).
+        !referenceRender
       ) {
         top = cached.top
         height = cached.height
