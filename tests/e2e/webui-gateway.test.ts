@@ -460,6 +460,12 @@ describe('WebUI gateway', () => {
       )!
       const meta = (snapshot.event as { meta: { sessionEpoch: number } }).meta
 
+      // The snapshot arrives before the child's REPL registers its
+      // runtime, and a submit landing in that window is refused once
+      // with runtime_not_ready (see waitForRuntimeReady) — the other
+      // driving tests wait for the permissionMode meta event first.
+      await waitForRuntimeReady(frames, 'the live session')
+
       socket.send(
         JSON.stringify({
           type: 'command',
