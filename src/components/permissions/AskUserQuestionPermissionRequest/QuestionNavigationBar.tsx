@@ -95,7 +95,7 @@ export function QuestionNavigationBar({
   const hideArrows = questions.length === 1 && hideSubmitTab
 
   return (
-    <Box flexDirection="row" marginBottom={1}>
+    <Box flexDirection="row" marginTop={1} marginBottom={1}>
       {!hideArrows && (
         <Text color={currentQuestionIndex === 0 ? 'inactive' : undefined}>
           ←{' '}
