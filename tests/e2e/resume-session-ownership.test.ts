@@ -17,8 +17,6 @@ import {
   describe,
   test as bunTest,
   expect,
-  beforeAll,
-  afterAll,
   afterEach,
   setDefaultTimeout,
 } from 'bun:test'
@@ -35,8 +33,7 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { MockAnthropicServer } from '../helpers/mock-server'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const PROJECT_ROOT = join(import.meta.dir, '..', '..')
 const CLI_BINARY = join(PROJECT_ROOT, 'cli-dev')
@@ -57,20 +54,11 @@ function textTurn(text: string) {
 }
 
 describe('Resume session ownership', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let cwd: string | null = null
   let configDir: string | null = null
   let homeDir: string | null = null
   let headlessDirs: string[] = []
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
 
   afterEach(async () => {
     const { rm } = await import('node:fs/promises')
@@ -122,13 +110,11 @@ describe('Resume session ownership', () => {
     homeDir = await mkdtemp(join(tmpdir(), 'claude-e2e-own-home-'))
 
     server.reset([textTurn('First response')])
-    const session = new TmuxSession({
-      serverUrl: server.url,
+    const session = await startSession({
       cwd,
       reuseConfigDir: configDir,
       reuseHomeDir: homeDir,
     })
-    await session.start()
     await session.submitAndWaitForResponse('Initial prompt')
     await session.stop()
 
@@ -176,16 +162,13 @@ describe('Resume session ownership', () => {
     additionalArgs: string[],
     readyText: string = DIALOG_TEXT,
   ): Promise<TmuxSession> {
-    const session = new TmuxSession({
-      serverUrl: server.url,
+    return startSession({
       cwd: cwd!,
       reuseConfigDir: configDir!,
       reuseHomeDir: homeDir!,
       additionalArgs,
       readyText,
     })
-    await session.start()
-    return session
   }
 
   test('--continue offers to fork, and forking leaves the held transcript alone', async () => {
@@ -203,7 +186,15 @@ describe('Resume session ownership', () => {
 
     // "Fork into a new session" is the first option.
     await session.sendKeys('Enter')
-    await session.waitForText('for shortcuts', 30_000)
+    // State wait, not content wait: the idle footer must be on the LIVE
+    // pane (a log or history lookup would match an earlier idle frame).
+    // waitForPrompt is unusable here — these sessions carry a custom
+    // readyText for their startup picker.
+    await session.waitForScreen(s => s.includes('for shortcuts'), {
+      currentPaneOnly: true,
+      timeoutMs: 30_000,
+      description: 'idle prompt after forking',
+    })
     await session.sendLine('Follow up')
     await session.waitForText('Forked response', 20_000)
 
@@ -287,7 +278,15 @@ describe('Resume session ownership', () => {
     expect(dialog).toContain(String(process.pid))
 
     await session.sendKeys('Enter')
-    await session.waitForText('for shortcuts', 30_000)
+    // State wait, not content wait: the idle footer must be on the LIVE
+    // pane (a log or history lookup would match an earlier idle frame).
+    // waitForPrompt is unusable here — these sessions carry a custom
+    // readyText for their startup picker.
+    await session.waitForScreen(s => s.includes('for shortcuts'), {
+      currentPaneOnly: true,
+      timeoutMs: 30_000,
+      description: 'idle prompt after forking',
+    })
     expect(await claimedSessionIds()).not.toContain(held)
 
     await session.stop()
@@ -302,13 +301,11 @@ describe('Resume session ownership', () => {
     // A live session of its own, so the fork target is neither this session
     // nor the held one.
     server.reset([textTurn('Live response'), textTurn('Forked response')])
-    const session = new TmuxSession({
-      serverUrl: server.url,
+    const session = await startSession({
       cwd: cwd!,
       reuseConfigDir: configDir!,
       reuseHomeDir: homeDir!,
     })
-    await session.start()
     await session.submitAndWaitForResponse('Live prompt')
     const [ownId] = await claimedSessionIds()
     expect(ownId).toBeDefined()
@@ -320,7 +317,15 @@ describe('Resume session ownership', () => {
 
     // "Fork into a new session" is the first option.
     await session.sendKeys('Enter')
-    await session.waitForText('for shortcuts', 30_000)
+    // State wait, not content wait: the idle footer must be on the LIVE
+    // pane (a log or history lookup would match an earlier idle frame).
+    // waitForPrompt is unusable here — these sessions carry a custom
+    // readyText for their startup picker.
+    await session.waitForScreen(s => s.includes('for shortcuts'), {
+      currentPaneOnly: true,
+      timeoutMs: 30_000,
+      description: 'idle prompt after forking',
+    })
 
     const claimed = await claimedSessionIds()
     expect(claimed).toHaveLength(1)

@@ -19,8 +19,6 @@ import {
   describe,
   test as bunTest,
   expect,
-  beforeAll,
-  afterAll,
   afterEach,
   setDefaultTimeout,
 } from 'bun:test'
@@ -29,11 +27,8 @@ setDefaultTimeout(120_000)
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  MockAnthropicServer,
-  type RequestLogEntry,
-} from '../helpers/mock-server'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { type RequestLogEntry } from '../helpers/mock-server'
+import { createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
@@ -68,19 +63,10 @@ function findRequest(
 }
 
 describe('Resume prefix cache continuity', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let cwd: string | null = null
   let configDir: string | null = null
   let homeDir: string | null = null
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
 
   afterEach(async () => {
     const { rm } = await import('node:fs/promises')
@@ -114,13 +100,11 @@ describe('Resume prefix cache continuity', () => {
     // Phase 1 — two turns. The second request's body is the warmed prefix.
     server.reset([success('ALPHA-ONE response'), success('ALPHA-TWO response')])
 
-    let session = new TmuxSession({
-      serverUrl: server.url,
+    let session = await startSession({
       cwd,
       reuseConfigDir: configDir,
       reuseHomeDir: homeDir,
     })
-    await session.start()
     await session.submitAndWaitForResponse('prefix probe ALPHA-ONE')
     await session.submitAndWaitForResponse('prefix probe ALPHA-TWO')
     const phase1Log = server.getRequestLog()
@@ -131,14 +115,12 @@ describe('Resume prefix cache continuity', () => {
 
     // Phase 2 — resume and send a third turn.
     server.reset([success('ALPHA-THREE response')])
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       cwd,
       reuseConfigDir: configDir,
       reuseHomeDir: homeDir,
       additionalArgs: ['--continue'],
     })
-    await session.start()
     await session.submitAndWaitForResponse('prefix probe ALPHA-THREE')
 
     const phase2Log = server.getRequestLog()

@@ -8,22 +8,14 @@
  * at-the-bottom check.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
-import { MockAnthropicServer } from '../helpers/mock-server'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 import { textResponse } from '../helpers/fixture-builders'
 import {
-  TmuxSession,
-  sleep,
   createLoggingTest,
   findTextCell,
+  setupE2ESuite,
+  sleep,
+  type TmuxSession,
 } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
@@ -31,17 +23,8 @@ const test = createLoggingTest(bunTest)
 setDefaultTimeout(300_000)
 
 describe('Jump to bottom pill', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-  afterAll(() => server.stop())
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   test('paging back down to the bottom dismisses the pill', async () => {
     const TURNS = 6
@@ -55,12 +38,10 @@ describe('Jump to bottom pill', () => {
     }
     server.reset(responses)
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       height: 40,
       width: 120,
     })
-    await session.start()
 
     for (let i = 0; i < TURNS; i++) {
       await session.sendLine(`question ${i}`)

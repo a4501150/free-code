@@ -5,50 +5,26 @@
  * (4xx, 5xx, truncated streams) through the full interactive REPL.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
-import { MockAnthropicServer } from '../helpers/mock-server'
 import {
   errorResponse,
   rawResponse,
   textResponse,
 } from '../helpers/fixture-builders'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
 describe('Error Handling', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   describe('HTTP Error Codes', () => {
     test('non-retried HTTP errors are handled gracefully', async () => {
-      session = new TmuxSession({
-        serverUrl: server.url,
+      session = await startSession({
         settings: { maxRetries: 0 },
       })
-      await session.start()
 
       server.reset([
         errorResponse(400, 'invalid_request_error', 'Invalid request body'),
@@ -90,11 +66,9 @@ describe('Error Handling', () => {
         textResponse('Success after rate limit'),
       ])
 
-      session = new TmuxSession({
-        serverUrl: server.url,
+      session = await startSession({
         settings: { maxRetries: 1 },
       })
-      await session.start()
 
       const screen = await session.submitAndWaitForResponse(
         'trigger rate limit',
@@ -143,11 +117,9 @@ describe('Error Handling', () => {
 
       server.reset([rawResponse(partialSSE)])
 
-      session = new TmuxSession({
-        serverUrl: server.url,
+      session = await startSession({
         settings: { maxRetries: 0 },
       })
-      await session.start()
 
       const screen = await session.submitAndWaitForResponse(
         'trigger truncated response',

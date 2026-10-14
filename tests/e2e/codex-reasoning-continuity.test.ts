@@ -16,43 +16,33 @@
  */
 
 import {
+  afterAll,
+  beforeAll,
   describe,
   test as bunTest,
   expect,
-  beforeAll,
-  afterAll,
-  afterEach,
   setDefaultTimeout,
 } from 'bun:test'
 setDefaultTimeout(120_000)
 
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { MockCodexServer } from '../helpers/mock-codex-server'
 import { textResponse } from '../helpers/fixture-builders'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
 describe('Codex reasoning continuity E2E', () => {
-  let anthropicServer: MockAnthropicServer
+  const { server: anthropicServer, startSession } = setupE2ESuite()
   let codexServer: MockCodexServer
   let session: TmuxSession | undefined
 
   beforeAll(async () => {
-    anthropicServer = new MockAnthropicServer()
-    await anthropicServer.start()
     codexServer = new MockCodexServer()
     await codexServer.start()
   })
 
   afterAll(() => {
-    anthropicServer.stop()
     codexServer.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
-    session = undefined
   })
 
   test('turn 2 replays separate summary, raw, and encrypted reasoning state', async () => {
@@ -91,8 +81,7 @@ describe('Codex reasoning continuity E2E', () => {
     ])
     anthropicServer.reset([textResponse('fallback')])
 
-    session = new TmuxSession({
-      serverUrl: anthropicServer.url,
+    session = await startSession({
       settings: {
         providers: {
           'test-codex': {
@@ -114,7 +103,6 @@ describe('Codex reasoning continuity E2E', () => {
       },
       additionalArgs: ['--model', 'gpt-5-codex'],
     })
-    await session.start()
 
     await session.sendLine('First question please')
     await session.waitForText('Turn1Answer', 20_000)

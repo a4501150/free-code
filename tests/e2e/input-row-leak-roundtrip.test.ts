@@ -10,22 +10,14 @@
  * FREECODE_LEAK_E2E_SYNC=1 fakes a DEC 2026 terminal (TERM_PROGRAM) so the
  * DECSTBM shift fast path runs, as it does in real terminals.
  */
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(600_000)
 
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
@@ -40,24 +32,14 @@ const longResponse = (tag: string): string =>
   ).join('\n')
 
 describe('input row leak after dialog round-trip', () => {
-  let server: MockAnthropicServer
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(async () => {
-    server.stop()
-  })
+  const { server } = setupE2ESuite()
 
   bunTest.skipIf(!process.env.FREECODE_LEAK_E2E)(
     'dialog round-trip leaves transcript text on the input row',
     async () => {
       const cliBinary = process.env.FREECODE_LEAK_E2E_BIN
       for (let round = 0; round < ROUNDS; round++) {
-        const session = new TmuxSession({
-          serverUrl: server.url,
+        const session = await startSession({
           additionalArgs: [
             '--dangerously-skip-permissions',
             '--debug-file',
@@ -79,7 +61,6 @@ describe('input row leak after dialog round-trip', () => {
           },
           ...(cliBinary ? { cliBinary } : {}),
         })
-        await session.start()
 
         try {
           // Turn 1: arm a monitor that emits a line every 2s for ~24s, so

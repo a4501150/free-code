@@ -8,43 +8,24 @@
  * ships without it).
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
-import { MockAnthropicServer } from '../helpers/mock-server'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import {
+  createLoggingTest,
+  setupE2ESuite,
+  type TmuxSession,
+} from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
 describe('Internal-command survivors', () => {
-  let server: MockAnthropicServer
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
+  const { server, startSession } = setupE2ESuite()
 
   let session: TmuxSession
 
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
-
   test('stateless internal survivor commands render expected output', async () => {
     server.reset([])
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
+    session = await startSession()
 
     await session.sendLine('/version')
     const versionScreen = await session.waitForScreen(
@@ -107,8 +88,7 @@ describe('Internal-command survivors', () => {
 
   test('/summary returns a friendly message when there is nothing in scope', async () => {
     server.reset([])
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
+    session = await startSession()
 
     await session.sendLine('/summary')
     const screen = await session.waitForText(
@@ -120,8 +100,7 @@ describe('Internal-command survivors', () => {
 
   test('/debug-tool-call reports no tool calls when history is empty', async () => {
     server.reset([])
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
+    session = await startSession()
 
     await session.sendLine('/debug-tool-call')
     const screen = await session.waitForText('No tool calls recorded', 30_000)

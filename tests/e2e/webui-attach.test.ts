@@ -1,19 +1,15 @@
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  setDefaultTimeout,
-  test as bunTest,
-} from 'bun:test'
+import { describe, expect, setDefaultTimeout, test as bunTest } from 'bun:test'
 import { readdir } from 'fs/promises'
 import { join } from 'path'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
 import { waitFor } from '../helpers/wait-helpers'
-import { createLoggingTest, sleep, TmuxSession } from './tmux-helpers'
+import {
+  TmuxSession,
+  createLoggingTest,
+  setupE2ESuite,
+  sleep,
+} from './tmux-helpers'
 import { readAttachDescriptor } from '../../src/webui/attach/attachDescriptor'
 import { connectAttachClient } from '../../src/webui/gateway/attachClient'
 import type { AttachEventBody } from '../../src/webui/protocol/attachSchemas'
@@ -110,26 +106,12 @@ function materialize(events: AttachEventBody[]): WebTranscriptItem[] {
 }
 
 describe('WebUI attach', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   test('mirrors a live terminal session transcript to an attached client', async () => {
     server.reset([textResponse('The answer is 42.')])
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
+    session = await startSession()
 
     const pid = await waitForAttachablePid(session.configDirPath!)
     const collector = makeCollector()
@@ -169,8 +151,7 @@ describe('WebUI attach', () => {
 
   test('injects a prompt from the client into the live session', async () => {
     server.reset([textResponse('Acknowledged from the browser.')])
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
+    session = await startSession()
 
     const pid = await waitForAttachablePid(session.configDirPath!)
     const collector = makeCollector()
@@ -203,8 +184,7 @@ describe('WebUI attach', () => {
 
   test('rejects a prompt composed against a stale session epoch', async () => {
     server.reset([textResponse('ok')])
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
+    session = await startSession()
 
     const pid = await waitForAttachablePid(session.configDirPath!)
     const collector = makeCollector()
@@ -235,8 +215,7 @@ describe('WebUI attach', () => {
       ]),
       textResponse('Tool finished.'),
     ])
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
+    session = await startSession()
 
     const pid = await waitForAttachablePid(session.configDirPath!)
     const collector = makeCollector()
@@ -290,8 +269,7 @@ describe('WebUI attach', () => {
       ]),
       textResponse('Tool finished.'),
     ])
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
+    session = await startSession()
 
     const pid = await waitForAttachablePid(session.configDirPath!)
     const collector = makeCollector()

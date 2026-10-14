@@ -12,66 +12,38 @@
  * overlay phases land on distinct frames.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(180_000)
 
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MockAnthropicServer } from '../helpers/mock-server'
 import type { MockResponse } from '../helpers/sse-encoder'
 import {
   thinkingToolUseResponse,
   textResponse,
+  withDelay,
 } from '../helpers/fixture-builders'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
-function withDelay(response: MockResponse, delayMs: number): MockResponse {
-  const r = response as unknown as {
-    kind: 'success'
-    response: Record<string, unknown>
-  }
-  r.response.sseEventDelayMs = delayMs
-  return response
-}
-
 describe('thinking swap repaint E2E', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession | undefined
   let debugPath: string
 
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
+  test('shift fast path carries the swap frames', async () => {
     debugPath = join(
       await mkdtemp(join(tmpdir(), 'swap-repaint-')),
       'debug.txt',
     )
-  })
-
-  afterAll(async () => {
-    server.stop()
-    if (session) await session.stop()
-  })
-
-  test('shift fast path carries the swap frames', async () => {
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       additionalArgs: ['--debug-file', debugPath],
       // Footer swaps "? for shortcuts" for task hints while the panel is
       // expanded; the mode pill is a stable idle marker instead.
       readyText: 'manual mode on',
     })
-    await session.start()
 
     const longThinking = 'Considering the plan and what it implies. '.repeat(14)
     server.reset([

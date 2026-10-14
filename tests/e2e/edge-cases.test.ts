@@ -5,51 +5,29 @@
  * through the full interactive REPL.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import {
   TmuxSession,
   sleep,
   createLoggingTest,
   findTextCell,
+  setupE2ESuite,
 } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
 describe('Edge Cases', () => {
-  let server: MockAnthropicServer
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
+  const { server, startSession } = setupE2ESuite()
 
   describe('Special Characters', () => {
     let session: TmuxSession
 
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
     test('special characters in prompt (quotes, backslashes)', async () => {
       server.reset([textResponse('Received special chars')])
 
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       // No tool use — just a text response, no permission needed
       await session.submitAndWaitForResponse(
@@ -78,10 +56,6 @@ describe('Edge Cases', () => {
   describe('Large Payloads', () => {
     let session: TmuxSession
 
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
     test('tool with large JSON input', async () => {
       const largeInput: Record<string, unknown> = {
         command: 'echo "large input test"',
@@ -93,8 +67,7 @@ describe('Edge Cases', () => {
         textResponse('Large input handled'),
       ])
 
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       // 1 tool use = 1 permission approval
       await session.submitAndApprove('Large input test', 30_000)
@@ -113,8 +86,7 @@ describe('Edge Cases', () => {
         textResponse('Handled the large output'),
       ])
 
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       // 1 tool use = 1 permission approval
       await session.submitAndApprove('Large output test', 30_000)
@@ -137,11 +109,9 @@ describe('Edge Cases', () => {
         textResponse('Large output complete'),
       ])
 
-      session = new TmuxSession({
-        serverUrl: server.url,
+      session = await startSession({
         settings: { permissions: { allow: ['Bash'] } },
       })
-      await session.start()
       await session.sendLine('Generate large output')
       await session.waitForText('Large output complete', 30_000)
 
@@ -195,10 +165,6 @@ describe('Edge Cases', () => {
   describe('Permission Dialog During Typing', () => {
     let session: TmuxSession
 
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
     bunTest(
       'permission dialog appears even when user is actively typing',
       async () => {
@@ -215,8 +181,7 @@ describe('Edge Cases', () => {
           textResponse('Tool completed successfully'),
         ])
 
-        session = new TmuxSession({ serverUrl: server.url })
-        await session.start()
+        session = await startSession()
 
         // Submit a prompt to trigger the agent loop
         await session.sendLine('Run echo command')
@@ -256,8 +221,7 @@ describe('Edge Cases', () => {
           textResponse('Done after approval'),
         ])
 
-        session = new TmuxSession({ serverUrl: server.url })
-        await session.start()
+        session = await startSession()
 
         // Submit prompt to trigger agent loop
         await session.sendLine('Run a command')
@@ -291,10 +255,6 @@ describe('Edge Cases', () => {
   describe('Multiple Content Blocks', () => {
     let session: TmuxSession
 
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
     test('multiple text blocks in one response', async () => {
       server.reset([
         {
@@ -309,8 +269,7 @@ describe('Edge Cases', () => {
         },
       ])
 
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       // No tool use — just text blocks, no permission needed
       const screen = await session.submitAndWaitForResponse('Multiple blocks')

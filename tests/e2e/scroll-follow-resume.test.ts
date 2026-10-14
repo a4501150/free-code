@@ -8,18 +8,14 @@
  * hidden below the fold (blank rows above the prompt) until the next submit.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
-import { MockAnthropicServer } from '../helpers/mock-server'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+import {
+  TmuxSession,
+  sleep,
+  createLoggingTest,
+  setupE2ESuite,
+} from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
@@ -53,17 +49,8 @@ function bottomGap(screen: string): number {
 }
 
 describe('Scroll follow resume', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-  afterAll(() => server.stop())
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   test('paging back down to where you left off resumes following', async () => {
     const FILLER_TURNS = 6
@@ -87,13 +74,11 @@ describe('Scroll follow resume', () => {
       textResponse(tail),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       height: 40,
       width: 120,
       settings: { permissions: { allow: ['Bash'] } },
     })
-    await session.start()
 
     for (let i = 0; i < FILLER_TURNS; i++) {
       await session.sendLine(`question ${i}`)

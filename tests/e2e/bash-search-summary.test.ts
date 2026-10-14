@@ -9,38 +9,21 @@
  * builder's bucketing — unit tests cover the classifier alone.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import {
+  createLoggingTest,
+  setupE2ESuite,
+  type TmuxSession,
+} from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
 describe('bash collapsed summary E2E', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
+
   let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   test('search pipelines collapse as searches, plain commands as bash', async () => {
     server.reset([
@@ -77,8 +60,7 @@ describe('bash collapsed summary E2E', () => {
       textResponse('SUMMARY_DONE'),
     ])
 
-    session = new TmuxSession({ serverUrl: server.url })
-    await session.start()
+    session = await startSession()
 
     await session.submitAndApprove('seed a file then run three commands')
     let screen: string

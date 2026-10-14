@@ -5,40 +5,23 @@
  * transcript view when the user navigates to a running worker and types.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
-import { MockAnthropicServer } from '../helpers/mock-server'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { waitForRequest } from '../helpers/mock-server-wait'
-import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+import {
+  TmuxSession,
+  sleep,
+  createLoggingTest,
+  setupE2ESuite,
+} from './tmux-helpers'
 
 setDefaultTimeout(180_000)
 
 const test = createLoggingTest(bunTest)
 
 describe('Coordinator worker transcript view', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   test('user-typed message appears in viewed worker transcript', async () => {
     // Separate models: coordinator=main-model, worker=worker-model.
@@ -81,8 +64,7 @@ describe('Coordinator worker transcript view', () => {
       textResponse('Done.'),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       settings: {
         providers: {
           'test-anthropic': {
@@ -103,7 +85,6 @@ describe('Coordinator worker transcript view', () => {
         backgroundTasksEnabled: true,
       },
     })
-    await session.start()
 
     // Kick off the coordinator
     await session.sendLine('spawn a worker')
@@ -121,15 +102,11 @@ describe('Coordinator worker transcript view', () => {
       timeoutMs: 15_000,
       description: 'worker first API request',
     })
-    await sleep(500)
 
     // Navigate to the worker view: Down → footer tasks, Down → worker row, Enter
-    await session.sendSpecialKey('Down')
-    await sleep(300)
-    await session.sendSpecialKey('Down')
-    await sleep(300)
-    await session.sendSpecialKey('Enter')
-    await sleep(1000)
+    await session.sendKeyAndAwaitRender('Down')
+    await session.sendKeyAndAwaitRender('Down')
+    await session.sendKeyAndAwaitRender('Enter')
 
     // Verify we're in the worker view (banner shows worker name)
     const viewScreen = await session.capturePane()
@@ -137,9 +114,9 @@ describe('Coordinator worker transcript view', () => {
 
     // Type a message while the worker is running (Bash sleep is blocking)
     await session.sendLine('please also say goodbye')
-    await sleep(1000)
 
     // The user message should appear in the transcript
+    await session.waitForText('please also say goodbye')
     const afterInput = await session.capturePaneWithHistory()
     expect(afterInput).toContain('please also say goodbye')
   })
@@ -182,8 +159,7 @@ describe('Coordinator worker transcript view', () => {
       ...Array.from({ length: 6 }, () => textResponse('ack')),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       settings: {
         providers: {
           'test-anthropic': {
@@ -202,7 +178,6 @@ describe('Coordinator worker transcript view', () => {
         backgroundTasksEnabled: true,
       },
     })
-    await session.start()
 
     await session.sendLine('spawn a worker')
     await waitForRequest(server, req => req.body.model === 'worker-model', {
@@ -245,12 +220,9 @@ describe('Coordinator worker transcript view', () => {
     })
 
     const enterWorker = async () => {
-      await session.sendSpecialKey('Down')
-      await sleep(300)
-      await session.sendSpecialKey('Down')
-      await sleep(300)
-      await session.sendSpecialKey('Enter')
-      await sleep(1500)
+      await session.sendKeyAndAwaitRender('Down')
+      await session.sendKeyAndAwaitRender('Down')
+      await session.sendKeyAndAwaitRender('Enter')
     }
 
     // capturePane, never capturePaneWithHistory: tmux scrollback legitimately
@@ -284,8 +256,7 @@ describe('Coordinator worker transcript view', () => {
     expect(grownWorkerView).not.toContain('leader filler line')
 
     // Scroll the worker up, then leave: the leader must land on its own tail.
-    await session.sendSpecialKey('PageUp')
-    await sleep(500)
+    await session.sendKeyAndAwaitRender('PageUp')
     await session.sendSpecialKey('Escape')
     const backToLeader = await session.waitForScreen(
       s => s.includes('LEADERTAILMARK'),
@@ -300,8 +271,7 @@ describe('Coordinator worker transcript view', () => {
 
     // Scroll the leader up, then re-enter. exitAgentView cleared the task's
     // messages and diskLoaded, so this re-runs the async sidechain bootstrap.
-    await session.sendSpecialKey('PageUp')
-    await sleep(500)
+    await session.sendKeyAndAwaitRender('PageUp')
     await enterWorker()
     const reenteredWorker = await session.waitForScreen(
       s => s.includes('WORKERTAILMARK'),

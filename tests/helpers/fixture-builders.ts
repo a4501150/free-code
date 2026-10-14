@@ -40,6 +40,25 @@ export function textResponse(
 }
 
 /**
+ * Tag a success response with an SSE event delay: the mock server drips the
+ * stream events out at this interval so stream phases (deltas, block stop,
+ * message commit) land at distinct wall times. Used by repaint/blink tests
+ * that need the response to stream slowly.
+ */
+export function withDelay(
+  response: MockResponse,
+  delayMs: number,
+): MockResponse {
+  if (response.kind !== 'success') {
+    throw new Error('withDelay only applies to success responses')
+  }
+  return {
+    ...response,
+    response: { ...response.response, sseEventDelayMs: delayMs },
+  }
+}
+
+/**
  * Response with one or more tool_use blocks.
  * stop_reason defaults to "tool_use".
  * Optionally include a text block before the tool calls.

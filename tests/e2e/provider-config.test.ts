@@ -25,23 +25,20 @@ import { join } from 'node:path'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { MockOpenAIServer } from '../helpers/mock-openai-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
 describe('Provider Config E2E', () => {
-  let anthropicServer: MockAnthropicServer
+  const { server: anthropicServer, startSession } = setupE2ESuite()
   let openaiServer: MockOpenAIServer
 
   beforeAll(async () => {
-    anthropicServer = new MockAnthropicServer()
-    await anthropicServer.start()
     openaiServer = new MockOpenAIServer()
     await openaiServer.start()
   })
 
   afterAll(() => {
-    anthropicServer.stop()
     openaiServer.stop()
   })
 
@@ -50,13 +47,8 @@ describe('Provider Config E2E', () => {
   describe('OpenAI Chat Completions Provider', () => {
     let session: TmuxSession
 
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
     test('routes, translates, authenticates, and handles tool use', async () => {
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
+      session = await startSession({
         settings: {
           providers: {
             'test-openai': {
@@ -72,7 +64,6 @@ describe('Provider Config E2E', () => {
         },
         additionalArgs: ['--model', 'test-model'],
       })
-      await session.start()
 
       openaiServer.reset([{ kind: 'text', text: 'Hello from OpenAI!' }])
       anthropicServer.reset([textResponse('fallback')])
@@ -147,18 +138,13 @@ describe('Provider Config E2E', () => {
   describe('Provider-Qualified Model Syntax', () => {
     let session: TmuxSession
 
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
     test('qualified OpenAI model routes to correct provider and model ID', async () => {
       // Both providers share the same model ID "shared-model".
       // Using "test-openai:shared-model" should route to the OpenAI server.
       openaiServer.reset([{ kind: 'text', text: 'From OpenAI provider' }])
       anthropicServer.reset([textResponse('From Anthropic provider')])
 
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
+      session = await startSession({
         settings: {
           providers: {
             'test-anthropic': {
@@ -177,7 +163,6 @@ describe('Provider Config E2E', () => {
         },
         additionalArgs: ['--model', 'test-openai:shared-model'],
       })
-      await session.start()
 
       await session.sendLine('Hello')
       const screen = await session.waitForText('From OpenAI provider', 15_000)
@@ -194,8 +179,7 @@ describe('Provider Config E2E', () => {
       openaiServer.reset([{ kind: 'text', text: 'From OpenAI provider' }])
       anthropicServer.reset([textResponse('From Anthropic provider')])
 
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
+      session = await startSession({
         settings: {
           providers: {
             'test-anthropic': {
@@ -214,7 +198,6 @@ describe('Provider Config E2E', () => {
         },
         additionalArgs: ['--model', 'test-anthropic:shared-model'],
       })
-      await session.start()
 
       await session.sendLine('Hello')
       const screen = await session.waitForText(
@@ -235,16 +218,11 @@ describe('Provider Config E2E', () => {
   describe('Per-Provider Caching', () => {
     let session: TmuxSession
 
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
     test('automatic-prefix provider has no cache_control in requests', async () => {
       openaiServer.reset([{ kind: 'text', text: 'No cache markers' }])
       anthropicServer.reset([textResponse('fallback')])
 
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
+      session = await startSession({
         settings: {
           providers: {
             'test-openai': {
@@ -261,7 +239,6 @@ describe('Provider Config E2E', () => {
         },
         additionalArgs: ['--model', 'test-model'],
       })
-      await session.start()
 
       await session.sendLine('Test caching')
       await session.waitForText('No cache markers', 15_000)
@@ -281,8 +258,7 @@ describe('Provider Config E2E', () => {
       // ahead of the attribution block, whose cch= hash changes every request.
       anthropicServer.reset([textResponse('Cached')])
 
-      session = new TmuxSession({ serverUrl: anthropicServer.url })
-      await session.start()
+      session = await startSession({})
       await session.sendLine('Test breakpoints')
       await session.waitForText('Cached', 15_000)
 
@@ -329,8 +305,7 @@ describe('Provider Config E2E', () => {
       // instead of writing it. Environment facts live in the user context.
       anthropicServer.reset([textResponse('Static')])
 
-      session = new TmuxSession({ serverUrl: anthropicServer.url })
-      await session.start()
+      session = await startSession({})
       await session.sendLine('Test static prompt')
       await session.waitForText('Static', 15_000)
 
@@ -362,9 +337,8 @@ describe('Provider Config E2E', () => {
       }> {
         anthropicServer.reset([textResponse('Done.')])
         // No cwd option, so each session gets its own mkdtemp directory.
-        const s = new TmuxSession({ serverUrl: anthropicServer.url })
+        const s = await startSession({})
         try {
-          await s.start()
           await s.sendLine('hello')
           await s.waitForText('Done.', 15_000)
           const body = anthropicServer.getRequestLog()[0]!.body as {
@@ -401,18 +375,13 @@ describe('Provider Config E2E', () => {
   describe('Default Model Config', () => {
     let session: TmuxSession
 
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
-
     test('defaultModel in settings routes to correct provider', async () => {
       // Use settings.defaultModel (provider-qualified) to select a model
       // without --model flag. Should route to the OpenAI server.
       openaiServer.reset([{ kind: 'text', text: 'From default model config' }])
       anthropicServer.reset([textResponse('fallback')])
 
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
+      session = await startSession({
         settings: {
           defaultModel: 'test-openai:test-model',
           providers: {
@@ -431,7 +400,6 @@ describe('Provider Config E2E', () => {
           },
         },
       })
-      await session.start()
 
       await session.sendLine('Hello')
       const screen = await session.waitForText(
@@ -449,8 +417,7 @@ describe('Provider Config E2E', () => {
     test('defaultModel routes to the correct provider', async () => {
       openaiServer.reset([{ kind: 'text', text: 'From defaultModel' }])
 
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
+      session = await startSession({
         settings: {
           defaultModel: 'test-openai:test-model',
           providers: {
@@ -463,7 +430,6 @@ describe('Provider Config E2E', () => {
           },
         },
       })
-      await session.start()
 
       await session.sendLine('Hello')
       const screen = await session.waitForText('From defaultModel', 15_000)
@@ -478,8 +444,7 @@ describe('Provider Config E2E', () => {
       anthropicServer.reset([textResponse('From --model flag')])
       openaiServer.reset([{ kind: 'text', text: 'From defaultModel' }])
 
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
+      session = await startSession({
         settings: {
           defaultModel: 'test-openai:test-model', // should be overridden
           providers: {
@@ -499,7 +464,6 @@ describe('Provider Config E2E', () => {
         },
         additionalArgs: ['--model', 'test-anthropic:flag-model'],
       })
-      await session.start()
 
       await session.sendLine('Hello')
       const screen = await session.waitForText('From --model flag', 15_000)
@@ -557,7 +521,6 @@ describe('Provider Config E2E', () => {
     }
 
     afterEach(async () => {
-      if (session) await session.stop()
       if (tierCwd) {
         await rm(tierCwd, { recursive: true, force: true }).catch(() => {})
         tierCwd = null
@@ -638,8 +601,7 @@ describe('Provider Config E2E', () => {
         textResponse('Main done'),
       ])
 
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
+      session = await startSession({
         cwd: tierCwd,
         settings: {
           defaultModel: 'test-anthropic:main-model',
@@ -655,7 +617,6 @@ describe('Provider Config E2E', () => {
         },
         // TmuxSession's env -i isolation already prevents host settings pollution.
       })
-      await session.start()
 
       await session.submitAndApprove('Run tier test', 90_000)
       await session.waitForText('Main done', 30_000)
@@ -687,8 +648,7 @@ describe('Provider Config E2E', () => {
         textResponse('Main done'),
       ])
 
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
+      session = await startSession({
         cwd: tierCwd,
         settings: {
           defaultModel: 'test-anthropic:main-model',
@@ -708,7 +668,6 @@ describe('Provider Config E2E', () => {
           },
         },
       })
-      await session.start()
 
       await session.submitAndApprove('Run tier test', 90_000)
       await session.waitForText('Main done', 30_000)
@@ -737,8 +696,7 @@ describe('Provider Config E2E', () => {
         textResponse('Main done'),
       ])
 
-      session = new TmuxSession({
-        serverUrl: anthropicServer.url,
+      session = await startSession({
         cwd: tierCwd,
         settings: {
           defaultModel: 'test-anthropic:main-model',
@@ -753,7 +711,6 @@ describe('Provider Config E2E', () => {
           },
         },
       })
-      await session.start()
 
       await session.submitAndApprove('Run tier test', 90_000)
       await session.waitForText('Main done', 30_000)

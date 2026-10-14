@@ -9,17 +9,8 @@
  * via approvePermission() which presses Enter on the "Yes" dialog.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
-import { MockAnthropicServer } from '../helpers/mock-server'
 import {
   textResponse,
   toolUseResponse,
@@ -28,34 +19,20 @@ import {
   maxTokensResponse,
 } from '../helpers/fixture-builders'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
 describe('Conversation Flow E2E', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   // ─── Request Shape ─────────────────────────────────────────
 
   describe('Request Shape', () => {
     test('first request contains user message and tool definitions', async () => {
       server.reset([textResponse('Got it')])
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       await session.submitAndWaitForResponse('Hello from the e2e test')
 
@@ -98,8 +75,7 @@ describe('Conversation Flow E2E', () => {
         ]),
         textResponse('Both done'),
       ])
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       await session.submitAndApprove('Test tool result round trip')
 
@@ -143,8 +119,7 @@ describe('Conversation Flow E2E', () => {
         toolUseResponse([{ name: 'Bash', input: { command: 'echo "c"' } }]),
         textResponse('All three commands completed: a, b, c'),
       ])
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       await session.submitAndApprove('Run three-command history test')
 
@@ -181,11 +156,9 @@ describe('Conversation Flow E2E', () => {
         ]),
         textResponse('This should not appear'),
       ])
-      session = new TmuxSession({
-        serverUrl: server.url,
+      session = await startSession({
         additionalArgs: ['--max-turns', '1'],
       })
-      await session.start()
 
       await session.submitAndApprove('Call a tool', 30_000)
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
@@ -197,11 +170,9 @@ describe('Conversation Flow E2E', () => {
         toolUseResponse([{ name: 'Bash', input: { command: 'echo "turn2"' } }]),
         textResponse('Completed within 3 turns'),
       ])
-      session = new TmuxSession({
-        serverUrl: server.url,
+      session = await startSession({
         additionalArgs: ['--max-turns', '3'],
       })
-      await session.start()
 
       await session.submitAndApprove('Multi-turn within limit')
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(3)
@@ -212,8 +183,7 @@ describe('Conversation Flow E2E', () => {
 
   describe('Stop Reasons', () => {
     test('end_turn and tool_use stop reasons complete normally', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       server.reset([textResponse('Normal completion')])
       let screen = await session.submitAndWaitForResponse('Complete normally')
@@ -236,8 +206,7 @@ describe('Conversation Flow E2E', () => {
         maxTokensResponse('This response was truncated because'),
         textResponse(' it was too long. Here is the rest.'),
       ])
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       await session.submitAndWaitForResponse('Generate a long response', 30_000)
       expect(server.getRequestCount()).toBeGreaterThanOrEqual(1)
@@ -248,11 +217,9 @@ describe('Conversation Flow E2E', () => {
 
   describe('Extended Thinking', () => {
     test('thinking responses render for text and tool-use turns', async () => {
-      session = new TmuxSession({
-        serverUrl: server.url,
+      session = await startSession({
         settings: { thinkingEnabled: true },
       })
-      await session.start()
 
       server.reset([
         thinkingResponse(

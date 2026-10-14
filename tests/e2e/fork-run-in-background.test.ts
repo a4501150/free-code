@@ -7,23 +7,12 @@
  *    report arrives later inside a <task-notification>.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
-import {
-  MockAnthropicServer,
-  type RequestLogEntry,
-} from '../helpers/mock-server'
+import type { RequestLogEntry } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
@@ -85,21 +74,8 @@ function resultContentString(tr: { content: unknown } | undefined): string {
 }
 
 describe('Fork run_in_background', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   test('foreground fork reports through the tool_result, no notification', async () => {
     server.reset([
@@ -120,8 +96,7 @@ describe('Fork run_in_background', () => {
       textResponse('The fork reported fg-fork-report.'),
     ])
 
-    session = new TmuxSession({ serverUrl: server.url, settings: SETTINGS })
-    await session.start()
+    session = await startSession({ settings: SETTINGS })
     await session.submitAndApprove('Fork something in the foreground', 90_000)
 
     const log = await waitForRequestCount(server, 3, {
@@ -162,8 +137,7 @@ describe('Fork run_in_background', () => {
       textResponse('Acknowledged the notification.'),
     ])
 
-    session = new TmuxSession({ serverUrl: server.url, settings: SETTINGS })
-    await session.start()
+    session = await startSession({ settings: SETTINGS })
     await session.submitAndApprove('Fork something in the background', 90_000)
 
     const log = await waitForRequestCount(server, 4, {

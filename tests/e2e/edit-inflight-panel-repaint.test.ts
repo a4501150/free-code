@@ -12,60 +12,35 @@
  * tool_use block lands on its own repaint frame.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(180_000)
 
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MockAnthropicServer } from '../helpers/mock-server'
-import type { MockResponse } from '../helpers/sse-encoder'
-import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import {
+  textResponse,
+  toolUseResponse,
+  withDelay,
+} from '../helpers/fixture-builders'
+import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
-function withDelay(response: MockResponse, delayMs: number): MockResponse {
-  const r = response as unknown as {
-    kind: 'success'
-    response: Record<string, unknown>
-  }
-  r.response.sseEventDelayMs = delayMs
-  return response
-}
-
 describe('edit in-flight panel repaint', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession | undefined
   let debugPath: string
   let cwdDir: string
 
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
+  test('streaming Edits scroll without rewriting the screen', async () => {
     debugPath = join(
       await mkdtemp(join(tmpdir(), 'edit-repaint-')),
       'debug.txt',
     )
     cwdDir = await mkdtemp(join(tmpdir(), 'edit-repaint-cwd-'))
     await writeFile(join(cwdDir, 'a.txt'), 'alpha\nbeta\ngamma\ndelta\n')
-  })
-
-  afterAll(async () => {
-    server.stop()
-    if (session) await session.stop()
-  })
-
-  test('streaming Edits scroll without rewriting the screen', async () => {
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       cwd: cwdDir,
       additionalArgs: [
         '--debug-file',
@@ -77,7 +52,6 @@ describe('edit in-flight panel repaint', () => {
       readyText: 'bypass permissions on',
       settings: { skipDangerousModePermissionPrompt: true },
     })
-    await session.start()
 
     const p = join(cwdDir, 'a.txt')
     server.reset([

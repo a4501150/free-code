@@ -9,15 +9,12 @@ import {
   describe,
   test as bunTest,
   expect,
-  beforeAll,
-  afterAll,
   beforeEach,
   setDefaultTimeout,
 } from 'bun:test'
 setDefaultTimeout(120_000)
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { createLoggingTest } from './tmux-helpers'
+import { createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -203,16 +200,7 @@ function getResultMessage(parsed: unknown): Record<string, unknown> | null {
 // ---------------------------------------------------------------------------
 
 describe('Output Formats', () => {
-  let server: MockAnthropicServer
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
+  const { server } = setupE2ESuite()
 
   beforeEach(() => {
     server.reset([])

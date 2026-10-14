@@ -11,19 +11,14 @@
  * minHeight={9} + alignSelf="stretch" for a definite height floor.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+import {
+  type TmuxSession,
+  createLoggingTest,
+  setupE2ESuite,
+} from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
@@ -40,38 +35,23 @@ function countDividerLines(lines: string[]): number {
 }
 
 describe('LogoV2 vertical divider', () => {
-  let server: MockAnthropicServer
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
+  const { server, startSession } = setupE2ESuite()
 
   describe('Horizontal layout divider', () => {
     let session: TmuxSession
-
-    afterEach(async () => {
-      if (session) await session.stop()
-    })
 
     test('divider renders on initial startup', async () => {
       server.reset([])
 
       // Wide terminal (130 cols) triggers horizontal layout mode.
       // CLAUDE_CODE_FORCE_FULL_LOGO=true forces the full logo.
-      session = new TmuxSession({
-        serverUrl: server.url,
+      session = await startSession({
         width: 130,
         height: 40,
         additionalEnv: {
           CLAUDE_CODE_FORCE_FULL_LOGO: 'true',
         },
       })
-      await session.start()
 
       const screen = await session.capturePane()
       const logoLines = screen.split('\n').slice(0, 15)
@@ -88,15 +68,13 @@ describe('LogoV2 vertical divider', () => {
 
       server.reset([textResponse(longResponse)])
 
-      session = new TmuxSession({
-        serverUrl: server.url,
+      session = await startSession({
         width: 130,
         height: 40,
         additionalEnv: {
           CLAUDE_CODE_FORCE_FULL_LOGO: 'true',
         },
       })
-      await session.start()
 
       // Verify divider present initially
       let screen = await session.capturePane()
@@ -113,12 +91,9 @@ describe('LogoV2 vertical divider', () => {
       expect(screen.split('\n')[0]).not.toContain('╭')
 
       // Scroll back up to reveal logo
-      await session.sendSpecialKey('PPage')
-      await sleep(500)
-      await session.sendSpecialKey('PPage')
-      await sleep(500)
-      await session.sendSpecialKey('PPage')
-      await sleep(500)
+      await session.sendKeyAndAwaitRender('PPage')
+      await session.sendKeyAndAwaitRender('PPage')
+      await session.sendKeyAndAwaitRender('PPage')
 
       // Verify divider is still present after re-entering viewport
       screen = await session.capturePane()

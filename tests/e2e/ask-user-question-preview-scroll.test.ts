@@ -7,19 +7,15 @@
  * shift from arrow keys), and by shift+arrow on terminals that transmit it.
  */
 
-import {
-  describe,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  test,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, expect, test, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep, findTextCell } from './tmux-helpers'
+import {
+  sleep,
+  findTextCell,
+  setupE2ESuite,
+  type TmuxSession,
+} from './tmux-helpers'
 
 const TOTAL_ROWS = 40
 
@@ -28,22 +24,9 @@ function row(n: number): string {
 }
 
 describe('AskUserQuestion Preview Scroll', () => {
-  let server: MockAnthropicServer
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
+  const { server, startSession } = setupE2ESuite()
 
   let session: TmuxSession
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   test('shift+up/down scrolls tall preview content', async () => {
     server.reset([
@@ -77,13 +60,11 @@ describe('AskUserQuestion Preview Scroll', () => {
       ]),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       height: 40,
       width: 90,
       additionalEnv: {},
     })
-    await session.start()
 
     await session.sendLine('Show the tall preview dialog')
     await session.waitForText('press n to add notes', 30_000)
@@ -97,26 +78,32 @@ describe('AskUserQuestion Preview Scroll', () => {
 
     // Scroll down a few lines: the top rows leave the window.
     for (let i = 0; i < 5; i++) await session.sendSpecialKey('S-Down')
-    await sleep(300)
-    screen = await session.capturePane()
+    screen = await session.waitForScreen(s => s.includes(row(6)), {
+      currentPaneOnly: true,
+      timeoutMs: 10_000,
+      description: 'preview scrolled down to row 6',
+    })
     expect(screen).not.toContain(row(1))
-    expect(screen).toContain(row(6))
     // Option focus must not move while scrolling.
     expect(screen).toMatch(/\u276f\s*1\.\s*Tall/)
 
     // Scrolling past the end clamps at the last line.
     for (let i = 0; i < TOTAL_ROWS; i++) await session.sendSpecialKey('S-Down')
-    await sleep(300)
-    screen = await session.capturePane()
-    expect(screen).toContain(row(TOTAL_ROWS))
+    screen = await session.waitForScreen(s => s.includes(row(TOTAL_ROWS)), {
+      currentPaneOnly: true,
+      timeoutMs: 10_000,
+      description: 'preview scrolled to the last row',
+    })
     expect(screen).toContain(`of ${TOTAL_ROWS}`)
 
     // Scrolling back up returns to the top and clamps there.
     for (let i = 0; i < TOTAL_ROWS + 5; i++)
       await session.sendSpecialKey('S-Up')
-    await sleep(300)
-    screen = await session.capturePane()
-    expect(screen).toContain(row(1))
+    screen = await session.waitForScreen(s => s.includes(row(1)), {
+      currentPaneOnly: true,
+      timeoutMs: 10_000,
+      description: 'preview scrolled back to the first row',
+    })
     expect(screen).not.toContain(row(TOTAL_ROWS))
   })
 
@@ -154,26 +141,30 @@ describe('AskUserQuestion Preview Scroll', () => {
       ]),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       height: 40,
       width: 90,
       additionalEnv: {},
     })
-    await session.start()
 
     await session.sendLine('Show the tall preview dialog')
     await session.waitForText('press n to add notes', 30_000)
 
     for (let i = 0; i < 5; i++) await session.sendSpecialKey('S-Down')
+    // Negative assertion: absence of the top row cannot be polled, only
+    // settled for — the batch of keys is already queued.
     await sleep(300)
     expect(await session.capturePane()).not.toContain(row(1))
 
     await session.sendSpecialKey('Down')
-    await sleep(300)
-    const screen = await session.capturePane()
-    expect(screen).toContain(row(1))
-    expect(screen).toMatch(/\u276f\s*2\.\s*Also tall/)
+    const screen = await session.waitForScreen(
+      s => s.includes(row(1)) && /\u276f\s*2\.\s*Also tall/.test(s),
+      {
+        currentPaneOnly: true,
+        timeoutMs: 10_000,
+        description: 'option switch resets the preview scroll',
+      },
+    )
   })
 
   test('clicking the preview focuses it so bare arrows scroll', async () => {
@@ -208,13 +199,11 @@ describe('AskUserQuestion Preview Scroll', () => {
       ]),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       height: 40,
       width: 90,
       additionalEnv: {},
     })
-    await session.start()
 
     await session.sendLine('Show the tall preview dialog')
     await session.waitForText('press n to add notes', 30_000)
@@ -228,6 +217,8 @@ describe('AskUserQuestion Preview Scroll', () => {
     const previewCell = findTextCell(screen, row(1))
     expect(previewCell).not.toBeNull()
     await session.sendMouseClick(previewCell!.col, previewCell!.row)
+    // Negative assertion: the option pointer must be GONE, which cannot be
+    // polled for — only a settle window can prove it.
     await sleep(300)
 
     screen = await session.capturePane()
@@ -237,19 +228,25 @@ describe('AskUserQuestion Preview Scroll', () => {
 
     // Bare Down now scrolls the preview and leaves option focus alone.
     for (let i = 0; i < 5; i++) await session.sendSpecialKey('Down')
-    await sleep(300)
-    screen = await session.capturePane()
+    screen = await session.waitForScreen(s => s.includes(row(6)), {
+      currentPaneOnly: true,
+      timeoutMs: 10_000,
+      description: 'bare arrows scroll the focused preview',
+    })
     expect(screen).not.toContain(row(1))
-    expect(screen).toContain(row(6))
     expect(screen).toContain('2. Short')
 
     // A digit acts on the option list, which takes focus back from the preview.
     // (Escape is not a way out: CancelRequestHandler claims it via the
     // keybinding emitter, which runs before DOM handlers, so it cancels.)
     await session.sendText('2')
-    await sleep(300)
-    screen = await session.capturePane()
-    expect(screen).toContain('press n to add notes')
-    expect(screen).toMatch(/\u276f\s*2\.\s*Short/)
+    screen = await session.waitForScreen(
+      s => /❯\s*2\.\s*Short/.test(s) && s.includes('press n to add notes'),
+      {
+        currentPaneOnly: true,
+        timeoutMs: 10_000,
+        description: 'digit selection returns focus to the option list',
+      },
+    )
   })
 })

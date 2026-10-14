@@ -12,8 +12,6 @@ import {
   describe,
   test as bunTest,
   expect,
-  beforeAll,
-  afterAll,
   afterEach,
   setDefaultTimeout,
 } from 'bun:test'
@@ -22,23 +20,14 @@ setDefaultTimeout(120_000)
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MockAnthropicServer } from '../helpers/mock-server'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { createLoggingTest, setupE2ESuite } from './tmux-helpers'
+import { waitFor } from '../helpers/wait-helpers'
 
 const test = createLoggingTest(bunTest)
 
 describe('Statusline payload', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let cwd: string | null = null
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
 
   afterEach(async () => {
     if (cwd) {
@@ -83,8 +72,7 @@ describe('Statusline payload', () => {
       },
     ])
 
-    const session = new TmuxSession({
-      serverUrl: server.url,
+    const session = await startSession({
       cwd,
       settings: {
         statusLine: {
@@ -99,16 +87,29 @@ describe('Statusline payload', () => {
       // the hook finishes.
       readyText: 'ok',
     })
-    await session.start()
     await session.sendLine('Hello')
     await session.waitForText('Hi', 20_000)
-    // Hook invocation is debounced ~300ms; allow for scheduling + subprocess.
-    const { sleep } = await import('./tmux-helpers')
-    await sleep(2_000)
-
-    // Read the captured payload.
-    const raw = await Bun.file(capturePath).text()
-    const payload = JSON.parse(raw) as Record<string, unknown>
+    // Hook invocation is debounced ~300ms and can fire several times as the
+    // turn's usage lands — poll until the payload actually carries the
+    // per-turn breakdown instead of sleeping past the debounce.
+    const payload = await waitFor(
+      async () => {
+        try {
+          const parsed = JSON.parse(
+            await Bun.file(capturePath).text(),
+          ) as Record<string, unknown>
+          return 'last_usage' in parsed ? parsed : null
+        } catch {
+          return null
+        }
+      },
+      value => value !== null,
+      {
+        timeoutMs: 10_000,
+        intervalMs: 100,
+        description: 'statusline hook to capture the post-turn payload',
+      },
+    )
 
     // Per-turn breakdown (populated in Step 3).
     expect(payload).toHaveProperty('last_usage')
@@ -141,15 +142,13 @@ describe('Statusline payload', () => {
 
     // The default status line suppresses the `? for shortcuts` hint, so the
     // idle marker is the token breakdown the default script prints.
-    const session = new TmuxSession({
-      serverUrl: server.url,
+    const session = await startSession({
       cwd,
       // TmuxSession defaults statusLine to off for hint stability; undefined
       // removes the key so the embedded default applies.
       settings: { statusLine: undefined },
       readyText: 'cw 0% ce',
     })
-    await session.start()
     await session.waitForText('#')
     await session.sendLine('Hello')
     await session.waitForText('Hi', 20_000)

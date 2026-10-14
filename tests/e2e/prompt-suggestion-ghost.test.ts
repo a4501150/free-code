@@ -10,42 +10,21 @@
  * the fork's request lands on slot 3 deterministically.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(180_000)
 
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse } from '../helpers/fixture-builders'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
 describe('prompt suggestion ghost text', () => {
-  let server: MockAnthropicServer
-  let session: TmuxSession | undefined
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(async () => {
-    server.stop()
-    if (session) await session.stop()
-  })
+  const { server, startSession } = setupE2ESuite()
 
   test('the post-turn fork renders its suggestion in the input row', async () => {
-    session = new TmuxSession({
-      serverUrl: server.url,
+    const session = await startSession({
       settings: { promptSuggestionEnabled: true },
     })
-    await session.start()
 
     server.reset([
       textResponse('FIRST ANSWER HERE'),

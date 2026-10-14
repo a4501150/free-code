@@ -21,6 +21,7 @@
     "format": "prettier --write .",
     "test": "bun run test:unit && bun run test:e2e",
     "test:e2e": "bun test tests/e2e/ --timeout 120000",
+    "test:e2e:parallel": "bun run scripts/e2e-parallel.ts",
     "test:unit": "bun test tests/unit/",
     "typecheck": "tsc --noEmit"
   },

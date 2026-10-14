@@ -14,8 +14,6 @@ import {
   describe,
   test as bunTest,
   expect,
-  beforeAll,
-  afterAll,
   afterEach,
   setDefaultTimeout,
 } from 'bun:test'
@@ -24,25 +22,15 @@ setDefaultTimeout(120_000)
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MockAnthropicServer } from '../helpers/mock-server'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
 describe('Resume / context continuity', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let cwd: string | null = null
   let configDir: string | null = null
   let homeDir: string | null = null
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
 
   afterEach(async () => {
     const { rm } = await import('node:fs/promises')
@@ -84,13 +72,11 @@ describe('Resume / context continuity', () => {
       },
     ])
 
-    let session = new TmuxSession({
-      serverUrl: server.url,
+    let session = await startSession({
       cwd,
       reuseConfigDir: configDir,
       reuseHomeDir: homeDir,
     })
-    await session.start()
     await session.submitAndWaitForResponse('Initial prompt')
     // Stop the session — the transcript file should now be on disk in
     // configDir/projects/<sanitized-cwd>/<session-id>.jsonl.
@@ -109,14 +95,12 @@ describe('Resume / context continuity', () => {
       },
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       cwd,
       reuseConfigDir: configDir,
       reuseHomeDir: homeDir,
       additionalArgs: ['--continue'],
     })
-    await session.start()
     await session.sendLine('Follow up')
     const screen = await session.waitForText('Resumed response', 20_000)
     expect(screen).toContain('Resumed response')

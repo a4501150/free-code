@@ -11,57 +11,32 @@
  * logged, not asserted on.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(180_000)
 
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MockAnthropicServer } from '../helpers/mock-server'
-import type { MockResponse } from '../helpers/sse-encoder'
-import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import {
+  textResponse,
+  toolUseResponse,
+  withDelay,
+} from '../helpers/fixture-builders'
+import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
-function withDelay(response: MockResponse, delayMs: number): MockResponse {
-  const r = response as unknown as {
-    kind: 'success'
-    response: Record<string, unknown>
-  }
-  r.response.sseEventDelayMs = delayMs
-  return response
-}
-
 describe('task create collapsed blink', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession | undefined
   let debugPath: string
 
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
+  test('the Creating row mounts once and updates in place', async () => {
     debugPath = join(
       await mkdtemp(join(tmpdir(), 'create-blink-')),
       'debug.txt',
     )
-  })
-
-  afterAll(async () => {
-    server.stop()
-    if (session) await session.stop()
-  })
-
-  test('the Creating row mounts once and updates in place', async () => {
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       additionalArgs: [
         '--debug-file',
         debugPath,
@@ -71,7 +46,6 @@ describe('task create collapsed blink', () => {
       readyText: 'bypass permissions on',
       settings: { skipDangerousModePermissionPrompt: true },
     })
-    await session.start()
 
     const filler = Array.from(
       { length: 40 },

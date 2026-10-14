@@ -10,25 +10,14 @@
  * parallel-tools.test.ts into a single e2e suite.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
 import { writeFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import {
-  MockAnthropicServer,
-  type RequestLogEntry,
-} from '../helpers/mock-server'
+import { type RequestLogEntry } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
@@ -82,26 +71,12 @@ function resultContentString(
 // ── Tests ────────────────────────────────────────────────────
 
 describe('Tool Use E2E', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   describe('Basic Tools', () => {
     test('basic Bash, Read, Edit, and Write tool results', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       server.reset([
         toolUseResponse([
@@ -204,8 +179,7 @@ describe('Tool Use E2E', () => {
     })
 
     test('an Edit in a later response is approved by the ledger without a re-Read', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       const filePath = join(session.cwd, 'edit-chain.txt')
       await writeFile(filePath, 'one\ntwo\nthree')
@@ -253,8 +227,7 @@ describe('Tool Use E2E', () => {
     })
 
     test('two Edits of the same file in one response serialize and both apply', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       const filePath = join(session.cwd, 'edit-serialize.txt')
       await writeFile(filePath, 'one\ntwo\nthree')
@@ -299,8 +272,7 @@ describe('Tool Use E2E', () => {
     })
 
     test('an Edit of a never-read file applies when the match is unique', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       const filePath = join(session.cwd, 'blind-edit.txt')
       await writeFile(filePath, 'alpha beta gamma')
@@ -333,8 +305,7 @@ describe('Tool Use E2E', () => {
     })
 
     test('an ambiguous Edit errors, and extended context disambiguates on retry', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       const filePath = join(session.cwd, 'dup-edit.txt')
       await writeFile(filePath, 'dup x\nkeep\ndup x')
@@ -383,8 +354,7 @@ describe('Tool Use E2E', () => {
     })
 
     test('a Bash cat of a file licenses an Edit without a Read', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       const filePath = join(session.cwd, 'bash-seen-edit.txt')
       await writeFile(filePath, 'visible from bash\nsecond line')
@@ -427,8 +397,7 @@ describe('Tool Use E2E', () => {
 
   describe('Parallel Tool Calls', () => {
     test('parallel Bash and file tools return all tool_results', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       const testFile = join(session.cwd, 'parallel-read.txt')
       await writeFile(testFile, 'parallel read content')
@@ -489,8 +458,7 @@ describe('Tool Use E2E', () => {
     })
 
     test('parallel mixed failure and sequential follow-up are handled', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       server.reset([
         toolUseResponse([
@@ -556,8 +524,7 @@ describe('Tool Use E2E', () => {
         textResponse('Both agents finished successfully'),
       ])
 
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       // If the useNow bug is present, the CLI crashes during grouped agent
       // rendering and never returns to idle — submitAndApprove times out.
@@ -577,8 +544,7 @@ describe('Tool Use E2E', () => {
 
   describe('Tool Header Display', () => {
     test('Edit tool compact mode shows only file_path', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       const editFile = join(session.cwd, 'compact-edit.txt')
       const compactOriginal = 'alpha beta gamma'
@@ -611,8 +577,7 @@ describe('Tool Use E2E', () => {
     })
 
     test('tool name and params have no space between them', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       // Use Agent tool — its header is NOT collapsed and stays visible
       // after resolution as "Agent(description: ...)".

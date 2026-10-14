@@ -12,14 +12,18 @@
  * - Seeded freecode.json (memory, checkpointing, auto-connect and friends
  *   are off via settings keys, not env flags)
  *
- * Tmux pane output is piped to a log file and dumped on timeout for debugging.
+ * Tmux pane output is piped to a log file: waitForText/waitForPattern poll
+ * its (ANSI-stripped) tail — an in-process file read — while screen-shape
+ * and state assertions use capture-pane. The full log is dumped on timeout
+ * for debugging.
  */
 
 import { mkdtemp, writeFile, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { setDefaultTimeout } from 'bun:test'
+import { afterAll, afterEach, beforeAll, setDefaultTimeout } from 'bun:test'
 import { MODEL_SETTINGS_KEYS } from '../../src/utils/settings/modelSettingsKeys'
+import { MockAnthropicServer } from '../helpers/mock-server'
 import { sleep, waitFor, type WaitForOptions } from '../helpers/wait-helpers'
 
 // E2E tests run through tmux and need generous timeouts. Each test file
@@ -162,7 +166,11 @@ export class TmuxSession {
       this._cwd = this.cwdDir
     }
 
-    this.logFile = join(this.configDir, 'tmux-output.log')
+    // The log name is unique per session: resume tests reuse the config dir
+    // across sessions, and a shared name would append to the previous
+    // session's log — whose stale frames contain readyText, making the
+    // log-based ready-wait match before the new CLI has even booted.
+    this.logFile = join(this.configDir, `tmux-output-${this.sessionName}.log`)
 
     // Pre-seed global config to skip trust dialogs.
     const resolvedCwd = await realpath(this._cwd)
@@ -274,24 +282,45 @@ export class TmuxSession {
     // No --bare: all tools registered. No permission flags: real permission pipeline.
     const cliArgs = [...this._additionalArgs].join(' ')
 
-    // Kill any existing session with this name
-    await exec(`tmux kill-session -t ${this.sessionName} 2>/dev/null || true`)
+    // Kill any existing session with this name (name collisions from a
+    // previous run are tolerated)
+    await runTmux(['kill-session', '-t', this.sessionName], {
+      tolerateFailure: true,
+    })
 
     // Create the tmux session. `env -i` wipes the child env so only the keys
     // listed in `envVars` are visible to the CLI process — this is what
     // prevents host-level Anthropic env vars from polluting the test.
-    const cmd = `tmux new-session -d -s ${this.sessionName} -x ${this._width} -y ${this._height} "cd ${shellEscape(this._cwd)} && env -i ${envString} ${this._cliBinary} ${cliArgs}; sleep 30"`
-    await exec(cmd)
+    // The pane command is one argv element; tmux itself runs it via sh -c.
+    const paneCommand = `cd ${shellEscape(this._cwd)} && env -i ${envString} ${this._cliBinary} ${cliArgs}; sleep 30`
+    await runTmux([
+      'new-session',
+      '-d',
+      '-s',
+      this.sessionName,
+      '-x',
+      String(this._width),
+      '-y',
+      String(this._height),
+      paneCommand,
+    ])
 
     this.started = true
 
-    // Pipe pane output to log file for debugging
-    await exec(
-      `tmux pipe-pane -t ${this.sessionName} -o 'cat >> ${shellEscape(this.logFile!)}'`,
-    )
+    // Pipe pane output to log file — the tail is what waitForText/waitForPattern
+    // poll, and the full file is dumped when a wait times out.
+    await runTmux([
+      'pipe-pane',
+      '-t',
+      this.sessionName,
+      '-o',
+      `cat >> ${shellEscape(this.logFile!)}`,
+    ])
 
-    // Wait for the REPL to be ready
-    await this.waitForText(this._readyText, 30_000)
+    // Wait for the REPL to be ready. Generous timeout: under parallel
+    // e2e runs the compiled CLI can take a while to boot under CPU
+    // contention.
+    await this.waitForText(this._readyText, 60_000)
   }
 
   /**
@@ -310,17 +339,22 @@ export class TmuxSession {
       // group (the pane command runs as its own group leader).
       let panePids: string[] = []
       try {
-        const out = await exec(
-          `tmux list-panes -t ${this.sessionName} -F '#{pane_pid}'`,
-        )
+        const out = await runTmux([
+          'list-panes',
+          '-t',
+          this.sessionName,
+          '-F',
+          '#{pane_pid}',
+        ])
         panePids = out.trim().split('\n').filter(Boolean)
       } catch {
         // Session already gone — nothing to escalate.
       }
-      await exec(`tmux kill-session -t ${this.sessionName} 2>/dev/null || true`)
+      await runTmux(['kill-session', '-t', this.sessionName], {
+        tolerateFailure: true,
+      })
       for (const pid of panePids) {
-        // Negative pid kills the whole group; failure means it is already gone.
-        await exec(`kill -KILL -${pid} 2>/dev/null || true`)
+        await killGroup(pid)
       }
       this.started = false
     }
@@ -359,20 +393,20 @@ export class TmuxSession {
   // ── Input ──────────────────────────────────────────────────
 
   async sendKeys(keys: string): Promise<void> {
-    await exec(`tmux send-keys -t ${this.sessionName} ${shellEscape(keys)}`)
+    await runTmux(['send-keys', '-t', this.sessionName, keys])
   }
 
   async sendText(text: string): Promise<void> {
-    await exec(`tmux send-keys -t ${this.sessionName} -l ${shellEscape(text)}`)
+    await runTmux(['send-keys', '-t', this.sessionName, '-l', text])
   }
 
   async sendLine(text: string): Promise<void> {
     await this.sendText(text)
-    await exec(`tmux send-keys -t ${this.sessionName} Enter`)
+    await this.sendSpecialKey('Enter')
   }
 
   async sendSpecialKey(key: string): Promise<void> {
-    await exec(`tmux send-keys -t ${this.sessionName} ${key}`)
+    await runTmux(['send-keys', '-t', this.sessionName, key])
   }
 
   /**
@@ -409,38 +443,95 @@ export class TmuxSession {
   // ── Output ─────────────────────────────────────────────────
 
   async capturePane(): Promise<string> {
-    return exec(`tmux capture-pane -t ${this.sessionName} -p`)
+    return runTmux(['capture-pane', '-t', this.sessionName, '-p'])
   }
 
   async capturePaneWithHistory(lines = 1000): Promise<string> {
-    return exec(`tmux capture-pane -t ${this.sessionName} -p -S -${lines}`)
+    return runTmux([
+      'capture-pane',
+      '-t',
+      this.sessionName,
+      '-p',
+      '-S',
+      `-${lines}`,
+    ])
   }
 
   // ── Waiting ────────────────────────────────────────────────
 
+  /**
+   * Last LOG_TAIL_BYTES of the pane log, ANSI-stripped. This is the raw byte
+   * stream (including intermediate in-place frames), so it is only used for
+   * "did this text get rendered" checks — never for screen-shape or state
+   * assertions, which must use capturePane/waitForScreen.
+   */
+  private async readLogTail(): Promise<string> {
+    if (!this.logFile) {
+      throw new Error('Session not started — no pane log yet')
+    }
+    try {
+      const file = Bun.file(this.logFile)
+      const size = file.size
+      if (size === 0) return ''
+      const start = Math.max(0, size - LOG_TAIL_BYTES)
+      return stripAnsi(await file.slice(start).text())
+    } catch {
+      // Log file not created yet (nothing rendered)
+      return ''
+    }
+  }
+
+  /**
+   * Wait for text to appear in the rendered output. Polls the pane log tail
+   * (already piped by start()) instead of spawning capture-pane — an
+   * in-process file read per poll rather than two process spawns. Crash
+   * detection runs on the stripped tail: a panic that scrolled out of the
+   * visible pane still lands in the log.
+   */
   async waitForText(
     text: string,
     timeout = 30_000,
-    interval = 100,
+    interval = 50,
   ): Promise<string> {
-    return this.waitForScreen(screen => screen.includes(text), {
-      timeoutMs: timeout,
-      intervalMs: interval,
-      description: `text "${text}"`,
-    })
+    return waitFor(
+      () => this.readLogTail(),
+      tail => {
+        detectCrash(tail)
+        return tail.includes(text)
+      },
+      {
+        timeoutMs: timeout,
+        intervalMs: interval,
+        description: `text "${text}"`,
+        onTimeout: async () => {
+          await this.dumpLog()
+          const tail = await this.readLogTail().catch(() => '')
+          return `Recent pane output:\n${tail}`
+        },
+      },
+    )
   }
 
   async waitForPattern(
     pattern: RegExp,
     timeout = 30_000,
-    interval = 100,
+    interval = 50,
   ): Promise<{ screen: string; match: RegExpMatchArray }> {
-    const screen = await this.waitForScreen(
-      screen => screen.match(pattern) !== null,
+    const screen = await waitFor(
+      () => this.readLogTail(),
+      tail => {
+        detectCrash(tail)
+        return tail.match(pattern) !== null
+      },
       {
         timeoutMs: timeout,
         intervalMs: interval,
         description: `pattern ${pattern}`,
+        onTimeout: async () => {
+          await this.dumpLog()
+          const tail = await this.readLogTail().catch(() => '')
+          return `Recent pane output:\n${tail}`
+        },
       },
     )
     const match = screen.match(pattern)
@@ -486,54 +577,148 @@ export class TmuxSession {
     )
   }
 
-  /** Wait until the CLI is idle (ready for next input). */
+  /**
+   * Wait until the CLI is idle (ready for next input).
+   *
+   * Pane-based, NOT log-based: the readyText footer is re-emitted to the raw
+   * stream on every idle render since the session's first frame, so the log
+   * tail always contains it — only the live pane shows whether the CLI is
+   * idle *right now*.
+   */
   async waitForPrompt(timeout = 30_000): Promise<string> {
-    return this.waitForText(this._readyText, timeout)
+    return this.waitForScreen(screen => screen.includes(this._readyText), {
+      timeoutMs: timeout,
+      intervalMs: 50,
+      description: 'idle prompt',
+    })
   }
 
   // ── Permission handling ────────────────────────────────────
 
   /**
-   * Wait for either a permission dialog or the idle prompt, whichever appears first.
-   * If a permission dialog appears, approve it by pressing Enter.
+   * Wait for either a permission dialog or the idle prompt, whichever appears
+   * first. If a permission dialog appears, approve it by pressing Enter and
+   * then wait for the pane to change before returning, so a caller that
+   * loops back into this method cannot re-match the dialog it just approved.
    * Returns 'approved' if a dialog was handled, 'idle' if the prompt returned.
+   *
+   * Polls the CURRENT pane only, never history: summary lines like
+   * "Ran 1 bash command" from earlier turns stay in scrollback, and matching
+   * them there reports a busy CLI as idle mid-chain.
+   *
+   * An idle report is debounced: the CLI renders an idle-looking frame in
+   * the gap between a tool result and the next turn's busy frame (no footer
+   * once the spinner takes over), so 'idle' is only returned once it holds
+   * across ~150ms of consecutive frames. Any dialog or busy frame during
+   * that window resumes the wait instead.
    */
   async waitForPermissionOrIdle(
     timeout = 30_000,
-    interval = 100,
+    interval = 50,
   ): Promise<'approved' | 'idle'> {
-    return waitFor(
-      () => this.capturePaneWithHistory(),
-      screen => getPermissionOrIdleState(screen, this._readyText) !== null,
-      {
-        timeoutMs: timeout,
-        intervalMs: interval,
-        description: 'permission dialog or idle prompt',
-        onTimeout: async () => {
-          await this.dumpLog()
-          const finalScreen = await this.capturePaneWithHistory()
-          return `Screen content:\n${finalScreen}`
-        },
-      },
-    ).then(async screen => {
-      const result = getPermissionOrIdleState(screen, this._readyText)
-      if (result === 'approved') {
-        await this.sendSpecialKey('Enter')
-        await sleep(300)
+    const deadline = Date.now() + timeout
+    for (;;) {
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) {
+        await this.dumpLog()
+        throw new Error(
+          `Timed out waiting for permission dialog or idle prompt after ${timeout}ms.\nScreen content:\n${await this.capturePane()}`,
+        )
       }
-      if (!result) {
+      const screen = await waitFor(
+        () => this.capturePane(),
+        screen => getPermissionOrIdleState(screen, this._readyText) !== null,
+        {
+          timeoutMs: remaining,
+          intervalMs: interval,
+          description: 'permission dialog or idle prompt',
+          onTimeout: async () => {
+            await this.dumpLog()
+            const finalScreen = await this.capturePane()
+            return `Screen content:\n${finalScreen}`
+          },
+        },
+      )
+      const result = getPermissionOrIdleState(screen, this._readyText)
+      if (result === null) {
         throw new Error(
           'Permission or idle state matched during wait but not after capture',
         )
       }
-      return result
+      if (result === 'approved') {
+        await this.waitForPaneChangeAfter('approval Enter', remaining)
+        continue
+      }
+      // result === 'idle': debounce before reporting it (see docstring).
+      let idleSince = Date.now()
+      for (;;) {
+        await sleep(50)
+        const recheck = getPermissionOrIdleState(
+          await this.capturePane(),
+          this._readyText,
+        )
+        if (recheck !== 'idle') {
+          // Transient idle frame — the turn resumed (busy or a new dialog).
+          break
+        }
+        if (Date.now() - idleSince >= 150) {
+          return 'idle'
+        }
+        if (Date.now() >= deadline) {
+          return 'idle'
+        }
+      }
+    }
+  }
+
+  /**
+   * Press Enter on whatever is showing and wait until the current pane
+   * leaves the exact pre-Enter state. Any processed Enter produces a
+   * re-render (dialog collapse, busy frame, response), so this replaces the
+   * old fixed sleep and cannot fire early on a stale frame.
+   */
+  private async waitForPaneChangeAfter(
+    description: string,
+    timeout = 30_000,
+  ): Promise<void> {
+    const before = await this.capturePane()
+    await this.sendSpecialKey('Enter')
+    await this.waitForScreen(screen => screen !== before, {
+      currentPaneOnly: true,
+      timeoutMs: timeout,
+      intervalMs: 25,
+      description: `${description} to take effect`,
+    })
+  }
+
+  /**
+   * Send a key and wait until the pane leaves the exact pre-key state —
+   * the event-driven replacement for fixed pacing sleeps between navigation
+   * keystrokes (PageUp/PageDown/arrow keys). Any processed key that alters
+   * the screen re-renders, so this fires as soon as the key took effect.
+   * Throws on timeout, so only use it for keys expected to change the
+   * screen; a key the UI ignores (e.g. scrolling past the top) would hang
+   * until the timeout.
+   */
+  async sendKeyAndAwaitRender(key: string, timeout = 10_000): Promise<void> {
+    const before = await this.capturePane()
+    await this.sendSpecialKey(key)
+    await this.waitForScreen(screen => screen !== before, {
+      currentPaneOnly: true,
+      timeoutMs: timeout,
+      intervalMs: 25,
+      description: `key ${key} to take effect`,
     })
   }
 
   /**
    * Submit a prompt and auto-approve any permission dialogs until the CLI
-   * returns to idle. Handles both auto-approved (safe) and prompted (dangerous)
-   * tool executions.
+   * returns to idle. Handles both auto-approved (safe) and prompted
+   * (dangerous) tool executions.
+   *
+   * Sleep-free: submission is detected by waiting for the pane to leave the
+   * pre-submit snapshot (the input line clears, so a completed turn can
+   * never look like the snapshot) instead of a fixed delay.
    *
    * This is the main test helper for tool-using prompts.
    *
@@ -541,8 +726,7 @@ export class TmuxSession {
    * @param timeout Total timeout for the entire operation
    */
   async submitAndApprove(prompt: string, timeout = 60_000): Promise<string> {
-    await this.sendLine(prompt)
-    await sleep(500)
+    await this.submitPrompt(prompt)
 
     // Keep approving permission dialogs until the CLI returns to idle
     while (true) {
@@ -555,6 +739,40 @@ export class TmuxSession {
   }
 
   /**
+   * Type a prompt, wait for the input line to actually show it, then submit
+   * and wait for the submission to take effect. Two snapshots bound each
+   * transition:
+   *
+   *  1. `pre` (before typing) — the echo wait ends when the pane leaves the
+   *     pre-typing state; Enter is not sent until then, so the CLI cannot
+   *     have processed it early.
+   *  2. `typed` (with the prompt in the input line) — the submit wait ends
+   *     when the pane leaves that state. Submitting always clears the input
+   *     line, so even a turn that completes between polls leaves a pane
+   *     different from `typed`. This is what prevents the first
+   *     permission-or-idle poll from matching the stale idle footer before
+   *     the turn has started (the reason the old code slept 500ms).
+   */
+  private async submitPrompt(prompt: string): Promise<void> {
+    const pre = await this.capturePane()
+    await this.sendText(prompt)
+    await this.waitForScreen(screen => screen !== pre, {
+      currentPaneOnly: true,
+      timeoutMs: 10_000,
+      intervalMs: 25,
+      description: 'typed prompt to be echoed',
+    })
+    const typed = await this.capturePane()
+    await this.sendSpecialKey('Enter')
+    await this.waitForScreen(screen => screen !== typed, {
+      currentPaneOnly: true,
+      timeoutMs: 10_000,
+      intervalMs: 25,
+      description: 'prompt submission to take effect',
+    })
+  }
+
+  /**
    * Submit a prompt that expects no tool use (text-only response).
    * Just sends the prompt and waits for the idle prompt to return.
    */
@@ -562,8 +780,7 @@ export class TmuxSession {
     prompt: string,
     timeout = 30_000,
   ): Promise<string> {
-    await this.sendLine(prompt)
-    await sleep(500)
+    await this.submitPrompt(prompt)
     return this.waitForPrompt(timeout)
   }
 }
@@ -578,6 +795,50 @@ export async function withTmuxSession<T>(
     return await fn(session)
   } finally {
     await session.stop()
+  }
+}
+
+/**
+ * Standard e2e file wiring, replacing the beforeAll/afterAll/afterEach
+ * prologue repeated in every suite: one mock Anthropic server for the file,
+ * plus session tracking — every session started via startSession() is
+ * stopped in afterEach, even when a test fails mid-way, and a test may
+ * start several sessions.
+ *
+ * Must be called synchronously inside describe() so the hooks register on
+ * that suite. Files needing extra mock servers (OpenAI, Codex) own those in
+ * their own beforeAll/afterAll and pass the URL via startSession's
+ * serverUrl override or the TmuxSession settings.
+ */
+export function setupE2ESuite(): {
+  server: MockAnthropicServer
+  startSession: (
+    options?: Omit<TmuxSessionOptions, 'serverUrl'> & { serverUrl?: string },
+  ) => Promise<TmuxSession>
+} {
+  const server = new MockAnthropicServer()
+  const sessions: TmuxSession[] = []
+  beforeAll(async () => {
+    await server.start()
+  })
+  afterAll(() => {
+    server.stop()
+  })
+  afterEach(async () => {
+    await Promise.all(sessions.splice(0).map(session => session.stop()))
+  })
+  return {
+    server,
+    async startSession(options = {}) {
+      const { serverUrl, ...rest } = options
+      const session = new TmuxSession({
+        ...rest,
+        serverUrl: serverUrl ?? server.url,
+      })
+      sessions.push(session)
+      await session.start()
+      return session
+    },
   }
 }
 
@@ -640,28 +901,57 @@ function shellEscape(str: string): string {
   return "'" + str.replace(/'/g, "'\\''") + "'"
 }
 
-async function exec(cmd: string): Promise<string> {
-  const proc = Bun.spawn(['bash', '-c', cmd], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  // Drain both streams concurrently. Reading both is required to avoid
-  // deadlock when the child writes more than the pipe buffer to either
-  // stream before we read.
+/**
+ * Run tmux with an argv array — no shell involved. Every keystroke and
+ * screen poll goes through here (the hottest spawn path in the suite), and
+ * skipping the `bash -c` wrapper halves the per-call cost (~27ms → ~14ms).
+ */
+async function runTmux(
+  args: string[],
+  opts: { tolerateFailure?: boolean } = {},
+): Promise<string> {
+  const proc = Bun.spawn(['tmux', ...args], { stdout: 'pipe', stderr: 'pipe' })
   const [stdout, stderr] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
   ])
   await proc.exited
-  if (proc.exitCode !== 0) {
+  if (proc.exitCode !== 0 && !opts.tolerateFailure) {
     throw new Error(
-      `command failed (exit ${proc.exitCode}): ${cmd}\n` +
-        (stderr ? `stderr: ${stderr.trim()}\n` : '') +
-        (stdout ? `stdout: ${stdout.trim()}\n` : ''),
+      `tmux ${args.join(' ')} failed (exit ${proc.exitCode}): ${stderr.trim()}`,
     )
   }
   return stdout
 }
+
+/**
+ * Hard-kill a process group (negative pid). Failure means it is already
+ * gone — tolerated by design.
+ */
+async function killGroup(pid: string): Promise<void> {
+  const proc = Bun.spawn(['kill', '-KILL', `-${pid}`], {
+    stdout: 'ignore',
+    stderr: 'ignore',
+  })
+  await proc.exited
+}
+
+/**
+ * Strip ANSI escape sequences (SGR, cursor movement, OSC, charset) from raw
+ * pane output. Sequences can sit mid-word, so the stripped stream reassembles
+ * the visible text.
+ */
+const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_PATTERN, '')
+}
+
+/**
+ * How many bytes of the pane log waitForText/waitForPattern consider "recent".
+ * Comparable to the old 1000-line history window (~120KB); deliberately
+ * generous so text rendered a few turns ago still matches.
+ */
+const LOG_TAIL_BYTES = 256 * 1024
 
 /**
  * Verifies tmux is on PATH before starting any session. Throws with a
@@ -676,12 +966,7 @@ let _tmuxCheck: Promise<void> | null = null
 async function ensureTmuxAvailable(): Promise<void> {
   if (!_tmuxCheck) {
     _tmuxCheck = (async () => {
-      const proc = Bun.spawn(
-        ['bash', '-c', 'command -v tmux >/dev/null 2>&1'],
-        { stdout: 'ignore', stderr: 'ignore' },
-      )
-      await proc.exited
-      if (proc.exitCode !== 0) {
+      if (!Bun.which('tmux')) {
         const hint =
           process.platform === 'darwin'
             ? 'brew install tmux'

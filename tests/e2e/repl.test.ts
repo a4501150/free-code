@@ -6,47 +6,29 @@
  * submission, multi-turn conversations, slash commands, and keyboard input.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+import {
+  createLoggingTest,
+  setupE2ESuite,
+  sleep,
+  type TmuxSession,
+} from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
 describe('REPL E2E', () => {
-  let server: MockAnthropicServer
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
+  const { server, startSession } = setupE2ESuite()
 
   let session: TmuxSession
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   // ─── Startup ─────────────────────────────────────────────
 
   describe('Startup', () => {
     test('shows welcome screen, input prompt, model, and billing info', async () => {
       server.reset([])
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       const screen = await session.capturePane()
 
@@ -61,8 +43,7 @@ describe('REPL E2E', () => {
 
   describe('Text Responses and Prompt Submission', () => {
     test('renders text responses and returns to the prompt', async () => {
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       server.reset([textResponse('Hello, world!')])
       await session.sendLine('Say hello')
@@ -124,8 +105,7 @@ describe('REPL E2E', () => {
         textResponse('First answer: the sky is blue'),
         textResponse('Second answer: water is wet'),
       ])
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       await session.sendLine('What color is the sky?')
       await session.waitForText('First answer', 15_000)
@@ -146,8 +126,7 @@ describe('REPL E2E', () => {
   describe('Slash Commands', () => {
     test('/help and /model render their UI', async () => {
       server.reset([])
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       await session.sendLine('/help')
       let screen = await session.waitForText('Shortcuts', 10_000)
@@ -181,8 +160,7 @@ describe('REPL E2E', () => {
   describe('Keyboard Interaction', () => {
     test('Ctrl+C does not crash the REPL', async () => {
       server.reset([])
-      session = new TmuxSession({ serverUrl: server.url })
-      await session.start()
+      session = await startSession()
 
       await session.sendKeys('partial input')
       await sleep(300)

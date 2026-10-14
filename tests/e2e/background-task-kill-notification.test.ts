@@ -16,22 +16,16 @@
  * detail, live pending tail)" Change 2.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
-import {
-  MockAnthropicServer,
-  type RequestLogEntry,
-} from '../helpers/mock-server'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
+import type { RequestLogEntry } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { waitForRequest } from '../helpers/mock-server-wait'
-import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+import {
+  TmuxSession,
+  sleep,
+  createLoggingTest,
+  setupE2ESuite,
+} from './tmux-helpers'
 
 setDefaultTimeout(180_000)
 
@@ -69,21 +63,9 @@ function userTextBlob(req: RequestLogEntry): string {
 }
 
 describe('Background task kill notification', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
+
   let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   test('x-keypress in /tasks dialog enqueues killed notification', async () => {
     server.reset([
@@ -105,8 +87,7 @@ describe('Background task kill notification', () => {
       textResponse('Acknowledged.'),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       settings: {
         // The harness seeds backgroundTasksEnabled: false, which strips
         // run_in_background from the Bash schema. Override so the model can
@@ -114,7 +95,6 @@ describe('Background task kill notification', () => {
         backgroundTasksEnabled: true,
       },
     })
-    await session.start()
 
     // Turn 1 — kick off the background bash. submitAndApprove handles the
     // permission prompt for `sleep 120`.
@@ -181,11 +161,9 @@ describe('Background task kill notification', () => {
       textResponse('Acknowledged completion.'),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       settings: { backgroundTasksEnabled: true },
     })
-    await session.start()
     await session.submitAndApprove('Run a quick command in the background')
 
     const matching = await waitForRequest(

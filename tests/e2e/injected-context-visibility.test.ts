@@ -13,19 +13,10 @@
  *    message; the transcript row is rebuilt for display instead.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
 import {
@@ -33,6 +24,7 @@ import {
   sleep,
   createLoggingTest,
   findTextCell,
+  setupE2ESuite,
 } from './tmux-helpers'
 
 setDefaultTimeout(180_000)
@@ -62,33 +54,18 @@ function backgroundBashResponses() {
 const BACKGROUND_TASK_SETTINGS = { backgroundTasksEnabled: true }
 
 describe('Injected context visibility', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   test('task notification is collapsed and expands to full detail on click', async () => {
     server.reset(backgroundBashResponses())
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       settings: {
         ...BACKGROUND_TASK_SETTINGS,
         permissions: { allow: ['Bash'] },
       },
     })
-    await session.start()
 
     await session.submitAndApprove('Run a quick task in the background')
     await session.waitForText('Acknowledged.', 20_000)
@@ -132,8 +109,7 @@ describe('Injected context visibility', () => {
       '# Project rules\nDISTINCTIVE_CLAUDE_MD_MARKER\n',
     )
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       cwd,
       additionalEnv: {
         // prependUserContext returns early under NODE_ENV=test, and the
@@ -143,7 +119,6 @@ describe('Injected context visibility', () => {
       },
       settings: { claudeMdEnabled: true },
     })
-    await session.start()
 
     // Labelled apart from ordinary reminders: it is the session's own context,
     // not a mid-conversation nudge, and it opens the transcript.
@@ -176,15 +151,13 @@ describe('Injected context visibility', () => {
   test('with the setting off the row stays summary-only', async () => {
     server.reset(backgroundBashResponses())
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       settings: {
         ...BACKGROUND_TASK_SETTINGS,
         permissions: { allow: ['Bash'] },
         showInjectedContext: false,
       },
     })
-    await session.start()
 
     await session.submitAndApprove('Run a quick task in the background')
     await session.waitForText('Acknowledged.', 20_000)
@@ -212,8 +185,7 @@ describe('Injected context visibility', () => {
   test('injected rows and a wrapped prompt share one grid', async () => {
     server.reset([textResponse('Done.')])
 
-    session = new TmuxSession({ serverUrl: server.url, width: 70 })
-    await session.start()
+    session = await startSession({ width: 70 })
 
     await session.submitAndWaitForResponse(
       'why I see lots of `Request URL https://example.com/translations/en.json Request Method GET Status Code 404 Not Found`',
@@ -248,34 +220,37 @@ describe('Injected context visibility', () => {
   test('toggling the setting does not change the request body', async () => {
     async function wireMessages(showInjectedContext: boolean): Promise<string> {
       server.reset([textResponse('Done.')])
-      const s = new TmuxSession({
-        serverUrl: server.url,
+      const s = await startSession({
         settings: { showInjectedContext },
       })
-      try {
-        await s.start()
-        await s.sendLine('hello there')
-        // Wait on the request itself, not the prompt: waitForPrompt matches
-        // the already-idle prompt if the CLI hasn't consumed the input yet,
-        // which it hasn't under full-suite load.
-        const log = await waitForRequestCount(server, 1, {
-          timeoutMs: 30_000,
-          description: 'the turn request for the wire comparison',
-        })
-        const serialized = JSON.stringify(log[0]!.body.messages)
-        // Each session gets its own mkdtemp config dir and cwd, and both paths
-        // appear inside the skills/keybindings reminder. The scratchpad path in
-        // the user context additionally carries a per-session UUID. Normalize
-        // that per-session noise so the comparison is about the setting only.
-        return serialized
-          .split(s.configDirPath ?? '\u0000')
-          .join('<CONFIG_DIR>')
-          .split(s.cwd)
-          .join('<CWD>')
-          .replace(/`[^`]*\/scratchpad`/g, '`<SCRATCHPAD>`')
-      } finally {
-        await s.stop()
-      }
+      await s.sendLine('hello there')
+      // Wait on the request itself, not the prompt: waitForPrompt matches
+      // the already-idle prompt if the CLI hasn't consumed the input yet,
+      // which it hasn't under full-suite load.
+      const log = await waitForRequestCount(server, 1, {
+        timeoutMs: 30_000,
+        description: 'the turn request for the wire comparison',
+      })
+      const serialized = JSON.stringify(log[0]!.body.messages)
+      // Each session gets its own mkdtemp config dir and cwd, and both paths
+      // appear inside the skills/keybindings reminder — both literally and
+      // dashified as the project key of the tool-catalog manifest path. The
+      // scratchpad path in the user context additionally carries a
+      // per-session UUID. Normalize all that per-session noise so the
+      // comparison is about the setting only.
+      // dashified = the tool-catalog project key form: every non-alphanumeric
+      // character of the path becomes a dash.
+      const dashify = (p: string) => p.replace(/[^a-zA-Z0-9]/g, '-')
+      return serialized
+        .split(s.configDirPath ?? '\u0000')
+        .join('<CONFIG_DIR>')
+        .split(dashify(s.configDirPath ?? '\u0000'))
+        .join('<CONFIG_DIR_KEY>')
+        .split(s.cwd)
+        .join('<CWD>')
+        .split(dashify(s.cwd))
+        .join('<CWD_KEY>')
+        .replace(/`[^`]*\/scratchpad`/g, '`<SCRATCHPAD>`')
     }
 
     const withOn = await wireMessages(true)

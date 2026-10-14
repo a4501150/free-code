@@ -6,19 +6,10 @@
  * component's text options in the AskUserQuestion dialog.
  */
 
-import {
-  describe,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  test,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, expect, test, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { toolUseResponse, textResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep } from './tmux-helpers'
+import { sleep, setupE2ESuite, type TmuxSession } from './tmux-helpers'
 
 function getNumberColumn(line: string): number {
   const match = line.match(/(\d+)\./)
@@ -27,22 +18,9 @@ function getNumberColumn(line: string): number {
 }
 
 describe('AskUserQuestion Alignment', () => {
-  let server: MockAnthropicServer
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
+  const { server, startSession } = setupE2ESuite()
 
   let session: TmuxSession
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   test('footer items align with select options', async () => {
     server.reset([
@@ -73,18 +51,24 @@ describe('AskUserQuestion Alignment', () => {
       textResponse('OK, got it.'),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       height: 40,
       width: 120,
       additionalEnv: {},
     })
-    await session.start()
 
     await session.sendLine('Help me choose an approach')
-    await sleep(500)
 
-    const screen = await session.waitForText('Chat about this', 30_000)
+    // Wait on the pane grid, not the log: the assertions below compare
+    // per-row columns, which only exist in the rendered grid.
+    const screen = await session.waitForScreen(
+      s => s.includes('Chat about this'),
+      {
+        currentPaneOnly: true,
+        timeoutMs: 30_000,
+        description: 'question dialog to render',
+      },
+    )
     const lines = screen.split('\n')
 
     const option1Line = lines.find(l => l.includes('Option A'))
@@ -104,7 +88,6 @@ describe('AskUserQuestion Alignment', () => {
     expect(opt1Col).toBe(chatCol)
 
     await session.sendSpecialKey('Escape')
-    await sleep(500)
   })
 
   test('Other text input option aligns with text options and footer', async () => {
@@ -138,16 +121,13 @@ describe('AskUserQuestion Alignment', () => {
       textResponse('OK, understood.'),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       height: 40,
       width: 120,
       additionalEnv: {},
     })
-    await session.start()
 
     await session.sendLine('How should refunds work?')
-    await sleep(500)
 
     await session.waitForText('Chat about this', 30_000)
 
@@ -157,8 +137,16 @@ describe('AskUserQuestion Alignment', () => {
     await session.sendSpecialKey('Down')
     await sleep(200)
     await session.sendText('I prefer a different approach')
-    await sleep(500)
 
+    // Wait for the typed text to render in the Other input
+    await session.waitForScreen(
+      s => s.includes('I prefer a different approach'),
+      {
+        currentPaneOnly: true,
+        timeoutMs: 10_000,
+        description: 'typed Other-option text to render',
+      },
+    )
     const screen = await session.capturePane()
     const lines = screen.split('\n')
 
@@ -183,7 +171,6 @@ describe('AskUserQuestion Alignment', () => {
     expect(col1).toBe(colChat)
 
     await session.sendSpecialKey('Escape')
-    await sleep(500)
   })
 
   test('tall question content keeps wrapped Other input aligned', async () => {
@@ -233,13 +220,11 @@ describe('AskUserQuestion Alignment', () => {
       ]),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       height: 30,
       width: 72,
       additionalEnv: {},
     })
-    await session.start()
 
     await session.sendLine('Show the tall question dialog')
     await session.waitForText('Chat about this', 30_000)
@@ -247,7 +232,18 @@ describe('AskUserQuestion Alignment', () => {
     for (let i = 0; i < 4; i++) await session.sendSpecialKey('Down')
     await session.sendText(`${'x'.repeat(140)}OTHER_END`)
 
-    const screen = await session.waitForText('OTHER_END', 10_000)
+    // Wait on the pane grid, not the log: the assertions below check the
+    // wrapped continuation row, which only exists in the rendered grid.
+    const screen = await session.waitForScreen(
+      s =>
+        s.includes('OTHER_END') &&
+        s.split('\n').some(line => /^\s+x{2,}/.test(line)),
+      {
+        currentPaneOnly: true,
+        timeoutMs: 10_000,
+        description: 'wrapped Other input to render in the dialog',
+      },
+    )
     const lines = screen.split('\n')
     const inputLine = lines.find(
       line => line.includes('5.') && line.includes('x'),
@@ -293,21 +289,27 @@ describe('AskUserQuestion Alignment', () => {
       ]),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       height: 30,
       width: 72,
       additionalEnv: {},
     })
-    await session.start()
 
     await session.sendLine('Show the tall preview dialog')
     await session.waitForText('press n to add notes', 30_000)
     await session.sendText('n')
     await session.sendText('x'.repeat(44))
-    await sleep(300)
-
-    const screen = await session.capturePane()
+    // Wait on the pane grid, not the log: the assertions below check the
+    // wrapped continuation row, which only exists once the dialog has
+    // re-rendered the preview column around the typed text.
+    const screen = await session.waitForScreen(
+      s => s.includes('Notes:') && s.split('\n').some(l => /^\s+x{2,}/.test(l)),
+      {
+        currentPaneOnly: true,
+        timeoutMs: 10_000,
+        description: 'wrapped notes text to render in the dialog',
+      },
+    )
     const lines = screen.split('\n')
     const notesLine = lines.find(line => line.includes('Notes:'))
     const previewBorderLine = lines.find(line => line.includes('┌'))

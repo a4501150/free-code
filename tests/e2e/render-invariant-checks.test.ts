@@ -34,22 +34,14 @@
  * This is the regression net for the whole bug class — flip to skipIf
  * only if a new signature needs investigation, and document it here.
  */
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(300_000)
 
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
@@ -61,16 +53,7 @@ const longResponse = (tag: string): string =>
   ).join('\n')
 
 describe('render invariant checks', () => {
-  let server: MockAnthropicServer
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
+  const { server, startSession } = setupE2ESuite()
 
   bunTest(
     'dialog round-trips produce no layout or render violations',
@@ -79,8 +62,7 @@ describe('render invariant checks', () => {
         await mkdtemp(join(tmpdir(), 'render-check-')),
         'debug.txt',
       )
-      const session = new TmuxSession({
-        serverUrl: server.url,
+      const session = await startSession({
         width: 158,
         height: 40,
         additionalArgs: [
@@ -122,7 +104,6 @@ describe('render invariant checks', () => {
           },
         },
       })
-      await session.start()
 
       try {
         // Arm a monitor that ticks for ~2 minutes (still running through

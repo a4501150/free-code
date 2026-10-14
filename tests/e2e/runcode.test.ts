@@ -8,24 +8,13 @@
  * pane. This also re-validates the Bun.Transpiler + AsyncFunction loader in
  * the bytecode-compiled binary end to end.
  */
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
 import { join } from 'node:path'
-import {
-  MockAnthropicServer,
-  type RequestLogEntry,
-} from '../helpers/mock-server'
+import { type RequestLogEntry } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import { createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
@@ -65,25 +54,10 @@ function requestToolNames(entry: RequestLogEntry): string[] {
 }
 
 describe('RunCode code-mode E2E', () => {
-  let server: MockAnthropicServer
-  let session: TmuxSession
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
+  const { server, startSession } = setupE2ESuite()
 
   test('MCP tool stays out of tools[] and runs via a scripted call', async () => {
-    session = new TmuxSession({
-      serverUrl: server.url,
+    const session = await startSession({
       settings: {
         mcpServers: {
           srv: {
@@ -94,7 +68,6 @@ describe('RunCode code-mode E2E', () => {
         },
       },
     })
-    await session.start()
 
     // MCP connect is async and can land after the first turn; run a warm-up
     // turn so the scripted turn deterministically sees the connected server.

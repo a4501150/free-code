@@ -10,21 +10,22 @@
  */
 
 import {
+  beforeAll,
   describe,
   test as bunTest,
   expect,
-  beforeAll,
-  afterAll,
-  afterEach,
   setDefaultTimeout,
 } from 'bun:test'
 setDefaultTimeout(120_000)
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
-import { MockAnthropicServer } from '../helpers/mock-server'
 import { toolUseResponse, textResponse } from '../helpers/fixture-builders'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
-import { TmuxSession, createLoggingTest } from './tmux-helpers'
+import {
+  createLoggingTest,
+  setupE2ESuite,
+  type TmuxSession,
+} from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
@@ -40,7 +41,7 @@ function classifierTextResponse(text: string) {
 }
 
 describe('Auto Mode Classifier Deny E2E', () => {
-  let server: MockAnthropicServer
+  const { server, startSession } = setupE2ESuite()
   let session: TmuxSession
 
   beforeAll(async () => {
@@ -50,16 +51,6 @@ describe('Auto Mode Classifier Deny E2E', () => {
         `cli-dev binary not found at ${cliDevBinary}. Run 'bun run build:dev:full' first.`,
       )
     }
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
-
-  afterEach(async () => {
-    if (session) await session.stop()
   })
 
   test('collapsed view shows the count summary; the pill stays hidden until expand', async () => {
@@ -78,9 +69,7 @@ describe('Auto Mode Classifier Deny E2E', () => {
       textResponse('Acknowledged.'),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
-
+    session = await startSession({
       width: 140,
       height: 50,
       // Auto mode replaces the standard "? for shortcuts" footer with the
@@ -97,7 +86,6 @@ describe('Auto Mode Classifier Deny E2E', () => {
       // --enable-auto-mode is the explicit opt-in flag matching the CLI option.
       additionalArgs: ['--enable-auto-mode'],
     })
-    await session.start()
 
     await session.sendLine('please run rm -rf /tmp/anything-special')
 
@@ -138,9 +126,7 @@ describe('Auto Mode Classifier Deny E2E', () => {
       textResponse('Acknowledged.'),
     ])
 
-    session = new TmuxSession({
-      serverUrl: server.url,
-
+    session = await startSession({
       width: 140,
       height: 50,
       readyText: 'shift+tab to cycle',
@@ -151,7 +137,6 @@ describe('Auto Mode Classifier Deny E2E', () => {
       },
       additionalArgs: ['--enable-auto-mode', '--verbose'],
     })
-    await session.start()
 
     await session.sendLine('please run rm -rf /tmp/anything-special')
 

@@ -5,40 +5,23 @@
  * scroll up/down a bit more, then type /clear → blank screen.
  */
 
-import {
-  describe,
-  test as bunTest,
-  expect,
-  beforeAll,
-  afterAll,
-  afterEach,
-  setDefaultTimeout,
-} from 'bun:test'
-import { MockAnthropicServer } from '../helpers/mock-server'
+import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 import { textResponse } from '../helpers/fixture-builders'
-import { TmuxSession, sleep, createLoggingTest } from './tmux-helpers'
+import {
+  TmuxSession,
+  sleep,
+  createLoggingTest,
+  setupE2ESuite,
+} from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
 
 setDefaultTimeout(300_000)
 
 describe('Clear after scroll blank screen', () => {
-  let server: MockAnthropicServer
-
-  beforeAll(async () => {
-    server = new MockAnthropicServer()
-    await server.start()
-  })
-
-  afterAll(() => {
-    server.stop()
-  })
+  const { server, startSession } = setupE2ESuite()
 
   let session: TmuxSession
-
-  afterEach(async () => {
-    if (session) await session.stop()
-  })
 
   test('screen is not blank after /clear when scrolled to middle of long conversation', async () => {
     // Build ~10 pages of content: 8 turns × 80 lines = 640 lines at height=40
@@ -52,12 +35,10 @@ describe('Clear after scroll blank screen', () => {
     }
     server.reset(responses)
 
-    session = new TmuxSession({
-      serverUrl: server.url,
+    session = await startSession({
       height: 40,
       width: 120,
     })
-    await session.start()
 
     // Submit 8 prompts, wait for each turn to complete
     const TURNS = 8
