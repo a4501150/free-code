@@ -757,10 +757,7 @@ export default class Ink {
    * via the pacer.
    */
   private scheduleDrainFrame(): void {
-    this.drainTimer = setTimeout(
-      () => this.onRender(),
-      INPUT_PRIORITY_FRAME_MS,
-    )
+    this.drainTimer = setTimeout(() => this.onRender(), INPUT_PRIORITY_FRAME_MS)
   }
 
   onRender() {
@@ -2180,7 +2177,6 @@ export default class Ink {
     // Cancel any pending paced renders to prevent accessing freed Yoga nodes
     this.cancelScheduledRender()
     this.clearDrainTimer()
-
     ;(reconciler as any).updateContainerSync(null, this.container, null, noop)
     ;(reconciler as any).flushSyncWork()
     instances.delete(this.options.stdout)

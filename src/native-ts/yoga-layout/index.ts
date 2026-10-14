@@ -1558,32 +1558,32 @@ function layoutNode(
   // and sticky-scroll never follows new content. A dirty node's _hasL entry is
   // stale by definition — invalidate it so the layout pass recomputes.
   const wasDirty = node.isDirty_
-    if (performLayout) {
-      node._lW = availableWidth
-      node._lH = availableHeight
-      node._lWM = widthMode
-      node._lHM = heightMode
-      node._lOW = keyOW
-      node._lOH = keyOH
-      node._lFW = forceWidth
-      node._lFH = forceHeight
-      node._hasL = true
-      node.isDirty_ = false
-      // Previous approach cleared _cN here to prevent stale pre-dirty entries
-      // from hitting (long-continuous blank-screen bug). Now replaced by
-      // generation stamping: the cache check requires sameGen || !isDirty_, so
-      // previous-generation entries from a dirty node can't hit. Clearing here
-      // would wipe fresh same-generation entries from an earlier measure call,
-      // forcing recompute on the layout call.
-    } else {
-      // Don't clear isDirty_. For DIRTY nodes, invalidate _hasL so the upcoming
-      // performLayout=true call recomputes with the new child set (otherwise
-      // sticky-scroll never follows new content — the bug from 4557bc9f9c).
-      // Clean nodes keep _hasL: their layout from the previous generation is
-      // still valid, they're only here because an ancestor is dirty and called
-      // with different inputs than cached.
-      if (wasDirty) node._hasL = false
-    }
+  if (performLayout) {
+    node._lW = availableWidth
+    node._lH = availableHeight
+    node._lWM = widthMode
+    node._lHM = heightMode
+    node._lOW = keyOW
+    node._lOH = keyOH
+    node._lFW = forceWidth
+    node._lFH = forceHeight
+    node._hasL = true
+    node.isDirty_ = false
+    // Previous approach cleared _cN here to prevent stale pre-dirty entries
+    // from hitting (long-continuous blank-screen bug). Now replaced by
+    // generation stamping: the cache check requires sameGen || !isDirty_, so
+    // previous-generation entries from a dirty node can't hit. Clearing here
+    // would wipe fresh same-generation entries from an earlier measure call,
+    // forcing recompute on the layout call.
+  } else {
+    // Don't clear isDirty_. For DIRTY nodes, invalidate _hasL so the upcoming
+    // performLayout=true call recomputes with the new child set (otherwise
+    // sticky-scroll never follows new content — the bug from 4557bc9f9c).
+    // Clean nodes keep _hasL: their layout from the previous generation is
+    // still valid, they're only here because an ancestor is dirty and called
+    // with different inputs than cached.
+    if (wasDirty) node._hasL = false
+  }
 
   // Resolve padding/border/margin against ownerWidth (yoga uses ownerWidth for %)
   // Write directly into the pre-allocated layout arrays — avoids 3 allocs per
