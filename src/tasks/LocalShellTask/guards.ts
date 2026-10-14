@@ -29,6 +29,10 @@ export type LocalShellTaskState = TaskStateBase & {
   // UI display variant. 'monitor' → shows description instead of command,
   // 'Monitor details' dialog title, distinct status bar pill.
   kind?: BashTaskKind
+  // Monitor-only: max notification cadence in ms as requested via the
+  // Monitor tool's notify_interval. Shown in the monitor detail dialog;
+  // undefined for bash tasks and mirrors registered before this field.
+  notifyIntervalMs?: number
 }
 
 export function isLocalShellTask(task: unknown): task is LocalShellTaskState {

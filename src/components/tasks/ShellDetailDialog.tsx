@@ -115,6 +115,9 @@ export function ShellDetailDialog({
   // ScrollBox would overflow modal's overflow=hidden.
   const terminalSize = useTerminalSize()
   const { columns, rows } = useModalOrTerminalSize(terminalSize)
+  const isMonitor = shell.kind === 'monitor'
+  const showNotifyFrequency = isMonitor && shell.notifyIntervalMs !== undefined
+
   // Pre-wrap rather than letting Text wrap: the ScrollBox scrolls in
   // rendered rows, so the position label and the height budget both need
   // the post-wrap line count. hard/trim match Ink's own `wrap` behavior.
@@ -129,7 +132,10 @@ export function ShellDetailDialog({
 
   // Output keeps first claim on the budget: it's the panel that grows, and
   // the command panel is scrollable when it doesn't get all the rows it wants.
-  const viewportBudget = rows - VIEWPORT_CHROME_ROWS
+  // The monitor-only notify-frequency row adds a chrome line; budget for it
+  // so the dialog doesn't overflow into the messages area above.
+  const chromeRows = VIEWPORT_CHROME_ROWS + (showNotifyFrequency ? 1 : 0)
+  const viewportBudget = rows - chromeRows
   const commandHeight = Math.max(
     COMMAND_VIEWPORT_HEIGHT_MIN,
     Math.min(
@@ -244,8 +250,6 @@ export function ShellDetailDialog({
     }
   }
 
-  const isMonitor = shell.kind === 'monitor'
-
   // ScrollBox is the raw ink component, so theme keys have to be resolved
   // here rather than passed through like they would be to a themed Box.
   const [themeName] = useTheme()
@@ -314,6 +318,15 @@ export function ShellDetailDialog({
             <Text bold>Runtime:</Text>{' '}
             {formatDuration((shell.endTime ?? Date.now()) - shell.startTime)}
           </Text>
+          {isMonitor && shell.notifyIntervalMs !== undefined && (
+            <Text>
+              <Text bold>Notify frequency:</Text>{' '}
+              <Text dimColor>
+                at most once per {formatDuration(shell.notifyIntervalMs)} (exit
+                and error notify immediately)
+              </Text>
+            </Text>
+          )}
         </Box>
 
         <Box flexDirection="column" onClick={() => setFocusedPanel('command')}>

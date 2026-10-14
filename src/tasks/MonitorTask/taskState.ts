@@ -88,6 +88,9 @@ export function registerMonitorTaskState(
     isBackgrounded: true,
     agentId: monitor.agentId,
     kind: 'monitor',
+    ...(monitor.notifyIntervalMs !== undefined
+      ? { notifyIntervalMs: monitor.notifyIntervalMs }
+      : {}),
     ...(terminal
       ? {
           result: { code: monitor.exitCode ?? -1, interrupted: false },

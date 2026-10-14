@@ -70,7 +70,10 @@ describe('monitorStatusToTaskStatus', () => {
 describe('registerMonitorTaskState', () => {
   test('registers a running mirror with the monitor-kind display variant', () => {
     const { state, setAppState } = makeStore()
-    registerMonitorTaskState(makeMonitor(), setAppState)
+    registerMonitorTaskState(
+      makeMonitor({ notifyIntervalMs: 90_000 }),
+      setAppState,
+    )
     const task = getTask(state, 'mon_1_test')
     expect(isLocalShellTask(task)).toBe(true)
     expect(task.type).toBe('local_bash')
@@ -78,6 +81,7 @@ describe('registerMonitorTaskState', () => {
     expect(task.status).toBe('running')
     expect(task.isBackgrounded).toBe(true)
     expect(task.shellCommand).toBeNull()
+    expect(task.notifyIntervalMs).toBe(90_000)
     expect(task.description).toBe('app-log-tail')
     expect(task.command).toBe('tail -f app.log')
   })
