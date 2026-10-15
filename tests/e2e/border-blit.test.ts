@@ -90,14 +90,19 @@ describe('LogoV2 vertical divider', () => {
       // First line should NOT be the logo border
       expect(screen.split('\n')[0]).not.toContain('╭')
 
-      // Scroll back up to reveal logo
-      await session.sendKeyAndAwaitRender('PPage')
-      await session.sendKeyAndAwaitRender('PPage')
-      await session.sendKeyAndAwaitRender('PPage')
+      // Scroll back up until the logo reaches the top of the pane. The
+      // number of pages depends on how much of the response rendered, so a
+      // fixed press count can land one page short; keep pressing until the
+      // logo's top border appears in the captured rows.
+      const maxScrollBackPresses = 10
+      for (let i = 0; i < maxScrollBackPresses; i++) {
+        await session.sendKeyAndAwaitRender('PPage')
+        screen = await session.capturePane()
+        logoLines = screen.split('\n').slice(0, 15)
+        if (logoLines.some(line => line.includes('╭'))) break
+      }
 
       // Verify divider is still present after re-entering viewport
-      screen = await session.capturePane()
-      logoLines = screen.split('\n').slice(0, 15)
       const dividerCount = countDividerLines(logoLines)
 
       // The divider should be visible on multiple rows.
