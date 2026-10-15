@@ -6,8 +6,8 @@
  *
  * Shapes were reconstructed from every construction site in
  * src/utils/messages.ts, src/utils/attachments.ts, src/query.ts,
- * src/QueryEngine.ts, src/remote/structuredMessageAdapter.ts and their
- * consumers. Keep them in sync with those files.
+ * src/QueryEngine.ts and their consumers. Keep them in sync with those
+ * files.
  */
 
 import type {
