@@ -14,6 +14,7 @@ import {
 } from 'react'
 import { useNotifications } from '../context/notifications.js'
 import { sendNotification } from '../services/notifier.js'
+import { compactProgressLabel } from '../services/compact/compactProgressLabel.js'
 import { useTerminalNotification } from '../ink/useTerminalNotification.js'
 import { hasCursorUpViewportYankBug } from '../ink/terminal.js'
 import { useFlipInvalidation } from '../ink/hooks/use-flip-invalidation.js'
@@ -1195,10 +1196,21 @@ export function REPL({
     loadedNestedMemoryPathsRef,
     setResponseLength,
     setStreamMode,
-    setSpinnerMessage,
-    setSpinnerColor,
-    setSpinnerShimmerColor,
-    setCompactingStartTime,
+    // The single sink for every command and tool path's compaction progress.
+    onCompactProgress: event => {
+      setSpinnerMessage(compactProgressLabel(event))
+      if (event.type === 'compact_end') {
+        setSpinnerColor(null)
+        setSpinnerShimmerColor(null)
+        setCompactingStartTime(null)
+      } else {
+        if (event.type === 'hooks_start') {
+          setSpinnerColor('claudeBlue_FOR_SYSTEM_SPINNER')
+          setSpinnerShimmerColor('claudeBlueShimmer_FOR_SYSTEM_SPINNER')
+        }
+        setCompactingStartTime((prev: number | null) => prev ?? Date.now())
+      }
+    },
     setInProgressToolUseIDs,
     hasInterruptibleToolInProgressRef,
     scrollRef,
