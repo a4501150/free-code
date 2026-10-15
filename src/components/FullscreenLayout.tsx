@@ -471,7 +471,7 @@ export function FullscreenLayout({
 // (absoluteRectsPrev third-pass in render-node-to-output.ts, #23939). Shows
 // "Jump to bottom" when count is 0 (scrolled away but no new messages yet —
 // the dead zone where users previously thought chat stalled).
-function NewMessagesPill({
+export function NewMessagesPill({
   count,
   onClick,
 }: {
@@ -557,7 +557,7 @@ function StickyPromptHeader({
 // even when the overlay extends above the viewport. We omit minHeight and
 // flex-end here: they would create empty padding rows that shift visible
 // items down into the prompt area when the list has fewer items than max.
-function SuggestionsOverlay(): React.ReactNode {
+export function SuggestionsOverlay(): React.ReactNode {
   const data = usePromptOverlay()
   if (!data || data.suggestions.length === 0) return null
   return (
@@ -584,7 +584,7 @@ function SuggestionsOverlay(): React.ReactNode {
 // Dialog portaled from PromptInput — same clip-escape pattern as
 // SuggestionsOverlay. Renders later in tree order so it paints over
 // suggestions if both are ever up (they shouldn't be).
-function DialogOverlay(): React.ReactNode {
+export function DialogOverlay(): React.ReactNode {
   const node = usePromptOverlayDialog()
   if (!node) return null
   return (
