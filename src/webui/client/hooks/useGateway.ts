@@ -1,42 +1,53 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  connectGateway,
+  connectGatewayInfo,
+  connectSessionStream,
+  fetchImage as fetchImageBytes,
+  sendCommand,
   type CommandResult,
-  type GatewaySocket,
-  type ServerFrame,
+  type SessionCommandRoute,
+  type SessionStream,
 } from '../api.js'
 import type {
-  AttachEventBody,
-  AttachRequestBody,
-} from '../../protocol/attachSchemas.js'
+  WireCommand,
+  WireEvent,
+  WireImagePayload,
+} from '../../../session/wire.js'
 
 export type Gateway = {
   connected: boolean
-  attach(processKey: string): void
-  detach(): void
-  send(body: AttachRequestBody): void
-  request(body: AttachRequestBody): Promise<CommandResult>
+  /** Points the event stream, command sender and image reader at one process. */
+  attachSession(processKey: string): void
+  /**
+   * Stop watching the current process. React state alone cannot do this: the
+   * stream stays open and keeps feeding a view the user has left.
+   */
+  detachSession(): void
+  /** POSTs to the attached session; resolves a failure rather than rejecting. */
+  command(route: SessionCommandRoute, body: WireCommand): Promise<CommandResult>
+  /** Bytes for one transcript image of the attached session. */
+  fetchImage(itemId: string): Promise<WireImagePayload>
 }
 
 /**
- * Owns the one websocket for the whole app.
+ * Owns the gateway info socket and the one attached session stream.
  *
- * Deliberately narrow: it does not poll, and it performs no HTTP. The caller
- * decides what an event means.
+ * Deliberately narrow: it does not poll, and it performs no session-list HTTP.
+ * The caller decides what an event or an offline stream means.
  */
 export function useGateway({
   csrf,
   onEvent,
-  onProcessGone,
-  onAttachFailed,
+  onStreamOffline,
   onRestartReady,
 }: {
   csrf: string | null
-  onEvent(seq: number, event: AttachEventBody): void
-  /** The attached process ended. Carries the session it was serving. */
-  onProcessGone(info: { processKey: string; sessionId: string }): void
-  /** The gateway could not reach the process, so no snapshot is coming. */
-  onAttachFailed(): void
+  onEvent(seq: number, event: WireEvent): void
+  /**
+   * The attached process stopped answering the stream (the gateway answered a
+   * reconnect non-ok). No further events are coming on this key.
+   */
+  onStreamOffline(processKey: string): void
   /** The old gateway completed a restart and is handing off to a new one. */
   onRestartReady(info: {
     publicUrl: string | null
@@ -44,67 +55,80 @@ export function useGateway({
   }): void
 }): Gateway {
   const [connected, setConnected] = useState(false)
-  const socketRef = useRef<GatewaySocket | null>(null)
+  const streamRef = useRef<SessionStream | null>(null)
+  const attachedKey = useRef<string | null>(null)
 
-  // Held in a ref so a new callback identity cannot tear the socket down.
+  // Held in refs so a new callback or a refreshed token cannot tear the
+  // socket or the stream down.
+  const csrfRef = useRef(csrf)
+  csrfRef.current = csrf
   const onEventRef = useRef(onEvent)
   onEventRef.current = onEvent
-  const onProcessGoneRef = useRef(onProcessGone)
-  onProcessGoneRef.current = onProcessGone
-  const onAttachFailedRef = useRef(onAttachFailed)
-  onAttachFailedRef.current = onAttachFailed
+  const onStreamOfflineRef = useRef(onStreamOffline)
+  onStreamOfflineRef.current = onStreamOffline
   const onRestartReadyRef = useRef(onRestartReady)
   onRestartReadyRef.current = onRestartReady
 
   useEffect(() => {
-    if (!csrf) return
-    const socket = connectGateway({
-      csrf,
-      onFrame: (frame: ServerFrame) => {
-        if (frame.type === 'event') onEventRef.current(frame.seq, frame.event)
-        if (frame.type === 'process_gone') {
-          onProcessGoneRef.current({
-            processKey: frame.processKey,
-            sessionId: frame.sessionId,
-          })
-        }
-        if (frame.type === 'error' && frame.code === 'attach_failed') {
-          onAttachFailedRef.current()
-        }
-        if (frame.type === 'restart_ready') {
-          onRestartReadyRef.current({
-            publicUrl: frame.publicUrl,
-            localUrl: frame.localUrl,
-          })
-        }
-      },
+    const socket = connectGatewayInfo({
       onOpen: () => setConnected(true),
       onClose: () => setConnected(false),
+      onRestartReady: info => onRestartReadyRef.current(info),
     })
-    socketRef.current = socket
     return () => {
       socket.close()
-      socketRef.current = null
+      streamRef.current?.close()
+      streamRef.current = null
+      attachedKey.current = null
     }
-  }, [csrf])
-
-  const attach = useCallback((processKey: string) => {
-    socketRef.current?.attach(processKey)
   }, [])
 
-  const detach = useCallback(() => {
-    socketRef.current?.detach()
+  const attachSession = useCallback((processKey: string) => {
+    if (attachedKey.current === processKey) return
+    streamRef.current?.close()
+    attachedKey.current = processKey
+    streamRef.current = connectSessionStream(processKey, {
+      onEvent: (seq, event) => onEventRef.current(seq, event),
+      onOffline: () => {
+        // A stream that went away for a key the user already left must not
+        // disturb the one they are watching now.
+        if (attachedKey.current !== processKey) return
+        streamRef.current?.close()
+        streamRef.current = null
+        attachedKey.current = null
+        onStreamOfflineRef.current(processKey)
+      },
+    })
   }, [])
 
-  const send = useCallback((body: AttachRequestBody) => {
-    socketRef.current?.send(body)
+  const detachSession = useCallback(() => {
+    streamRef.current?.close()
+    streamRef.current = null
+    attachedKey.current = null
   }, [])
 
-  const request = useCallback((body: AttachRequestBody) => {
-    const socket = socketRef.current
-    if (!socket) return Promise.reject(new Error('not connected'))
-    return socket.request(body)
+  const command = useCallback(
+    (route: SessionCommandRoute, body: WireCommand) => {
+      const processKey = attachedKey.current
+      const token = csrfRef.current
+      if (!processKey || !token) {
+        return Promise.resolve({
+          ok: false,
+          error: { code: 'detached', message: 'no session is attached' },
+        })
+      }
+      return sendCommand(processKey, token, route, body)
+    },
+    [],
+  )
+
+  const fetchImage = useCallback(async (itemId: string) => {
+    const processKey = attachedKey.current
+    if (!processKey) throw new Error('no session is attached')
+    const image = await fetchImageBytes(processKey, itemId)
+    if (!image) throw new Error('the session has no bytes for that image')
+    return image
   }, [])
 
-  return { connected, attach, detach, send, request }
+  return { connected, attachSession, detachSession, command, fetchImage }
 }

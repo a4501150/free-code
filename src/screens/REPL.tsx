@@ -14,7 +14,6 @@ import {
 } from 'react'
 import { useNotifications } from '../context/notifications.js'
 import { sendNotification } from '../services/notifier.js'
-import { compactProgressLabel } from '../services/compact/compactProgressLabel.js'
 import { useTerminalNotification } from '../ink/useTerminalNotification.js'
 import { hasCursorUpViewportYankBug } from '../ink/terminal.js'
 import { useFlipInvalidation } from '../ink/hooks/use-flip-invalidation.js'
@@ -258,8 +257,11 @@ import {
 } from '../utils/sessionRestore.js'
 import { updateSessionName } from '../utils/concurrentSessions.js'
 import { useScheduledTasks } from '../hooks/useScheduledTasks.js'
-import * as webuiAttachModule from '../server/hostSingleton.js'
 import { useReplAttachBridge } from '../server/replBridge.js'
+import {
+  EXTERNAL_PERMISSION_MODES,
+  type ExternalPermissionMode,
+} from '../types/permissions.js'
 const SUGGEST_BG_PR_NOOP = (_p: string, _n: string): boolean => false
 import { useTaskListWatcher } from '../hooks/useTaskListWatcher.js'
 
@@ -356,12 +358,13 @@ import { useReplExit } from '../hooks/repl/useReplExit.js'
 import { useReplTerminalStatus } from '../hooks/repl/useReplTerminalStatus.js'
 import { useReplSessionResume } from '../hooks/repl/useReplSessionResume.js'
 import { useReplQueryExecution } from '../hooks/repl/useReplQueryExecution.js'
+import { SessionCore } from '../session/SessionCore.js'
+import type { CompactProgressEvent } from '../Tool.js'
 import { useReplStreaming } from '../hooks/repl/useReplStreaming.js'
 import { useReplQueryLifecycle } from '../hooks/repl/useReplQueryLifecycle.js'
 import { useReplToolUseContext } from '../hooks/repl/useReplToolUseContext.js'
 import { useReplBackgrounding } from '../hooks/repl/useReplBackgrounding.js'
 import { useReplDialogs } from '../hooks/repl/useReplDialogs.js'
-import { useReplComposerHost } from '../hooks/repl/useReplComposerHost.js'
 import { useReplSubmission } from '../hooks/repl/useReplSubmission.js'
 import { useReplTranscript } from '../hooks/repl/useReplTranscript.js'
 import { useReplInput } from '../hooks/repl/useReplInput.js'
@@ -660,21 +663,20 @@ export function REPL({
     [disableSlashCommands, mergedCommands],
   )
 
-  const commandNames = useMemo(
-    () => [
-      ...new Set(
-        commands
-          .filter(c => !c.isHidden)
-          .flatMap(c => [getCommandName(c), ...(c.aliases ?? [])]),
-      ),
-    ],
-    [commands],
-  )
-
   useIdeLogging(mcp.clients)
   useIdeSelection(mcp.clients, setIDESelection)
 
   // ── Message state (must come before streaming/query hooks) ──
+  // One session core per mounted session, owning the transcript from the
+  // first render. The query-execution hook binds its loop inputs; the event
+  // projections (this screen's hooks, the wire bridge) only ever subscribe.
+  const sessionCoreRef = useRef<SessionCore | null>(null)
+  if (sessionCoreRef.current === null) {
+    sessionCoreRef.current = new SessionCore({
+      initialTranscript: initialMessages ? [...initialMessages] : [],
+    })
+  }
+  const core = sessionCoreRef.current
   const {
     messages,
     messagesRef,
@@ -688,10 +690,10 @@ export function REPL({
     contentReplacementStateRef,
     awaitPendingHooks,
   } = useReplMessages({
+    core,
     initialMessages,
     initialContentReplacements,
     pendingHookMessages,
-    publishTranscript: () => webuiAttachModule.publishAttachTranscript(),
   })
 
   // ── Streaming state ──
@@ -1197,20 +1199,8 @@ export function REPL({
     setResponseLength,
     setStreamMode,
     // The single sink for every command and tool path's compaction progress.
-    onCompactProgress: event => {
-      setSpinnerMessage(compactProgressLabel(event))
-      if (event.type === 'compact_end') {
-        setSpinnerColor(null)
-        setSpinnerShimmerColor(null)
-        setCompactingStartTime(null)
-      } else {
-        if (event.type === 'hooks_start') {
-          setSpinnerColor('claudeBlue_FOR_SYSTEM_SPINNER')
-          setSpinnerShimmerColor('claudeBlueShimmer_FOR_SYSTEM_SPINNER')
-        }
-        setCompactingStartTime((prev: number | null) => prev ?? Date.now())
-      }
-    },
+    onCompactProgress: (event: CompactProgressEvent) =>
+      core.handleCompactProgress(event),
     setInProgressToolUseIDs,
     hasInterruptibleToolInProgressRef,
     scrollRef,
@@ -1240,8 +1230,7 @@ export function REPL({
 
   const { onQuery, onQueryEvent, handleIncomingPrompt } = useReplQueryExecution(
     {
-      messagesRef,
-      setMessages,
+      core,
       setStreamMode,
       setStreamingToolUses,
       setStreamingThinking,
@@ -1334,15 +1323,6 @@ export function REPL({
       bashToolsProcessedIdx,
       setAbortController,
     })
-  // The composer's session-side action seam — the same closures PromptInput
-  // used to receive as onSubmit/onAgentSubmit/getToolUseContext props.
-  const composerHost = useReplComposerHost({
-    onSubmit,
-    onAgentSubmit,
-    getToolUseContext,
-    setAppState,
-    setToolPermissionContext,
-  })
   // handleExit → useReplExit hook
 
   const handleShowMessageSelector = useCallback(() => {
@@ -1677,10 +1657,10 @@ export function REPL({
     insertTextRef,
   })
 
-  // Mirror this session onto its attach socket so a browser can watch and
+  // Mirror this session onto its wire surface so a browser can watch and
   // drive it.
   useReplAttachBridge({
-    messagesRef,
+    core,
     getState: () =>
       toolUseConfirmQueue.length > 0
         ? 'requires_action'
@@ -1689,12 +1669,20 @@ export function REPL({
           : 'idle',
     // streamMode keeps its last value after a turn ends, so gate it on loading.
     getActivity: () => (isLoading ? streamMode : undefined),
-    getIsCompacting: () => compactingStartTime !== null,
+    getIsCompacting: () => core.isCompacting,
     getModel: () => mainLoopModel,
-    getPermissionMode: () => toolPermissionContext.mode,
+    // Internal-only modes are not part of the wire enum; a surface that
+    // cannot set them should not be told a name it cannot render.
+    getPermissionMode: () =>
+      (EXTERNAL_PERMISSION_MODES as readonly string[]).includes(
+        toolPermissionContext.mode,
+      )
+        ? (toolPermissionContext.mode as ExternalPermissionMode)
+        : undefined,
     getInProgressToolUseIds: () => inProgressToolUseIDs,
     todos: tasksV2,
-    commandNames,
+    commands,
+    tasks,
     onCancel,
     onSetPermissionMode: mode => {
       setAppState(prev => {
@@ -2170,7 +2158,7 @@ export function REPL({
                         ideSelection={ideSelection}
                         hasSuppressedDialogs={!!hasSuppressedDialogs}
                         isLocalJSXCommandActive={isShowingLocalJSXCommand}
-                        host={composerHost}
+                        getToolUseContext={getToolUseContext}
                         toolPermissionContext={toolPermissionContext}
                         setToolPermissionContext={setToolPermissionContext}
                         apiKeyStatus={apiKeyStatus}
@@ -2200,6 +2188,8 @@ export function REPL({
                         setVimMode={setVimMode}
                         showBashesDialog={showBashesDialog}
                         setShowBashesDialog={setShowBashesDialog}
+                        onSubmit={onSubmit}
+                        onAgentSubmit={onAgentSubmit}
                         isSearchingHistory={isSearchingHistory}
                         setIsSearchingHistory={setIsSearchingHistory}
                         helpOpen={isHelpOpen}

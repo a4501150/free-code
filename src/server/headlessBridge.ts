@@ -7,40 +7,52 @@
  * a bare allow silently submits empty answers. Exit-plan approval must also
  * drop `plan`, or it falsely reports a user edit.
  */
-import { isWebuiManagedProcess } from '../utils/webuiManagedProcess.ts'
-import type { CanUseToolFn } from '../Tool.ts'
-import type { Message } from '../types/message.ts'
+import { isWebuiManagedProcess } from '../utils/webuiManagedProcess.js'
+import type { CanUseToolFn } from '../Tool.js'
+import type { CommandBase } from '../types/command.js'
+import type { Message } from '../types/message.js'
+import type { TaskState } from '../tasks/types.js'
 import {
   enqueue,
   getCommandQueueSnapshot,
-} from '../utils/messageQueueManager.ts'
+} from '../utils/messageQueueManager.js'
 import type { UUID } from 'crypto'
 import {
   getStreamActivity,
   getIsCompacting,
   getInProgressToolUseIds as getGlobalInProgressIds,
   setStreamActivityListener,
-} from '../utils/streamActivity.ts'
+} from '../utils/streamActivity.js'
+import { currentSessionRequests } from '../session/requests.js'
+import { buildRequestUi } from '../session/requestUi.js'
 import type {
-  WebPendingCommand,
-  WebPermissionMode,
-  WebSessionActivity,
-  WebSessionState,
-} from '../webui/protocol/attachSchemas.ts'
+  WirePendingCommand,
+  WirePermissionMode,
+  WireSessionActivity,
+  WireSessionState,
+} from '../session/wire.js'
 import {
-  getAttachHost,
   publishAttachMeta,
   publishAttachPendingCommands,
   publishAttachTranscript,
   registerAttachRuntime,
   startProcessAttachHost,
-} from './hostSingleton.ts'
-import { executePermissionRequestHooksForHost } from '../cli/structuredIO.ts'
+} from './hostSingleton.js'
+import { executePermissionRequestHooksForHost } from '../cli/structuredIO.js'
 import {
   applyPermissionUpdates,
   createSessionToolAllowUpdate,
-} from '../utils/permissions/PermissionUpdate.ts'
-import { buildSubmitValue } from './runtime.ts'
+} from '../utils/permissions/PermissionUpdate.js'
+import {
+  REJECT_MESSAGE,
+  REJECT_MESSAGE_WITH_REASON_PREFIX,
+  SUBAGENT_REJECT_MESSAGE,
+  SUBAGENT_REJECT_MESSAGE_WITH_REASON_PREFIX,
+  withMemoryCorrectionHint,
+} from '../utils/messages.js'
+import { buildSubmitValue } from './runtime.js'
+import { buildWireCatalog, tasksToWire } from './catalog.js'
+import { loadAgentWireTranscript } from './agentTranscript.js'
 
 export function shouldAttachHeadless(): boolean {
   return isWebuiManagedProcess()
@@ -51,44 +63,48 @@ export type HeadlessAttachParams = {
   getMessages(): readonly Message[]
   isRunning(): boolean
   getModel(): string | undefined
-  getPermissionMode(): string | undefined
-  getCommands(): string[]
+  getPermissionMode(): WirePermissionMode | undefined
+  getCommands(): readonly CommandBase[]
+  getTasks(): Record<string, TaskState>
   getInProgressToolUseIds?(): ReadonlySet<string>
   interrupt(): void
-  setModel(model: string): void
-  setPermissionMode(mode: WebPermissionMode): void
+  /** null returns to the account/config default. */
+  setModel(model: string | null): void
+  setPermissionMode(mode: WirePermissionMode): void
   requestRun(): void
 }
 
 /**
- * Publishes a headless session on an attach socket, so a server-owned session
+ * Publishes a headless session on a wire surface, so a server-owned session
  * speaks the same protocol as one the user started in a terminal.
  */
 export function startHeadlessAttach(params: HeadlessAttachParams): void {
-  const host = startProcessAttachHost({
+  const surface = startProcessAttachHost({
     cwd: params.cwd,
     entrypoint: 'webui-child',
   })
-  if (!host) return
+  if (!surface) return
 
   registerAttachRuntime({
     getMessages: () => params.getMessages(),
-    getState: (): WebSessionState =>
-      host.permissions.pending().length > 0
+    getState: (): WireSessionState =>
+      currentSessionRequests().pending().length > 0
         ? 'requires_action'
         : params.isRunning()
           ? 'running'
           : 'idle',
-    getActivity: (): WebSessionActivity | undefined =>
+    getActivity: (): WireSessionActivity | undefined =>
       params.isRunning() ? getStreamActivity() : undefined,
     getIsCompacting: () => getIsCompacting(),
     getModel: () => params.getModel(),
     getPermissionMode: () => params.getPermissionMode(),
     getTodos: () => [],
-    getCommands: () => params.getCommands(),
+    getTasks: () => tasksToWire(params.getTasks()),
+    getAgentTranscript: agentId => loadAgentWireTranscript(agentId),
+    getCatalog: () => buildWireCatalog(params.getCommands()),
     getPendingCommands: () => {
       const snapshot = getCommandQueueSnapshot()
-      const commands: WebPendingCommand[] = []
+      const commands: WirePendingCommand[] = []
       for (const cmd of snapshot) {
         if (cmd.mode !== 'prompt') continue
         const text =
@@ -100,7 +116,9 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
                 )
                 .map(b => b.text)
                 .join('\n')
-        if (text && cmd.uuid) commands.push({ id: cmd.uuid, text })
+        if (text && cmd.uuid) {
+          commands.push({ id: cmd.uuid, text, isMeta: cmd.isMeta })
+        }
       }
       return commands
     },
@@ -118,11 +136,11 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
       params.requestRun()
     },
 
-    interrupt() {
+    cancel() {
       params.interrupt()
     },
 
-    setPermissionMode(mode) {
+    setMode(mode) {
       params.setPermissionMode(mode)
     },
 
@@ -131,20 +149,12 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
     },
   })
 
-  // The headless loop mutates its message array in place, so unlike the REPL
-  // there is no setter to hook. Poll instead, and only while a browser is
-  // actually attached. Unref'd so it cannot hold a finished process open.
-  const timer = setInterval(() => {
-    if (!host.hasSubscribers) return
-    publishAttachTranscript()
-    publishAttachMeta()
-    publishAttachPendingCommands()
-  }, 400)
-  timer.unref?.()
-
   // Compacting state changes must reach the browser immediately, not on the
-  // next 400ms poll tick, or a fast compact is invisible.
-  setStreamActivityListener(() => publishAttachMeta())
+  // next publish, or a fast compact is invisible.
+  setStreamActivityListener(() => {
+    publishAttachMeta()
+    publishAttachTranscript()
+  })
 }
 
 /** Call after the message array changes so an attached browser sees it. */
@@ -161,9 +171,12 @@ export function publishHeadlessTranscript(): void {
  * decision is effectively a denial. This routes it to the attached browser
  * instead and waits, which is what makes a server-owned session usable.
  *
- * PermissionRequest hooks race the browser here, as they race the terminal
- * dialog and the structured host. Without that, a hook that answers every
- * other host would be ignored for a gateway-owned session alone.
+ * The request opens on the session's request broker — the same single
+ * ask/race site the interactive dialog uses — so the wire surface announces
+ * it and any attached client can answer. PermissionRequest hooks race the
+ * browser here, as they race the terminal dialog and the structured host.
+ * Without that, a hook that answers every other host would be ignored for a
+ * gateway-owned session alone.
  */
 export function wrapCanUseToolWithWebUI(inner: CanUseToolFn): CanUseToolFn {
   return async (
@@ -184,10 +197,7 @@ export function wrapCanUseToolWithWebUI(inner: CanUseToolFn): CanUseToolFn {
     )
     if (decision.behavior !== 'ask') return decision
 
-    const host = getAttachHost()
-    if (!host) return decision
-
-    const broker = host.permissions
+    const broker = currentSessionRequests()
     const requestId = broker.newRequestId()
     const displayInput = decision.updatedInput ?? input
 
@@ -216,6 +226,7 @@ export function wrapCanUseToolWithWebUI(inner: CanUseToolFn): CanUseToolFn {
 
       const unsubscribe = broker.open(
         {
+          kind: 'permission',
           requestId,
           toolName: tool.name,
           toolUseId: toolUseID,
@@ -223,14 +234,47 @@ export function wrapCanUseToolWithWebUI(inner: CanUseToolFn): CanUseToolFn {
           input: displayInput as Record<string, unknown>,
           blockedPath: decision.blockedPath,
           openedAt: Date.now(),
+          // The ask's display half, so a terminal with the classic dialog
+          // components can mount the tool's own permission dialog: its
+          // suggested-rule options and the compound-command flag.
+          suggestions:
+            'suggestions' in decision ? decision.suggestions : undefined,
+          subcommandResults:
+            decision.decisionReason?.type === 'subcommandResults',
+          // The question/plan enrichments, so a surface with the classic
+          // dialog components can mount the tool's own dialog (same tag
+          // the REPL's interactive handler applies).
+          ui: buildRequestUi(
+            tool.name,
+            displayInput as Record<string, unknown>,
+          ),
         },
-        browserDecision => {
+        response => {
+          if (response.kind !== 'permission') return
+          const browserDecision = response.decision
           if (browserDecision.behavior === 'allow') {
             const updated =
               browserDecision.updatedInput &&
               Object.keys(browserDecision.updatedInput).length
                 ? browserDecision.updatedInput
                 : displayInput
+            // Rule updates from a classic dialog's options ("always allow
+            // this prefix/directory") apply session-scoped only — forced
+            // to the in-memory destination, never a durable settings file.
+            const ruleUpdates = (browserDecision.updates ?? []).map(update =>
+              update.type === 'setMode'
+                ? update
+                : { ...update, destination: 'session' as const },
+            )
+            if (ruleUpdates.length > 0) {
+              toolUseContext.setAppState(prev => ({
+                ...prev,
+                toolPermissionContext: applyPermissionUpdates(
+                  prev.toolPermissionContext,
+                  ruleUpdates,
+                ),
+              }))
+            }
             if (browserDecision.persist) {
               // Session scope only, so nothing is written to disk. The
               // terminal's equivalent writes a durable project-local rule,
@@ -243,17 +287,46 @@ export function wrapCanUseToolWithWebUI(inner: CanUseToolFn): CanUseToolFn {
                 ),
               }))
             }
-            finish({ behavior: 'allow', updatedInput: updated })
+            // An approval carrying feedback (plan approval's "approve
+            // with this feedback") rides the same acceptFeedback field
+            // the terminal dialog's path produces.
+            finish({
+              behavior: 'allow',
+              updatedInput: updated,
+              ...(browserDecision.feedback?.trim()
+                ? { acceptFeedback: browserDecision.feedback.trim() }
+                : {}),
+            })
           } else {
+            // The classic dialog's reject (PermissionContext.cancelAndAbort):
+            // a bare reject composes the standard STOP message — the text the
+            // transcript's rejected-tool-use renderer keys on — and interrupts
+            // the turn; feedback rides the with-reason prefix instead. The
+            // wire's absent message IS the bare reject (the browser shell
+            // sends `message || undefined`); a subagent gets its own wording.
+            const feedback = browserDecision.message?.trim() || undefined
+            const sub = !!toolUseContext.agentId
+            const message = feedback
+              ? withMemoryCorrectionHint(
+                  `${sub ? SUBAGENT_REJECT_MESSAGE_WITH_REASON_PREFIX : REJECT_MESSAGE_WITH_REASON_PREFIX}${feedback}`,
+                )
+              : withMemoryCorrectionHint(
+                  sub ? SUBAGENT_REJECT_MESSAGE : REJECT_MESSAGE,
+                )
             finish({
               behavior: 'deny',
-              message: browserDecision.message ?? 'Denied from the WebUI',
+              message,
               decisionReason: {
                 type: 'permissionPromptTool',
                 permissionPromptToolName: 'webui',
                 toolResult: { behavior: 'deny' },
               },
             })
+            // The classic's bare reject aborts the turn after the decision is
+            // in hand (the "[Request interrupted by user for tool use]" row);
+            // finish is already settled, so the abort racer cannot overwrite
+            // the composed message.
+            if (!feedback && !sub) toolUseContext.abortController.abort()
           }
         },
       )

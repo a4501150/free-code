@@ -1,52 +1,91 @@
-import type { DomainUserContentBlock } from '../types/domain.ts'
-import type { Message } from '../types/message.ts'
-import type {
-  WebPendingCommand,
-  WebPermissionMode,
-  WebSessionActivity,
-  WebSessionState,
-  WebSubmitImage,
-  WebTodo,
-} from '../webui/protocol/attachSchemas.ts'
-
 /**
- * The seam between the attach socket and the process that owns the session.
+ * The seam between the wire surface and the process that owns a session.
  *
- * The interactive REPL and the headless loop register different
- * implementations, so the socket protocol and everything the gateway and
- * browser see stay identical across both process kinds.
+ * Successor of `webui/attach/runtime.ts` (v1 AttachRuntime), widened to the v2
+ * request/rpc surface: the interactive REPL and the headless loop register
+ * different implementations, so the surface, the gateway and the browser see
+ * one protocol across both process kinds.
+ *
+ * All reads must be synchronous and cheap — the surface calls them on the
+ * publish path while a turn is streaming. `submit`/`cancel`/`setModel`/`setMode`
+ * are fire-and-forget: the command was accepted, the visible effect arrives as
+ * events.
  */
-export type AttachRuntime = {
+
+import type { DomainUserContentBlock } from '../types/domain.js'
+import type { Message } from '../types/message.js'
+import type { SessionEvent } from '../session/events.js'
+import type {
+  WireCatalog,
+  WireImage,
+  WirePendingCommand,
+  WirePermissionMode,
+  WireTask,
+  WireTodo,
+  WireTranscriptSnapshot,
+  WireSessionActivity,
+  WireSessionState,
+} from '../session/wire.js'
+
+export type SessionRuntime = {
   /** The authoritative transcript. Called synchronously; must not copy lazily. */
   getMessages(): readonly Message[]
-  getState(): WebSessionState
+  /**
+   * The session core's event bus, when the host has one. The channel folds
+   * the streaming events into `stream` draft frames through this handle; a
+   * host that omits it simply serves no preview.
+   */
+  subscribeCore?(onEvent: (event: SessionEvent) => void): () => void
+  getState(): WireSessionState
   /** The phase of a streaming turn. Undefined when nothing is streaming. */
-  getActivity(): WebSessionActivity | undefined
+  getActivity(): WireSessionActivity | undefined
   getIsCompacting(): boolean
+  /** Undefined means the account/config default. */
   getModel(): string | undefined
-  getPermissionMode(): string | undefined
-  getTodos(): WebTodo[]
-  getCommands(): string[]
-  getPendingCommands(): WebPendingCommand[]
+  getPermissionMode(): WirePermissionMode | undefined
+  getTodos(): WireTodo[]
+  getTasks(): WireTask[]
+  getPendingCommands(): WirePendingCommand[]
+  getCatalog(): WireCatalog
   getInProgressToolUseIds(): ReadonlySet<string>
+  /**
+   * Sidechain drill-down; absent means this process serves none yet. May be
+   * async — the common case reads the sidechain JSONL — and the route waits.
+   */
+  getAgentTranscript?(
+    agentId: string,
+  ): WireTranscriptSnapshot | null | Promise<WireTranscriptSnapshot | null>
 
   /**
    * Queue a prompt. `interrupt` aborts the running turn and runs this next, as
    * one atomic queue operation rather than a cancel followed by a submit, which
-   * would race.
+   * would race. An `agentId` steers the prompt to that background agent's
+   * input instead of the main loop (the classic's onAgentSubmit routing); a
+   * host that serves none ignores it.
    */
   submit(
     content: string,
     delivery: 'next' | 'interrupt',
     commandId: string,
-    images?: readonly WebSubmitImage[],
+    images?: readonly WireImage[],
+    agentId?: string,
   ): void
 
   /** Cancel the running turn without queueing anything. */
-  interrupt(): void
+  cancel(): void
 
-  setPermissionMode(mode: WebPermissionMode): void
-  setModel(model: string): void
+  /** null returns to the account/config default. */
+  setModel(model: string | null): void
+  setMode(mode: WirePermissionMode): void
+
+  /**
+   * Lifecycle methods (`compact`, `clear`, `rewind`, `queue_edit`,
+   * `queue_remove`, `resume`). The surface answers 501 when a host omits it.
+   */
+  rpc?(
+    method: string,
+    params?: Record<string, unknown>,
+  ): unknown | Promise<unknown>
 }
 
 /**
@@ -62,7 +101,7 @@ export type AttachRuntime = {
  */
 export function buildSubmitValue(
   content: string,
-  images: readonly WebSubmitImage[] | undefined,
+  images: readonly WireImage[] | undefined,
 ): string | DomainUserContentBlock[] {
   if (!images?.length) return content
   const blocks: DomainUserContentBlock[] = images.map(image => ({

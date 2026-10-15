@@ -1,66 +1,83 @@
+/**
+ * The process's wire surface, started once after `registerSession()` resolves.
+ *
+ * Successor of `webui/attach/hostSingleton.ts`. The permission relay no longer
+ * needs a bridge here: the surface mirrors the session request broker directly,
+ * so a permission opened by the policy chain appears on the wire and is
+ * answerable from any attached surface.
+ */
+
 import {
   getSessionId,
   getTotalCostUSD,
   getTotalLinesAdded,
   getTotalLinesRemoved,
   onSessionSwitch,
-} from '../bootstrap/state.ts'
-import { registerCleanup } from '../utils/cleanupRegistry.ts'
-import { startAttachHost, type AttachHost } from './attachHost.ts'
-import type { AttachRuntime } from './runtime.ts'
+} from '../bootstrap/state.js'
+import { registerCleanup } from '../utils/cleanupRegistry.js'
+import { startWireSurface, type WireSurface } from './surface.js'
+import type { SessionRuntime } from './runtime.js'
 
-let host: AttachHost | null = null
-let pendingRuntime: AttachRuntime | null = null
+let surface: WireSurface | null = null
+let pendingRuntime: SessionRuntime | null = null
 
 /**
- * The process's attach host, or null when the WebUI is compiled out, the
- * platform is unsupported, or this process does not own a top-level session.
+ * The process's wire surface, or null when the WebUI is compiled out or this
+ * process does not own a top-level session.
  */
-export function getAttachHost(): AttachHost | null {
-  return host
+export function getAttachSurface(): WireSurface | null {
+  return surface
 }
 
 /**
  * Registers the process's runtime.
  *
  * The REPL mounts before `registerSession()` resolves, so the runtime is
- * routinely offered before the host exists. Holding it here means neither side
- * has to know about the other's startup order.
+ * routinely offered before the surface exists. Holding it here means neither
+ * side has to know about the other's startup order.
  */
-export function registerAttachRuntime(runtime: AttachRuntime): void {
+export function registerAttachRuntime(runtime: SessionRuntime): void {
   pendingRuntime = runtime
-  host?.registerRuntime(runtime)
+  surface?.registerRuntime(runtime)
 }
 
 export function publishAttachTranscript(): void {
-  host?.publishTranscript()
+  surface?.publishTranscript()
 }
 
 export function publishAttachMeta(): void {
-  host?.publishMeta()
+  surface?.publishMeta()
 }
 
 export function publishAttachTodos(): void {
-  host?.publishTodos()
+  surface?.publishTodos()
+}
+
+export function publishAttachTasks(): void {
+  surface?.publishTasks()
+}
+
+export function publishAttachCatalog(): void {
+  surface?.publishCatalog()
 }
 
 export function publishAttachPendingCommands(): void {
-  host?.publishPendingCommands()
+  surface?.publishQueue()
 }
 
 /**
- * Starts the attach host for this process.
+ * Starts the wire surface for this process.
  *
  * Called after `registerSession()` succeeds, so a subagent or a `doctor`
- * subcommand never publishes a socket. Startup does not await the listener.
+ * subcommand never publishes a descriptor. Startup does not await the listener.
  */
 export function startProcessAttachHost(options: {
   cwd: string
   entrypoint?: string
-}): AttachHost | null {
-  if (host) return host
+}): WireSurface | null {
+  if (surface) return surface
 
-  host = startAttachHost({
+  surface = startWireSurface({
     sessionId: getSessionId(),
     cwd: options.cwd,
     entrypoint: options.entrypoint,
@@ -71,13 +88,13 @@ export function startProcessAttachHost(options: {
     }),
   })
 
-  if (!host) return null
-  const started = host
+  if (!surface) return null
+  const started = surface
 
   if (pendingRuntime) started.registerRuntime(pendingRuntime)
 
-  // /resume and /clear both change the session under a live process. The socket
-  // stays put; only the identity on it moves.
+  // /resume and /clear both change the session under a live process. The
+  // surface (and its descriptor path) stays put; only the identity on it moves.
   onSessionSwitch(id => {
     started.setSessionId(id)
   })
@@ -89,9 +106,9 @@ export function startProcessAttachHost(options: {
   return started
 }
 
-/** Test seam. Production code never replaces a running host. */
+/** Test seam. Production code never replaces a running surface. */
 export function resetProcessAttachHostForTests(): void {
-  host?.stop()
-  host = null
+  surface?.stop()
+  surface = null
   pendingRuntime = null
 }

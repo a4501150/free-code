@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
 import { useNotifications } from '../context/notifications.js'
-import { Box, useAnimationFrame } from '../ink.js'
+import { Box, Text, useAnimationFrame } from '../ink.js'
 import { ShimmerChar } from '../components/Spinner/ShimmerChar.js'
 import { getGlobalConfig } from '../utils/config.js'
 import { getRainbowColor } from '../utils/thinking.js'
@@ -19,7 +19,7 @@ export function isBuddyTeaserWindow(): boolean {
 const SHIMMER_FRAME_MS = 50
 const SHIMMER_PADDING = 10
 
-function RainbowText({ text }: { text: string }): React.ReactNode {
+export function RainbowText({ text }: { text: string }): React.ReactNode {
   const reducedMotion = getInitialSettings().prefersReducedMotion ?? false
   const [ref, time] = useAnimationFrame(reducedMotion ? null : SHIMMER_FRAME_MS)
   const chars = [...text]
@@ -41,6 +41,25 @@ function RainbowText({ text }: { text: string }): React.ReactNode {
         />
       ))}
     </Box>
+  )
+}
+
+/**
+ * The teaser's Text-context variant: per-char colored <Text> nodes, no Box.
+ * The notification row mounts a jsx slot inside a <Text wrap="truncate">,
+ * and the reconciler rejects a Box in a Text (the classic's row hides that
+ * behind its error boundary); the hosted viewer mounts the teaser in a Text
+ * directly, so it renders this fragment instead of the shimmer RainbowText.
+ */
+export function RainbowTeaser({ text }: { text: string }): React.ReactNode {
+  return (
+    <>
+      {[...text].map((ch, i) => (
+        <Text key={i} color={getRainbowColor(i)}>
+          {ch}
+        </Text>
+      ))}
+    </>
   )
 }
 

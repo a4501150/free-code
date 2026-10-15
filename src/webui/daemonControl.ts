@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
 import { readNdjsonSocket, writeNdjson } from './gateway/ndjsonConnection.js'
 import { WebStartOptionsSchema } from './gateway/webState.js'
-import type { WebStatus } from './gateway/service.js'
+import type { WebStatus } from '../sessiond/service.js'
 
 const DIR_MODE = 0o700
 const FILE_MODE = 0o600
@@ -48,7 +48,7 @@ export type DaemonControlHandlers = {
 /**
  * The supervisor's control socket.
  *
- * Same posture as the attach socket: owner-only directory and socket, so the
+ * Same posture as the surface descriptor: owner-only directory and socket, so the
  * trust boundary is the filesystem. This socket can start a publicly reachable
  * server, so it must not be readable by another user.
  */

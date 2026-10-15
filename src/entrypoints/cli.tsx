@@ -100,6 +100,31 @@ async function main(): Promise<void> {
     return
   }
 
+  // Fast-path for `claude attach [session]`: the TUI as a client of a
+  // sessiond-hosted (or externally surfaced) session. Reads the host's
+  // attach descriptor and renders the shared AttachedSession screen.
+  if (args[0] === 'attach') {
+    profileCheckpoint('cli_attach_path')
+    enableConfigs()
+    initSinks()
+    const { attachHandler } = await import('../cli/handlers/attach.js')
+    const rest = args.slice(1)
+    const urlIdx = rest.indexOf('--url')
+    const tokenIdx = rest.indexOf('--token-from-descriptor')
+    const url = urlIdx !== -1 ? rest[urlIdx + 1] : undefined
+    const tokenFromDescriptor = tokenIdx !== -1 ? rest[tokenIdx + 1] : undefined
+    const target = rest.find(
+      (a, i) =>
+        !a.startsWith('--') &&
+        i !== urlIdx + 1 &&
+        i !== tokenIdx + 1 &&
+        a !== '--url' &&
+        a !== '--token-from-descriptor',
+    )
+    await attachHandler(target, { url, tokenFromDescriptor })
+    return
+  }
+
   // Fast-path for --worktree --tmux: exec into tmux before loading full CLI
   const hasTmuxFlag = args.includes('--tmux') || args.includes('--tmux=classic')
   if (

@@ -1,15 +1,12 @@
 import { useState } from 'react'
-import type {
-  WebPermissionMode,
-  WebPermissionRequest,
-} from '../../protocol/attachSchemas.js'
+import type { PermissionEntry } from '../store.js'
+import type { WirePermissionMode } from '../../../session/wire.js'
 import { renderMarkdown } from '../markdown.js'
 
 /**
- * The browser surface for ExitPlanMode.
+ * The browser surface for a `ui.kind === 'plan'` request.
  *
- * `plan` is already on the request: `normalizeToolInput` injects it from disk
- * as the assistant message arrives, which is well before any permission check.
+ * The plan content rides the request's `ui`, so no disk read is involved.
  *
  * The terminal's clear-context choices are deliberately absent. Those work by
  * rejecting the tool call and starting a fresh query from the REPL, which a
@@ -19,12 +16,12 @@ import { renderMarkdown } from '../markdown.js'
 /**
  * The input an approval sends back.
  *
- * `plan` is dropped. Leaving it in makes `ExitPlanModeTool` treat the plan as
- * one the user rewrote, and the model is then told "Approved Plan (edited by
- * user)" for a plan nobody touched. The tool reads the plan from disk when the
- * input omits it, which is exactly what the terminal relies on by sending an
- * empty object. This client cannot send an empty one, because the bridge reads
- * that as "use the original input".
+ * `plan` is dropped. Leaving it in makes the tool treat the plan as one the
+ * user rewrote, and the model is then told "Approved Plan (edited by user)" for
+ * a plan nobody touched. The tool reads the plan from disk when the input omits
+ * it, which is exactly what the terminal relies on by sending an empty object.
+ * This client cannot send an empty one, because the route reads an absent
+ * `updatedInput` as "use the original input".
  */
 export function approvalInput(
   input: Record<string, unknown>,
@@ -35,22 +32,24 @@ export function approvalInput(
 
 export function PlanTray({
   request,
+  planContent,
   queued,
   onApprove,
   onKeepPlanning,
 }: {
-  request: WebPermissionRequest
+  request: PermissionEntry
+  /** `request.ui.planContent`. */
+  planContent: string
   queued: number
   /**
-   * The mode is sent as its own request before the allow, because an allow
-   * cannot carry a permission update. That ordering matches the terminal,
-   * where the mode is applied before the tool runs.
+   * One round trip: the allow carries `setMode`, which switches the permission
+   * mode as part of answering, the same ordered effect the terminal achieves by
+   * applying the mode before the tool runs.
    */
-  onApprove(mode: WebPermissionMode): void
+  onApprove(mode: WirePermissionMode): void
   onKeepPlanning(feedback: string): void
 }): React.ReactElement {
   const [feedback, setFeedback] = useState('')
-  const plan = typeof request.input.plan === 'string' ? request.input.plan : ''
 
   return (
     <section className="tray" role="alertdialog" aria-label="Plan approval">
@@ -61,12 +60,12 @@ export function PlanTray({
         ) : null}
       </header>
 
-      {plan ? (
+      {planContent ? (
         <div
           className="tray__plan md"
           // renderMarkdown sanitizes, and the session is the only writer, but
           // every transcript string is treated as untrusted regardless.
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(plan) }}
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(planContent) }}
         />
       ) : (
         <p className="tray__desc">No plan was recorded. Approve to proceed.</p>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { WebSessionMeta, WebTodo } from '../../protocol/attachSchemas.js'
+import type { WireSessionMeta, WireTodo } from '../../../session/wire.js'
 
 /** Never let a drag eat the whole screen, or the transcript disappears. */
 const MAX_FRACTION = 0.8
@@ -40,8 +40,8 @@ export function InstrumentSheet({
   onToggle,
   children,
 }: {
-  meta: WebSessionMeta | null
-  todos: WebTodo[]
+  meta: WireSessionMeta | null
+  todos: WireTodo[]
   open: boolean
   onToggle(next: boolean): void
   children: React.ReactNode

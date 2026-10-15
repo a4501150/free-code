@@ -1,16 +1,16 @@
-import { calculateTokenWarningState } from '../services/compact/autoCompact.ts'
-import { isAutoCompactEnabled } from '../services/compact/autoCompactConfig.ts'
-import type { Message } from '../types/message.ts'
+import { calculateTokenWarningState } from '../services/compact/autoCompact.js'
+import { isAutoCompactEnabled } from '../services/compact/autoCompactConfig.js'
+import type { Message } from '../types/message.js'
 import {
   calculateContextPercentages,
   getContextWindowForModel,
-} from '../utils/context.ts'
-import { getMessagesAfterCompactBoundary } from '../utils/messages.ts'
+} from '../utils/context.js'
+import { getMessagesAfterCompactBoundary } from '../utils/messages.js'
 import {
   getCurrentUsage,
   tokenCountFromLastAPIResponse,
-} from '../utils/tokens.ts'
-import type { WebSessionContext } from '../webui/protocol/attachSchemas.ts'
+} from '../utils/tokens.js'
+import type { WireSessionContext } from '../session/wire.js'
 
 /**
  * The context budget, measured the two ways the TUI measures it.
@@ -28,7 +28,7 @@ import type { WebSessionContext } from '../webui/protocol/attachSchemas.ts'
 export function buildContextMeter(
   messages: readonly Message[],
   model: string | undefined,
-): WebSessionContext | undefined {
+): WireSessionContext | undefined {
   if (!model) return undefined
 
   const afterBoundary = getMessagesAfterCompactBoundary(messages as Message[])

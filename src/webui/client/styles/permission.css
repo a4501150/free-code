@@ -4,21 +4,24 @@
  * thumb, it cannot be scrolled past, and it keeps full width at 390px.
  */
 
-.tray {
+/* Several requests can be open at once (a permission racing a hook prompt,
+   two elicitations from two servers), and each one is a tray. The stack owns
+   the grid slot, the height cap and the scroller, so a third tray pushes the
+   oldest out of view above the fold rather than off the bottom of the
+   screen. 60dvh leaves the composer and the sheet handle below it. */
+.trays {
   grid-area: tray;
+  max-height: 60dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tray {
   border-top: 1px solid var(--signal);
   background: var(--bg-raised);
   padding: 0.75rem 1rem 1rem;
   padding-left: max(1rem, env(safe-area-inset-left));
   padding-right: max(1rem, env(safe-area-inset-right));
-  /* `.main` is overflow:hidden, so without a cap and a scroller of its own a
-     tall tray grows past the bottom edge and is simply clipped. A question with
-     several options put its own answer buttons out of reach. The inner caps on
-     the plan and preview blocks do not help, because the tray is what overflows.
-     60dvh leaves the composer and the sheet handle below it. */
-  max-height: 60dvh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   animation: rise 140ms ease-out;
 }
 
@@ -73,15 +76,29 @@
   font-size: 12px;
 }
 
-.tray__pre {
-  margin: 0 0 0.5rem;
+/* The editable input pane: the request's own JSON, prefilled, mono, and the
+   one place a browser answer can carry `updatedInput`. */
+.tray__edit {
+  width: 100%;
+  margin: 0 0 0.25rem;
   padding: 0.5rem;
   background: var(--bg-sunk);
   border: 1px solid var(--rule);
-  max-height: 12rem;
-  overflow: auto;
-  white-space: pre-wrap;
   color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  resize: vertical;
+}
+
+.tray__edit:focus {
+  outline: 1px solid var(--signal);
+  outline-offset: -1px;
+}
+
+.tray__error {
+  margin: 0 0 0.5rem;
+  color: var(--del);
+  font-size: 12px;
 }
 
 .tray__feedback {
@@ -209,4 +226,97 @@
 .question__other:focus {
   outline: 1px solid var(--signal);
   outline-offset: -1px;
+}
+
+/* ── allow controls ────────────────────────────────────────────── */
+
+.tray__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.tray__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.tray__check input {
+  accent-color: var(--signal);
+}
+
+.tray__mode select {
+  margin-left: 0.25rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  color: inherit;
+  font: inherit;
+  padding: 0.15rem 0.3rem;
+}
+
+.tray__mode select:focus {
+  outline: 1px solid var(--signal);
+  outline-offset: -1px;
+}
+
+/* ── elicitation forms ─────────────────────────────────────────── */
+
+.elicitation__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.elicitation__row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.25rem 0.6rem;
+}
+
+.elicitation__label {
+  color: var(--text-dim);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.elicitation__required {
+  color: var(--signal);
+  margin-left: 0.15rem;
+}
+
+.elicitation__input {
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  color: inherit;
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+}
+
+.elicitation__input:focus {
+  outline: 1px solid var(--signal);
+  outline-offset: -1px;
+}
+
+.elicitation__check {
+  justify-self: start;
+  accent-color: var(--signal);
+}
+
+/* The description sits under its field, in the second column. */
+.elicitation__desc {
+  grid-column: 2;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.elicitation__waiting {
+  color: var(--text-dim);
+  font-style: italic;
 }

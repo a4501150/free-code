@@ -1,29 +1,39 @@
 import type {
-  WebModelOption,
-  WebSessionMeta,
-  WebTodo,
-} from '../../protocol/attachSchemas.js'
-import { ModePicker, type Mode } from './ModePicker.js'
+  WireCatalog,
+  WirePermissionMode,
+  WireSessionMeta,
+  WireTodo,
+} from '../../../session/wire.js'
+import { ModePicker } from './ModePicker.js'
 import { SessionMeters } from './SessionMeters.js'
 import { TodoList } from './TodoList.js'
 
 export function Instruments({
   meta,
   todos,
-  models,
+  catalog,
   onSetMode,
   onSetModel,
 }: {
-  meta: WebSessionMeta | null
-  todos: WebTodo[]
-  models: WebModelOption[]
-  onSetMode(mode: Mode): void
-  onSetModel(model: string): void
+  meta: WireSessionMeta | null
+  todos: WireTodo[]
+  catalog: WireCatalog
+  onSetMode(mode: WirePermissionMode): void
+  /** null returns to the account default. */
+  onSetModel(model: string | null): void
 }): React.ReactElement {
   return (
     <aside className="instruments" aria-label="Session details">
-      <SessionMeters meta={meta} models={models} onSetModel={onSetModel} />
-      <ModePicker active={meta?.permissionMode} onSetMode={onSetMode} />
+      <SessionMeters
+        meta={meta}
+        models={catalog.models}
+        onSetModel={onSetModel}
+      />
+      <ModePicker
+        active={meta?.permissionMode}
+        modes={catalog.permissionModes}
+        onSetMode={onSetMode}
+      />
       <TodoList todos={todos} />
     </aside>
   )

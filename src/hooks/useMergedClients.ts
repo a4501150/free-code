@@ -6,10 +6,15 @@ export function mergeClients(
   initialClients: MCPServerConnection[] | undefined,
   mcpClients: readonly MCPServerConnection[] | undefined,
 ): MCPServerConnection[] {
-  if (initialClients && mcpClients && mcpClients.length > 0) {
-    return uniqBy([...initialClients, ...mcpClients], 'name')
+  if (mcpClients && mcpClients.length > 0) {
+    // Initial clients win name conflicts (uniqBy keeps first occurrence):
+    // a startup connection the host deliberately built overrides a same-
+    // named store write.
+    return initialClients
+      ? uniqBy([...initialClients, ...mcpClients], 'name')
+      : [...mcpClients]
   }
-  return initialClients || []
+  return initialClients ?? []
 }
 
 export function useMergedClients(

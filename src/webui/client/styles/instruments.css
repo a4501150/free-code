@@ -260,3 +260,98 @@
     transition: none;
   }
 }
+
+/* Background tasks: agents and shells the session spawned. */
+.tasks {
+  border-top: 1px solid var(--rule);
+  padding: 0.4rem 0 0;
+  margin-top: 0.4rem;
+}
+.tasks__head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+.tasks__count {
+  margin-left: auto;
+  color: var(--text-faint);
+}
+.tasks__list {
+  list-style: none;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.task {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.task__marker {
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+.task__body {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.task__status {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.task__status.is-running {
+  color: var(--signal);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.task__status.is-completed {
+  color: var(--add);
+}
+.task__status.is-failed,
+.task__status.is-killed,
+.task__status.is-error {
+  color: var(--del);
+}
+.task__label {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.task__duration {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.task__detail {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0.3rem 0.4rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 7rem;
+  overflow: auto;
+}

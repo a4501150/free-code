@@ -532,3 +532,25 @@
     padding: 0.2rem 0.5rem;
   }
 }
+
+/* History search: one field above the history list, styled like the rail's
+   own text rather than a floating browser control. */
+.rail__search {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 0.4rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.rail__search:focus {
+  outline: none;
+  border-color: var(--rule-bright);
+}
+.rail__search::placeholder {
+  color: var(--text-faint);
+}

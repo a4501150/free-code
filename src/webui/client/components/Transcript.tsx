@@ -6,9 +6,19 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { WebTranscriptItem } from '../../protocol/transcriptWire.js'
-import type { WebPendingCommand } from '../../protocol/attachSchemas.js'
+import type { WireItem } from '../../../session/wire.js'
 import { renderMarkdown } from '../markdown.js'
+import {
+  agentIdsByToolUse,
+  attachmentGutter,
+  attachmentView,
+  compactDividerText,
+  progressView,
+  systemRowText,
+  toolNamesByUseId,
+  type AttachmentView,
+  type ProgressView,
+} from '../itemViews.js'
 import { ToolCard } from './ToolCard.js'
 
 function sizeLabel(bytes: number): string {
@@ -21,23 +31,83 @@ type ToolGroup = {
   kind: 'tool_group'
   messageId: string
   toolName: string
-  items: Array<{ item: WebTranscriptItem; result?: WebTranscriptItem }>
+  items: Array<{ item: WireItem; result?: WireItem }>
 }
 
-type RowEntry =
-  | { kind: 'row'; item: WebTranscriptItem; result?: WebTranscriptItem }
-  | ToolGroup
+type RowEntry = { kind: 'row'; item: WireItem; result?: WireItem } | ToolGroup
+
+/** A muted, single-line system-ish row shared by progress and attachments. */
+function SideRow({
+  gutter,
+  cls,
+  label,
+  detail,
+  mono,
+}: {
+  gutter: string
+  cls: string
+  label: string
+  detail?: string
+  mono?: boolean
+}): React.ReactElement {
+  return (
+    <div className={`row ${cls}`}>
+      <span className="row__gutter">{gutter}</span>
+      <div className="row__body">
+        <span className="row__label">{label}</span>
+        {detail ? (
+          <pre className={`row__detail${mono ? ' is-mono' : ''}`}>{detail}</pre>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function ProgressRow({ view }: { view: ProgressView }): React.ReactElement {
+  return (
+    <SideRow
+      gutter="⋯"
+      cls="row--progress"
+      label={`${view.label}${view.detail ? ` — ${view.detail}` : ''}`}
+    />
+  )
+}
+
+function AttachmentRow({
+  view,
+  item,
+}: {
+  view: AttachmentView
+  item: WireItem
+}): React.ReactElement {
+  return (
+    <SideRow
+      gutter={attachmentGutter(item.attachment?.type ?? '')}
+      cls={`row--attachment ${view.cls}`}
+      label={view.label}
+      detail={view.detail}
+      mono={view.mono}
+    />
+  )
+}
 
 const Row = memo(function Row({
   item,
   result,
   inProgressToolUseIds,
+  toolNames,
+  agentIds,
   onOpenImage,
+  onOpenAgent,
 }: {
-  item: WebTranscriptItem
-  result?: WebTranscriptItem
+  item: WireItem
+  result?: WireItem
   inProgressToolUseIds?: string[]
-  onOpenImage(item: WebTranscriptItem): void
+  toolNames: Map<string, string>
+  /** tool_use ids whose agent receipt proved a sidechain exists. */
+  agentIds: Map<string, string>
+  onOpenImage(item: WireItem): void
+  onOpenAgent?: (agentId: string) => void
 }): React.ReactElement | null {
   switch (item.kind) {
     case 'user':
@@ -88,20 +158,51 @@ const Row = memo(function Row({
           item={item}
           result={result}
           inProgressToolUseIds={inProgressToolUseIds}
+          onOpenAgent={
+            onOpenAgent && item.toolUseId && agentIds.has(item.toolUseId)
+              ? () => {
+                  const id = agentIds.get(item.toolUseId!)
+                  if (id) onOpenAgent(id)
+                }
+              : undefined
+          }
         />
       )
 
-    case 'system':
-      if (!item.text) return null
+    case 'system': {
+      const divider = compactDividerText(item)
+      if (divider) {
+        return (
+          <div className="row row--compact-seam" role="separator">
+            <span className="row__rule" aria-hidden />
+            <span className="row__seam-label">{divider}</span>
+            <span className="row__rule" aria-hidden />
+          </div>
+        )
+      }
+      const systemText = systemRowText(item)
+      if (!systemText) return null
       return (
         <div className={`row row--system is-${item.level ?? 'info'}`}>
-          <div className="row__body">{item.text}</div>
+          <div className="row__body">{systemText}</div>
         </div>
       )
+    }
 
-    // Tool results render inside their tool card, and attachments are noise.
+    case 'progress': {
+      const view = progressView(item, toolNames)
+      if (!view) return null
+      return <ProgressRow view={view} />
+    }
+
+    case 'attachment': {
+      const view = attachmentView(item)
+      if (!view) return null
+      return <AttachmentRow view={view} item={item} />
+    }
+
+    // Tool results render inside their tool card.
     case 'tool_result':
-    case 'attachment':
       return null
   }
 })
@@ -109,9 +210,13 @@ const Row = memo(function Row({
 const AgentGroup = memo(function AgentGroup({
   group,
   inProgressToolUseIds,
+  agentIds,
+  onOpenAgent,
 }: {
   group: ToolGroup
   inProgressToolUseIds?: string[]
+  agentIds: Map<string, string>
+  onOpenAgent?: (agentId: string) => void
 }): React.ReactElement {
   const running = group.items.filter(
     ({ item }) =>
@@ -147,6 +252,14 @@ const AgentGroup = memo(function AgentGroup({
           result={result}
           inProgressToolUseIds={inProgressToolUseIds}
           compact
+          onOpenAgent={
+            onOpenAgent && item.toolUseId && agentIds.has(item.toolUseId)
+              ? () => {
+                  const id = agentIds.get(item.toolUseId!)
+                  if (id) onOpenAgent(id)
+                }
+              : undefined
+          }
         />
       ))}
     </div>
@@ -157,7 +270,7 @@ const AgentGroup = memo(function AgentGroup({
 const FOLLOW_SLACK_PX = 80
 
 type OpenImage = {
-  item: WebTranscriptItem
+  item: WireItem
   state: 'loading' | 'ready' | 'failed'
   /**
    * A data URL, which the page's CSP allows through `img-src 'self' data:`.
@@ -171,15 +284,14 @@ type OpenImage = {
 export function Transcript({
   items,
   order,
-  pendingCommands,
   inProgressToolUseIds,
   activity,
   followSignal,
   onFetchImage,
+  onOpenAgent,
 }: {
-  items: Map<string, WebTranscriptItem>
+  items: Map<string, WireItem>
   order: string[]
-  pendingCommands: WebPendingCommand[]
   inProgressToolUseIds?: string[]
   activity?: string
   /**
@@ -190,14 +302,20 @@ export function Transcript({
   followSignal: number
   /** Resolves the bytes for one image, which the wire deliberately omits. */
   onFetchImage(itemId: string): Promise<{ mediaType: string; data: string }>
+  /**
+   * Opens one agent's sidechain transcript. Absent in the sidechain panel
+   * itself: a drill-down that drills down is how you get lost.
+   */
+  onOpenAgent?: (agentId: string) => void
 }): React.ReactElement {
-  const entries = useMemo(() => {
+  const { entries, toolNames, agentIds } = useMemo(() => {
     const list = order
       .map(id => items.get(id))
-      .filter((item): item is WebTranscriptItem => Boolean(item))
+      .filter((item): item is WireItem => Boolean(item))
+    const toolNames = toolNamesByUseId(list)
 
     // Pair each result with its tool_use so a card owns its output.
-    const resultsByToolUse = new Map<string, WebTranscriptItem>()
+    const resultsByToolUse = new Map<string, WireItem>()
     for (const item of list) {
       if (item.kind === 'tool_result' && item.toolUseId) {
         resultsByToolUse.set(item.toolUseId, item)
@@ -216,8 +334,8 @@ export function Transcript({
       ) {
         // Collect consecutive Agent calls with same messageId
         const groupItems: Array<{
-          item: WebTranscriptItem
-          result?: WebTranscriptItem
+          item: WireItem
+          result?: WireItem
         }> = []
         const messageId = item.messageId
         while (
@@ -261,7 +379,7 @@ export function Transcript({
         i++
       }
     }
-    return entries
+    return { entries, toolNames, agentIds: agentIdsByToolUse(list) }
   }, [items, order])
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -305,7 +423,7 @@ export function Transcript({
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
 
-  async function openImage(item: WebTranscriptItem): Promise<void> {
+  async function openImage(item: WireItem): Promise<void> {
     setOpen({ item, state: 'loading' })
     try {
       const image = await onFetchImage(item.id)
@@ -334,9 +452,7 @@ export function Transcript({
       }}
     >
       <div className="transcript__content" ref={contentRef}>
-        {entries.length ||
-        pendingCommands.length ||
-        activity === 'compacting' ? (
+        {entries.length || activity === 'compacting' ? (
           <>
             {entries.map(entry =>
               entry.kind === 'tool_group' ? (
@@ -344,6 +460,8 @@ export function Transcript({
                   key={`group:${entry.messageId}`}
                   group={entry}
                   inProgressToolUseIds={inProgressToolUseIds}
+                  agentIds={agentIds}
+                  onOpenAgent={onOpenAgent}
                 />
               ) : (
                 <Row
@@ -351,16 +469,15 @@ export function Transcript({
                   item={entry.item}
                   result={entry.result}
                   inProgressToolUseIds={inProgressToolUseIds}
+                  toolNames={toolNames}
+                  agentIds={agentIds}
                   onOpenImage={target => void openImage(target)}
+                  onOpenAgent={onOpenAgent}
                 />
               ),
             )}
-            {pendingCommands.map(cmd => (
-              <div key={cmd.id} className="row row--user is-pending">
-                <span className="row__gutter">›</span>
-                <div className="row__body">{cmd.text}</div>
-              </div>
-            ))}
+            {/* Queued prompts are edited from the composer's queued list,
+                not shown again here. */}
             {activity === 'compacting' ? (
               <div className="row row--system is-info">
                 <div className="row__body">Compacting…</div>

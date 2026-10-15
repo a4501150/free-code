@@ -250,6 +250,11 @@ export function QuestionView({
           Planning: <FilePathLink filePath={planFilePath} />
         </Text>
       )}
+      {/* No top rule here: the classic pane never shows one — the divider
+          this view used to mount had marginTop={-1} (zero net height,
+          painting into the row above), and the classic blit always
+          restored that row's blank, so the hosted viewer showing the
+          dashes was the only place it ever became visible. */}
       <Box flexDirection="column" paddingTop={0}>
         <QuestionNavigationBar
           questions={questions}
