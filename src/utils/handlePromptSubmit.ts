@@ -1,7 +1,7 @@
 import type { UUID } from 'crypto'
 
 import { type Command, getCommandName, isCommandEnabled } from '../commands.js'
-import { selectableUserMessagesFilter } from '../components/MessageSelector.js'
+import { selectableUserMessagesFilter } from './messagePredicates.js'
 import type { SpinnerMode } from '../components/Spinner/types.js'
 import type { QuerySource } from '../constants/querySource.js'
 import { expandPastedTextRefs, parseReferences } from '../history.js'
