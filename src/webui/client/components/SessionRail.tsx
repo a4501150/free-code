@@ -14,6 +14,8 @@ export function SessionRail({
   activeKey,
   activeState,
   defaultCwd,
+  search,
+  onSearch,
   onSelect,
   onCreate,
   onResume,
@@ -23,6 +25,9 @@ export function SessionRail({
   activeKey: string | null
   activeState?: string
   defaultCwd: string
+  /** The history search text; the server answers history rows only. */
+  search: string
+  onSearch(q: string): void
   onSelect(entry: SessionListEntry): void
   onCreate(cwd: string): Promise<string | null>
   onResume(sessionId: string): Promise<string | null>
@@ -82,11 +87,23 @@ export function SessionRail({
       )}
 
       <h3 className="rail__title">history</h3>
+      {/* The search is server-side (title, cwd, branch): the rail only ever
+          holds the first page, and the matches are usually deeper. */}
+      <input
+        type="search"
+        className="rail__search"
+        placeholder="search history…"
+        aria-label="Search session history"
+        value={search}
+        onChange={event => onSearch(event.target.value)}
+      />
       {past.length === 0 ? (
-        <p className="rail__empty">Nothing yet.</p>
+        <p className="rail__empty">{search ? 'No matches.' : 'Nothing yet.'}</p>
       ) : (
         <ul className="rail__list">
-          {past.slice(0, 40).map(entry => (
+          {/* A search already arrived capped; slicing it again would hide
+              the match the user typed for. */}
+          {past.slice(0, search ? 50 : 40).map(entry => (
             <HistoryRow
               key={entry.sessionId}
               entry={entry}

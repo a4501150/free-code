@@ -4,7 +4,7 @@ import {
   type DaemonControlResponse,
 } from './daemonControl.js'
 import type { WebStartOptions } from './gateway/webState.js'
-import type { WebStatus } from './gateway/service.js'
+import type { WebStatus } from '../sessiond/service.js'
 import { readWebState } from './gateway/webState.js'
 
 function print(line: string): void {
@@ -20,6 +20,7 @@ function usage(): void {
   print('')
   print('Commands:')
   print('  start   Start the daemon and the web server (and tunnel)')
+  print('  serve   Run sessiond in the foreground (hosts sessions in-process)')
   print('  stop    Stop the web server, the tunnel and the daemon')
   print('  restart Restart both, reusing the tunnel URL. Use after a rebuild')
   print('  status  Show whether the web server is running')
@@ -328,6 +329,45 @@ export async function webMain(args: string[]): Promise<void> {
         return
       }
       if (!(await launch(options))) process.exitCode = 1
+      return
+    }
+
+    case 'serve': {
+      // Foreground sessiond: this process hosts the sessions and serves the
+      // browser directly — no daemon, no tunnel, no control socket (the
+      // same service the supervisor runs, driven in-process).
+      if (rest.includes('--help')) {
+        print(
+          'Usage: claude web serve [--foreground] [--port <n>] [--password-stdin] [--permission-mode <mode>]',
+        )
+        return
+      }
+      if (!(await ensurePassword(rest))) {
+        process.exitCode = 1
+        return
+      }
+      let serveOptions: WebStartOptions
+      try {
+        serveOptions = { ...parseStartOptions(rest), tunnel: 'none' as const }
+      } catch (err) {
+        print(`Error: ${err instanceof Error ? err.message : String(err)}`)
+        process.exitCode = 1
+        return
+      }
+      const { createSessiondService } = await import('../sessiond/service.js')
+      const service = createSessiondService()
+      const status = await service.start(serveOptions)
+      print(`sessiond serving ${status.url}`)
+      process.on(
+        'SIGINT',
+        () => void service.stop().then(() => process.exit(0)),
+      )
+      process.on(
+        'SIGTERM',
+        () => void service.stop().then(() => process.exit(0)),
+      )
+      // Stay alive: the listener owns the loop.
+      await new Promise(() => {})
       return
     }
 

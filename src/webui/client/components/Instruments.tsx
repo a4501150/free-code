@@ -1,47 +1,40 @@
 import type {
-  WebModelOption,
-  WebSessionMeta,
-  WebTaskSummary,
-  WebTodo,
-} from '../../protocol/attachSchemas.js'
-import { ModePicker, type Mode } from './ModePicker.js'
+  WireCatalog,
+  WirePermissionMode,
+  WireSessionMeta,
+  WireTodo,
+} from '../../../session/wire.js'
+import { ModePicker } from './ModePicker.js'
 import { SessionMeters } from './SessionMeters.js'
-import { TaskList } from './TaskList.js'
 import { TodoList } from './TodoList.js'
 
 export function Instruments({
   meta,
   todos,
-  tasks,
-  models,
-  viewedTaskId,
+  catalog,
   onSetMode,
   onSetModel,
-  onViewTask,
-  onKillTask,
 }: {
-  meta: WebSessionMeta | null
-  todos: WebTodo[]
-  tasks: WebTaskSummary[]
-  models: WebModelOption[]
-  /** The task whose transcript the main pane is showing, if any. */
-  viewedTaskId?: string
-  onSetMode(mode: Mode): void
-  onSetModel(model: string): void
-  onViewTask(taskId: string): void
-  onKillTask(taskId: string): void
+  meta: WireSessionMeta | null
+  todos: WireTodo[]
+  catalog: WireCatalog
+  onSetMode(mode: WirePermissionMode): void
+  /** null returns to the account default. */
+  onSetModel(model: string | null): void
 }): React.ReactElement {
   return (
     <aside className="instruments" aria-label="Session details">
-      <SessionMeters meta={meta} models={models} onSetModel={onSetModel} />
-      <ModePicker active={meta?.permissionMode} onSetMode={onSetMode} />
-      <TodoList todos={todos} />
-      <TaskList
-        tasks={tasks}
-        viewedTaskId={viewedTaskId}
-        onViewTask={onViewTask}
-        onKillTask={onKillTask}
+      <SessionMeters
+        meta={meta}
+        models={catalog.models}
+        onSetModel={onSetModel}
       />
+      <ModePicker
+        active={meta?.permissionMode}
+        modes={catalog.permissionModes}
+        onSetMode={onSetMode}
+      />
+      <TodoList todos={todos} />
     </aside>
   )
 }

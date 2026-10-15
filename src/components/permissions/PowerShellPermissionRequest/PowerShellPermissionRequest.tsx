@@ -222,7 +222,7 @@ export function PowerShellPermissionRequest(
             permissionResult={toolUseConfirm.permissionResult}
             toolName="PowerShell"
           />
-          {toolUseContext.options.debug && (
+          {toolUseContext?.options?.debug && (
             <Box justifyContent="flex-end" marginTop={1}>
               <Text dimColor>Ctrl-D to hide debug info</Text>
             </Box>
@@ -259,7 +259,7 @@ export function PowerShellPermissionRequest(
               {explainerState.enabled &&
                 ` · ctrl+e to ${explainerState.visible ? 'hide' : 'explain'}`}
             </Text>
-            {toolUseContext.options.debug && (
+            {toolUseContext?.options?.debug && (
               <Text dimColor>Ctrl+d to show debug info</Text>
             )}
           </Box>

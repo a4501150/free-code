@@ -309,7 +309,7 @@ function BashPermissionRequestInner({
             permissionResult={toolUseConfirm.permissionResult}
             toolName="Bash"
           />
-          {toolUseContext.options.debug && (
+          {toolUseContext?.options?.debug && (
             <Box justifyContent="flex-end" marginTop={1}>
               <Text dimColor>Ctrl-D to hide debug info</Text>
             </Box>
@@ -346,7 +346,7 @@ function BashPermissionRequestInner({
               {explainerState.enabled &&
                 ` · ctrl+e to ${explainerState.visible ? 'hide' : 'explain'}`}
             </Text>
-            {toolUseContext.options.debug && (
+            {toolUseContext?.options?.debug && (
               <Text dimColor>Ctrl+d to show debug info</Text>
             )}
           </Box>

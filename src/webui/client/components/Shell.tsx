@@ -1,20 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionListEntry } from '../../../sessiond/sessionList.js'
 import type {
-  WebPermissionDecision,
-  WebPermissionRequest,
-  WebTaskTranscript,
-} from '../../protocol/attachSchemas.js'
+  WireCommand,
+  WirePermissionDecision,
+  WireRequest,
+  WireRequestResponse,
+} from '../../../session/wire.js'
+import { fetchAgentTranscript } from '../api.js'
 import { useGateway } from '../hooks/useGateway.js'
 import { useSessions } from '../hooks/useSessions.js'
 import { createViewStore, useViewStore } from '../store.js'
+import { AgentPanel, type AgentPanelState } from './AgentPanel.js'
 import { Composer } from './Composer.js'
 import { InstrumentSheet } from './InstrumentSheet.js'
 import { Instruments } from './Instruments.js'
 import { PermissionTray } from './PermissionTray.js'
 import { approvalInput, PlanTray } from './PlanTray.js'
 import { QuestionTray } from './QuestionTray.js'
+import { HookPromptTray } from './HookPromptTray.js'
+import { ElicitationTray } from './ElicitationTray.js'
 import { MenuDrawer } from './MenuDrawer.js'
+import { TaskPanel } from './TaskPanel.js'
 import { TopBar } from './TopBar.js'
 import { Transcript } from './Transcript.js'
 
@@ -48,8 +54,8 @@ export function redirectAfterRestart(
  * Picks the process that serves `sessionId` now.
  *
  * `goneKeys` is not optional bookkeeping. The session list is a poll behind, so
- * it still advertises a process that has already ended, and attaching to that
- * key answers `attach_failed` and delivers no snapshot.
+ * it still advertises a process that has already ended, and opening a stream on
+ * that key answers non-ok and delivers no snapshot.
  */
 export function chooseFollowTarget(
   entries: readonly SessionListEntry[],
@@ -90,63 +96,26 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   const store = useMemo(() => createViewStore(), [])
   const view = useViewStore(store)
 
-  // Subagent transcripts are watched through the same socket but land in their
-  // own store, so the main transcript keeps accumulating underneath a viewer.
-  const viewerStore = useMemo(() => createViewStore(), [])
-  const viewerView = useViewStore(viewerStore)
-  const [viewedTaskId, setViewedTaskId] = useState<string | null>(null)
-  const viewedTaskIdRef = useRef<string | null>(null)
-  viewedTaskIdRef.current = viewedTaskId
-  // Highest event seq seen, so a seeded viewer compares against the same
-  // watermark as the store it mirrors.
-  const seqRef = useRef(0)
-
   // Process keys that are known dead. The session list is a poll behind, so
-  // without this the follow below re-attaches to the very process that just
-  // ended and lands on an `attach_failed` with no snapshot to show for it.
+  // without this the follow below re-opens a stream on the very process that
+  // just ended and lands on a refusal with no snapshot to show for it.
   const goneKeys = useRef(new Set<string>())
 
-  // Declared before the socket, because the process-gone handler refreshes the
+  // Declared before the gateway, because the offline handler refreshes the
   // list to find whoever serves the session now.
   const sessions = useSessions(csrf)
 
   const gateway = useGateway({
     csrf,
-    onEvent: (seq, event) => {
-      seqRef.current = seq
-      // A task's transcript patch goes only to the viewer watching it; the
-      // main store would otherwise mix a subagent into the main stream.
-      if (event.kind === 'task_transcript') {
-        if (event.taskId === viewedTaskIdRef.current) {
-          viewerStore.apply(seq, { kind: 'transcript', patch: event.patch })
-        }
-        return
-      }
-      store.apply(seq, event)
-    },
-    onProcessGone: info => {
-      goneKeys.current.add(info.processKey)
-      // A close for a process the user already left must not disturb the one
-      // they are watching now.
-      if (info.processKey !== activeKey) return
-      gateway.detach()
-      setActiveKey(null)
-      setActiveSessionId(info.sessionId)
-      store.reset()
-      setViewedTaskId(null)
-      viewerStore.reset()
-      void sessions.refresh()
-    },
-    onAttachFailed: () => {
-      // No snapshot is coming, so leaving the key set would strand the view on
-      // an empty transcript with a composer that cannot send.
-      if (!activeKey) return
-      goneKeys.current.add(activeKey)
-      gateway.detach()
+    onEvent: (seq, event) => store.apply(seq, event),
+    onStreamOffline: processKey => {
+      goneKeys.current.add(processKey)
+      // A stream closing for a process the user already left must not disturb
+      // the one they are watching now.
+      if (processKey !== activeKey) return
       setActiveKey(null)
       store.reset()
-      setViewedTaskId(null)
-      viewerStore.reset()
+      setAgent(null)
       void sessions.refresh()
     },
     onRestartReady: info => {
@@ -155,60 +124,86 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     },
   })
 
-  /**
-   * Open a subagent's transcript in the main pane: seed a snapshot with a
-   * request, then keep the viewer store current with `subscribe_task` deltas.
-   * The request is answered before the subscribe is even sent, so no delta can
-   * arrive against an unseeded store.
-   */
-  const openTask = useCallback(
-    async (taskId: string) => {
-      if (viewedTaskIdRef.current === taskId) return
-      if (viewedTaskIdRef.current) {
-        gateway.send({
-          kind: 'unsubscribe_task',
-          taskId: viewedTaskIdRef.current,
-        })
-      }
-      viewerStore.reset()
-      setViewedTaskId(taskId)
-      const answer = await gateway.request({
-        kind: 'get_task_transcript',
-        taskId,
+  // The sidechain drill-down: one agent transcript fetched on demand and
+  // rendered over the main view. One panel at a time; switching sessions
+  // closes it, because a sidechain belongs to the session it ran in.
+  const [agent, setAgent] = useState<AgentPanelState | null>(null)
+  const openAgent = useCallback(
+    async (agentId: string) => {
+      if (!activeKey) return
+      setAgent({ agentId, state: 'loading' })
+      const snapshot = await fetchAgentTranscript(activeKey, agentId)
+      setAgent(current => {
+        // A late answer for an agent the reader already closed (or swapped)
+        // must not resurrect the panel.
+        if (
+          !current ||
+          current.agentId !== agentId ||
+          current.state !== 'loading'
+        )
+          return current
+        return snapshot
+          ? { agentId, state: 'ready', snapshot }
+          : { agentId, state: 'failed', error: 'No transcript for that agent.' }
       })
-      // The user may have left (or switched) while the read was in flight.
-      if (viewedTaskIdRef.current !== taskId) return
-      if (answer.ok) {
-        const { items } = answer.result as WebTaskTranscript
-        viewerStore.apply(seqRef.current, {
-          kind: 'transcript',
-          patch: {
-            type: 'replace',
-            snapshot: { items, order: items.map(item => item.id) },
-          },
-        })
-      }
-      gateway.send({ kind: 'subscribe_task', taskId })
     },
-    [gateway, viewerStore],
+    [activeKey],
   )
 
-  const closeTask = useCallback(() => {
-    const taskId = viewedTaskIdRef.current
-    if (taskId) gateway.send({ kind: 'unsubscribe_task', taskId })
-    setViewedTaskId(null)
-    viewerStore.reset()
-  }, [gateway, viewerStore])
+  // The open panel follows a running agent: the sidechain JSONL grows as the
+  // agent works, and a full re-read per tick replaces the snapshot whole, so
+  // a poll can never duplicate or reorder rows. The clock stops when the
+  // task owning the shown chain goes terminal — nothing more will arrive.
+  useEffect(() => {
+    if (!agent || !activeKey) return
+    const task = view.tasks.find(
+      candidate => candidate.agentId === agent.agentId,
+    )
+    const live =
+      !!task &&
+      task.status !== 'completed' &&
+      task.status !== 'failed' &&
+      task.status !== 'killed'
+    if (!live) return
+    const timer = setInterval(() => {
+      void fetchAgentTranscript(activeKey, agent.agentId).then(snapshot => {
+        if (!snapshot) return
+        setAgent(current =>
+          current && current.agentId === agent.agentId
+            ? { agentId: agent.agentId, state: 'ready', snapshot }
+            : current,
+        )
+      })
+    }, 2000)
+    return () => clearInterval(timer)
+  }, [agent?.agentId, agent?.state, activeKey, view.tasks])
+
+  // A task's transcript panel resolves through its agent id: the card and
+  // the panel row both know the task, only the sidechain knows the agent.
+  const openTask = useCallback(
+    (taskId: string) => {
+      const task = view.tasks.find(candidate => candidate.id === taskId)
+      if (task?.agentId) void openAgent(task.agentId)
+    },
+    [view.tasks, openAgent],
+  )
+
+  const killTask = useCallback(
+    (taskId: string) => {
+      void gateway.command('kill_task', { kind: 'kill_task', taskId })
+    },
+    [gateway],
+  )
 
   const attachTo = useCallback(
     (processKey: string, sessionId: string) => {
       store.reset()
-      closeTask()
+      setAgent(null)
       setActiveKey(processKey)
       setActiveSessionId(sessionId)
-      gateway.attach(processKey)
+      gateway.attachSession(processKey)
     },
-    [gateway, store, closeTask],
+    [gateway, store],
   )
 
   /** Attaching is always the same steps, whatever produced the key. */
@@ -302,16 +297,6 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     return () => window.removeEventListener('keydown', onKey)
   }, [railOpen])
 
-  // Escape also steps out of a subagent transcript, back to the session.
-  useEffect(() => {
-    if (!viewedTaskId) return
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') closeTask()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [viewedTaskId, closeTask])
-
   // Paths the session has touched, which is what @ mentions can offer without
   // giving the browser filesystem access.
   const knownPaths = useMemo(() => {
@@ -327,27 +312,12 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   // Image bytes never ride the transcript, so a reader who wants to see one
   // asks the session for it.
   const fetchImage = useCallback(
-    async (itemId: string) => {
-      const answer = await gateway.request({ kind: 'get_image', itemId })
-      if (!answer.ok) {
-        throw new Error(answer.error?.message ?? 'the session refused')
-      }
-      return answer.result as { mediaType: string; data: string }
-    },
+    (itemId: string) => gateway.fetchImage(itemId),
     [gateway],
   )
 
   const meta = view.meta
-  const viewedTask = viewedTaskId
-    ? view.tasks.find(task => task.id === viewedTaskId)
-    : undefined
-  const viewedTaskLabel = viewedTask
-    ? viewedTask.name
-      ? `${viewedTask.name} — ${viewedTask.description}`
-      : viewedTask.description
-    : (viewedTaskId ?? '')
   const busy = meta?.state === 'running'
-  const pending = view.permissions[0]
   // The browser cannot browse the filesystem, so the only sensible default is a
   // directory some session already runs in.
   const defaultCwd =
@@ -362,61 +332,118 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
 
   // A permission request is the one thing that must not be missed on a phone,
   // and the sheet sits between it and the composer.
-  const hasPending = Boolean(pending)
+  const hasPending = view.requests.length > 0
   useEffect(() => {
     if (hasPending) setSheetOpen(false)
   }, [hasPending])
 
-  function decide(requestId: string, decision: WebPermissionDecision): void {
-    gateway.send({ kind: 'permission_decision', requestId, decision })
+  function decide(requestId: string, response: WireRequestResponse): void {
+    void gateway.command('request_respond', {
+      kind: 'request_respond',
+      requestId,
+      response,
+    })
+  }
+
+  function permission(
+    decision: WirePermissionDecision,
+  ): Extract<WireRequestResponse, { kind: 'permission' }> {
+    return { kind: 'permission', decision }
+  }
+
+  /** Lifecycle and queue rpcs; the bodies come from composerViews. */
+  function sendRpc(body: unknown): void {
+    void gateway.command('rpc', body as WireCommand)
   }
 
   /**
-   * Two tools cannot be answered yes or no. Both always ask, and the terminal
-   * answers them by allowing with an enriched input, so each needs a surface
-   * that can produce that input.
+   * Two request shapes cannot be answered yes or no. Both always ask, and the
+   * terminal answers them by allowing with enriched input, so each needs a
+   * surface that can produce that input. The wire marks them with `ui`.
    */
-  function renderTray(request: WebPermissionRequest): React.ReactElement {
-    const queued = view.permissions.length
+  function renderTray(request: WireRequest): React.ReactElement {
+    const queued = view.requests.length
 
-    if (request.toolName === 'AskUserQuestion') {
+    if (request.kind === 'hook_prompt') {
       return (
-        <QuestionTray
+        <HookPromptTray
+          key={request.requestId}
           request={request}
           queued={queued}
-          onAnswer={updatedInput =>
-            decide(request.requestId, { behavior: 'allow', updatedInput })
-          }
-          onCancel={() =>
-            decide(request.requestId, {
-              behavior: 'deny',
-              message: 'User declined to answer questions',
-            })
+          onSelect={selected =>
+            decide(request.requestId, { kind: 'hook_prompt', selected })
           }
         />
       )
     }
 
-    if (request.toolName === 'ExitPlanMode') {
+    if (request.kind === 'elicitation') {
       return (
-        <PlanTray
+        <ElicitationTray
+          key={request.requestId}
           request={request}
           queued={queued}
+          onRespond={response =>
+            decide(request.requestId, { kind: 'elicitation', ...response })
+          }
+        />
+      )
+    }
+
+    if (request.ui?.kind === 'question') {
+      return (
+        <QuestionTray
+          key={request.requestId}
+          request={request}
+          questions={request.ui.questions}
+          queued={queued}
+          onAnswer={updatedInput =>
+            decide(
+              request.requestId,
+              permission({ behavior: 'allow', updatedInput }),
+            )
+          }
+          onCancel={() =>
+            decide(
+              request.requestId,
+              permission({
+                behavior: 'deny',
+                message: 'User declined to answer questions',
+              }),
+            )
+          }
+        />
+      )
+    }
+
+    if (request.ui?.kind === 'plan') {
+      return (
+        <PlanTray
+          key={request.requestId}
+          request={request}
+          planContent={request.ui.planContent}
+          queued={queued}
           onApprove={mode => {
-            // Ordered, not raced: one socket delivers these in sequence, so
-            // the mode is in place before the tool runs. An allow cannot
-            // carry a permission update, which is how the terminal does it.
-            gateway.send({ kind: 'set_permission_mode', mode })
-            decide(request.requestId, {
-              behavior: 'allow',
-              updatedInput: approvalInput(request.input),
-            })
+            // One round trip: `setMode` is in place by the time the tool runs,
+            // which is the ordering the terminal gets from sending the mode
+            // before the allow.
+            decide(
+              request.requestId,
+              permission({
+                behavior: 'allow',
+                updatedInput: approvalInput(request.input),
+                setMode: mode,
+              }),
+            )
           }}
           onKeepPlanning={feedback =>
-            decide(request.requestId, {
-              behavior: 'deny',
-              message: feedback || 'Keep planning',
-            })
+            decide(
+              request.requestId,
+              permission({
+                behavior: 'deny',
+                message: feedback || 'Keep planning',
+              }),
+            )
           }
         />
       )
@@ -424,16 +451,15 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
 
     return (
       <PermissionTray
+        key={request.requestId}
         request={request}
         queued={queued}
-        onAllow={persist =>
-          decide(request.requestId, { behavior: 'allow', persist })
-        }
+        onAllow={controls => decide(request.requestId, permission(controls))}
         onDeny={message =>
-          decide(request.requestId, {
-            behavior: 'deny',
-            message: message || undefined,
-          })
+          decide(
+            request.requestId,
+            permission({ behavior: 'deny', message: message || undefined }),
+          )
         }
       />
     )
@@ -446,6 +472,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         connected={gateway.connected}
         railOpen={railOpen}
         onToggleRail={() => setRailOpen(open => !open)}
+        onRpc={sendRpc}
       />
 
       <MenuDrawer
@@ -455,6 +482,8 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         defaultCwd={defaultCwd}
         csrf={csrf}
         restartInfo={restartInfo}
+        search={sessions.query}
+        onSearch={sessions.setQuery}
         onSelect={select}
         onCreate={create}
         onResume={resume}
@@ -475,38 +504,18 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
       ) : null}
 
       <main className="main">
-        {activeKey && viewedTaskId ? (
-          <div className="viewer__banner">
-            <button type="button" className="viewer__back" onClick={closeTask}>
-              ← session
-            </button>
-            <span className="viewer__label">subagent: {viewedTaskLabel}</span>
-          </div>
-        ) : null}
         {activeKey ? (
-          viewedTaskId ? (
-            <Transcript
-              items={viewerView.items}
-              order={viewerView.order}
-              pendingCommands={[]}
-              followSignal={followSignal}
-              onFetchImage={fetchImage}
-              tasks={view.tasks}
-              onOpenTask={taskId => void openTask(taskId)}
-            />
-          ) : (
-            <Transcript
-              items={view.items}
-              order={view.order}
-              pendingCommands={view.pendingCommands}
-              inProgressToolUseIds={view.meta?.inProgressToolUseIds}
-              activity={view.meta?.activity}
-              followSignal={followSignal}
-              onFetchImage={fetchImage}
-              tasks={view.tasks}
-              onOpenTask={taskId => void openTask(taskId)}
-            />
-          )
+          <Transcript
+            items={view.items}
+            order={view.order}
+            inProgressToolUseIds={view.meta?.inProgressToolUseIds}
+            activity={view.meta?.activity}
+            followSignal={followSignal}
+            onFetchImage={fetchImage}
+            onOpenAgent={id => void openAgent(id)}
+            tasks={view.tasks}
+            onOpenTask={openTask}
+          />
         ) : (
           <div className="transcript transcript--empty">
             {following
@@ -515,7 +524,19 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
           </div>
         )}
 
-        {pending ? renderTray(pending) : null}
+        {agent ? (
+          <AgentPanel panel={agent} onClose={() => setAgent(null)} />
+        ) : null}
+
+        {view.requests.length > 0 ? (
+          <div
+            className="trays"
+            role="group"
+            aria-label="Requests awaiting answers"
+          >
+            {view.requests.map(renderTray)}
+          </div>
+        ) : null}
 
         {/* Only while attached: with no session behind it the sheet is a
             handle over an empty panel. Before the composer in the DOM as well
@@ -529,19 +550,30 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
             open={sheetOpen}
             onToggle={setSheetOpen}
           >
-            <Instruments
-              meta={meta}
-              todos={view.todos}
-              tasks={view.tasks}
-              models={view.models}
-              viewedTaskId={viewedTaskId ?? undefined}
-              onSetMode={mode =>
-                gateway.send({ kind: 'set_permission_mode', mode })
-              }
-              onSetModel={model => gateway.send({ kind: 'set_model', model })}
-              onViewTask={taskId => void openTask(taskId)}
-              onKillTask={taskId => gateway.send({ kind: 'kill_task', taskId })}
-            />
+            <>
+              <Instruments
+                meta={meta}
+                todos={view.todos}
+                catalog={view.catalog}
+                onSetMode={mode =>
+                  void gateway.command('mode', { kind: 'mode_set', mode })
+                }
+                onSetModel={model =>
+                  void gateway.command('model', { kind: 'model_set', model })
+                }
+              />
+              <TaskPanel
+                tasks={view.tasks}
+                viewedTaskId={
+                  agent
+                    ? view.tasks.find(task => task.agentId === agent.agentId)
+                        ?.id
+                    : undefined
+                }
+                onOpenTask={openTask}
+                onKillTask={killTask}
+              />
+            </>
           </InstrumentSheet>
         ) : null}
 
@@ -549,10 +581,12 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
           <Composer
             busy={busy}
             knownPaths={knownPaths}
-            commands={view.commands}
+            commands={view.catalog.commands}
+            queued={view.queue}
+            onRpc={sendRpc}
             onSubmit={(text, delivery, images) => {
-              gateway.send({
-                kind: 'submit',
+              void gateway.command('prompt', {
+                kind: 'prompt',
                 commandId: crypto.randomUUID(),
                 content: text,
                 ...(images.length ? { images } : {}),
@@ -561,7 +595,9 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
               })
               setFollowSignal(n => n + 1)
             }}
-            onInterrupt={() => gateway.send({ kind: 'interrupt' })}
+            onInterrupt={() => {
+              void gateway.command('cancel', { kind: 'cancel' })
+            }}
           />
         ) : null}
       </main>

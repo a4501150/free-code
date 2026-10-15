@@ -19,6 +19,8 @@ export function MenuDrawer({
   defaultCwd,
   csrf,
   restartInfo,
+  search,
+  onSearch,
   onSelect,
   onCreate,
   onResume,
@@ -31,6 +33,8 @@ export function MenuDrawer({
   defaultCwd: string
   csrf: string
   restartInfo: { publicUrl: string | null; localUrl: string | null } | null
+  search: string
+  onSearch(q: string): void
   onSelect(entry: SessionListEntry): void
   onCreate(cwd: string): Promise<string | null>
   onResume(sessionId: string): Promise<string | null>
@@ -77,6 +81,8 @@ export function MenuDrawer({
         activeKey={activeKey}
         activeState={activeState}
         defaultCwd={defaultCwd}
+        search={search}
+        onSearch={onSearch}
         onSelect={onSelect}
         onCreate={onCreate}
         onResume={onResume}

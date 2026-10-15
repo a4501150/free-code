@@ -1,10 +1,10 @@
 import type {
-  WebTaskNotification,
-  WebTranscriptItem,
-} from '../../protocol/transcriptWire.js'
-import type { WebTaskSummary } from '../../protocol/attachSchemas.js'
+  WireItem,
+  WireTask,
+  WireTaskNotification,
+} from '../../../session/wire.js'
 
-const TYPE_LABEL: Record<WebTaskSummary['taskType'], string> = {
+const TYPE_LABEL: Record<string, string> = {
   local_agent: 'agent',
   remote_agent: 'remote',
   local_bash: 'shell',
@@ -26,9 +26,9 @@ function duration(ms: number): string {
 
 /** Live status wins over what the notice reported: the task may have moved. */
 function liveStatus(
-  notice: WebTaskNotification,
-  task: WebTaskSummary | undefined,
-): WebTaskSummary['status'] | WebTaskNotification['status'] | undefined {
+  notice: WireTaskNotification,
+  task: WireTask | undefined,
+): string | undefined {
   return task?.status ?? notice.status
 }
 
@@ -44,8 +44,8 @@ export function NotificationCard({
   tasks,
   onOpenTask,
 }: {
-  item: WebTranscriptItem
-  tasks?: WebTaskSummary[]
+  item: WireItem
+  tasks?: WireTask[]
   onOpenTask?(taskId: string): void
 }): React.ReactElement | null {
   const notice = item.notification
@@ -68,11 +68,11 @@ export function NotificationCard({
     notice.taskType === 'monitor'
       ? 'monitor'
       : task
-        ? TYPE_LABEL[task.taskType]
+        ? (TYPE_LABEL[task.kind] ?? 'task')
         : 'task'
 
   const openable =
-    task && task.taskType === 'local_agent' && onOpenTask
+    task && task.kind === 'local_agent' && onOpenTask
       ? notice.taskId
       : undefined
 

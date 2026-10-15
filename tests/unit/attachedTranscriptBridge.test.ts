@@ -1,0 +1,233 @@
+/**
+ * The wire-items -> renderable-transcript bridge and the status-line
+ * derivation: the two pure decisions the attached-session viewer makes.
+ */
+import { describe, expect, test } from 'bun:test'
+import {
+  bridgeTranscript,
+  isInjectedContextItem,
+} from '../../src/screens/attached/transcriptBridge.js'
+import type {
+  WireItem,
+  WireTranscriptSnapshot,
+} from '../../src/session/wire.js'
+
+function item(
+  overrides: Partial<WireItem> & { id: string; kind: WireItem['kind'] },
+): WireItem {
+  return { rev: 'r1', timestamp: '2026-09-28T00:00:00Z', ...overrides }
+}
+
+function snapshot(items: WireItem[]): WireTranscriptSnapshot {
+  return { items, order: items.map(i => i.id) }
+}
+
+describe('bridgeTranscript', () => {
+  test('assistant text and a tool call sharing a messageId regroup into one message', () => {
+    const snap = snapshot([
+      item({
+        id: 'a1',
+        kind: 'assistant',
+        text: 'working',
+        messageId: 'msg-1',
+        model: 'm',
+      }),
+      item({
+        id: 'a2',
+        kind: 'tool_use',
+        messageId: 'msg-1',
+        toolUseId: 'tu-1',
+        toolName: 'Bash',
+        toolInput: { command: 'echo hi' },
+      }),
+      item({
+        id: 'u2',
+        kind: 'tool_result',
+        toolUseId: 'tu-1',
+        text: 'hi',
+      }),
+    ])
+    const bridged = bridgeTranscript(snap, false)
+    const messageUnits = bridged.units.filter(u => u.kind === 'message')
+    // One assistant unit (two blocks) + one tool_result unit.
+    expect(messageUnits).toHaveLength(2)
+    const assistant = messageUnits[0] as Extract<
+      (typeof bridged.units)[number],
+      { kind: 'message' }
+    >
+    expect(assistant.message.type).toBe('assistant')
+    const content = (
+      assistant.message as { message: { content: Array<{ type: string }> } }
+    ).message.content
+    expect(content.map(b => b.type)).toEqual(['text', 'tool_use'])
+
+    // The lookups the tool cards need: resolved state and the block itself.
+    expect(bridged.lookups.resolvedToolUseIDs.has('tu-1')).toBe(true)
+    expect(bridged.lookups.toolUseByToolUseID.get('tu-1')?.name).toBe('Bash')
+  })
+
+  test('an errored tool result marks its call errored in the lookups', () => {
+    const bridged = bridgeTranscript(
+      snapshot([
+        item({
+          id: 'a1',
+          kind: 'tool_use',
+          messageId: 'msg-1',
+          toolUseId: 'tu-9',
+          toolName: 'Bash',
+          toolInput: {},
+        }),
+        item({
+          id: 'u2',
+          kind: 'tool_result',
+          toolUseId: 'tu-9',
+          text: 'boom',
+          isError: true,
+        }),
+      ]),
+      false,
+    )
+    expect(bridged.lookups.erroredToolUseIDs.has('tu-9')).toBe(true)
+  })
+
+  test('reminder rows follow the classic rule: wrapped rows only, gated by the setting', () => {
+    const snap = snapshot([
+      item({
+        id: 'x1',
+        kind: 'attachment',
+        attachment: {
+          type: 'session_guidance',
+          display: 'guidance',
+          reminder: 'ctx\nline two',
+        },
+      }),
+      // A carrier with no reminder wrapper (what user_context_snapshot
+      // really is): the classic pane renders nothing for it — its content
+      // reaches the pane as the rebuilt `Session context` row.
+      item({
+        id: 'x2',
+        kind: 'attachment',
+        attachment: { type: 'user_context_snapshot', display: 'snapshot' },
+      }),
+      item({
+        id: 'x4',
+        kind: 'attachment',
+        attachment: { type: 'file', display: 'a file' },
+      }),
+    ])
+    for (const type of ['user_context_snapshot', 'session_guidance']) {
+      expect(
+        isInjectedContextItem(
+          item({
+            id: 'i',
+            kind: 'attachment',
+            attachment: { type, display: '' },
+          }),
+        ),
+      ).toBe(true)
+    }
+    // Classic's default (showInjectedContext on): the wrapped row rides,
+    // the unwrapped carrier drops, the summary-line attachment is untouched.
+    const bridged = bridgeTranscript(snap, true)
+    expect(bridged.units).toHaveLength(2)
+    const attachments = bridged.units.filter(
+      u => u.kind === 'attachment' && 'item' in u,
+    ) as Extract<(typeof bridged.units)[number], { kind: 'attachment' }>[]
+    const byId = new Map(attachments.map(u => [u.item.id, u]))
+    expect(byId.get('x1')!.injected).toBe(true)
+    expect(byId.has('x2')).toBe(false)
+    expect(byId.get('x4')!.injected).toBe(false)
+    expect(byId.get('x1')!.item.attachment?.reminder).toBe('ctx\nline two')
+    // The classic prefilter: with the setting off, injected rows are gone
+    // entirely — not collapsed, absent.
+    const off = bridgeTranscript(snap, false)
+    expect(off.units).toHaveLength(1)
+    expect(off.units[0]!.kind === 'attachment' && off.units[0]!.item.id).toBe(
+      'x4',
+    )
+  })
+
+  test('a user item carries its text into a user message; isMeta is preserved', () => {
+    const bridged = bridgeTranscript(
+      snapshot([
+        item({ id: 'h1', kind: 'user', text: 'hello', isMeta: false }),
+        item({ id: 'h2', kind: 'user', text: '<meta>', isMeta: true }),
+      ]),
+      false,
+    )
+    const users = bridged.units.filter(u => u.kind === 'message')
+    expect(users).toHaveLength(2)
+    expect(users[1]!.kind === 'message' && users[1]!.message.isMeta).toBe(true)
+  })
+
+  test('system rows survive as native units; compact seams included', () => {
+    const bridged = bridgeTranscript(
+      snapshot([
+        item({
+          id: 's1',
+          kind: 'system',
+          text: 'Conversation compacted',
+          subtype: 'compact_boundary',
+        }),
+      ]),
+      false,
+    )
+    expect(bridged.units).toEqual([
+      { kind: 'system', item: expect.objectContaining({ id: 's1' }) },
+    ])
+  })
+
+  test('a commandInput user item rebuilds the synthetic tag form', () => {
+    // The classic dispatcher routes the tag form to UserCommandMessage —
+    // the REPL's `❯ /name args` row. The bridge must rebuild the tags,
+    // not show the tagless transport text.
+    const bridged = bridgeTranscript(
+      snapshot([
+        item({
+          id: 'c1',
+          kind: 'user',
+          text: '/model opus',
+          commandInput: { name: 'model', args: 'opus' },
+        }),
+      ]),
+      false,
+    )
+    const unit = bridged.units[0]
+    expect(unit!.kind).toBe('message')
+    if (unit!.kind !== 'message') return
+    const text = (
+      unit!.message as {
+        message: { content: Array<{ type: string; text?: string }> }
+      }
+    ).message.content[0]!.text!
+    expect(text.startsWith('<command-name>/model</command-name>')).toBe(true)
+    expect(text).toContain('<command-args>opus</command-args>')
+  })
+
+  test('a local_command system row rides through with its raw tags', () => {
+    // The viewer renders these through the classic UserTextMessage, whose
+    // branch predicate is a raw `<local-command-stdout` prefix — the
+    // bridge must not rewrite the text.
+    const bridged = bridgeTranscript(
+      snapshot([
+        item({
+          id: 's2',
+          kind: 'system',
+          text: '<local-command-stdout>3.0.0 (built now)</local-command-stdout>',
+          subtype: 'local_command',
+        }),
+      ]),
+      false,
+    )
+    expect(bridged.units).toEqual([
+      { kind: 'system', item: expect.objectContaining({ id: 's2' }) },
+    ])
+    const unit = bridged.units[0] as Extract<
+      (typeof bridged.units)[number],
+      { kind: 'system' }
+    >
+    expect(unit.item.text).toBe(
+      '<local-command-stdout>3.0.0 (built now)</local-command-stdout>',
+    )
+  })
+})

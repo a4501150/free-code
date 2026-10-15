@@ -19,7 +19,8 @@ import { createSessionToolAllowUpdate } from '../../../utils/permissions/Permiss
 import { hasPermissionsToUseTool } from '../../../utils/permissions/permissions.js'
 import type { PermissionContext } from '../PermissionContext.js'
 import { createResolveOnce } from '../PermissionContext.js'
-import * as webuiAttachModule from '../../../server/hostSingleton.js'
+import { currentSessionRequests } from '../../../session/requests.js'
+import { buildRequestUi } from '../../../session/requestUi.js'
 
 type InteractivePermissionParams = {
   ctx: PermissionContext
@@ -243,17 +244,18 @@ function handleInteractivePermission(
     }
   }
 
-  // WebUI relay — a fourth racer. A browser attached over the session's Unix
-  // socket sees the same prompt and can answer it. Whoever answers first wins
-  // through the same claim(); the others are torn down.
-  const host = webuiAttachModule.getAttachHost()
-  if (host) {
-    const broker = host.permissions
+  // Remote-client relay — a fourth racer, on the session's request broker
+  // (session-scoped, resolved from inside the core's scope). Any attached
+  // surface sees the same prompt and can answer it. Whoever answers first
+  // wins through the same claim(); the others are torn down.
+  {
+    const broker = currentSessionRequests()
     const webRequestId = broker.newRequestId()
     const webSignal = ctx.toolUseContext.abortController.signal
 
     const brokerUnsub = broker.open(
       {
+        kind: 'permission',
         requestId: webRequestId,
         toolName: ctx.tool.name,
         toolUseId: ctx.toolUseID,
@@ -262,8 +264,14 @@ function handleInteractivePermission(
         blockedPath: result.blockedPath,
         agentId: ctx.assistantMessage.agentId,
         openedAt: permissionPromptStartTimeMs,
+        ui: buildRequestUi(
+          ctx.tool.name,
+          displayInput as Record<string, unknown>,
+        ),
       },
-      async decision => {
+      async response => {
+        if (response.kind !== 'permission') return
+        const decision = response.decision
         if (!claim()) return // atomic check-and-mark before await
         cleanupRemoteRacers()
         ctx.removeFromQueue()
@@ -285,7 +293,21 @@ function handleInteractivePermission(
               await ctx.handleUserAllow(
                 updated,
                 [createSessionToolAllowUpdate(ctx.tool.name)],
-                undefined,
+                decision.feedback,
+                permissionPromptStartTimeMs,
+              ),
+            )
+            return
+          }
+
+          if (decision.feedback) {
+            // An approval with feedback (plan approval's "approve with this
+            // feedback") rides the same path the terminal dialog uses.
+            resolveOnce(
+              await ctx.handleUserAllow(
+                updated,
+                [],
+                decision.feedback,
                 permissionPromptStartTimeMs,
               ),
             )
@@ -311,9 +333,11 @@ function handleInteractivePermission(
             },
             { permissionPromptStartTimeMs },
           )
-          resolveOnce(
-            ctx.cancelAndAbort(decision.message ?? 'Denied from the WebUI'),
-          )
+          // An absent message IS the bare reject — cancelAndAbort composes
+          // the standard STOP text and interrupts, exactly as the local
+          // dialog's Esc does; inventing feedback here would reach the
+          // model as "the user said: Denied by a session client".
+          resolveOnce(ctx.cancelAndAbort(decision.message))
         }
       },
     )

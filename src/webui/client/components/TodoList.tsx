@@ -1,4 +1,4 @@
-import type { WebTodo } from '../../protocol/attachSchemas.js'
+import type { WireTodo } from '../../../session/wire.js'
 
 function box(status: string): string {
   if (status === 'completed') return '×'
@@ -6,7 +6,7 @@ function box(status: string): string {
   return ' '
 }
 
-export function TodoList({ todos }: { todos: WebTodo[] }): React.ReactElement {
+export function TodoList({ todos }: { todos: WireTodo[] }): React.ReactElement {
   const open = todos.filter(t => t.status !== 'completed')
 
   return (
