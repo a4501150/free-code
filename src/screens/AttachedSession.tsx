@@ -67,6 +67,7 @@ import { useApiKeyVerification } from '../hooks/useApiKeyVerification.js'
 import type { Command } from '../commands.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 import type { ComposerHost } from '../components/PromptInput/composerHost.js'
+import type { PromptInputHelpers } from '../utils/handlePromptSubmit.js'
 import { getNextPermissionMode } from '../utils/permissions/getNextPermissionMode.js'
 import { logForDebugging } from '../utils/debug.js'
 import { AttachedTrays } from './attached/AttachedTrays.js'
@@ -466,8 +467,21 @@ export function AttachedSession({
   // a verb of this surface. Input-local state (buffer, history index,
   // footer selection, palette) never crosses here — the component owns
   // it, which is the whole point of the seam.
-  const composerHost = useMemo<ComposerHost>(
-    () => ({
+  const composerHost = useMemo<ComposerHost>(() => {
+    // The classic clears the buffer synchronously at accept time
+    // (useReplSubmission's onSubmit clears before dispatch;
+    // handlePromptSubmit does the same on its queue path). A clear
+    // trailing the wire round-trip writes '' blind and stomps text typed
+    // while send() was in flight — so both submit halves call this
+    // before their first await.
+    const clearAtAccept = (helpers: PromptInputHelpers): void => {
+      composer.setInputValue('')
+      composer.setPastedContents({})
+      helpers.clearBuffer()
+      helpers.resetHistory()
+      helpers.setCursorOffset(0)
+    }
+    return {
       submit: async (input, helpers, speculationAccept) => {
         if (speculationAccept) {
           // Speculation is session-scoped: the speculative turn lives in
@@ -487,6 +501,7 @@ export function AttachedSession({
             speculation: IDLE_SPECULATION_STATE,
           }))
         }
+        clearAtAccept(helpers)
         // /tasks is a local dialog, not a turn: when this process IS the
         // session's, the viewer mounts the classic BackgroundTasksDialog
         // itself — the session's task state and output files are right
@@ -524,21 +539,14 @@ export function AttachedSession({
             sessionEpoch: view.meta?.sessionEpoch ?? 0,
           } as Record<string, unknown>)
         }
-        // The classic clears the buffer on every accepted submit —
-        // handlePromptSubmit runs these helpers on all paths, and the
-        // composer's own state must not outlive the keystroke.
-        composer.setInputValue('')
-        composer.setPastedContents({})
-        helpers.clearBuffer()
-        helpers.resetHistory()
-        helpers.setCursorOffset(0)
       },
-      submitToAgent: async (input, target) => {
+      submitToAgent: async (input, target, helpers) => {
         // The composer already resolved the steering target from the
         // live store (getActiveAgentForInput); the wire prompt carries
         // the agent id and the session's queue routes it, so no local
         // task lookup is needed here.
         repinScroll()
+        clearAtAccept(helpers)
         await send({
           kind: 'prompt',
           content: input,
@@ -570,19 +578,18 @@ export function AttachedSession({
           mode: nextMode,
         })
       },
-    }),
-    [
-      send,
-      view.meta,
-      isLocalHost,
-      setAppState,
-      markTurnStarting,
-      repinScroll,
-      composer.setInputValue,
-      composer.setPastedContents,
-      composer.setSubmitCount,
-    ],
-  )
+    }
+  }, [
+    send,
+    view.meta,
+    isLocalHost,
+    setAppState,
+    markTurnStarting,
+    repinScroll,
+    composer.setInputValue,
+    composer.setPastedContents,
+    composer.setSubmitCount,
+  ])
 
   // The classic tool registry: feeds the real tool cards. A tool the card
   // cannot resolve for (MCP on a remote attach, newer host build) renders
