@@ -118,6 +118,13 @@ export async function launchHosted(
               // The pane this process shows at boot replaces the REPL's:
               // the classic banner, not the remote attach's one-liner.
               showWelcomeBanner
+              // The composer's palette wants the real registry, not the
+              // wire catalog projection: the session adopted the assembled
+              // one (the CLI's partial defaults carry no commands), so
+              // read what it took — the palette then shows the registry's
+              // help text and argument hints, like the REPL's does.
+              commands={entry.hosted.options.commands}
+              agents={entry.hosted.options.agentDefinitions?.activeAgents}
             />
           </MCPConnectionManager>
         </AlternateScreen>
