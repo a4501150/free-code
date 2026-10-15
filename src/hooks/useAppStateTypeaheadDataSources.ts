@@ -12,7 +12,17 @@ import {
   getSessionIdFromLog,
   searchSessionsByCustomTitle,
 } from '../utils/sessionStorage.js'
-import { hasSlackMcpServer } from '../utils/suggestions/slackChannelSuggestions.js'
+import {
+  getSlackChannelSuggestions,
+  hasSlackMcpServer,
+} from '../utils/suggestions/slackChannelSuggestions.js'
+import { getShellHistoryCompletion } from '../utils/suggestions/shellHistoryCompletion.js'
+import {
+  getDirectoryCompletions,
+  getPathCompletions,
+} from '../utils/suggestions/directoryCompletion.js'
+import { getShellCompletions } from '../utils/bash/shellCompletion.js'
+import { generateUnifiedSuggestions } from './unifiedSuggestions.js'
 import type {
   TypeaheadAgentMember,
   TypeaheadDataSources,
@@ -34,7 +44,6 @@ export function useAppStateTypeaheadDataSources(): TypeaheadDataSources {
       mcpResources,
       promptSuggestion,
       isViewingAgentTask,
-      getMcpClients: () => store.getState().mcp.clients,
       hasSlackMcpServer: () => hasSlackMcpServer(store.getState().mcp.clients),
       getAgentDirectMessages: () => {
         const state = store.getState()
@@ -68,6 +77,20 @@ export function useAppStateTypeaheadDataSources(): TypeaheadDataSources {
       onFileIndexBuildComplete: (callback: () => void) =>
         onIndexBuildComplete(callback),
       addNotification: content => addNotification(content),
+      // Process-coupled lookups: the classic host IS the process, so each
+      // member is a pass-through to the module the engine used to import.
+      searchUnifiedSuggestions: (query, resources, agentDefs, showOnEmpty) =>
+        generateUnifiedSuggestions(query, resources, agentDefs, showOnEmpty),
+      getDirectoryCompletions: partialPath =>
+        getDirectoryCompletions(partialPath),
+      getPathCompletions: (partialPath, options) =>
+        getPathCompletions(partialPath, options),
+      getShellCompletions: (cmdInput, cmdCursorOffset, abortSignal) =>
+        getShellCompletions(cmdInput, cmdCursorOffset, abortSignal),
+      getShellHistoryCompletion: cmdInput =>
+        getShellHistoryCompletion(cmdInput),
+      getSlackChannelSuggestions: searchToken =>
+        getSlackChannelSuggestions(store.getState().mcp.clients, searchToken),
     }),
     [
       store,

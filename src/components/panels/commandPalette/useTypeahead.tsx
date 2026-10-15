@@ -1,4 +1,3 @@
-import * as React from 'react'
 import {
   useCallback,
   useEffect,
@@ -7,7 +6,6 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { Text } from '../../../ink.js'
 
 import { useDebounceCallback } from 'usehooks-ts'
 import { type Command, getCommandName } from '../../../commands.js'
@@ -35,10 +33,7 @@ import {
   generateProgressiveArgumentHint,
   parseArguments,
 } from '../../../utils/argumentSubstitution.js'
-import {
-  getShellCompletions,
-  type ShellCompletionType,
-} from '../../../utils/bash/shellCompletion.js'
+import type { ShellCompletionType } from '../../../utils/bash/shellCompletion.js'
 import {
   applyCommandSuggestion,
   findMidInputSlashCommand,
@@ -46,13 +41,7 @@ import {
   getBestCommandMatch,
   isCommandInput,
 } from '../../../utils/suggestions/commandSuggestions.js'
-import {
-  getDirectoryCompletions,
-  getPathCompletions,
-  isPathLikeToken,
-} from '../../../utils/suggestions/directoryCompletion.js'
-import { getShellHistoryCompletion } from '../../../utils/suggestions/shellHistoryCompletion.js'
-import { getSlackChannelSuggestions } from '../../../utils/suggestions/slackChannelSuggestions.js'
+import { isPathLikeToken } from '../../../utils/suggestions/directoryCompletion.js'
 import {
   applyFileSuggestion,
   findLongestCommonPrefix,
@@ -70,7 +59,6 @@ import type {
   CommandPaletteState,
   CommandPaletteStore,
 } from './paletteStore.js'
-import { generateUnifiedSuggestions } from '../../../hooks/unifiedSuggestions.js'
 
 const HAS_AT_SYMBOL_RE = /(^|\s)@([\p{L}\p{N}\p{M}_\-./\\()[\]~:]*|"[^"]*"?)$/u
 const HASH_CHANNEL_RE = /(^|\s)#([a-z0-9][a-z0-9_-]*)$/
@@ -172,9 +160,16 @@ function applyTriggerSuggestion(
 let currentShellCompletionAbortController: AbortController | null = null
 
 /**
- * Generate bash shell completion suggestions
+ * Generate bash shell completion suggestions. The fetcher arrives through
+ * the data-source seam — spawning the shell is the classic host's idea of
+ * this lookup, not the engine's.
  */
 async function generateBashSuggestions(
+  getShellCompletions: (
+    input: string,
+    cursorOffset: number,
+    abortSignal: AbortSignal,
+  ) => Promise<SuggestionItem[]>,
   input: string,
   cursorOffset: number,
 ): Promise<SuggestionItem[]> {
@@ -374,12 +369,13 @@ export function useTypeahead({
   const fetchFileSuggestions = useCallback(
     async (searchToken: string, isAtSymbol = false): Promise<void> => {
       latestSearchTokenRef.current = searchToken
-      const combinedItems = await generateUnifiedSuggestions(
-        searchToken,
-        mcpResources,
-        agents,
-        isAtSymbol,
-      )
+      const combinedItems =
+        await dataSourcesRef.current.searchUnifiedSuggestions(
+          searchToken,
+          mcpResources,
+          agents,
+          isAtSymbol,
+        )
       // Discard stale results if a newer query was initiated while waiting
       if (latestSearchTokenRef.current !== searchToken) {
         return
@@ -446,10 +442,8 @@ export function useTypeahead({
   const fetchSlackChannels = useCallback(
     async (partial: string): Promise<void> => {
       latestSlackTokenRef.current = partial
-      const channels = await getSlackChannelSuggestions(
-        dataSourcesRef.current.getMcpClients(),
-        partial,
-      )
+      const channels =
+        await dataSourcesRef.current.getSlackChannelSuggestions(partial)
       if (latestSlackTokenRef.current !== partial) return
       store.setState(prev => ({
         commandArgumentHint: undefined,
@@ -518,7 +512,8 @@ export function useTypeahead({
       // Bash mode: check for history-based ghost text completion
       if (mode === 'bash' && value.trim()) {
         latestBashInputRef.current = value
-        const historyMatch = await getShellHistoryCompletion(value)
+        const historyMatch =
+          await dataSourcesRef.current.getShellHistoryCompletion(value)
         // Discard stale results if input changed while waiting
         if (latestBashInputRef.current !== value) {
           return
@@ -646,7 +641,8 @@ export function useTypeahead({
             return
           }
 
-          const dirSuggestions = await getDirectoryCompletions(args)
+          const dirSuggestions =
+            await dataSourcesRef.current.getDirectoryCompletions(args)
           if (dirSuggestions.length > 0) {
             store.setState(prev => ({
               suggestions: dirSuggestions,
@@ -845,9 +841,10 @@ export function useTypeahead({
           // This handles cases like @~/path, @./path, @/path for directory traversal
           if (isPathLikeToken(searchToken)) {
             latestPathTokenRef.current = searchToken
-            const pathSuggestions = await getPathCompletions(searchToken, {
-              maxResults: 10,
-            })
+            const pathSuggestions =
+              await dataSourcesRef.current.getPathCompletions(searchToken, {
+                maxResults: 10,
+              })
             // Discard stale results if a newer query was initiated while waiting
             if (latestPathTokenRef.current !== searchToken) {
               return
@@ -1227,6 +1224,7 @@ export function useTypeahead({
         suggestionType = 'shell'
         // This should be very fast, taking <10ms
         const bashSuggestions = await generateBashSuggestions(
+          dataSourcesRef.current.getShellCompletions,
           input,
           cursorOffset,
         )
@@ -1261,12 +1259,13 @@ export function useTypeahead({
             ? completionInfo.token.substring(1)
             : completionInfo.token
 
-          suggestionItems = await generateUnifiedSuggestions(
-            searchToken,
-            mcpResources,
-            agents,
-            isAtSymbol,
-          )
+          suggestionItems =
+            await dataSourcesRef.current.searchUnifiedSuggestions(
+              searchToken,
+              mcpResources,
+              agents,
+              isAtSymbol,
+            )
         } else {
           suggestionItems = []
         }
@@ -1612,11 +1611,7 @@ export function useTypeahead({
         e.preventDefault()
         dataSourcesRef.current.addNotification({
           key: 'thinking-toggle-hint',
-          jsx: (
-            <Text dimColor>
-              Use {thinkingToggleShortcut} to toggle thinking
-            </Text>
-          ),
+          text: `Use ${thinkingToggleShortcut} to toggle thinking`,
           priority: 'immediate',
           timeoutMs: 3000,
         })
