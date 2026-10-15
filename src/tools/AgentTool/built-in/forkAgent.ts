@@ -40,7 +40,7 @@ ${worktreeNotice ? `${worktreeNotice}\n\n` : ''}${prompt}`
 // agent-listing line and the Agent tool description bullet — separate copies
 // drifted to different conditions once before.
 export const FORK_USAGE_GUIDANCE =
-  'Use when the subagent task benefits from inheriting your full transcript and prompt cache, or when your current task would fill your context with raw output you don\'t need again.'
+  "Use when the subagent task benefits from inheriting your full transcript and prompt cache, or when your current task would fill your context with raw output you don't need again."
 
 export const FORK_AGENT: BuiltInAgentDefinition = {
   agentType: 'fork',
