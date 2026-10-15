@@ -7,8 +7,7 @@ import React, {
   useSyncExternalStore,
 } from 'react'
 import { randomUUID } from 'crypto'
-import { Box, Text, Ansi, useApp, useInput } from '../ink.js'
-import { stringWidth } from '../ink/stringWidth.js'
+import { Box, Text, useApp, useInput } from '../ink.js'
 import { Message } from '../components/Message.js'
 import ScrollBox, { type ScrollBoxHandle } from '../ink/components/ScrollBox.js'
 import { ScrollKeybindingHandler } from '../components/ScrollKeybindingHandler.js'
@@ -30,12 +29,14 @@ import {
 } from '../session/viewStore.js'
 import { toWireItems } from '../session/toWire.js'
 import { draftView } from './attached/itemViews.js'
-import { useStatusLine } from './attached/StatusLineRow.js'
 import type { LocalDialog, LocalDialogStore } from '../session/localDialogs.js'
 import {
   NewMessagesPill,
   isJumpToBottomVisible,
+  SuggestionsOverlay,
+  DialogOverlay,
 } from '../components/FullscreenLayout.js'
+import { PromptOverlayProvider } from '../context/promptOverlayContext.js'
 import { SpinnerWithVerb, type SpinnerMode } from '../components/Spinner.js'
 import { LogoV2 } from '../components/LogoV2/LogoV2.js'
 import { taskView } from '../webui/client/itemViews.js'
@@ -48,45 +49,26 @@ import {
   useAppStateStore,
   useSetAppState,
 } from '../state/AppState.js'
-import type { FooterItem } from '../state/AppStateStore.js'
+import { IDLE_SPECULATION_STATE } from '../state/AppStateStore.js'
+import type { Message as MessageType } from '../types/message.js'
+import { addToHistory as appendHistory } from '../history.js'
 import { AssistantThinkingMessage } from '../components/messages/AssistantThinkingMessage.js'
 import { AssistantTextMessage } from '../components/messages/AssistantTextMessage.js'
 import { getAllBaseTools } from '../tools.js'
 import type { ToolPermissionContext, Tools } from '../Tool.js'
-import { PromptInputFooterLeftSide } from '../components/PromptInput/PromptInputFooterLeftSide.js'
-import { PromptInputFooterSuggestions } from '../components/PromptInput/PromptInputFooterSuggestions.js'
-import type { SuggestionItem } from '../components/PromptInput/PromptInputFooterSuggestions.js'
-import { isVimModeEnabled } from '../components/PromptInput/utils.js'
-import { useKeybindings } from '../keybindings/useKeybinding.js'
-import { renderPlaceholder } from '../hooks/renderPlaceholder.js'
-import VimTextInput from '../components/VimTextInput.js'
-import type { VimMode } from '../types/textInputTypes.js'
-import {
-  CoordinatorTaskPanel,
-  useCoordinatorTaskCount,
-  getVisibleAgentTasks,
-} from '../components/CoordinatorAgentStatus.js'
-import { useAgentBanner } from '../components/PromptInput/useAgentBanner.js'
-import {
-  enterAgentView,
-  exitAgentView,
-  stopOrDismissAgent,
-} from '../state/agentViewHelpers.js'
-import { isBackgroundTask } from '../tasks/types.js'
-import {
-  isLocalAgentTask,
-  isPanelAgentTask,
-} from '../tasks/LocalAgentTask/LocalAgentTask.js'
-import { isCoordinatorMode } from '../coordinator/coordinatorMode.js'
+import { exitAgentView } from '../state/agentViewHelpers.js'
+import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
 import { BackgroundTasksDialog } from '../components/tasks/BackgroundTasksDialog.js'
 import { ModalContext } from '../context/modalContext.js'
-import {
-  queueRows,
-  queueEditBody,
-  queueRemoveBody,
-  rpcBody,
-  slashSuggestions,
-} from '../webui/client/composerViews.js'
+import { rpcBody } from '../webui/client/composerViews.js'
+import PromptInput from '../components/PromptInput/PromptInput.js'
+import { useReplInput } from '../hooks/repl/useReplInput.js'
+import { useApiKeyVerification } from '../hooks/useApiKeyVerification.js'
+import type { Command } from '../commands.js'
+import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
+import type { ComposerHost } from '../components/PromptInput/composerHost.js'
+import { getNextPermissionMode } from '../utils/permissions/getNextPermissionMode.js'
+import { logForDebugging } from '../utils/debug.js'
 import { AttachedTrays } from './attached/AttachedTrays.js'
 import { ViewerErrorBoundary } from '../components/ViewerErrorBoundary.js'
 import { Select } from '../components/CustomSelect/index.js'
@@ -113,6 +95,20 @@ import { getGlobalConfig } from '../utils/config.js'
 const MODAL_TRANSCRIPT_PEEK = 2
 
 const EMPTY_SET = new Set<string>()
+
+// useReplInput's background-PR-intercept hook: a REPL affordance this
+// viewer has no part of.
+const NO_BG_PR_INTERCEPT = (_prev: string, _next: string): boolean => false
+
+// The composer's `messages` prop for a wire-fed host: the array is not
+// what the composer reads on this surface — transcriptFacts carries the
+// honest facts (see the mount site) and the footer's message-derived
+// stats (StatusLine cache counters) have no local transcript to walk.
+const NO_MESSAGES: MessageType[] = []
+
+// Stable empty agent list for a remote attach (agents are a palette
+// input; a fresh array identity would churn it every render).
+const EMPTY_AGENTS: AgentDefinition[] = []
 
 type ConnectionState =
   | { status: 'connecting' }
@@ -153,6 +149,15 @@ export type AttachedSessionProps = {
    * the /tasks mirror).
    */
   localDialogs?: LocalDialogStore
+  /**
+   * The real command registry / agent definitions, when this process
+   * assembled them (the hosted launcher's session defaults). The classic
+   * palette consumes these whole; without them (remote attach) the viewer
+   * projects the wire catalog's metadata instead, which lacks the
+   * registry's richer help text and argument completions.
+   */
+  commands?: Command[]
+  agents?: AgentDefinition[]
   onExit?: () => void
 }
 
@@ -182,6 +187,8 @@ export function AttachedSession({
   initialPrompt,
   showWelcomeBanner,
   localDialogs,
+  commands: commandsProp,
+  agents: agentsProp,
   onExit,
 }: AttachedSessionProps): React.ReactNode {
   const store = useMemo(() => createViewStore(), [])
@@ -189,6 +196,7 @@ export function AttachedSession({
   // Live store reads (an Enter that flips the agent view in the same
   // keystroke must steer from the store, not this render's closure).
   const appStateStore = useAppStateStore()
+  const setAppState = useSetAppState()
   const [connection, setConnection] = useState<ConnectionState>({
     status: 'connecting',
   })
@@ -200,18 +208,8 @@ export function AttachedSession({
   const holdScrollOnExpand = useCallback(() => {
     scrollRef.current?.holdNextGrowth()
   }, [])
-  const [inputText, setInputText] = useState('')
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const historyRef = useRef<string[]>([])
-  const historyAtRef = useRef(-1)
-  const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  // The double-Esc clear arming timestamp (useTextInput's handleEscape
-  // useDoublePress, mirrored in the bespoke composer's escape branch).
-  const escClearArmedRef = useRef<number | null>(null)
-  // The shortcuts help menu, toggled by '?' typed as the whole input —
-  // the classic input's own affordance (PromptInput's onChange check).
-  const [helpOpen, setHelpOpen] = useState(false)
   // The /buddy rainbow teaser: classic queues it through the notifications
   // context on REPL mount; the viewer has no such channel, so it runs the
   // same gate (no companion hatched, teaser window) and timeout directly.
@@ -227,20 +225,6 @@ export function AttachedSession({
   const [runningSince, setRunningSince] = useState<number | null>(null)
   const [, setTick] = useState(0)
   const { exit } = useApp()
-  // The vim input engine's mode, seeded INSERT like the REPL's useReplInput
-  // fold; when editorMode is vim the composer below mounts the classic's
-  // own VimTextInput and this drives the footer's `-- INSERT --` row.
-  const [vimMode, setVimMode] = useState<VimMode>('INSERT')
-  // The engine's cursor placement (mandatory TextInput plumbing; the
-  // bespoke non-vim composer has none).
-  const [cursorOffset, setCursorOffset] = useState(0)
-  // The engine's ctrl+c/ctrl+d double-press exit message — the same bytes
-  // the exit keybinding hook tracks for the bespoke composer, fed by the
-  // engine's onExitMessage instead.
-  const [engineExit, setEngineExit] = useState<{
-    pending: boolean
-    keyName: string | null
-  }>({ pending: false, keyName: null })
 
   // The in-process host mounts classic local dialogs (the /tasks pane) in a
   // modal slot mirroring FullscreenLayout's: the dialog publishes its focused
@@ -261,6 +245,24 @@ export function AttachedSession({
   // mirror of FullscreenLayout's `dividerYRef`/`useUnseenDivider` chrome:
   // scrollHeight at the first scroll-away, null once following resumes.
   const dividerYRef = useRef<number | null>(null)
+  // The classic composer's input-local state: the host-agnostic REPL
+  // input store (useReplInput) owns the buffer, pastes, vim mode,
+  // history-search and help-menu flags and the submit counter, exactly
+  // as it does in the REPL. The viewer needs a transcript repin hook
+  // and nothing else session-side: typing while scrolled away re-pins
+  // the view like the classic's.
+  const repinScroll = useCallback(() => {
+    scrollRef.current?.scrollToBottom()
+    dividerYRef.current = null
+  }, [])
+  const lastUserScrollTsRef = useRef(0)
+  const composer = useReplInput({
+    repinScroll,
+    lastUserScrollTsRef,
+    recentScrollRepinWindowMs: 1000,
+    trySuggestBgPRIntercept: NO_BG_PR_INTERCEPT,
+  })
+  const { status: apiKeyStatus } = useApiKeyVerification()
   const onTranscriptScroll = useCallback(
     (sticky: boolean, handle: ScrollBoxHandle) => {
       // Only transcript scrolls drive the pill — a mounted modal publishes
@@ -366,14 +368,6 @@ export function AttachedSession({
     else exit()
   }, [onExit, exit])
 
-  const exitState = useExitOnCtrlCDWithKeybindings(doExit, () => {
-    if (view.meta?.state === 'running' && clientRef.current) {
-      cancel()
-      return true
-    }
-    return false
-  })
-
   useEffect(() => {
     let cancelled = false
     let client: SurfaceClient | null = null
@@ -467,80 +461,126 @@ export function AttachedSession({
     } as Record<string, unknown>)
   }, [initialPrompt, connection.status, view.meta, send, markTurnStarting])
 
-  const handleSubmit = useCallback(
-    async (text: string) => {
-      // The classic routes input to the viewed background agent before
-      // anything else (PromptInput's getActiveAgentForInput branch): while
-      // a drill-down is on screen the prompt steers over the wire, and
-      // even slash commands ride it — onAgentSubmit receives the raw input.
-      // Live store read: an Enter that just flipped the view in this same
-      // keystroke must steer there — the render closure still holds the
-      // pre-view state.
-      const liveViewingAgentTaskId = appStateStore.getState().viewingAgentTaskId
-      if (liveViewingAgentTaskId) {
-        setEditingQueueId(null)
-        scrollRef.current?.scrollToBottom()
-        dividerYRef.current = null
+  // The wire ComposerHost: every REPL-owned closure the classic composer
+  // reaches for (see components/PromptInput/composerHost.ts) mapped onto
+  // a verb of this surface. Input-local state (buffer, history index,
+  // footer selection, palette) never crosses here — the component owns
+  // it, which is the whole point of the seam.
+  const composerHost = useMemo<ComposerHost>(
+    () => ({
+      submit: async (input, helpers, speculationAccept) => {
+        if (speculationAccept) {
+          // Speculation is session-scoped: the speculative turn lives in
+          // the session's own query loop and its adoption happens there
+          // (or not at all, when the session discards it). The viewer's
+          // half is to stop painting the ghost: clear the store fields
+          // that drive it and send the accepted text as a plain prompt.
+          setAppState(prev => ({
+            ...prev,
+            promptSuggestion: {
+              text: null,
+              promptId: null,
+              shownAt: 0,
+              acceptedAt: 0,
+              generationRequestId: null,
+            },
+            speculation: IDLE_SPECULATION_STATE,
+          }))
+        }
+        // /tasks is a local dialog, not a turn: when this process IS the
+        // session's, the viewer mounts the classic BackgroundTasksDialog
+        // itself — the session's task state and output files are right
+        // here, no wire round-trip (and no dropped JSX) needed. A remote
+        // attach falls through to the session, which replies as before.
+        const trimmed = input.trim()
+        const word = trimmed.split(/\s/)[0] ?? ''
+        if (isLocalHost && trimmed === '/tasks') {
+          setTasksDialog(true)
+        } else if (word === '/compact' || word === '/clear') {
+          // /compact and /clear render nothing when the host runs them,
+          // so the viewer sends those two as rpc — the same buttons the
+          // browser has.
+          await send(
+            rpcBody(word === '/compact' ? 'compact' : 'clear') as Record<
+              string,
+              unknown
+            >,
+          )
+        } else {
+          // The classic records the submitted line in the shared history
+          // file (handlePromptSubmit's half; the composer's arrows read
+          // it back through useArrowKeyHistory, same file, same process).
+          if (trimmed) appendHistory(input)
+          // The human-message backstop the classic REPL runs on submit:
+          // re-pin the transcript and clear the unseen-divider snapshot.
+          repinScroll()
+          markTurnStarting()
+          composer.setSubmitCount(s => s + 1)
+          await send({
+            kind: 'prompt',
+            content: input,
+            delivery: 'next',
+            commandId: randomUUID(),
+            sessionEpoch: view.meta?.sessionEpoch ?? 0,
+          } as Record<string, unknown>)
+        }
+        // The classic clears the buffer on every accepted submit —
+        // handlePromptSubmit runs these helpers on all paths, and the
+        // composer's own state must not outlive the keystroke.
+        composer.setInputValue('')
+        composer.setPastedContents({})
+        helpers.clearBuffer()
+        helpers.resetHistory()
+        helpers.setCursorOffset(0)
+      },
+      submitToAgent: async (input, target) => {
+        // The composer already resolved the steering target from the
+        // live store (getActiveAgentForInput); the wire prompt carries
+        // the agent id and the session's queue routes it, so no local
+        // task lookup is needed here.
+        repinScroll()
         await send({
           kind: 'prompt',
-          content: text,
+          content: input,
           delivery: 'next',
           commandId: randomUUID(),
           sessionEpoch: view.meta?.sessionEpoch ?? 0,
-          agentId: liveViewingAgentTaskId,
+          agentId: target.id,
         })
-        return
-      }
-      // /tasks is a local dialog, not a turn: when this process IS the
-      // session's, the viewer mounts the classic BackgroundTasksDialog
-      // itself — the session's task state and output files are right here,
-      // no wire round-trip (and no dropped JSX) needed. A remote attach
-      // falls through to the session, which replies as before.
-      if (isLocalHost && text.trim() === '/tasks') {
-        setEditingQueueId(null)
-        setTasksDialog(true)
-        return
-      }
-      // /compact and /clear render nothing when the host runs them, so the
-      // viewer sends those two as rpc — the same buttons the browser has.
-      const word = text.trim().split(/\s/)[0] ?? ''
-      if (word === '/compact' || word === '/clear') {
-        setEditingQueueId(null)
-        await send(
-          rpcBody(word === '/compact' ? 'compact' : 'clear') as Record<
-            string,
-            unknown
-          >,
+      },
+      prefetchAttachments: () => {
+        // The keystroke prefetch of the @-mention/MCP/agent attachment
+        // trio warms the prompt pipeline — which runs session-side,
+        // where its own submits warm their own caches. Nothing for the
+        // viewer to pre-warm over the wire.
+      },
+      cyclePermissionMode: ctx => {
+        // Compute the next mode locally (pure over the context the
+        // footer already renders) and ask the session to transition.
+        // The session's mode_set handler performs the transition on the
+        // shared store and republishes meta — the same route the
+        // browser's mode button takes (webui Shell.tsx) — so the viewer
+        // never writes the session's permission state directly.
+        logForDebugging(
+          `[attached] cyclePermissionMode: currentMode=${ctx.mode}`,
         )
-        return
-      }
-      if (editingQueueId) {
-        setEditingQueueId(null)
-        await send(
-          queueEditBody(editingQueueId, text) as Record<string, unknown>,
-        )
-        return
-      }
-      // The human-message backstop the classic REPL runs on submit:
-      // re-pin the transcript and clear the unseen-divider snapshot.
-      scrollRef.current?.scrollToBottom()
-      dividerYRef.current = null
-      markTurnStarting()
-      await send({
-        kind: 'prompt',
-        content: text,
-        delivery: 'next',
-        commandId: randomUUID(),
-        sessionEpoch: view.meta?.sessionEpoch ?? 0,
-      } as Record<string, unknown>)
-    },
+        const nextMode = getNextPermissionMode(ctx)
+        void clientRef.current?.command('mode', {
+          kind: 'mode_set',
+          mode: nextMode,
+        })
+      },
+    }),
     [
       send,
-      editingQueueId,
       view.meta,
       isLocalHost,
+      setAppState,
       markTurnStarting,
-      appStateStore,
+      repinScroll,
+      composer.setInputValue,
+      composer.setPastedContents,
+      composer.setSubmitCount,
     ],
   )
 
@@ -565,27 +605,105 @@ export function AttachedSession({
   const composerActive =
     isConnected && !pendingRequest && !tasksDialog && !showLocalDialog
 
-  // editorMode is a live settings read: /vim flips it and the next render
-  // swaps the composer between the bespoke readline row and the classic's
-  // own vim engine — the same swap PromptInput makes between TextInput and
-  // VimTextInput.
-  const vimEnabled = isVimModeEnabled()
+  // Ctrl+C/D double-press exit stays viewer-local while the classic
+  // composer is unmounted (connecting, disconnected, a dialog or a tray
+  // owns the keys). While it is mounted the classic engine's own
+  // onExitMessage paints the footer's double-press row — the REPL has
+  // no outer exit hook either — and ctrl+c during a running turn rides
+  // this hook's interrupt branch, the counterpart of the classic's
+  // CancelRequestHandler app:interrupt.
+  useExitOnCtrlCDWithKeybindings(
+    doExit,
+    () => {
+      if (view.meta?.state === 'running' && clientRef.current) {
+        cancel()
+        return true
+      }
+      return false
+    },
+    !composerActive,
+  )
+
+  // What the classic composer's session-state props hold in the REPL,
+  // read where this process can honestly source them.
+  const storeToolPermissionContext = useAppState(s => s.toolPermissionContext)
+  const mcpClients = useAppState(s => s.mcp.clients)
+  // Remote attach: the viewer does not share the session's store, so
+  // the wire's permissionMode — the same enum the classic carries in
+  // the context — is what the ModeIndicator can honestly show.
+  const toolPermissionContext = isLocalHost
+    ? storeToolPermissionContext
+    : view.meta
+      ? ({ mode: view.meta.permissionMode } as ToolPermissionContext)
+      : storeToolPermissionContext
+  const setToolPermissionContext = useCallback(
+    (ctx: ToolPermissionContext) => {
+      // The session owns its permission state; cyclePermissionMode
+      // routes changes through mode_set and the session republishes.
+      // This write only refreshes the viewer's own display copy.
+      setAppState(prev => ({ ...prev, toolPermissionContext: ctx }))
+    },
+    [setAppState],
+  )
+  // The real registry when this process assembled it (hosted); a remote
+  // attach projects the wire catalog's metadata — the palette reads
+  // name/aliases/description/argumentHint only, and execution rides the
+  // wire submit regardless of what the suggestion object carries.
+  const commands = useMemo<Command[]>(
+    () =>
+      commandsProp ??
+      (view.catalog.commands.map(command => ({
+        type: 'local',
+        name: command.name,
+        description: command.description ?? '',
+        argumentHint: command.argHint,
+        aliases: command.aliases,
+      })) as unknown as Command[]),
+    [commandsProp, view.catalog.commands],
+  )
+  const agents = agentsProp ?? EMPTY_AGENTS
+  // Transcript facts the composer asks for in place of the Message[]
+  // array it does not hold: the wire's projected rows are the truth
+  // here (row count for the Esc-ladder and footer gates, an assistant
+  // row for the thinking-toggle, no paste-ids on the wire projection).
+  const transcriptFacts = useMemo(
+    () => ({
+      messageCount: view.order.length,
+      maxPasteId: 0,
+      hasAssistantMessage: view.order.some(
+        id => view.items.get(id)?.kind === 'assistant',
+      ),
+    }),
+    [view.order, view.items],
+  )
+  const conversationId = `${sessionId ?? pid}:${view.meta?.sessionEpoch ?? 0}`
+
+  // The pill's Enter opens the classic tasks dialog through
+  // showBashesDialog (PromptInput's handleOpenTasksDialog); this viewer
+  // owns the dialog slot, so the flag is routed to it and reset.
+  useEffect(() => {
+    if (!composer.showBashesDialog) return
+    composer.setShowBashesDialog(false)
+    if (isLocalHost) setTasksDialog(true)
+  }, [composer.showBashesDialog, composer.setShowBashesDialog, isLocalHost])
 
   // The prompt-suggestion ghost: the session's stop-hook fork writes
   // AppState.promptSuggestion.text into the shared store (the query loop
-  // runs session-side), and this composer paints it where the classic
-  // input paints its placeholder. Hidden while responding or typing, like
-  // usePromptSuggestion gates it in the REPL.
-  const setAppState = useSetAppState()
+  // runs session-side) and the mounted PromptInput paints it like the
+  // classic input paints its placeholder. What the classic host's
+  // usePromptSuggestion would do — mark the suggestion as shown once
+  // the input actually displays it (telemetry and empty-Enter accept
+  // both gate on shownAt) — this viewer does here, with the same
+  // visibility gate usePromptSuggestion applies.
   const suggestionText = useAppState(s => s.promptSuggestion.text)
-  const ghostText =
-    suggestionText && inputText === '' && !isRunning && !turnStarting
-      ? suggestionText
-      : null
+  const suggestionVisible =
+    suggestionText !== null &&
+    composer.inputValue === '' &&
+    composer.inputMode === 'prompt' &&
+    !isRunning &&
+    !turnStarting
   useEffect(() => {
-    if (!ghostText) return
-    // The mirror of the hook's markShown — telemetry and accept tracking
-    // both gate on shownAt.
+    if (!suggestionVisible) return
     setAppState(prev =>
       prev.promptSuggestion.shownAt !== 0 || !prev.promptSuggestion.text
         ? prev
@@ -597,151 +715,21 @@ export function AttachedSession({
             },
           },
     )
-  }, [ghostText, setAppState])
-  const acceptSuggestion = useCallback(() => {
-    setAppState(prev => ({
-      ...prev,
-      promptSuggestion: {
-        text: null,
-        promptId: null,
-        shownAt: 0,
-        acceptedAt: 0,
-        generationRequestId: null,
-      },
-    }))
-  }, [setAppState])
+  }, [suggestionVisible, setAppState])
 
-  // ─── Footer pill navigation (the classic's footer:up/down context) ────
-  // The selection lives in the shared store, so the tasks pill
-  // (PromptInputFooterLeftSide), the agent panel rows (CoordinatorTaskPanel)
-  // and this composer all read the same focus — the same triple PromptInput
-  // wires in the REPL. The bespoke useInput below plays the Footer context:
-  // this component sits above its own KeybindingSetup provider, so
-  // useKeybindings would silently no-op here.
+  // ─── Agent drill-down state (the transcript half) ─────────────────────
+  // The footer's pill/panel selection, its clamp effects and the agent
+  // banner all live inside the mounted PromptInput now — they drive and
+  // read the same shared store the REPL's do. What stays here is only
+  // what the transcript and the Esc fallback read.
   const tasks = useAppState(s => s.tasks)
-  const footerSelection = useAppState(s => s.footerSelection)
-  const coordinatorTaskIndex = useAppState(s => s.coordinatorTaskIndex)
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
-  const coordinatorTaskCount = useCoordinatorTaskCount()
   // The classic's viewed-agent derivation (REPL.tsx): the local_agent whose
   // transcript is on screen, if any.
   const viewedTask = viewingAgentTaskId ? tasks[viewingAgentTaskId] : undefined
   const viewedAgentTask =
     viewedTask && isLocalAgentTask(viewedTask) ? viewedTask : undefined
   const viewedAgentRunning = viewedAgentTask?.status === 'running'
-  const agentBanner = useAgentBanner()
-  const tasksFooterVisible =
-    Object.values(tasks).some(t => t.status === 'running') ||
-    coordinatorTaskCount > 0
-  // The pill (BackgroundTaskStatus) only renders for non-panel-agent bg
-  // tasks; with only agent rows visible the -1 sentinel is skipped.
-  const hasBgTaskPill = useMemo(
-    () =>
-      Object.values(tasks).some(
-        t =>
-          isBackgroundTask(t) &&
-          !(isCoordinatorMode() ? isPanelAgentTask(t) : false),
-      ),
-    [tasks],
-  )
-  const minCoordinatorIndex = hasBgTaskPill ? -1 : 0
-  const footerItems = useMemo<readonly FooterItem[]>(
-    () => (tasksFooterVisible ? ['tasks'] : []),
-    [tasksFooterVisible],
-  )
-  const footerItemSelected =
-    footerSelection && footerItems.includes(footerSelection)
-      ? footerSelection
-      : null
-  // The classic's TextInput focus gate (PromptInput's baseProps.focus):
-  // a selected footer pill takes the caret out of the input, and an
-  // unfocused input paints no cursor.
-  const inputFocused = !footerItemSelected
-  const tasksSelected = footerItemSelected === 'tasks'
-  const selectFooterItem = useCallback(
-    (item: FooterItem | null) => {
-      setAppState(prev => {
-        const nextSelection =
-          prev.footerSelection === item ? prev.footerSelection : item
-        const nextIndex =
-          item === 'tasks' ? minCoordinatorIndex : prev.coordinatorTaskIndex
-        if (
-          nextSelection === prev.footerSelection &&
-          nextIndex === prev.coordinatorTaskIndex
-        ) {
-          return prev
-        }
-        return {
-          ...prev,
-          footerSelection: nextSelection,
-          coordinatorTaskIndex: nextIndex,
-        }
-      })
-    },
-    [setAppState, minCoordinatorIndex],
-  )
-  // delta: +1 = down, -1 = up. Returns true when nav happened (including
-  // the deselect at the start), false at a boundary — the classic's
-  // navigateFooter contract.
-  const navigateFooter = useCallback(
-    (delta: 1 | -1, exitAtStart = false): boolean => {
-      const idx = footerItemSelected
-        ? footerItems.indexOf(footerItemSelected)
-        : -1
-      const next = footerItems[idx + delta]
-      if (next) {
-        selectFooterItem(next)
-        return true
-      }
-      if (delta < 0 && exitAtStart) {
-        selectFooterItem(null)
-        return true
-      }
-      return false
-    },
-    [footerItemSelected, footerItems, selectFooterItem],
-  )
-  // The agent row the footer's coordinator index points at: -1/0 is the
-  // main line, 1..N the visible agent rows (the classic's openSelected map).
-  const selectedAgentTaskId =
-    coordinatorTaskIndex >= 1
-      ? getVisibleAgentTasks(tasks)[coordinatorTaskIndex - 1]?.id
-      : undefined
-
-  // The classic's clamp effect: tasks completing shrink the list under the
-  // cursor, and a resurrected index must not steal focus on the next start.
-  useEffect(() => {
-    if (coordinatorTaskIndex >= coordinatorTaskCount) {
-      const clamped = Math.max(minCoordinatorIndex, coordinatorTaskCount - 1)
-      setAppState(prev =>
-        prev.coordinatorTaskIndex === clamped
-          ? prev
-          : { ...prev, coordinatorTaskIndex: clamped },
-      )
-    } else if (coordinatorTaskIndex < minCoordinatorIndex) {
-      setAppState(prev =>
-        prev.coordinatorTaskIndex === minCoordinatorIndex
-          ? prev
-          : { ...prev, coordinatorTaskIndex: minCoordinatorIndex },
-      )
-    }
-  }, [
-    coordinatorTaskCount,
-    coordinatorTaskIndex,
-    minCoordinatorIndex,
-    setAppState,
-  ])
-  // A selection whose pill stopped rendering clears itself (the classic's
-  // derivation + effect, PromptInput lines ~540).
-  useEffect(() => {
-    if (footerSelection && !footerItemSelected) {
-      setAppState(prev =>
-        prev.footerSelection === null
-          ? prev
-          : { ...prev, footerSelection: null },
-      )
-    }
-  }, [footerSelection, footerItemSelected, setAppState])
 
   // ─── Agent drill-down: the viewed agent's transcript over the wire ────
   // The hosted viewer shares the session's store, so the task's live
@@ -819,186 +807,10 @@ export function AttachedSession({
     scrollRef.current?.scrollToBottom()
   }, [viewingAgentTaskId])
 
-  const paletteToken = inputText.startsWith('/')
-    ? inputText.split(/\s/)[0]!
-    : ''
-  // The classic's showArgumentHint: a bare slash command (no arguments
-  // typed yet) with an argumentHint renders the hint dim after the input.
-  const argumentHint = useMemo(() => {
-    if (!inputText.startsWith('/') || inputText.trim().length === 0) {
-      return undefined
-    }
-    const commandWithoutArgs =
-      inputText.trim().indexOf(' ') === -1 || inputText.endsWith(' ')
-    if (!commandWithoutArgs) return undefined
-    const name = inputText.split(/\s/)[0]!
-    const command = view.catalog.commands.find(
-      candidate =>
-        (candidate.name.startsWith('/')
-          ? candidate.name
-          : `/${candidate.name}`) === name,
-    )
-    return command?.argHint
-  }, [inputText, view.catalog.commands])
-  // The classic's hasCommandArgs gate: arguments typed after the command
-  // close the palette entirely — a bare trailing space still shows it.
-  const palette = useMemo(
-    () => slashSuggestions(view.catalog.commands, inputText),
-    [inputText, view.catalog.commands],
-  )
-  // The classic palette's selection and dismissal fold (useTypeahead): the
-  // selection resets as the filtered list regenerates, and Esc/accept
-  // remember the token so the panel stays hidden until the input changes.
-  const [selectedSuggestion, setSelectedSuggestion] = useState(0)
-  const [dismissedForToken, setDismissedForToken] = useState<string | null>(
-    null,
-  )
-  const paletteOpen =
-    palette.length > 0 &&
-    !editingQueueId &&
-    !pendingRequest &&
-    paletteToken !== dismissedForToken
-  const selectedSuggestionIndex = Math.min(
-    selectedSuggestion,
-    palette.length - 1,
-  )
-  useEffect(() => {
-    setSelectedSuggestion(0)
-  }, [paletteToken])
-  const suggestionItems = useMemo<SuggestionItem[]>(
-    () =>
-      palette.map(item => ({
-        id: `command-${item.value}`,
-        // The classic's createCommandSuggestionItem: the matched alias
-        // rides the display text in parentheses, never the insert.
-        displayText: item.matchedAlias
-          ? `${item.value} (${item.matchedAlias})`
-          : item.value,
-        description: item.detail,
-      })),
-    [palette],
-  )
-  // The classic's stable width from all commands (prevents layout shift
-  // while filtering): longest command name + "/" + padding.
-  const paletteMaxWidth = useMemo(() => {
-    const names = view.catalog.commands.map(command =>
-      command.name.replace(/^\//, ''),
-    )
-    return names.length === 0
-      ? undefined
-      : Math.max(...names.map(name => name.length)) + 6
-  }, [view.catalog.commands])
-
-  const acceptPalette = useCallback(() => {
-    const item = palette[selectedSuggestionIndex]
-    if (!item) return
-    // applyCommandSuggestion's fill half: the command with a trailing
-    // space, no execution — Tab only fills. The caret lands after the
-    // space, ready for arguments.
-    setInputText(`${item.value} `)
-    setCursorOffset(item.value.length + 1)
-    setDismissedForToken(paletteToken)
-  }, [palette, selectedSuggestionIndex, paletteToken])
-
-  const dismissPalette = useCallback(() => {
-    setDismissedForToken(paletteToken)
-  }, [paletteToken])
-
-  // The classic's Enter-on-suggestion: apply, and execute in place when
-  // the command runs without arguments (the catalog's runsDirectly —
-  // everything but a prompt command with named arguments; the classic
-  // reads type/argNames off the registry, the wire carries the verdict).
-  const executePalette = useCallback(() => {
-    const item = palette[selectedSuggestionIndex]
-    if (!item) return
-    setDismissedForToken(paletteToken)
-    if (item.hint && item.runsDirectly === false) {
-      setInputText(`${item.value} `)
-      setCursorOffset(item.value.length + 1)
-      return
-    }
-    historyRef.current.push(item.value)
-    if (historyRef.current.length > 50) historyRef.current.shift()
-    historyAtRef.current = -1
-    void handleSubmit(item.value)
-    setInputText('')
-    setCursorOffset(0)
-  }, [palette, selectedSuggestionIndex, paletteToken, handleSubmit])
-
-  // NOTE: the classic routes the palette's up/down/tab/escape through the
-  // keybinding system's Autocomplete context, but this component sits ABOVE
-  // its own KeybindingSetup provider — useKeybindings in this body reads a
-  // null context and silently no-ops (the trays work because they render
-  // below it). The bespoke useInput handler below owns the palette keys
-  // instead; in vim mode the engine owns the keys and Enter reaches the
-  // selection through submitFromInput.
-
-  // The history ring both composers share: the bespoke handler's arrows
-  // and the vim engine's onHistoryUp/Down callbacks. Returns true when a
-  // 'down' press found the cursor already at the live bottom — the classic's
-  // onHistoryDown contract, whose true result enters the footer.
-  const historyNav = useCallback(
-    (direction: 'up' | 'down'): boolean => {
-      const history = historyRef.current
-      if (history.length === 0 || inputText.includes('\n')) {
-        return direction === 'down'
-      }
-      let at = historyAtRef.current
-      at =
-        direction === 'up'
-          ? at < 0
-            ? history.length - 1
-            : Math.max(0, at - 1)
-          : at < 0
-            ? at
-            : Math.min(history.length - 1, at + 1)
-      historyAtRef.current = at
-      if (at >= 0) {
-        setInputText(history[at]!)
-        setCursorOffset(history[at]!.length)
-      }
-      return direction === 'down' && at < 0
-    },
-    [inputText],
-  )
-
-  // The vim engine's onChange — the classic PromptInput contract: '?' as
-  // the whole value toggles the shortcuts help, every other change closes
-  // it.
-  const changeFromInput = useCallback((value: string) => {
-    if (value === '?') {
-      setHelpOpen(v => !v)
-      return
-    }
-    setHelpOpen(false)
-    setInputText(value)
-  }, [])
-
-  // The vim engine's submit — the bespoke handler's return branch minus
-  // the key dispatch, which the engine owns.
-  const submitFromInput = useCallback(
-    (value: string) => {
-      setHelpOpen(false)
-      // The classic's Enter-on-suggestion: the palette routes the engine's
-      // return through the selection too — the raw partial never submits.
-      if (paletteOpen) {
-        executePalette()
-        return
-      }
-      const trimmed = value.trim()
-      const submitText = trimmed ? value : (ghostText ?? '')
-      if (ghostText && !trimmed) acceptSuggestion()
-      if (submitText.trim()) {
-        historyRef.current.push(submitText.trim())
-        if (historyRef.current.length > 50) historyRef.current.shift()
-        historyAtRef.current = -1
-        void handleSubmit(submitText)
-        setInputText('')
-        setCursorOffset(0)
-      }
-    },
-    [ghostText, acceptSuggestion, handleSubmit, paletteOpen, executePalette],
-  )
+  // The slash palette, its selection/dismissal fold, the argument hint
+  // and the history ring all live inside the mounted PromptInput now —
+  // the real useTypeahead over the real command registry, keyed by the
+  // real useArrowKeyHistory. Nothing bespoke remains to own those keys.
 
   // A running-turn clock: starts on the transition into running, and a 1s
   // tick keeps the elapsed time and task durations fresh. The refs back the
@@ -1039,8 +851,6 @@ export function AttachedSession({
   }, [view.streamDraft, isRunning])
 
   const verbose = useAppState(s => s.verbose)
-  // The classic footer's statusline half (see attached/StatusLineRow.tsx).
-  const statusLine = useStatusLine()
 
   // ── The task board, mirrored from the wire (remote attach only) ──────
   // The stream's todo rows ARE the session's task board (subject, status,
@@ -1103,205 +913,23 @@ export function AttachedSession({
     return () => clearTimeout(timer)
   }, [notificationKey])
 
-  const queued = queueRows(view.queue)
-  // The classic input's queue hint, over the wire's pending commands (the
-  // queue store is session-scoped — an attached UI consumes it over the
-  // wire, never from the module). The wire lists prompt-mode commands only,
-  // so editable = every non-meta row.
-  const inputPlaceholder =
-    inputText === '' && view.queue.some(command => !command.isMeta)
-      ? 'Press up to edit queued messages'
-      : undefined
-
-  // Cursor-aware editing for the hand-rolled (non-vim) composer: the
-  // classic engine (useTextInput's cursor) keeps the caret between
-  // characters; these are that cursor's insert/delete/move halves over
-  // the same state the vim engine drives.
-  const cursorAt = Math.min(cursorOffset, inputText.length)
-  const moveCursor = (offset: number) => {
-    setCursorOffset(Math.max(0, Math.min(inputText.length, offset)))
-  }
-  const typeAtCursor = (chars: string) => {
-    setInputText(
-      inputText.slice(0, cursorAt) + chars + inputText.slice(cursorAt),
-    )
-    setCursorOffset(cursorAt + chars.length)
-  }
-  const backspaceAtCursor = () => {
-    if (cursorAt === 0) return
-    setInputText(inputText.slice(0, cursorAt - 1) + inputText.slice(cursorAt))
-    setCursorOffset(cursorAt - 1)
-  }
-  // The engine's kill semantics (isKillKey): ctrl+w / meta+backspace cut
-  // the word before the caret, ctrl+u the line before it, ctrl+k the rest
-  // of the line; meta+delete kills the word ahead.
-  const killWordBefore = () => {
-    const lineStart = inputText.lastIndexOf('\n', cursorAt - 1) + 1
-    const kept = inputText.slice(lineStart, cursorAt).replace(/[^\s]+\s*$/, '')
-    setInputText(
-      inputText.slice(0, lineStart) + kept + inputText.slice(cursorAt),
-    )
-    setCursorOffset(lineStart + kept.length)
-  }
-  const killWordAfter = () => {
-    const rest = inputText.slice(cursorAt)
-    const word = rest.replace(/^\s+/, '').match(/^\S+/)?.[0] ?? ''
-    if (!word) return
-    setInputText(inputText.slice(0, cursorAt) + rest.replace(word, ''))
-  }
-  const jumpWord = (direction: -1 | 1) => {
-    if (direction === -1) {
-      const skipped = inputText.slice(0, cursorAt).replace(/\s+$/, '')
-      moveCursor(skipped.replace(/[^\s]+\s*$/, '').length)
-    } else {
-      const rest = inputText.slice(cursorAt)
-      const lead = rest.length - rest.replace(/^\s+/, '').length
-      const word = rest.slice(lead).match(/^\S+/)?.[0].length ?? 0
-      moveCursor(cursorAt + lead + word)
-    }
-  }
-
+  // The minimal key fallback for what the mounted composer's own engine
+  // does not own (its useInput covers editing, the palette, the footer
+  // pill, the help menu, history search, double-Esc clear and its own
+  // ctrl+c/ctrl+d double-press exit): the agent-drill-down and
+  // running-turn Esc cancels, the empty Shift+Enter steering interrupt,
+  // and the injected-context toggle the collapsed rows name. The
+  // classic REPL rides its CancelRequestHandler and
+  // useBackgroundTaskNavigation keybindings here; those are wired to
+  // the REPL's local abort controller and confirm queue, while cancel
+  // is a wire verb on this surface, so a plain input listener stands in.
   useInput(
     (input, key) => {
       if (!composerActive) return
-
-      // The vim engine owns the editing keys (insert, return, escape,
-      // arrows, ctrl combos) through its own useInput; only the
-      // viewer-local hotkeys no engine mapping covers stay here. The
-      // queue pair is empty-input-only so the engine's ctrl+e
-      // (end-of-line) never races it.
-      if (vimEnabled) {
-        if (key.ctrl && inputText === '' && queued.length > 0) {
-          const row = queued[0]!
-          if (input === 'x') {
-            void send(queueRemoveBody(row.id) as Record<string, unknown>)
-            return
-          }
-          if (input === 'e') {
-            setEditingQueueId(row.id)
-            setInputText(row.text)
-            setCursorOffset(row.text.length)
-            return
-          }
-        }
-        if (key.ctrl && (input === 'o' || input === 't')) {
-          setShowInjectedContext(value => !value)
-          return
-        }
-        return
-      }
-
-      // The classic input's '?' affordance: '?' as the whole value toggles
-      // the shortcuts help; any other keypress, submit or backspace on the
-      // empty line closes it (the classic closes on every value change).
-      if (input === '?' && inputText === '') {
-        setHelpOpen(v => !v)
-        return
-      }
-      if (helpOpen) {
-        if (key.return || key.backspace || key.delete) {
-          setHelpOpen(false)
-          if (key.return) return
-        } else if (input.length > 0) {
-          setHelpOpen(false)
-        }
-      }
-
-      if (key.return) {
-        // The classic's Enter-on-suggestion: while the palette is open the
-        // partial input never submits raw — the selection applies instead.
-        if (paletteOpen) {
-          executePalette()
-          return
-        }
-        // The classic's footer:openSelected — Enter on the tasks pill opens
-        // the dialog (or the agent view the index points at). The binding
-        // does not consume the key: TextInput's Enter fires in the same
-        // keystroke, so the buffer still submits below — with the store
-        // already flipped, an Enter that enters a view submits INTO it.
-        if (footerItemSelected) {
-          if (coordinatorTaskIndex === 0 && coordinatorTaskCount > 0) {
-            exitAgentView(setAppState)
-          } else if (selectedAgentTaskId) {
-            enterAgentView(selectedAgentTaskId, setAppState)
-          } else {
-            setTasksDialog(true)
-            selectFooterItem(null)
-          }
-        }
-        const trimmed = inputText.trim()
-        if (key.shift && isRunning && !trimmed) {
-          // Steer: an empty Shift+Enter is the browser's interrupt affordance.
-          cancel()
-          return
-        }
-        // An empty Enter accepts a visible suggestion — the mirror of the
-        // REPL's input-matches-suggestion submit.
-        const submitText = trimmed ? inputText : (ghostText ?? '')
-        if (ghostText && !trimmed) acceptSuggestion()
-        if (submitText.trim()) {
-          historyRef.current.push(submitText.trim())
-          if (historyRef.current.length > 50) historyRef.current.shift()
-          historyAtRef.current = -1
-          void handleSubmit(submitText)
-          setInputText('')
-          setCursorOffset(0)
-        }
-        return
-      }
-
-      if (key.ctrl && (input === 'u' || input === 'k' || input === 'w')) {
-        // The engine's kill keys, at the caret rather than the line end.
-        if (input === 'w') killWordBefore()
-        if (input === 'u') {
-          const lineStart = inputText.lastIndexOf('\n', cursorAt - 1) + 1
-          setInputText(
-            inputText.slice(0, lineStart) + inputText.slice(cursorAt),
-          )
-          setCursorOffset(lineStart)
-        }
-        if (input === 'k') {
-          const nextNewline = inputText.indexOf('\n', cursorAt)
-          setInputText(
-            nextNewline === -1
-              ? inputText.slice(0, cursorAt)
-              : inputText.slice(0, cursorAt) + inputText.slice(nextNewline),
-          )
-        }
-        return
-      }
-      if (key.backspace || key.delete) {
-        if (key.meta) {
-          // The engine's Meta+Backspace/Delete: kill the adjacent word.
-          if (key.backspace) killWordBefore()
-          else killWordAfter()
-        } else if (key.delete) {
-          // Delete erases the character AT the caret; backspace cuts
-          // the one before it. (The old handler only knew the line end.)
-          if (cursorAt < inputText.length) {
-            setInputText(
-              inputText.slice(0, cursorAt) + inputText.slice(cursorAt + 1),
-            )
-          }
-        } else {
-          backspaceAtCursor()
-        }
-        return
-      }
-
       if (key.escape) {
-        // The classic's autocomplete:dismiss — the palette yields Esc to
-        // the dismissal before anything else owns the key.
-        if (paletteOpen) {
-          dismissPalette()
-          return
-        }
         // The classic's agent-view Esc (useBackgroundTaskNavigation): a
         // running agent aborts its own work — the leader's turn is never
         // cancelled from a drill-down; a settled agent releases the view.
-        // The pill focus clears in the same keystroke too: the classic's
-        // keybindings never consume, so footer:clearSelection rides the
-        // same Esc (the selection survives entering a view).
         if (viewingAgentTaskId) {
           const task = tasks[viewingAgentTaskId]
           if (
@@ -1313,200 +941,29 @@ export function AttachedSession({
           } else {
             exitAgentView(setAppState)
           }
-          if (footerItemSelected) selectFooterItem(null)
-          return
-        }
-        // The classic's footer:clearSelection — Esc drops the pill focus.
-        if (footerItemSelected) {
-          selectFooterItem(null)
-          return
-        }
-        if (editingQueueId) {
-          setEditingQueueId(null)
-          setInputText('')
-          setCursorOffset(0)
           return
         }
         if (isRunning) {
           cancel()
           return
         }
-        // The classic's text-level double-Esc (useTextInput's
-        // handleEscape): the first press arms the clear — "Esc again to
-        // clear" for 1s — the second saves the line to history and clears.
-        if (inputText !== '') {
-          const now = Date.now()
-          if (
-            escClearArmedRef.current !== null &&
-            now - escClearArmedRef.current <= 1000
-          ) {
-            escClearArmedRef.current = null
-            setToast(null)
-            if (inputText.trim() !== '') {
-              historyRef.current.push(inputText.trim())
-              if (historyRef.current.length > 50) historyRef.current.shift()
-            }
-            historyAtRef.current = -1
-            setInputText('')
-            setCursorOffset(0)
-          } else {
-            escClearArmedRef.current = now
-            setToast('Esc again to clear')
-            setTimeout(() => {
-              if (escClearArmedRef.current === now) {
-                escClearArmedRef.current = null
-                setToast(null)
-              }
-            }, 1000)
-          }
-          return
-        }
-      }
-
-      if (key.upArrow || key.downArrow) {
-        // With the palette open, arrows move the selection (the classic's
-        // Autocomplete context); the classic's handleHistoryUp gate falls
-        // back to history when the list has 0 or 1 items.
-        if (paletteOpen && palette.length > 1) {
-          const direction = key.upArrow ? 'up' : 'down'
-          setSelectedSuggestion(at =>
-            direction === 'up'
-              ? at <= 0
-                ? palette.length - 1
-                : at - 1
-              : at >= palette.length - 1
-                ? 0
-                : at + 1,
-          )
-          return
-        }
-        // The classic's Footer context owns the arrows once a pill is
-        // selected (its TextInput is inactive then): ↑ walks back through
-        // the agent rows before leaving the pill, ↓ walks forward and
-        // never leaves it — a ↓ past the last row opens the tasks dialog.
-        if (footerItemSelected) {
-          if (key.upArrow) {
-            if (
-              tasksSelected &&
-              coordinatorTaskCount > 0 &&
-              coordinatorTaskIndex > minCoordinatorIndex
-            ) {
-              setAppState(prev => ({
-                ...prev,
-                coordinatorTaskIndex: prev.coordinatorTaskIndex - 1,
-              }))
-            } else {
-              navigateFooter(-1, true)
-            }
-          } else if (tasksSelected && coordinatorTaskCount > 0) {
-            if (coordinatorTaskIndex < coordinatorTaskCount - 1) {
-              setAppState(prev => ({
-                ...prev,
-                coordinatorTaskIndex: prev.coordinatorTaskIndex + 1,
-              }))
-            }
-          } else if (tasksSelected) {
-            setTasksDialog(true)
-            selectFooterItem(null)
-          } else {
-            navigateFooter(1)
-          }
-          return
-        }
-        // History ring, newest first; only while the line is single-line.
-        // At the live bottom a ↓ enters the footer (the classic's
-        // handleHistoryDown → selectFooterItem(first)).
-        if (key.downArrow && historyNav('down') && footerItems.length > 0) {
-          selectFooterItem(footerItems[0]!)
-          return
-        }
-        historyNav(key.upArrow ? 'up' : 'down')
         return
       }
-
-      // Queue row hotkeys on the first queued row, composer-empty only:
-      // ctrl+x drops it, ctrl+e loads it back for editing (the submit then
-      // rides rpc queue_edit). Ctrl so a prompt starting with e/x is never
-      // swallowed by a hotkey.
-      if (key.ctrl && inputText === '' && queued.length > 0) {
-        const row = queued[0]!
-        if (input === 'x') {
-          void send(queueRemoveBody(row.id) as Record<string, unknown>)
-          return
-        }
-        if (input === 'e') {
-          setEditingQueueId(row.id)
-          setInputText(row.text)
-          setCursorOffset(row.text.length)
-          return
-        }
+      if (
+        key.return &&
+        key.shift &&
+        isRunning &&
+        composer.inputValue.trim() === ''
+      ) {
+        // Steer: an empty Shift+Enter is the browser's interrupt affordance.
+        cancel()
+        return
       }
-
       if (key.ctrl && (input === 'o' || input === 't')) {
         // Expand/collapse the injected-context rows — the classic
         // transcript toggle, and the exact key the collapsed rows name.
         setShowInjectedContext(value => !value)
-        return
       }
-
-      if ((key.ctrl && input === 'a') || key.home) {
-        // The engine's line-start (emacs ctrl+a); the queue-edit ctrl+e
-        // above claims ctrl+e on an empty line first.
-        moveCursor(0)
-        return
-      }
-      if ((key.ctrl && input === 'e') || key.end) {
-        moveCursor(inputText.length)
-        return
-      }
-      if (key.leftArrow || key.rightArrow) {
-        // The engine's cursor: arrows walk characters, Meta+arrows words.
-        if (key.meta) jumpWord(key.leftArrow ? -1 : 1)
-        else moveCursor(cursorAt + (key.leftArrow ? -1 : 1))
-        return
-      }
-      if (key.ctrl || key.meta) return
-      if (key.pageUp || key.pageDown) return
-      if (key.tab) {
-        // The classic's autocomplete:accept — Tab fills the selection.
-        if (paletteOpen) {
-          acceptPalette()
-          return
-        }
-        return
-      }
-
-      // The classic's footer:close — with a pill selected the TextInput
-      // still types (useInput has no focus gate), so the Footer context
-      // only adds nav keys on top: 'x' stops/dismisses the selected agent
-      // row — except when the row IS the viewed agent, where it types into
-      // the steering input — and any other character lands in the buffer.
-      if (footerItemSelected) {
-        if (input === 'x' && tasksSelected && coordinatorTaskIndex >= 1) {
-          const task = getVisibleAgentTasks(tasks)[coordinatorTaskIndex - 1]
-          if (viewingAgentTaskId && task?.id === viewingAgentTaskId) {
-            typeAtCursor('x')
-            return
-          }
-          if (task) {
-            stopOrDismissAgent(task.id, setAppState)
-            if (task.status !== 'running') {
-              setAppState(prev => ({
-                ...prev,
-                coordinatorTaskIndex: Math.max(
-                  minCoordinatorIndex,
-                  prev.coordinatorTaskIndex - 1,
-                ),
-              }))
-            }
-            return
-          }
-        }
-        if (input) typeAtCursor(input)
-        return
-      }
-
-      if (input) typeAtCursor(input)
     },
     { isActive: composerActive },
   )
@@ -1778,240 +1235,100 @@ export function AttachedSession({
             </Box>
           )}
 
-        {/* Composer — the classic dock: full-width rule, the prompt line
-            at column 0, full-width rule, footer. The spinner and the task
-            panel live in the scroll content above, exactly where the
-            classic REPL mounts them. Same rows, same order, same indent
-            as the classic pane. Hidden while a local dialog owns the
-            bottom of the screen or a blocking tray takes the keys, like
-            PromptInput returning null behind the REPL's modal. */}
-        {isConnected && !tasksDialog && !showLocalDialog && !pendingRequest && (
-          <Box flexShrink={0} flexDirection="column" marginTop={1}>
-            {/* The /buddy teaser, painted exactly like the classic's
+        {/* Composer — the classic dock component: frame rules, agent
+            banner, input engine, slash overlay, footer (statusline, mode
+            label, tasks pill, agent panel rows, help menu) — the same
+            PromptInput the REPL mounts, reading the shared store, with
+            session-side actions riding the wire ComposerHost above. The
+            queued-command preview rows stay in the scroll content (the
+            classic PromptInputQueuedCommands' position); the input's
+            queue-editing affordance degrades on a remote attach, where
+            the session-scoped queue module behind it is invisible (the
+            wire rows above are its read-only mirror). Hidden while a
+            local dialog owns the bottom of the screen or a blocking tray
+            takes the keys, like PromptInput returning null behind the
+            REPL's modal. */}
+        {composerActive && (
+          // The prompt-overlay portal pair the classic FullscreenLayout
+          // owns: CommandPalette publishes its suggestion list through
+          // this context and PromptInput's dialog slot likewise — without
+          // the provider+overlay mount the palette computes suggestions
+          // but nothing renders them. Same dock anchoring as the classic
+          // (overlays are the dock column's first children).
+          <PromptOverlayProvider>
+            <Box flexShrink={0} flexDirection="column" marginTop={1}>
+              <SuggestionsOverlay />
+              <DialogOverlay />
+              {/* The /buddy teaser, painted exactly like the classic's
                 notification row: position=absolute takes zero layout
                 height, marginTop=-1 pulls it into the gap row above the
                 divider, height=1 + overflow=hidden clip it to one row. */}
-            {buddyTeaser && (
-              <Box
-                position="absolute"
-                marginTop={-1}
-                height={1}
-                width="100%"
-                paddingLeft={2}
-                paddingRight={1}
-                flexDirection="column"
-                alignItems="flex-end"
-                justifyContent="flex-end"
-                overflow="hidden"
-              >
-                <Text wrap="truncate">
-                  <RainbowTeaser text="/buddy" />
-                </Text>
-              </Box>
-            )}
-            {/* The classic's agent banner (PromptInput's agentBanner
-              branch): while a drill-down is on screen the input's frame
-              rules go the agent's color and the top rule carries the
-              @name chip. */}
-            {agentBanner ? (
-              <Text color={agentBanner.bgColor}>
-                {agentBanner.text ? (
-                  <>
-                    {'─'.repeat(
-                      Math.max(0, columns - stringWidth(agentBanner.text) - 4),
-                    )}
-                    <Text
-                      backgroundColor={agentBanner.bgColor}
-                      color="inverseText"
-                    >
-                      {' '}
-                      {agentBanner.text}{' '}
-                    </Text>
-                    {'──'}
-                  </>
-                ) : (
-                  '─'.repeat(columns)
-                )}
-              </Text>
-            ) : (
-              <Text color="promptBorder">{'─'.repeat(columns)}</Text>
-            )}
-            {pendingRequest ? (
-              <Box marginLeft={2}>
-                <Text dimColor>Waiting for permission…</Text>
-              </Box>
-            ) : (
-              <Box flexDirection="row">
-                {/* The separator after the glyph is a non-breaking space,
-                    like the classic PromptChar's `&nbsp;` — a plain
-                    space is trailing whitespace the renderer trims, and
-                    the classic pane keeps the extra cell. */}
-                {/* The classic PromptChar: the theme's default text color
-                    (no accent), dimmed while the turn loads — the viewed
-                    agent's color while its banner is up. */}
-                <Text
-                  color={agentBanner ? agentBanner.bgColor : undefined}
-                  dimColor={isRunning || turnStarting}
+              {buddyTeaser && (
+                <Box
+                  position="absolute"
+                  marginTop={-1}
+                  height={1}
+                  width="100%"
+                  paddingLeft={2}
+                  paddingRight={1}
+                  flexDirection="column"
+                  alignItems="flex-end"
+                  justifyContent="flex-end"
+                  overflow="hidden"
                 >
-                  {editingQueueId ? '✎\u00A0' : '❯\u00A0'}
-                </Text>
-                {vimEnabled ? (
-                  // The classic's own vim engine, wired like PromptInput's
-                  // baseProps: the same INSERT/NORMAL keymap, the same
-                  // placeholder, the same ctrl+c/ctrl+d double-press exit.
-                  // Editing keys are its useInput's, which is why the
-                  // handler above stands down while it is mounted.
-                  <Box flexGrow={1} flexShrink={1}>
-                    <VimTextInput
-                      value={inputText}
-                      onChange={changeFromInput}
-                      onSubmit={submitFromInput}
-                      onExit={doExit}
-                      onExitMessage={(show, keyName) =>
-                        setEngineExit({
-                          pending: show,
-                          keyName: keyName ?? null,
-                        })
-                      }
-                      onHistoryUp={() => historyNav('up')}
-                      onHistoryDown={() => historyNav('down')}
-                      onHistoryReset={() => {
-                        historyAtRef.current = -1
-                      }}
-                      placeholder={inputPlaceholder ?? undefined}
-                      focus={composerActive && inputFocused}
-                      showCursor
-                      multiline
-                      columns={columns - 3}
-                      cursorOffset={cursorOffset}
-                      onChangeCursorOffset={setCursorOffset}
-                      disableCursorMovementForUpDownKeys={palette.length > 0}
-                      disableEscapeDoublePress={palette.length > 0}
-                      initialMode={vimMode}
-                      onModeChange={setVimMode}
-                    />
-                  </Box>
-                ) : inputText ? (
-                  <>
-                    <Text>{inputText.slice(0, cursorAt)}</Text>
-                    {/* The engine's caret: the inverse cell sits between
-                        the text before and after the cursor, and an
-                        unfocused input paints none — like the classic's
-                        focus gate on the TextInput. */}
-                    {inputFocused ? <Text inverse> </Text> : null}
-                    <Text>{inputText.slice(cursorAt)}</Text>
-                    {argumentHint && (
-                      // The classic's showArgumentHint: a bare slash
-                      // command with a hint renders the hint dim after
-                      // the cursor until arguments are typed.
-                      <Text dimColor>
-                        {inputText.endsWith(' ') ? '' : ' '}
-                        {argumentHint}
-                      </Text>
-                    )}
-                  </>
-                ) : inputPlaceholder ? (
-                  // The classic input's queue-hint placeholder, rendered
-                  // through the classic's own renderPlaceholder helper —
-                  // cursor on the first character (chalk inverse), the
-                  // rest chalk-dim. The helper's SGR-dim bytes are what
-                  // the classic pane emits; ink's theme-gray dimColor is
-                  // a different escape sequence for the same look.
                   <Text wrap="truncate">
-                    <Ansi>
-                      {renderPlaceholder({
-                        placeholder: inputPlaceholder,
-                        value: inputText,
-                        showCursor: inputFocused,
-                        focus: inputFocused,
-                        terminalFocus: inputFocused,
-                      }).renderedPlaceholder ?? ''}
-                    </Ansi>
+                    <RainbowTeaser text="/buddy" />
                   </Text>
-                ) : ghostText ? (
-                  // The suggestion ghost: cursor first, dim suggestion
-                  // after it — the classic input row with a placeholder.
-                  <>
-                    {inputFocused ? <Text inverse> </Text> : null}
-                    <Text dimColor>
-                      {ghostText.slice(0, Math.max(0, columns - 4))}
-                    </Text>
-                  </>
-                ) : inputFocused ? (
-                  <Text inverse> </Text>
-                ) : null}
-              </Box>
-            )}
-            {/* The banner's bottom rule: the agent's color while the banner
-              is up, the frame color otherwise — the classic's closing rule
-              of the same branch. */}
-            <Text color={agentBanner ? agentBanner.bgColor : 'promptBorder'}>
-              {'─'.repeat(columns)}
-            </Text>
-            {editingQueueId && (
-              <Box paddingX={2}>
-                <Text dimColor>
-                  editing a queued command — Enter saves, Esc discards
-                </Text>
-              </Box>
-            )}
-            {(submitError || toast) && (
-              <Box paddingX={2}>
-                <Text
-                  color={submitError ? 'error' : 'warning'}
-                  dimColor={!submitError}
-                >
-                  {submitError ?? toast}
-                </Text>
-              </Box>
-            )}
-            {/* One bottom line, like the classic pane: the classic footer's
-                own left-side component (mode label, spinner hints, tasks
-                pill), reading the same store and keybindings the REPL's
-                does — then the coordinator agent panel rows below it, the
-                way PromptInputFooter mounts CoordinatorTaskPanel. */}
-            <AttachedBottomBar
-              meta={view.meta}
-              running={isRunning || turnStarting}
-              suppressHint={
-                (isLocalHost && statusLine.suppressHint) || inputText.length > 0
-              }
-              statusLine={isLocalHost ? statusLine.node : null}
-              exitPending={exitState.pending || engineExit.pending}
-              exitKeyName={
-                engineExit.pending ? engineExit.keyName : exitState.keyName
-              }
-              isLocalHost={isLocalHost}
-              helpOpen={helpOpen}
-              vimMode={vimEnabled ? vimMode : undefined}
-              tasksSelected={tasksSelected}
-              onOpenTasksDialog={() => setTasksDialog(true)}
-            />
-            {/* The classic's suggestion overlay: floats over the scroll
-                content above the prompt — the same absolute box
-                FullscreenLayout portals the REPL's palette through. Last
-                sibling so it paints over the notification rows, like the
-                classic's portaled overlay does. */}
-            {paletteOpen && (
-              <Box
-                position="absolute"
-                bottom="100%"
-                left={0}
-                right={0}
-                paddingX={2}
-                paddingY={1}
-                flexDirection="column"
-                opaque
-              >
-                <PromptInputFooterSuggestions
-                  suggestions={suggestionItems}
-                  selectedSuggestion={selectedSuggestionIndex}
-                  maxColumnWidth={paletteMaxWidth}
-                  overlay
-                />
-              </Box>
-            )}
-          </Box>
+                </Box>
+              )}
+              <PromptInput
+                debug={false}
+                ideSelection={undefined}
+                host={composerHost}
+                toolPermissionContext={toolPermissionContext}
+                setToolPermissionContext={setToolPermissionContext}
+                apiKeyStatus={apiKeyStatus}
+                commands={commands}
+                agents={agents}
+                isLoading={isRunning || turnStarting}
+                onExit={doExit}
+                verbose={verbose}
+                messages={NO_MESSAGES}
+                transcriptFacts={transcriptFacts}
+                input={composer.inputValue}
+                onInputChange={composer.setInputValue}
+                mode={composer.inputMode}
+                onModeChange={composer.setInputMode}
+                stashedPrompt={composer.stashedPrompt}
+                setStashedPrompt={composer.setStashedPrompt}
+                submitCount={composer.submitCount}
+                onShowMessageSelector={() => {}}
+                mcpClients={mcpClients}
+                pastedContents={composer.pastedContents}
+                setPastedContents={composer.setPastedContents}
+                vimMode={composer.vimMode}
+                setVimMode={composer.setVimMode}
+                showBashesDialog={composer.showBashesDialog}
+                setShowBashesDialog={composer.setShowBashesDialog}
+                isSearchingHistory={composer.isSearchingHistory}
+                setIsSearchingHistory={composer.setIsSearchingHistory}
+                helpOpen={composer.isHelpOpen}
+                setHelpOpen={composer.setIsHelpOpen}
+                insertTextRef={composer.insertTextRef}
+                conversationId={conversationId}
+              />
+              {(submitError || toast) && (
+                <Box paddingX={2}>
+                  <Text
+                    color={submitError ? 'error' : 'warning'}
+                    dimColor={!submitError}
+                  >
+                    {submitError ?? toast}
+                  </Text>
+                </Box>
+              )}
+            </Box>
+          </PromptOverlayProvider>
         )}
 
         {/* The local /tasks dialog, in the modal slot FullscreenLayout gives
@@ -2184,86 +1501,5 @@ function ViewerQueuedCommands({
         </QueuedMessageProvider>
       ))}
     </Box>
-  )
-}
-
-function AttachedBottomBar({
-  meta,
-  running,
-  suppressHint,
-  exitPending,
-  exitKeyName,
-  isLocalHost,
-  helpOpen,
-  vimMode,
-  statusLine,
-  tasksSelected,
-  onOpenTasksDialog,
-}: {
-  meta: WireSessionMeta | null
-  running: boolean
-  /** True when a displayed statusline owns the footer or input is in
-   *  flight — classic footer behavior: the `? for shortcuts` hint yields
-   *  to the user's own line and to typing. */
-  suppressHint: boolean
-  exitPending: boolean
-  exitKeyName: string | null
-  isLocalHost: boolean
-  /** The shortcuts help replaces the footer's whole left side, like
-   *  PromptInputFooter's helpOpen branch. */
-  helpOpen: boolean
-  /** The vim engine's mode while editorMode is vim, else undefined —
-   *  PromptInputFooter's exact gate: no editor, no indicator. */
-  vimMode: VimMode | undefined
-  /** The tasks pill's focus, from the shared store's footerSelection —
-   *  the same prop PromptInputFooter passes in the REPL. */
-  tasksSelected: boolean
-  /** The statusline row node, mounted inside this padded column like
-   *  PromptInputFooter mounts StatusLine above FooterLeftSide — both
-   *  rows share the footer's paddingX so they align. */
-  statusLine: React.ReactNode
-  onOpenTasksDialog: () => void
-}): React.ReactNode {
-  if (!meta) return null
-
-  if (helpOpen) {
-    return (
-      <PromptInputHelpMenu dimColor={true} fixedWidth={true} paddingX={2} />
-    )
-  }
-
-  return (
-    <>
-      <Box paddingX={2} flexDirection="column">
-        {/* PromptInputFooter's gate: no statusline while the exit
-            double-press message is up (mode is always 'prompt' here). */}
-        {statusLine && !exitPending && <Box flexShrink={0}>{statusLine}</Box>}
-        <PromptInputFooterLeftSide
-          exitMessage={{ show: exitPending, key: exitKeyName ?? undefined }}
-          vimMode={vimMode}
-          mode="prompt"
-          // ModeIndicator reads only the mode off the context; the wire's
-          // permissionMode is the same enum the classic carries there.
-          toolPermissionContext={
-            { mode: meta.permissionMode } as ToolPermissionContext
-          }
-          suppressHint={suppressHint}
-          isLoading={running}
-          tasksSelected={tasksSelected}
-          isSearching={false}
-          historyQuery=""
-          setHistoryQuery={() => {}}
-          historyFailedMatch={false}
-          onOpenTasksDialog={onOpenTasksDialog}
-        />
-      </Box>
-      {/* The agent panel rows, exactly where PromptInputFooter mounts
-          them — same gate (coordinator mode or the setting), same shared
-          store, so the rows and their eviction tick are the classic's. */}
-      {isLocalHost &&
-        (isCoordinatorMode() || getInitialSettings().showAgentPanel) && (
-          <CoordinatorTaskPanel />
-        )}
-    </>
   )
 }
