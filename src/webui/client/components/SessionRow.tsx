@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { SessionListEntry } from '../../gateway/sessionHub.js'
+import type { SessionListEntry } from '../../../sessiond/sessionList.js'
 
 function stateGlyph(entry: SessionListEntry, state?: string): string {
   if (!entry.live) return '○'

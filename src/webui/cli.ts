@@ -3,7 +3,8 @@ import {
   sendDaemonControl,
   type DaemonControlResponse,
 } from './daemonControl.js'
-import type { WebStartOptions, WebStatus } from './gateway/service.js'
+import type { WebStartOptions } from './gateway/webState.js'
+import type { WebStatus } from './gateway/service.js'
 import { readWebState } from './gateway/webState.js'
 
 function print(line: string): void {

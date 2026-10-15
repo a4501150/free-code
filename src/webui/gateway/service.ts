@@ -10,34 +10,12 @@ import {
   type GatewayAssistantStatus,
   type GatewayServer,
 } from './gatewayServer.js'
-// webState imports WebStartOptionsSchema from this module, so importing it
-// here at module scope would leave that schema undefined at evaluation time.
+import type { WebStartOptions } from './webState.js'
 
-export const WebStartOptionsSchema = z.object({
-  port: z.number().int().min(0).max(65535).optional(),
-  tunnel: z
-    .enum(['cloudflared', 'localtunnel', 'command', 'none'])
-    .default('cloudflared'),
-  tunnelCommand: z.string().optional(),
-  tunnelHost: z.string().optional(),
-  subdomain: z.string().optional(),
-
-  /**
-   * Permission settings the gateway hands to every session it spawns.
-   *
-   * A child otherwise loads only the disk settings for its own directory, so
-   * anything the operator chose here would be lost. `bypassPermissions` is
-   * absent on purpose: the browser is reachable behind one password, and
-   * `WebPermissionModeSchema` refuses that mode for the same reason.
-   */
-  permissionMode: z.enum(['default', 'acceptEdits', 'plan']).optional(),
-  allowedTools: z.array(z.string()).optional(),
-  disallowedTools: z.array(z.string()).optional(),
-  settings: z.string().optional(),
-  settingSources: z.string().optional(),
-})
-
-export type WebStartOptions = z.infer<typeof WebStartOptionsSchema>
+// Defined in webState: this file and the control socket both read the
+// options through the persisted store, so the schema lives with the state.
+export { WebStartOptionsSchema } from './webState.js'
+export type { WebStartOptions }
 
 export type WebStatus = {
   running: boolean

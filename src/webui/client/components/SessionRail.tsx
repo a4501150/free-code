@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { SessionListEntry } from '../../gateway/sessionHub.js'
+import type { SessionListEntry } from '../../../sessiond/sessionList.js'
 import { NewSessionForm } from './NewSessionForm.js'
 import { HistoryRow, SessionRow } from './SessionRow.js'
 

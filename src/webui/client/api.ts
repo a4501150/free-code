@@ -2,7 +2,7 @@ import type {
   AttachEventBody,
   AttachRequestBody,
 } from '../protocol/attachSchemas.js'
-import type { SessionListEntry } from '../gateway/sessionHub.js'
+import type { SessionListEntry } from '../../sessiond/sessionList.js'
 import type { DirectoryListing } from '../gateway/directories.js'
 
 export type ServerFrame =

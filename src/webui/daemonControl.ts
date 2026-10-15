@@ -4,7 +4,8 @@ import { join } from 'path'
 import { z } from 'zod'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
 import { attachNdjsonReader, writeNdjson } from './attach/ndjsonConnection.js'
-import { WebStartOptionsSchema, type WebStatus } from './gateway/service.js'
+import { WebStartOptionsSchema } from './gateway/webState.js'
+import type { WebStatus } from './gateway/service.js'
 
 const DIR_MODE = 0o700
 const FILE_MODE = 0o600
