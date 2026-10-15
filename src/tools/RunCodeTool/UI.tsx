@@ -22,7 +22,11 @@ import type { RunCodeProgress, ToolProgressData } from '../../types/tools.js'
 import { buildSubagentLookups } from '../../utils/messages.js'
 import { plural } from '../../utils/stringUtils.js'
 import { isOutputLineTruncated } from '../../utils/terminal.js'
-import { renderRunCodeResultText, type RunCodeOutput } from './RunCodeTool.js'
+import {
+  isRunCodeOutput,
+  renderRunCodeResultText,
+  type RunCodeOutput,
+} from './RunCodeTool.js'
 
 /** Collapsed cap for per-call lines; failed lines always survive the trim. */
 const MAX_CALLS_TO_SHOW = 5
@@ -299,6 +303,7 @@ export function renderToolResultMessage(
   _progressMessagesForMessage?: ProgressMessage<ToolProgressData>[],
   options?: { verbose?: boolean },
 ): React.ReactNode {
+  if (!isRunCodeOutput(output)) return null
   const rows: CallRow[] = output.segments.map((s, i) => ({
     key: `seg_${i}`,
     name: displayName(s.name),
@@ -392,6 +397,7 @@ export function renderToolUseErrorMessage(
 }
 
 export function isResultTruncated(output: RunCodeOutput): boolean {
+  if (!isRunCodeOutput(output)) return false
   return isOutputLineTruncated(renderRunCodeResultText(output))
 }
 

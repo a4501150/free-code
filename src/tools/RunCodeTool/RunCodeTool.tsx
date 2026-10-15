@@ -46,7 +46,21 @@ const outputSchema = z.object({
   logs: z.string(),
 })
 
+// toolUseResult is typed `unknown` on messages and normalizeMessages hands
+// the one message-level field to every block-split, so a foreign Output can
+// reach the renderers (e.g. a tool_result sharing a message with another
+// tool's result). Every entry point must check the shape before field access.
+export function isRunCodeOutput(output: unknown): output is Output {
+  return (
+    typeof output === 'object' &&
+    output !== null &&
+    Array.isArray((output as Output).segments) &&
+    typeof (output as Output).logs === 'string'
+  )
+}
+
 export function renderRunCodeResultText(output: Output): string {
+  if (!isRunCodeOutput(output)) return ''
   const parts: string[] = []
   output.segments.forEach((s, i) => {
     parts.push(
