@@ -388,9 +388,6 @@ class Project {
   currentSessionPrRepository: string | undefined
 
   sessionFile: string | null = null
-  // Entries buffered while sessionFile is null. Flushed by materializeSessionFile
-  // on the first user/assistant message — prevents metadata-only session files.
-  private pendingEntries: Entry[] = []
   private pendingWriteCount: number = 0
   private flushResolvers: Array<() => void> = []
   // Per-file write queues. Each entry carries a resolve callback so
@@ -524,7 +521,6 @@ class Project {
 
   resetSessionFile(): void {
     this.sessionFile = null
-    this.pendingEntries = []
   }
 
   /**
@@ -814,8 +810,9 @@ class Project {
   }
 
   /**
-   * Create the session file, write cached startup metadata, and flush
-   * buffered entries. Called on the first user/assistant message.
+   * Create the session file and write cached startup metadata. Called on the
+   * first persisted entry — writes are-through, nothing is buffered in
+   * memory beyond the short-lived write queue.
    */
   private async materializeSessionFile(): Promise<void> {
     // Guard here too — reAppendSessionMetadata writes via appendEntryToFile
@@ -825,13 +822,6 @@ class Project {
     this.ensureCurrentSessionFile()
     // mode/agentSetting are cache-only pre-materialization; write them now.
     this.reAppendSessionMetadata()
-    if (this.pendingEntries.length > 0) {
-      const buffered = this.pendingEntries
-      this.pendingEntries = []
-      for (const entry of buffered) {
-        await this.appendEntry(entry)
-      }
-    }
   }
 
   async insertMessageChain(
@@ -843,8 +833,9 @@ class Project {
     return this.trackWrite(async () => {
       let parentUuid: UUID | null = startingParentUuid ?? null
 
-      // First user/assistant message materializes the session file.
-      // Hook progress/attachment messages alone stay buffered.
+      // Materialize on a chain that carries a real message, so cached
+      // metadata lands before it. Entries from any other path materialize
+      // through appendEntry itself (write-through).
       if (
         this.sessionFile === null &&
         messages.some(m => m.type === 'user' || m.type === 'assistant')
@@ -972,10 +963,12 @@ class Project {
 
     let sessionFile: string
     if (isCurrentSession) {
-      // Buffer until materializeSessionFile runs (first user/assistant message).
+      // Write-through: the first entry materializes the file. A session that
+      // persists nothing creates nothing; the resume picker already drops
+      // message-less files.
       if (this.sessionFile === null) {
-        this.pendingEntries.push(entry)
-        return
+        await this.materializeSessionFile()
+        if (this.sessionFile === null) return
       }
       sessionFile = this.sessionFile
     } else {
