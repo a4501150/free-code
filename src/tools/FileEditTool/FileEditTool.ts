@@ -542,11 +542,13 @@ export const FileEditTool = buildTool({
         ? ' (file state is current in your context — no need to Read it back)'
         : approvalNote === 'recovered'
           ? ' (note: the file had been modified on disk since you last saw it — the edit applied cleanly, but the file contains other changes not in your context)'
-          : approvalNote === 'blind-placement'
-            ? ' (note: the edited lines were outside the part of this file you have seen — the replacement was verified against current disk content)'
-            : approvalNote === 'blind'
-              ? ' (note: you had not opened this file — the edit was verified against current disk content and matched exactly once)'
-              : ''
+          : approvalNote === 'blind-modified'
+            ? ' (note: the file had been modified on disk since you last saw it — the replacement was verified against current disk content and matched exactly once, but the file contains changes not in your context)'
+            : approvalNote === 'blind-placement'
+              ? ' (note: the edited lines were outside the part of this file you have seen — the replacement was verified against current disk content)'
+              : approvalNote === 'blind'
+                ? ' (note: you had not opened this file — the edit was verified against current disk content and matched exactly once)'
+                : ''
 
     return {
       tool_use_id: toolUseID,

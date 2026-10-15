@@ -79,14 +79,14 @@ describe('approveEdit', () => {
     expect(r.ok && r.note).toBe('recovered')
   })
 
-  test('recovered rejected when the edited text was not inside seen lines', () => {
+  test('unique match outside seen lines approves blind-modified', () => {
     const now = 'HEAD\ncore line\nTAIL'
     const r = approveEdit({
       state: state({ content: FILE, seenRanges: [{ start: 1, end: 1 }] }),
       currentContent: now,
       plan: planFor(now, 'core line', 'fixed line'),
     })
-    expect(!r.ok && r.errorCode).toBe(7)
+    expect(r.ok && r.note).toBe('blind-modified')
   })
 
   test('recovered rejected for replace_all over a changed file', () => {

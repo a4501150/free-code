@@ -6,9 +6,11 @@
  *
  * An edit is approved when it verifies against current disk content AND its
  * placement is grounded in what the model saw. Timestamps are only ever a
- * cheap re-validation hint — `touch` with unchanged content approves, and a
- * formatter rewrite can still approve when the edited text is inside the seen
- * region and unchanged there.
+ * cheap re-validation hint — `touch` with unchanged content approves, and
+ * after any disk change a unique match still approves (blindly when the text
+ * is outside the seen region); only placements that cannot name a unique
+ * target — ambiguous matches and replace_all over a changed file — require a
+ * re-Read.
  */
 
 import type { EditPlan, MatchSpan } from './editMatch.js'
@@ -25,6 +27,10 @@ export type ApprovalNote =
   /** Disk changed since the sighting; the exact text was seen at the seen
    *  lines and still matches uniquely on disk. */
   | 'recovered'
+  /** Disk changed since the sighting and the edited text is not inside the
+   *  seen lines, but the match against current disk is unique — the same
+   *  proof a blind placement gets. */
+  | 'blind-modified'
   /** File content is current but the edited lines fall outside the ranges
    *  actually shown (e.g. only the top of the file was Read). */
   | 'blind-placement'
@@ -120,11 +126,12 @@ export function approveEdit(args: {
       : { ok: true, note: 'blind-placement' }
   }
 
-  // Disk changed since the sighting. Recovery requires: a single placement
-  // (replace_all over a file whose current state the model cannot picture
-  // needs a re-Read), the exact text present once inside the seen lines (the
-  // model is pointing at content it actually looked at), and the current-disk
-  // match already unique (spans.length === 1).
+  // Disk changed since the sighting. A single unique match against current
+  // disk is the whole proof — the same one a blind placement gets — so a
+  // formatter rewrite no longer forces a re-Read; the grounded-in-seen-lines
+  // case only upgrades the note. What still needs a re-Read is a replacement
+  // that cannot name its placement: replace_all or an ambiguous match over a
+  // file whose current state the model cannot picture.
   if (plan.spans.length !== 1) {
     return {
       ok: false,
@@ -134,16 +141,12 @@ export function approveEdit(args: {
   }
   const seenSpan = findSeenSpan(state, plan.searchText)
   if (
-    !seenSpan ||
-    !seenCoversLines(state, seenSpan.startLine, seenSpan.endLine)
+    seenSpan &&
+    seenCoversLines(state, seenSpan.startLine, seenSpan.endLine)
   ) {
-    return {
-      ok: false,
-      message: FILE_MODIFIED_SINCE_READ_MESSAGE,
-      errorCode: 7,
-    }
+    return { ok: true, note: 'recovered' }
   }
-  return { ok: true, note: 'recovered' }
+  return { ok: true, note: 'blind-modified' }
 }
 
 /** True when the entry proves the model saw the entire current file content. */

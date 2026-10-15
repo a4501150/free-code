@@ -50,6 +50,7 @@ export const hunkSchema = z.object({
 export const approvalNoteSchema = z.enum([
   'fresh',
   'recovered',
+  'blind-modified',
   'blind-placement',
   'blind',
 ])
