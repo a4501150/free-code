@@ -17,6 +17,7 @@ import {
 import { RUN_CODE_TOOL_NAME } from '../../services/toolCatalog/exposure.js'
 import { createRunCodeBridge } from './bridge.js'
 import { runScript } from './loader.js'
+import { RUN_CODE_MODULE_SPECS, withModuleFallback } from './moduleRegistry.js'
 import {
   extractSearchText,
   isResultTruncated,
@@ -24,6 +25,10 @@ import {
   renderToolUseErrorMessage,
   renderToolUseProgressMessage,
 } from './UI.js'
+
+// Session-scoped object shared by every script run in this process; never
+// persisted to disk and dies with the CLI process.
+const persistentState: Record<string, unknown> = {}
 
 const inputSchema = z.object({
   code: z.string().min(1).describe('TypeScript script body.'),
@@ -91,7 +96,11 @@ export const RunCodeTool = buildTool({
     return [
       `Run a TypeScript script that imports cataloged tools and orchestrates them in one execution. The catalog directories are named in your environment context ("Tool catalog directory: ...", plus "project-scope servers: ..." when present): read index declarations in servers/<name>.ts (import specifier "mcp/<server>") and builtins.ts (import specifier "freecode:builtins") for exact function names and argument types. Server declarations live in the catalog directory the announce named for that server.`,
       'Each tool call from the script goes through the normal permission and hook pipeline, so rules for the underlying tools apply unchanged. Use await for each call and console.log to report intermediate findings; only your logs and the call results come back.',
-      'No filesystem or network access from the script — use cataloged tools. Dynamic import() and export default are not supported.',
+      'A `state` object persists across RunCode calls within this session: stash intermediate results with state.key = value and read them in later calls. It is in-memory only; write files to disk for anything durable.',
+      'Runtime access: dynamic import() resolves Node and Bun builtins (await import("node:fs"), await import("bun:sqlite")) and bundled modules (' +
+        RUN_CODE_MODULE_SPECS.join(', ') +
+        ') — those also work as static imports. Other specifiers (relative paths, arbitrary npm packages) do not resolve. The Bun, process, and fetch globals are reachable. Default imports in static import declarations are not supported.',
+      'Cataloged tools remain the normal way to act; use direct node/Bun access only when a script genuinely needs it.',
     ].join('\n')
   },
   get inputSchema(): InputSchema {
@@ -142,8 +151,9 @@ export const RunCodeTool = buildTool({
         onProgress?.({ toolUseID: `runcode_emit_${++seq}`, data }),
     })
     const result = await runScript(input.code, {
-      resolveNamespace: bridge.resolveNamespace,
+      resolveNamespace: withModuleFallback(bridge.resolveNamespace),
       signal: context.abortController.signal,
+      state: persistentState,
       extraGlobals: {
         freecode: {
           invoke: (name: string, args: Record<string, unknown>) =>

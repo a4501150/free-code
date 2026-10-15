@@ -39,6 +39,7 @@ import { getMcpPrefix } from '../mcp/mcpStringUtils.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import * as lockfile from '../../utils/lockfile.js'
 import { zodToJsonSchema } from '../../utils/zodToJsonSchema.js'
+import { RUN_CODE_MODULE_SPECS } from '../../tools/RunCodeTool/moduleRegistry.js'
 
 const CATALOG_DIR = 'tool-catalog'
 const SERVERS_DIR = 'servers'
@@ -347,10 +348,18 @@ function inputSchemaOf(tool: Tool): unknown {
 }
 
 const PRELUDE = [
+  '// Runtime surface: `state` persists across RunCode calls in this session.',
+  '// Dynamic import() resolves "node:*" and "bun:*" builtins natively; bundled',
+  '// modules (' +
+    RUN_CODE_MODULE_SPECS.join(', ') +
+    ') work both as `await import("zod")`',
+  '// and as a static `import { z } from "zod"`. Other specifiers (relative',
+  '// paths, arbitrary npm packages) do not resolve.',
   'type ToolResult = string',
   'declare const freecode: {',
   '  invoke(name: string, args: Record<string, unknown>): Promise<ToolResult>',
   '}',
+  'declare const state: Record<string, unknown>',
 ].join('\n')
 
 async function toolDescription(tool: Tool): Promise<string> {

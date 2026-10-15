@@ -3,7 +3,13 @@
 // the pipeline is: Bun.Transpiler (TS -> JS, erases `import type`), then a
 // rewrite of the remaining ESM import declarations into destructurings of
 // namespaces resolved by the caller, then AsyncFunction with injected globals.
+// Dynamic import() calls get the same treatment — node:*/bun:* builtins
+// resolve here via require, everything else routes through resolveNamespace —
+// so the executed body contains no import() at all (an AsyncFunction body has
+// no module loader of its own).
 // Validated against the bytecode build in tests/unit/runCode.test.ts.
+
+import { createRequire } from 'node:module'
 
 export type NamespaceResolution =
   | { ok: true; ns: Record<string, unknown>; exports?: string[] }
@@ -13,6 +19,8 @@ export type ScriptGlobals = {
   /** Routes `import ... from "mcp/<server>"` and `"freecode:builtins"`. */
   resolveNamespace: (spec: string) => NamespaceResolution
   signal: AbortSignal
+  /** Object shared across every run in this session, injected as `state`. */
+  state?: Record<string, unknown>
   /** Extra script-visible globals beyond console/signal (e.g. freecode). */
   extraGlobals?: Record<string, unknown>
 }
@@ -25,7 +33,75 @@ const IMPORT_DECL = /^import\s+([\s\S]*?)\s*from\s*["']([^"']+)["'];?[ \t]*$/gm
 const BARE_IMPORT = /^import\s*["']([^"']+)["'];?[ \t]*$/gm
 const EXPORTABLE =
   /^export\s+(?=(?:const\s)|(?:let\s)|(?:var\s)|(?:function\s)|(?:async\s+function\s)|(?:class\s))/gm
+const DYNAMIC_IMPORT_CALL = /\bimport\s*\(/g
 const MAX_LOG_LINE_CHARS = 4000
+
+const scriptTranspiler = new Bun.Transpiler({ loader: 'ts' })
+const AsyncFunction = Object.getPrototypeOf(async function () {})
+  .constructor as new (
+  ...args: string[]
+) => (...fnArgs: unknown[]) => Promise<unknown>
+
+const nativeModuleCache = new Map<string, Record<string, unknown>>()
+const requireBuiltin = createRequire(import.meta.url)
+
+function isNativeBuiltinSpec(spec: string): boolean {
+  return spec.startsWith('node:') || spec.startsWith('bun:')
+}
+
+// Builtins resolve synchronously so import rewriting stays a sync transform.
+function resolveNativeBuiltin(spec: string): NamespaceResolution {
+  const cached = nativeModuleCache.get(spec)
+  if (cached) return { ok: true, ns: cached }
+  try {
+    const ns = requireBuiltin(spec) as Record<string, unknown>
+    nativeModuleCache.set(spec, ns)
+    return { ok: true, ns }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+// Reads the argument of an `import(` call as a plain string literal. Anything
+// else (computed specifiers, escapes) cannot be resolved without executing the
+// script, so it is reported as an error instead.
+function readDynamicImportSpec(
+  body: string,
+  argStart: number,
+): { spec: string; end: number } | { error: string } {
+  let i = argStart
+  while (i < body.length && /\s/.test(body[i]!)) i++
+  const quote = body[i]
+  if (quote !== '"' && quote !== "'") {
+    return {
+      error:
+        'Dynamic import() requires a single plain string literal specifier.',
+    }
+  }
+  i++
+  let spec = ''
+  while (i < body.length && body[i] !== quote) {
+    if (body[i] === '\\') {
+      return {
+        error:
+          'Dynamic import() specifiers with escape sequences are not supported.',
+      }
+    }
+    spec += body[i]
+    i++
+  }
+  if (i >= body.length) {
+    return { error: 'Unterminated dynamic import() specifier.' }
+  }
+  i++
+  while (i < body.length && /\s/.test(body[i]!)) i++
+  if (body[i] !== ')') {
+    return {
+      error: 'Dynamic import() takes only a single string literal argument.',
+    }
+  }
+  return { spec, end: i + 1 }
+}
 
 function inspectValue(v: unknown): string {
   if (typeof v === 'string') return v
@@ -112,18 +188,13 @@ export async function runScript(
 
   let js: string
   try {
-    js = new Bun.Transpiler({ loader: 'ts' }).transformSync(code)
+    js = scriptTranspiler.transformSync(code)
   } catch (e) {
     return fail(
       `Syntax error in script: ${e instanceof Error ? e.message : String(e)}`,
     )
   }
 
-  if (/\bimport\s*\(/.test(js)) {
-    return fail(
-      'Dynamic import() is not supported; import catalog modules statically.',
-    )
-  }
   if (/^export\s+default\b/m.test(js) || /^export\s*\{/m.test(js)) {
     return fail(
       'Only plain `export const/function/class` declarations are allowed.',
@@ -138,6 +209,32 @@ export async function runScript(
 
   const resolved: Record<string, unknown>[] = []
   let error: string | null = null
+
+  const resolveForSpec = (spec: string): NamespaceResolution =>
+    isNativeBuiltinSpec(spec)
+      ? resolveNativeBuiltin(spec)
+      : globals.resolveNamespace(spec)
+
+  // Dynamic import() calls: node:*/bun:* resolve natively here, everything
+  // else routes through resolveNamespace (catalog namespaces and bundled
+  // modules alike). Every occurrence is rewritten to a namespace lookup, so
+  // the executed body never contains import().
+  let out = ''
+  let cursor = 0
+  for (const match of body.matchAll(DYNAMIC_IMPORT_CALL)) {
+    const read = readDynamicImportSpec(body, match.index + match[0].length)
+    if ('error' in read) return fail(read.error)
+    const resolution = resolveForSpec(read.spec)
+    if (!resolution.ok) {
+      return fail(`Cannot import "${read.spec}": ${resolution.error}`)
+    }
+    out += body.slice(cursor, match.index)
+    resolved.push(resolution.ns)
+    out += `Promise.resolve(ns(${resolved.length - 1}))`
+    cursor = read.end
+  }
+  body = out + body.slice(cursor)
+
   const process = (clause: string | null, spec: string): string => {
     const parsed: ParsedImport =
       clause === null ? { kind: 'bare', spec } : parseImportClause(clause, spec)
@@ -145,9 +242,13 @@ export async function runScript(
       error = parsed.reason
       return ''
     }
-    const resolution = globals.resolveNamespace(parsed.spec)
+    if (isNativeBuiltinSpec(spec) && parsed.kind === 'bare') {
+      // A builtin side-effect import has nothing to bind; drop it.
+      return ''
+    }
+    const resolution = resolveForSpec(spec)
     if (!resolution.ok) {
-      error = `Cannot import "${parsed.spec}": ${resolution.error}`
+      error = `Cannot import "${spec}": ${resolution.error}`
       return ''
     }
     if (parsed.kind === 'named') {
@@ -192,18 +293,22 @@ export async function runScript(
   }
   const ns = (i: number): Record<string, unknown> => resolved[i]!
 
-  const AsyncFunction = Object.getPrototypeOf(async function () {})
-    .constructor as new (
-    ...args: string[]
-  ) => (...fnArgs: unknown[]) => Promise<unknown>
   const extraNames = Object.keys(globals.extraGlobals ?? {})
-  const fn = new AsyncFunction('ns', 'console', 'signal', ...extraNames, body)
+  const fn = new AsyncFunction(
+    'ns',
+    'console',
+    'signal',
+    'state',
+    ...extraNames,
+    body,
+  )
 
   let abortHandler: (() => void) | undefined
   const run = fn(
     ns,
     console_,
     globals.signal,
+    globals.state ?? {},
     ...Object.values(globals.extraGlobals ?? {}),
   )
   try {

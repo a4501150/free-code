@@ -21,6 +21,10 @@ import {
 } from '../../src/tools/RunCodeTool/loader.js'
 import { createRunCodeBridge } from '../../src/tools/RunCodeTool/bridge.js'
 import {
+  resolveRunCodeModule,
+  withModuleFallback,
+} from '../../src/tools/RunCodeTool/moduleRegistry.js'
+import {
   RunCodeTool,
   renderRunCodeResultText,
 } from '../../src/tools/RunCodeTool/RunCodeTool.js'
@@ -77,9 +81,103 @@ describe('loader', () => {
     expect(res.ok).toBe(true)
   })
 
-  test('dynamic import, default imports, and export default are rejected', async () => {
+  test('dynamic import resolves catalog namespaces like static imports', async () => {
+    const res = await runScript(
+      `const srv = await import("mcp/srv"); await srv.greet({});`,
+      {
+        resolveNamespace: passthroughNamespace(async () => 'x'),
+        signal: abortController().signal,
+      },
+    )
+    expect(res.ok).toBe(true)
+  })
+
+  test('dynamic import of node builtins resolves and binds', async () => {
+    const res = await runScript(
+      `const fs = await import("node:fs"); console.log(typeof fs.readFileSync);`,
+      {
+        resolveNamespace: passthroughNamespace(async () => 'x'),
+        signal: abortController().signal,
+      },
+    )
+    expect(res.ok).toBe(true)
+    expect(res.logs).toEqual(['function'])
+  })
+
+  test('static imports from node builtins bind', async () => {
+    const res = await runScript(
+      `import { readFileSync } from "node:fs";\nimport * as path from "node:path";\nconsole.log(typeof readFileSync, typeof path.join);`,
+      {
+        resolveNamespace: passthroughNamespace(async () => 'x'),
+        signal: abortController().signal,
+      },
+    )
+    expect(res.ok).toBe(true)
+    expect(res.logs).toEqual(['function function'])
+  })
+
+  test('builtin side-effect imports are dropped', async () => {
+    const res = await runScript(`import "node:fs";\nconsole.log("ok");`, {
+      resolveNamespace: passthroughNamespace(async () => 'x'),
+      signal: abortController().signal,
+    })
+    expect(res.ok).toBe(true)
+    expect(res.logs).toEqual(['ok'])
+  })
+
+  test('computed dynamic import specifiers are rejected', async () => {
+    const res = await runScript(`const s = "node:fs"; await import(s);`, {
+      resolveNamespace: passthroughNamespace(async () => 'x'),
+      signal: abortController().signal,
+    })
+    expect(res.ok).toBe(false)
+    expect((res as { error: string }).error).toContain('plain string literal')
+  })
+
+  test('dynamic import of a bundled module returns its namespace', async () => {
+    const res = await runScript(
+      `const mod = await import("zod"); console.log(typeof mod.z.string);`,
+      {
+        resolveNamespace: withModuleFallback(() => ({
+          ok: false,
+          error: 'no catalog',
+        })),
+        signal: abortController().signal,
+      },
+    )
+    expect(res.ok).toBe(true)
+    expect(res.logs).toEqual(['function'])
+  })
+
+  test('static imports of bundled modules fall back to the registry', async () => {
+    const res = await runScript(
+      `import { z } from "zod"; console.log(typeof z.string);`,
+      {
+        resolveNamespace: withModuleFallback(() => ({
+          ok: false,
+          error: 'no catalog',
+        })),
+        signal: abortController().signal,
+      },
+    )
+    expect(res.ok).toBe(true)
+    expect(res.logs).toEqual(['function'])
+  })
+
+  test('unknown bare specifiers list the bundled modules', async () => {
+    const res = await runScript(`await import("left-pad");`, {
+      resolveNamespace: withModuleFallback(() => ({
+        ok: false,
+        error: 'no catalog',
+      })),
+      signal: abortController().signal,
+    })
+    expect(res.ok).toBe(false)
+    expect((res as { error: string }).error).toContain('Bundled modules')
+  })
+
+  test('default imports and export default are rejected', async () => {
     for (const code of [
-      `await import("mcp/srv");`,
       `import srv from "mcp/srv"; await srv.greet();`,
       `export default 1;`,
       `export { greet } from "mcp/srv";`,
@@ -90,6 +188,44 @@ describe('loader', () => {
       })
       expect(res.ok).toBe(false)
     }
+  })
+
+  test('state persists across runs sharing the same object', async () => {
+    const state: Record<string, unknown> = {}
+    const globals = {
+      resolveNamespace: passthroughNamespace(async () => 'x'),
+      signal: abortController().signal,
+      state,
+    }
+    const first = await runScript(`state.name = "kept";`, globals)
+    expect(first.ok).toBe(true)
+    const second = await runScript(`console.log(state.name);`, globals)
+    expect(second.ok).toBe(true)
+    expect(second.logs).toEqual(['kept'])
+  })
+
+  test('state is not shared across distinct objects', async () => {
+    const first = await runScript(`state.name = "kept";`, {
+      resolveNamespace: passthroughNamespace(async () => 'x'),
+      signal: abortController().signal,
+      state: {},
+    })
+    expect(first.ok).toBe(true)
+    const second = await runScript(`console.log(state.name);`, {
+      resolveNamespace: passthroughNamespace(async () => 'x'),
+      signal: abortController().signal,
+      state: {},
+    })
+    expect(second.ok).toBe(true)
+    expect(second.logs).toEqual(['undefined'])
+  })
+
+  test('registry resolution reports unavailable modules', () => {
+    const missing = resolveRunCodeModule('left-pad')
+    expect(missing.ok).toBe(false)
+    if (!missing.ok) expect(missing.error).toContain('zod')
+    const zod = resolveRunCodeModule('zod')
+    expect(zod.ok).toBe(true)
   })
 
   test('unknown specifier error surfaces, missing export lists available names', async () => {
