@@ -100,6 +100,16 @@ export class QueryGuard {
     return this._status !== 'idle'
   }
 
+  /**
+   * Is a QUERY running? Unlike `isActive`, this is false while the guard is
+   * merely reserved for dispatch — the state a slash command runs in. Used
+   * by the hosted resume rpc, which must refuse mid-turn but may run from
+   * inside a /resume command's own dispatch.
+   */
+  get isRunning(): boolean {
+    return this._status === 'running'
+  }
+
   get generation(): number {
     return this._generation
   }

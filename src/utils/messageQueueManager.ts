@@ -284,6 +284,21 @@ export function removeByFilter(
 }
 
 /**
+ * Replace a queued command's text in place, keyed by its command id
+ * (`QueuedCommand.uuid`). The remote hosts' `queue_edit` rpc rides this:
+ * the entry keeps its position and priority, only the text changes.
+ * Returns false when no queued command carries the id.
+ */
+export function editQueuedCommand(commandId: string, value: string): boolean {
+  const cmd = commandQueue.find(candidate => candidate.uuid === commandId)
+  if (!cmd) return false
+  cmd.value = value
+  notifySubscribers()
+  logOperation('edit', value)
+  return true
+}
+
+/**
  * Clear all commands from the queue.
  * Used by ESC cancellation to discard queued notifications.
  */
