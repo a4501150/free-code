@@ -43,7 +43,7 @@ import {
   diffSnapshots,
   toWireSnapshot,
 } from '../../src/webui/protocol/transcriptWire.js'
-import { buildSubmitValue } from '../../src/webui/attach/runtime.js'
+import { buildSubmitValue } from '../../src/server/runtime.js'
 import {
   parseQuestions,
   serializeAnswer,

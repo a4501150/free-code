@@ -1,5 +1,5 @@
-import type { DomainUserContentBlock } from '../../types/domain.js'
-import type { Message } from '../../types/message.js'
+import type { DomainUserContentBlock } from '../types/domain.ts'
+import type { Message } from '../types/message.ts'
 import type {
   WebPendingCommand,
   WebPermissionMode,
@@ -7,7 +7,7 @@ import type {
   WebSessionState,
   WebSubmitImage,
   WebTodo,
-} from '../protocol/attachSchemas.js'
+} from '../webui/protocol/attachSchemas.ts'
 
 /**
  * The seam between the attach socket and the process that owns the session.

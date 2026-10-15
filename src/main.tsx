@@ -2492,7 +2492,7 @@ async function run(): Promise<CommanderCommand> {
         // top-level session and must not publish an attach socket. Not
         // awaited, so a slow listener never delays first render.
         const { startProcessAttachHost } =
-          await import('./webui/attach/hostSingleton.js')
+          await import('./server/hostSingleton.js')
         startProcessAttachHost({
           cwd: getOriginalCwd(),
           entrypoint: 'repl',

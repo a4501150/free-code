@@ -3,7 +3,7 @@ import { createConnection, createServer, type Server } from 'net'
 import { join } from 'path'
 import { z } from 'zod'
 import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
-import { attachNdjsonReader, writeNdjson } from './attach/ndjsonConnection.js'
+import { readNdjsonSocket, writeNdjson } from './gateway/ndjsonConnection.js'
 import { WebStartOptionsSchema } from './gateway/webState.js'
 import type { WebStatus } from './gateway/service.js'
 
@@ -64,7 +64,7 @@ export function startDaemonControlServer(handlers: DaemonControlHandlers): {
   rmSync(path, { force: true })
 
   const server: Server = createServer(socket => {
-    attachNdjsonReader(socket, {
+    readNdjsonSocket(socket, {
       onLine(line) {
         void (async () => {
           let response: DaemonControlResponse
@@ -172,7 +172,7 @@ export async function sendDaemonControl(
 
     socket.once('connect', () => writeNdjson(socket, request))
     socket.once('error', () => finish(null))
-    attachNdjsonReader(socket, {
+    readNdjsonSocket(socket, {
       onLine(line) {
         try {
           finish(JSON.parse(line) as DaemonControlResponse)

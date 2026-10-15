@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import { writeFileSync } from 'fs'
 import { join } from 'path'
-import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { getClaudeConfigHomeDir } from '../utils/envUtils.ts'
 
 export type RestartReadyFrame = {
   type: 'restart_ready'
@@ -48,8 +48,8 @@ export async function gracefulRestart(ctx: {
   unbindControl: () => void
   broadcast: (frame: RestartReadyFrame) => void
 }): Promise<void> {
-  const { readWebState } = await import('./webState.js')
-  const { sendDaemonControl } = await import('../daemonControl.js')
+  const { readWebState } = await import('../webui/gateway/webState.ts')
+  const { sendDaemonControl } = await import('../webui/daemonControl.ts')
 
   const previous = readWebState()
   const options = previous

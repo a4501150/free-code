@@ -5,17 +5,17 @@ import { createConnection, type Socket } from 'net'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { PassThrough } from 'stream'
-import { readAttachDescriptor } from '../../src/webui/attach/attachDescriptor.js'
-import { startAttachHost } from '../../src/webui/attach/attachHost.js'
+import { readAttachDescriptor } from '../../src/server/descriptor.js'
+import { startAttachHost } from '../../src/server/attachHost.js'
 import {
-  attachNdjsonReader,
+  readNdjsonSocket,
   writeNdjson,
-} from '../../src/webui/attach/ndjsonConnection.js'
+} from '../../src/webui/gateway/ndjsonConnection.js'
 import {
   getAttachDescriptorPath,
   getAttachDir,
   verifyAttachDir,
-} from '../../src/webui/attach/security.js'
+} from '../../src/server/security.js'
 import {
   ATTACH_PROTOCOL_VERSION,
   MAX_ATTACH_LINE_BYTES,
@@ -50,7 +50,7 @@ describe('ndjson framing', () => {
     const socket = new PassThrough()
     const lines: string[] = []
     const errors: string[] = []
-    attachNdjsonReader(socket as unknown as Socket, {
+    readNdjsonSocket(socket as unknown as Socket, {
       onLine: line => lines.push(line),
       onError: code => errors.push(code),
       onClose: () => {},
@@ -236,7 +236,7 @@ describe('idle cost', () => {
     // finished, so assert it for real: a process whose only remaining handle is
     // the attach socket must exit on its own.
     const script = `
-      import { startAttachHost } from '${join(import.meta.dir, '..', '..', 'src/webui/attach/attachHost.ts')}'
+      import { startAttachHost } from '${join(import.meta.dir, '..', '..', 'src/server/attachHost.ts')}'
       const host = startAttachHost({ sessionId: crypto.randomUUID(), cwd: process.cwd() })
       await host.ready
       // Never call stop(). If the listener is referenced, this hangs.
@@ -283,7 +283,7 @@ describe('attach handshake', () => {
             },
           })
         })
-        attachNdjsonReader(client, {
+        readNdjsonSocket(client, {
           onLine: line => {
             clearTimeout(timer)
             client.destroy()
@@ -381,7 +381,7 @@ describe('image prompts', () => {
 
     const pending = new Map<string, (value: never) => void>()
     const client = createConnection(host!.descriptor.socketPath)
-    attachNdjsonReader(client, {
+    readNdjsonSocket(client, {
       onLine: line => {
         const message = JSON.parse(line) as { requestId?: string }
         const settle = message.requestId && pending.get(message.requestId)

@@ -1,6 +1,6 @@
 import { mkdirSync, statSync, type Stats } from 'fs'
 import { join } from 'path'
-import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { getClaudeConfigHomeDir } from '../utils/envUtils.ts'
 
 export const ATTACH_DIR_MODE = 0o700
 export const ATTACH_FILE_MODE = 0o600

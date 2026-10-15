@@ -36,10 +36,13 @@ import {
   type ChildSessionDefaults,
   type ChildSession,
 } from './childSessions.js'
-import { readAttachDescriptor } from '../attach/attachDescriptor.js'
+import { readAttachDescriptor } from '../../server/descriptor.js'
 import { connectAttachClient } from './attachClient.js'
 import { listDirectories, PathError, PATH_ERROR_STATUS } from './directories.js'
-import { startGracefulRestart, type RestartReadyFrame } from './restart.js'
+import {
+  startGracefulRestart,
+  type RestartReadyFrame,
+} from '../../sessiond/restart.js'
 import {
   createSessionHub,
   type HubSubscriber,

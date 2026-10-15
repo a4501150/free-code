@@ -1,8 +1,8 @@
 import { randomUUID } from 'crypto'
 import { createConnection } from 'net'
-import { startAttachHost } from './attach/attachHost.js'
-import { readAttachDescriptor } from './attach/attachDescriptor.js'
-import { attachNdjsonReader, writeNdjson } from './attach/ndjsonConnection.js'
+import { startAttachHost } from '../server/attachHost.js'
+import { readAttachDescriptor } from '../server/descriptor.js'
+import { readNdjsonSocket, writeNdjson } from './gateway/ndjsonConnection.js'
 import { startGatewayServer } from './gateway/gatewayServer.js'
 import { WEBUI_CSS, WEBUI_JS } from './generated/assets.js'
 import { ATTACH_PROTOCOL_VERSION } from './protocol/attachSchemas.js'
@@ -145,7 +145,7 @@ async function probeAttachHost(): Promise<{ ok: boolean; detail: string }> {
       })
     })
 
-    attachNdjsonReader(client, {
+    readNdjsonSocket(client, {
       onLine(line) {
         clearTimeout(timer)
         const parsed = JSON.parse(line) as { ok?: boolean }

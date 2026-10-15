@@ -11,7 +11,7 @@ import { randomBytes } from 'crypto'
 import type {
   WebPermissionDecision,
   WebPermissionRequest,
-} from '../protocol/attachSchemas.js'
+} from '../webui/protocol/attachSchemas.ts'
 
 export type WebPermissionCallbacks = {
   /** Open a request. Returns an unsubscribe that removes the pending entry. */

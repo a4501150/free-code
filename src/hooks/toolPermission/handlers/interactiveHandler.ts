@@ -19,7 +19,7 @@ import { createSessionToolAllowUpdate } from '../../../utils/permissions/Permiss
 import { hasPermissionsToUseTool } from '../../../utils/permissions/permissions.js'
 import type { PermissionContext } from '../PermissionContext.js'
 import { createResolveOnce } from '../PermissionContext.js'
-import * as webuiAttachModule from '../../../webui/attach/hostSingleton.js'
+import * as webuiAttachModule from '../../../server/hostSingleton.js'
 
 type InteractivePermissionParams = {
   ctx: PermissionContext

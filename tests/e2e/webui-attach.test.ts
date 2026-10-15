@@ -10,7 +10,7 @@ import {
   setupE2ESuite,
   sleep,
 } from './tmux-helpers'
-import { readAttachDescriptor } from '../../src/webui/attach/attachDescriptor'
+import { readAttachDescriptor } from '../../src/server/descriptor'
 import { connectAttachClient } from '../../src/webui/gateway/attachClient'
 import type { AttachEventBody } from '../../src/webui/protocol/attachSchemas'
 import type { WebTranscriptItem } from '../../src/webui/protocol/transcriptWire'

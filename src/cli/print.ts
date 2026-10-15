@@ -304,7 +304,7 @@ import {
   shouldAttachHeadless,
   startHeadlessAttach,
   wrapCanUseToolWithWebUI,
-} from '../webui/attach/headlessBridge.js'
+} from '../server/headlessBridge.js'
 import { createCronScheduler } from '../utils/cronScheduler.js'
 import { getCronJitterConfig } from '../utils/cronJitterConfig.js'
 import { isAssistantCronEnabled } from '../tools/ScheduleCronTool/prompt.js'

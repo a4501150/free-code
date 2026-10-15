@@ -7,26 +7,26 @@
  * a bare allow silently submits empty answers. Exit-plan approval must also
  * drop `plan`, or it falsely reports a user edit.
  */
-import { isWebuiManagedProcess } from '../../utils/webuiManagedProcess.js'
-import type { CanUseToolFn } from '../../Tool.js'
-import type { Message } from '../../types/message.js'
+import { isWebuiManagedProcess } from '../utils/webuiManagedProcess.ts'
+import type { CanUseToolFn } from '../Tool.ts'
+import type { Message } from '../types/message.ts'
 import {
   enqueue,
   getCommandQueueSnapshot,
-} from '../../utils/messageQueueManager.js'
+} from '../utils/messageQueueManager.ts'
 import type { UUID } from 'crypto'
 import {
   getStreamActivity,
   getIsCompacting,
   getInProgressToolUseIds as getGlobalInProgressIds,
   setStreamActivityListener,
-} from '../../utils/streamActivity.js'
+} from '../utils/streamActivity.ts'
 import type {
   WebPendingCommand,
   WebPermissionMode,
   WebSessionActivity,
   WebSessionState,
-} from '../protocol/attachSchemas.js'
+} from '../webui/protocol/attachSchemas.ts'
 import {
   getAttachHost,
   publishAttachMeta,
@@ -34,13 +34,13 @@ import {
   publishAttachTranscript,
   registerAttachRuntime,
   startProcessAttachHost,
-} from './hostSingleton.js'
-import { executePermissionRequestHooksForHost } from '../../cli/structuredIO.js'
+} from './hostSingleton.ts'
+import { executePermissionRequestHooksForHost } from '../cli/structuredIO.ts'
 import {
   applyPermissionUpdates,
   createSessionToolAllowUpdate,
-} from '../../utils/permissions/PermissionUpdate.js'
-import { buildSubmitValue } from './runtime.js'
+} from '../utils/permissions/PermissionUpdate.ts'
+import { buildSubmitValue } from './runtime.ts'
 
 export function shouldAttachHeadless(): boolean {
   return isWebuiManagedProcess()

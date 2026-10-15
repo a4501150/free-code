@@ -6,14 +6,14 @@
  */
 import { chmodSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { z } from 'zod'
-import { ATTACH_PROTOCOL_VERSION } from '../protocol/attachSchemas.js'
+import { ATTACH_PROTOCOL_VERSION } from '../webui/protocol/attachSchemas.ts'
 import {
   ATTACH_FILE_MODE,
   getAttachDescriptorPath,
   verifyAttachDir,
   verifyAttachFile,
   type SecurityResult,
-} from './security.js'
+} from './security.ts'
 
 export const AttachDescriptorSchema = z.object({
   protocolVersion: z.literal(ATTACH_PROTOCOL_VERSION),

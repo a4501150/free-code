@@ -1,5 +1,5 @@
 import type { Socket } from 'net'
-import { MAX_ATTACH_LINE_BYTES } from '../protocol/attachSchemas.js'
+import { MAX_ATTACH_LINE_BYTES } from '../protocol/attachSchemas.ts'
 
 export type NdjsonHandlers = {
   onLine: (line: string) => void
@@ -12,7 +12,7 @@ export type NdjsonHandlers = {
  * MAX_ATTACH_LINE_BYTES fails the connection rather than buffering without
  * bound, because the peer is local but not necessarily well behaved.
  */
-export function attachNdjsonReader(
+export function readNdjsonSocket(
   socket: Socket,
   handlers: NdjsonHandlers,
 ): void {

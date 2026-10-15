@@ -4,25 +4,25 @@
  */
 import { useEffect, useRef } from 'react'
 import type { UUID } from 'crypto'
-import type { Message } from '../../types/message.js'
-import type { Task } from '../../utils/taskSchemas.js'
+import type { Message } from '../types/message.ts'
+import type { Task } from '../utils/taskSchemas.ts'
 import {
   enqueue,
   getCommandQueueSnapshot,
-} from '../../utils/messageQueueManager.js'
+} from '../utils/messageQueueManager.ts'
 import type {
   WebPendingCommand,
   WebPermissionMode,
   WebSessionActivity,
   WebSessionState,
-} from '../protocol/attachSchemas.js'
+} from '../webui/protocol/attachSchemas.ts'
 import {
   publishAttachMeta,
   publishAttachPendingCommands,
   publishAttachTodos,
   registerAttachRuntime,
-} from './hostSingleton.js'
-import { buildSubmitValue, type AttachRuntime } from './runtime.js'
+} from './hostSingleton.ts'
+import { buildSubmitValue, type AttachRuntime } from './runtime.ts'
 
 export type ReplAttachBridgeParams = {
   messagesRef: { current: readonly Message[] }

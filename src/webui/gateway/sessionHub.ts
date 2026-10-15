@@ -1,4 +1,4 @@
-import { readAttachDescriptor } from '../attach/attachDescriptor.js'
+import { readAttachDescriptor } from '../../server/descriptor.js'
 import {
   listLiveSessions,
   type ConcurrentSessionEntry,

@@ -45,7 +45,7 @@ import {
   getSessionEndHookTimeoutMs,
 } from '../../utils/hooks.js'
 import { getCurrentWorktreeSession } from '../../utils/worktree.js'
-import { readAttachDescriptor } from '../../webui/attach/attachDescriptor.js'
+import { readAttachDescriptor } from '../../server/descriptor.js'
 import { createSystemMessage } from '../../utils/messages.js'
 import { reconstructContentReplacementState } from '../../utils/toolResultStorage.js'
 import { recordContentReplacement } from '../../utils/sessionStorage.js'

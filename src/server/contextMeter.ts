@@ -1,16 +1,16 @@
-import { calculateTokenWarningState } from '../../services/compact/autoCompact.js'
-import { isAutoCompactEnabled } from '../../services/compact/autoCompactConfig.js'
-import type { Message } from '../../types/message.js'
+import { calculateTokenWarningState } from '../services/compact/autoCompact.ts'
+import { isAutoCompactEnabled } from '../services/compact/autoCompactConfig.ts'
+import type { Message } from '../types/message.ts'
 import {
   calculateContextPercentages,
   getContextWindowForModel,
-} from '../../utils/context.js'
-import { getMessagesAfterCompactBoundary } from '../../utils/messages.js'
+} from '../utils/context.ts'
+import { getMessagesAfterCompactBoundary } from '../utils/messages.ts'
 import {
   getCurrentUsage,
   tokenCountFromLastAPIResponse,
-} from '../../utils/tokens.js'
-import type { WebSessionContext } from '../protocol/attachSchemas.js'
+} from '../utils/tokens.ts'
+import type { WebSessionContext } from '../webui/protocol/attachSchemas.ts'
 
 /**
  * The context budget, measured the two ways the TUI measures it.

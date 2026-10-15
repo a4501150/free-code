@@ -1,6 +1,6 @@
 import { createConnection, type Socket } from 'net'
-import { readAttachDescriptor } from '../attach/attachDescriptor.js'
-import { attachNdjsonReader, writeNdjson } from '../attach/ndjsonConnection.js'
+import { readAttachDescriptor } from '../../server/descriptor.js'
+import { readNdjsonSocket, writeNdjson } from './ndjsonConnection.js'
 import {
   ATTACH_PROTOCOL_VERSION,
   type AttachEventBody,
@@ -70,7 +70,7 @@ export async function connectAttachClient(
     pending.clear()
   }
 
-  attachNdjsonReader(socket, {
+  readNdjsonSocket(socket, {
     onLine(line) {
       let parsed: unknown
       try {

@@ -14,31 +14,34 @@ import {
   type WebSessionMeta,
   type WebModelOption,
   type WebSessionContext,
-} from '../protocol/attachSchemas.js'
-import { getModelOptions } from '../../utils/model/modelOptions.js'
-import { buildContextMeter } from './contextMeter.js'
+} from '../webui/protocol/attachSchemas.js'
+import { getModelOptions } from '../utils/model/modelOptions.js'
+import { buildContextMeter } from './contextMeter.ts'
 import {
   diffSnapshots,
   toWireSnapshot,
   type WebTranscriptSnapshot,
-} from '../protocol/transcriptWire.js'
+} from '../webui/protocol/transcriptWire.js'
 import {
   removeAttachDescriptor,
   writeAttachDescriptor,
   type AttachDescriptor,
-} from './attachDescriptor.js'
-import { attachNdjsonReader, writeNdjson } from './ndjsonConnection.js'
+} from './descriptor.js'
+import {
+  readNdjsonSocket,
+  writeNdjson,
+} from '../webui/gateway/ndjsonConnection.js'
 import {
   createWebPermissionBroker,
   type WebPermissionCallbacks,
-} from './permissionBroker.js'
-import type { AttachRuntime } from './runtime.js'
+} from './permissionBroker.ts'
+import type { AttachRuntime } from './runtime.ts'
 import {
   ATTACH_FILE_MODE,
   ensureAttachDir,
   getAttachSocketPath,
   isAttachSupportedPlatform,
-} from './security.js'
+} from './security.ts'
 
 type Connection = {
   socket: Socket
@@ -322,7 +325,7 @@ export function startAttachHost(
     }
     connections.add(connection)
 
-    attachNdjsonReader(socket, {
+    readNdjsonSocket(socket, {
       onLine(line) {
         let parsed: unknown
         try {

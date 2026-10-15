@@ -4,10 +4,10 @@ import {
   getTotalLinesAdded,
   getTotalLinesRemoved,
   onSessionSwitch,
-} from '../../bootstrap/state.js'
-import { registerCleanup } from '../../utils/cleanupRegistry.js'
-import { startAttachHost, type AttachHost } from './attachHost.js'
-import type { AttachRuntime } from './runtime.js'
+} from '../bootstrap/state.ts'
+import { registerCleanup } from '../utils/cleanupRegistry.ts'
+import { startAttachHost, type AttachHost } from './attachHost.ts'
+import type { AttachRuntime } from './runtime.ts'
 
 let host: AttachHost | null = null
 let pendingRuntime: AttachRuntime | null = null

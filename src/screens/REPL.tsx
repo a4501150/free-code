@@ -75,7 +75,7 @@ import {
   ResumeSessionConflictDialog,
   type ResumeSessionConflictChoice,
 } from '../components/ResumeSessionConflictDialog.js'
-import { readAttachDescriptor } from '../webui/attach/attachDescriptor.js'
+import { readAttachDescriptor } from '../server/descriptor.js'
 import type { PromptRequest, PromptResponse } from '../types/hooks.js'
 import PromptInput from '../components/PromptInput/PromptInput.js'
 import { PromptInputQueuedCommands } from '../components/PromptInput/PromptInputQueuedCommands.js'
@@ -258,8 +258,8 @@ import {
 } from '../utils/sessionRestore.js'
 import { updateSessionName } from '../utils/concurrentSessions.js'
 import { useScheduledTasks } from '../hooks/useScheduledTasks.js'
-import * as webuiAttachModule from '../webui/attach/hostSingleton.js'
-import { useReplAttachBridge } from '../webui/attach/replBridge.js'
+import * as webuiAttachModule from '../server/hostSingleton.js'
+import { useReplAttachBridge } from '../server/replBridge.js'
 const SUGGEST_BG_PR_NOOP = (_p: string, _n: string): boolean => false
 import { useTaskListWatcher } from '../hooks/useTaskListWatcher.js'
 
