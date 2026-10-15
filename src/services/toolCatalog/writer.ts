@@ -589,6 +589,9 @@ async function isAged(path: string): Promise<boolean> {
  * union across sessions, so a server this session doesn't render (another
  * project's server, a disconnected one) keeps its file and manifest entry.
  * Entries whose file is missing or corrupt are dropped: no file, no entry.
+ * A server the other catalog dir claims is dropped immediately: its copy
+ * here is a stale re-homing, and keeping it would make the per-turn delta
+ * diff two differently-rendered copies of the same server forever.
  * Age GC reaps an intact-but-unrendered entry only when no live session
  * claims the server and the file has been untouched past GC_MAX_AGE_MS.
  */
@@ -597,6 +600,7 @@ async function unionWithPrevious(
   rendered: CatalogManifest['servers'],
   previous: CatalogManifest | null,
   knownServers: Set<string>,
+  claimedElsewhere: Set<string>,
 ): Promise<CatalogManifest['servers']> {
   if (!previous) return rendered
   const byName = new Map(rendered.map(s => [s.name, s]))
@@ -611,6 +615,10 @@ async function unionWithPrevious(
       intact = false
     }
     if (!intact) continue
+    if (claimedElsewhere.has(prev.name)) {
+      await unlink(join(dir, prev.file)).catch(() => {})
+      continue
+    }
     if (!knownServers.has(prev.name) && (await isAged(join(dir, prev.file)))) {
       await unlink(join(dir, prev.file)).catch(() => {})
       continue
@@ -693,6 +701,12 @@ export async function writeToolCatalog(opts: {
    * never reaps a file for a server some live session still claims.
    */
   knownServers?: Set<string>
+  /**
+   * Server names this session renders into the other catalog dir. A carried
+   * -forward entry claimed by the other dir is dropped (and its file
+   * unlinked) instead of waiting out the age GC.
+   */
+  claimedElsewhere?: Set<string>
 }): Promise<CatalogWriteResult> {
   const dir = opts.catalogDir ?? toolCatalogDir()
   const statePath = opts.statePath ?? toolCatalogStatePath()
@@ -731,6 +745,7 @@ export async function writeToolCatalog(opts: {
       servers,
       previous,
       knownServers,
+      opts.claimedElsewhere ?? new Set<string>(),
     )
     await sweepServerFiles(dir, unioned, knownServers)
     await removeLegacyFiles(dir, builtins)

@@ -264,6 +264,31 @@ describe('tool catalog writer', () => {
     expect(reaped.manifest.servers.map(s => s.name)).toEqual(['new'])
     expect(existsSync(join(dir, 'servers', 'old.ts'))).toBe(false)
   })
+
+  test('a carried-forward entry claimed by the other catalog dir is dropped', async () => {
+    const dir = await freshDir()
+    await writeToolCatalog({
+      mcpTools: [fakeMcpTool('mcp__old__x', 'old')],
+      lazyBuiltInTools: [],
+      serverDescriptions: new Map(),
+      catalogDir: dir,
+      statePath: statePathFor(dir),
+    })
+
+    // The server re-homed to the other catalog dir (e.g. project scope took
+    // over): dropped immediately, without waiting out the age GC.
+    const dropped = await writeToolCatalog({
+      mcpTools: [fakeMcpTool('mcp__new__x', 'new')],
+      lazyBuiltInTools: [],
+      serverDescriptions: new Map(),
+      catalogDir: dir,
+      statePath: statePathFor(dir),
+      knownServers: new Set(['old', 'new']),
+      claimedElsewhere: new Set(['old']),
+    })
+    expect(dropped.manifest.servers.map(s => s.name)).toEqual(['new'])
+    expect(existsSync(join(dir, 'servers', 'old.ts'))).toBe(false)
+  })
 })
 
 describe('mcp_tools_delta reminder', () => {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readdir, readFile } from 'fs/promises'
+import { createHash } from 'crypto'
+import { mkdtemp, readdir, readFile, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { MCPServerConnection } from '../../src/services/mcp/types.js'
@@ -262,5 +263,56 @@ describe('MCP tools delta attachment', () => {
       servers: Array<{ name: string }>
     }
     expect(state.servers.map(s => s.name)).toEqual(['oliver'])
+  })
+
+  test('a stale user-catalog copy of a project server does not re-announce', async () => {
+    const projectTool = mcpTool(
+      'mcp__oliver__list',
+      'List',
+      {
+        type: 'object',
+        properties: {},
+      },
+      'oliver',
+    )
+    const clients = [fakeClient('oliver', 'project')]
+    const [baseline] = await announce([projectTool], [], clients)
+
+    // Simulate a pre-split stale copy of the same server at the user level:
+    // an intact file plus a manifest entry with a different content hash.
+    const stale = 'stale declarations'
+    await writeFile(join(catalogDir, 'servers', 'oliver.ts'), stale)
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        generation: 1,
+        updated: new Date().toISOString(),
+        servers: [
+          {
+            name: 'oliver',
+            file: 'servers/oliver.ts',
+            toolCount: 1,
+            hash: createHash('sha256').update(stale).digest('hex').slice(0, 16),
+          },
+        ],
+        builtins: [],
+      }),
+    )
+
+    // The project render wins the name, so nothing changed relative to the
+    // baseline — no per-turn reminder ping-pong.
+    const second = await announce(
+      [projectTool],
+      [attachMessage(baseline!)],
+      clients,
+    )
+    expect(second).toEqual([])
+
+    // The stale user-level copy is reaped instead of carried forward.
+    expect(await readdir(join(catalogDir, 'servers'))).toEqual([])
+    const userState = JSON.parse(await readFile(statePath, 'utf8')) as {
+      servers: Array<{ name: string }>
+    }
+    expect(userState.servers).toEqual([])
   })
 })

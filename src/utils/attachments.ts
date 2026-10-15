@@ -1555,6 +1555,7 @@ async function computeToolCatalogDeltas(
         catalogDir: opts?.catalogDir,
         statePath: opts?.statePath,
         knownServers: known.user,
+        claimedElsewhere: known.project,
       })
     ).manifest
     if (partition.projectDirActive) {
@@ -1570,6 +1571,7 @@ async function computeToolCatalogDeltas(
           catalogDir: opts?.projectCatalogDir ?? projectCatalogDir(),
           statePath: opts?.projectStatePath ?? projectCatalogStatePath(),
           knownServers: known.project,
+          claimedElsewhere: known.user,
         })
       ).manifest
     }
@@ -1585,13 +1587,22 @@ async function computeToolCatalogDeltas(
       .map(tool => tool.mcpInfo?.serverName)
       .filter((n): n is string => n !== undefined),
   )
-  const servers: CatalogAnnouncementServer[] = [
-    ...userManifest.servers.map(s => ({ ...s, catalog: 'user' as const })),
-    ...(projectManifest?.servers ?? []).map(s => ({
-      ...s,
-      catalog: 'project' as const,
-    })),
-  ]
+  // A server can appear in both manifests while a stale pre-split copy is
+  // still carried forward at the user level. Project scope is that
+  // server's authoritative home, so the project render wins the name;
+  // without this, the diff below would compare the two copies against a
+  // single by-name prev entry and flag the server as changed every turn.
+  const byName = new Map<
+    string,
+    CatalogAnnouncementServer & { description?: string }
+  >()
+  for (const s of userManifest.servers) {
+    byName.set(s.name, { ...s, catalog: 'user' as const })
+  }
+  for (const s of projectManifest?.servers ?? []) {
+    byName.set(s.name, { ...s, catalog: 'project' as const })
+  }
+  const servers = [...byName.values()]
     .filter(s => poolServers.has(s.name))
     .map(({ description: _description, ...snap }) => snap)
   const generation = Math.max(
