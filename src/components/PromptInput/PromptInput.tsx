@@ -22,7 +22,6 @@ import {
   useAppStateStore,
   useSetAppState,
 } from 'src/state/AppState.js'
-import type { AppState } from 'src/state/AppStateStore.js'
 import type { FooterItem } from 'src/state/AppStateStore.js'
 import { isCompanionVisible } from '../../buddy/companion.js'
 import { BuddyMenu } from '../../buddy/BuddyMenu.js'
@@ -31,7 +30,6 @@ import {
   isQueuedCommandEditable,
   popAllEditable,
 } from 'src/utils/messageQueueManager.js'
-import { startUserInputAttachmentPrefetch } from 'src/utils/attachments.js'
 import stripAnsi from 'strip-ansi'
 import { FastModePicker } from '../../commands/fast/fast.js'
 import { isUltrareviewEnabled } from '../../commands/review/ultrareviewEnabled.js'
@@ -81,10 +79,7 @@ import {
   abortPromptSuggestion,
   logSuggestionSuppressed,
 } from '../../services/PromptSuggestion/promptSuggestion.js'
-import {
-  type ActiveSpeculationState,
-  abortSpeculation,
-} from '../../services/PromptSuggestion/speculation.js'
+import { abortSpeculation } from '../../services/PromptSuggestion/speculation.js'
 import { getActiveAgentForInput } from '../../state/selectors.js'
 import {
   enterAgentView,
@@ -95,7 +90,6 @@ import type { ToolPermissionContext } from '../../Tool.js'
 import {
   isLocalAgentTask,
   isPanelAgentTask,
-  type LocalAgentTaskState,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { isBackgroundTask } from '../../tasks/types.js'
 import { getAgentColor } from '../../tools/AgentTool/agentColorManager.js'
@@ -121,7 +115,6 @@ import {
   isFastModeEnabled,
   isFastModeSupportedByModel,
 } from '../../utils/fastMode.js'
-import type { PromptInputHelpers } from '../../utils/handlePromptSubmit.js'
 import {
   getImageFromClipboard,
   PASTE_THRESHOLD,
@@ -134,12 +127,7 @@ import {
 } from '../../utils/keyboardShortcuts.js'
 import { logError } from '../../utils/log.js'
 import { modelDisplayString } from '../../utils/model/model.js'
-import {
-  cyclePermissionMode,
-  getNextPermissionMode,
-} from '../../utils/permissions/getNextPermissionMode.js'
 import { getPlatform } from '../../utils/platform.js'
-import type { ProcessUserInputContext } from '../../utils/processUserInput/processUserInput.js'
 import { editPromptInEditor } from '../../utils/promptEditor.js'
 import { findBtwTriggerPositions } from '../../utils/sideQuestion.js'
 import { findSlashCommandPositions } from '../../utils/suggestions/commandSuggestions.js'
@@ -171,6 +159,7 @@ import { QuickOpenDialog } from '../QuickOpenDialog.js'
 import TextInput from '../TextInput.js'
 import { ThinkingToggle } from '../ThinkingToggle.js'
 import VimTextInput from '../VimTextInput.js'
+import type { ComposerHost } from './composerHost.js'
 import { getModeFromInput, getValueFromInput } from './inputModes.js'
 import { Notifications } from './Notifications.js'
 import PromptInputFooter from './PromptInputFooter.js'
@@ -228,27 +217,8 @@ type Props = {
   showBashesDialog: string | boolean
   setShowBashesDialog: (show: string | boolean) => void
   onExit: () => void
-  getToolUseContext: (
-    messages: Message[],
-    newMessages: Message[],
-    abortController: AbortController,
-    mainLoopModel: string,
-  ) => ProcessUserInputContext
-  onSubmit: (
-    input: string,
-    helpers: PromptInputHelpers,
-    speculationAccept?: {
-      state: ActiveSpeculationState
-      speculationSessionTimeSavedMs: number
-      setAppState: (f: (prev: AppState) => AppState) => void
-    },
-    options?: { fromKeybinding?: boolean },
-  ) => Promise<void>
-  onAgentSubmit?: (
-    input: string,
-    task: LocalAgentTaskState,
-    helpers: PromptInputHelpers,
-  ) => Promise<void>
+  /** Session-side actions — see composerHost.ts. */
+  host: ComposerHost
   isSearchingHistory: boolean
   setIsSearchingHistory: (isSearching: boolean) => void
   onDismissSideQuestion?: () => void
@@ -303,9 +273,7 @@ function PromptInput({
   showBashesDialog,
   setShowBashesDialog,
   onExit,
-  getToolUseContext,
-  onSubmit: onSubmitProp,
-  onAgentSubmit,
+  host,
   isSearchingHistory,
   setIsSearchingHistory,
   onDismissSideQuestion,
@@ -916,13 +884,9 @@ function PromptInput({
 
       // Debounced keystroke prefetch of the input-scoped attachment trio
       // (@-mentions, MCP resources, agent mentions) so submit consumes
-      // settled work — see startUserInputAttachmentPrefetch.
-      startUserInputAttachmentPrefetch(
-        processedValue,
-        getToolUseContext,
-        messages,
-        mainLoopModel,
-      )
+      // settled work — routed through the host (was a direct
+      // startUserInputAttachmentPrefetch call with getToolUseContext).
+      host.prefetchAttachments(processedValue, messages, mainLoopModel)
 
       trackAndSetInput(processedValue)
     },
@@ -935,7 +899,7 @@ function PromptInput({
       pastedContents,
       dismissStashHint,
       setAppState,
-      getToolUseContext,
+      host,
       messages,
       mainLoopModel,
     ],
@@ -1077,7 +1041,7 @@ function PromptInput({
           // skipReset: resetSuggestion would abort the speculation before we accept it
           logOutcomeAtSubmission(suggestionText, { skipReset: true })
 
-          void onSubmitProp(
+          void host.submit(
             suggestionText,
             {
               setCursorOffset,
@@ -1086,8 +1050,7 @@ function PromptInput({
             },
             {
               state: speculation,
-              speculationSessionTimeSavedMs: speculationSessionTimeSavedMs,
-              setAppState,
+              speculationSessionTimeSavedMs,
             },
           )
           return // Skip normal query - speculation handled it
@@ -1132,17 +1095,21 @@ function PromptInput({
 
       // Route input to viewed background agent.
       const activeAgent = getActiveAgentForInput(store.getState())
-      if (activeAgent.type !== 'leader' && onAgentSubmit) {
-        await onAgentSubmit(inputParam, activeAgent.task, {
-          setCursorOffset,
-          clearBuffer,
-          resetHistory,
-        })
+      if (activeAgent.type !== 'leader') {
+        await host.submitToAgent(
+          inputParam,
+          { id: activeAgent.task.id, status: activeAgent.task.status },
+          {
+            setCursorOffset,
+            clearBuffer,
+            resetHistory,
+          },
+        )
         return
       }
 
       // Normal leader submission
-      await onSubmitProp(inputParam, {
+      await host.submit(inputParam, {
         setCursorOffset,
         clearBuffer,
         resetHistory,
@@ -1155,12 +1122,10 @@ function PromptInput({
       store,
       footerItems,
       suggestionsState.suggestions,
-      onSubmitProp,
-      onAgentSubmit,
+      host,
       clearBuffer,
       resetHistory,
       logOutcomeAtSubmission,
-      setAppState,
       markAccepted,
       pastedContents,
       removeNotification,
@@ -1544,45 +1509,16 @@ function PromptInput({
     }
   }, [helpOpen])
 
-  // Handler for chat:cycleMode - cycle through permission modes
+  // Handler for chat:cycleMode - cycle through permission modes. The compute,
+  // store write and queued-permission recheck live in the host.
   const handleCycleMode = useCallback(() => {
-    // Compute the next mode without triggering side effects first
-    logForDebugging(
-      `[auto-mode] handleCycleMode: currentMode=${toolPermissionContext.mode} isAutoModeAvailable=${toolPermissionContext.isAutoModeAvailable}`,
-    )
-    const nextMode = getNextPermissionMode(toolPermissionContext)
-
-    const { context: preparedContext } = cyclePermissionMode(
-      toolPermissionContext,
-    )
-
-    // Set the mode via setAppState directly because setToolPermissionContext
-    // intentionally preserves the existing mode (to prevent coordinator mode
-    // corruption from workers). Then call setToolPermissionContext to trigger
-    // recheck of queued permission prompts.
-    setAppState(prev => ({
-      ...prev,
-      toolPermissionContext: {
-        ...preparedContext,
-        mode: nextMode,
-      },
-    }))
-    setToolPermissionContext({
-      ...preparedContext,
-      mode: nextMode,
-    })
+    host.cyclePermissionMode(toolPermissionContext)
 
     // Close help tips if they're open when mode is cycled
     if (helpOpen) {
       setHelpOpen(false)
     }
-  }, [
-    toolPermissionContext,
-    viewingAgentTaskId,
-    setAppState,
-    setToolPermissionContext,
-    helpOpen,
-  ])
+  }, [host, toolPermissionContext, helpOpen])
 
   // Handler for chat:imagePaste - paste image from clipboard
   const handleImagePaste = useCallback(() => {

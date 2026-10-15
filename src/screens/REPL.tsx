@@ -360,6 +360,7 @@ import { useReplQueryLifecycle } from '../hooks/repl/useReplQueryLifecycle.js'
 import { useReplToolUseContext } from '../hooks/repl/useReplToolUseContext.js'
 import { useReplBackgrounding } from '../hooks/repl/useReplBackgrounding.js'
 import { useReplDialogs } from '../hooks/repl/useReplDialogs.js'
+import { useReplComposerHost } from '../hooks/repl/useReplComposerHost.js'
 import { useReplSubmission } from '../hooks/repl/useReplSubmission.js'
 import { useReplTranscript } from '../hooks/repl/useReplTranscript.js'
 import { useReplInput } from '../hooks/repl/useReplInput.js'
@@ -1321,6 +1322,15 @@ export function REPL({
       bashToolsProcessedIdx,
       setAbortController,
     })
+  // The composer's session-side action seam — the same closures PromptInput
+  // used to receive as onSubmit/onAgentSubmit/getToolUseContext props.
+  const composerHost = useReplComposerHost({
+    onSubmit,
+    onAgentSubmit,
+    getToolUseContext,
+    setAppState,
+    setToolPermissionContext,
+  })
   // handleExit → useReplExit hook
 
   const handleShowMessageSelector = useCallback(() => {
@@ -2148,7 +2158,7 @@ export function REPL({
                         ideSelection={ideSelection}
                         hasSuppressedDialogs={!!hasSuppressedDialogs}
                         isLocalJSXCommandActive={isShowingLocalJSXCommand}
-                        getToolUseContext={getToolUseContext}
+                        host={composerHost}
                         toolPermissionContext={toolPermissionContext}
                         setToolPermissionContext={setToolPermissionContext}
                         apiKeyStatus={apiKeyStatus}
@@ -2178,8 +2188,6 @@ export function REPL({
                         setVimMode={setVimMode}
                         showBashesDialog={showBashesDialog}
                         setShowBashesDialog={setShowBashesDialog}
-                        onSubmit={onSubmit}
-                        onAgentSubmit={onAgentSubmit}
                         isSearchingHistory={isSearchingHistory}
                         setIsSearchingHistory={setIsSearchingHistory}
                         helpOpen={isHelpOpen}
