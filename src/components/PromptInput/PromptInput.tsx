@@ -183,6 +183,21 @@ type Props = {
   isLoading: boolean
   verbose: boolean
   messages: Message[]
+  /**
+   * Transcript facts for hosts that do not hold the Message[] array (the
+   * hosted viewer renders from the wire's projected rows). Where the
+   * component would otherwise inspect `messages` only for its length or
+   * its paste-ids, these replace that read; every other use of `messages`
+   * (footer stats, notifications) stays on the array. maxPasteId is the
+   * highest id present (0 when none) — the same fact getMaxPasteId
+   * derives. Absent ⇒ derived from `messages`, which is what the classic
+   * REPL does.
+   */
+  transcriptFacts?: {
+    messageCount: number
+    maxPasteId: number
+    hasAssistantMessage: boolean
+  }
   input: string
   onInputChange: (value: string) => void
   mode: PromptInputMode
@@ -256,6 +271,7 @@ function PromptInput({
   isLoading,
   verbose,
   messages,
+  transcriptFacts,
   input,
   onInputChange,
   mode,
@@ -408,12 +424,16 @@ function PromptInput({
   // Counter for paste IDs (shared between images and text).
   // Compute initial value once from existing messages (for --continue/--resume).
   // useRef(fn()) evaluates fn() on every render and discards the result after
-  // mount — getInitialPasteId walks all messages + regex-scans text blocks,
+  // mount — getMaxPasteId walks all messages + regex-scans text blocks,
   // so guard with a lazy-init pattern to run it exactly once.
+  // Both sources report the SAME fact (highest paste id in the transcript);
+  // the next-id bump lives here only.
   const nextPasteIdRef = useRef(-1)
   if (nextPasteIdRef.current === -1) {
-    nextPasteIdRef.current = getInitialPasteId(messages)
+    nextPasteIdRef.current =
+      (transcriptFacts?.maxPasteId ?? getMaxPasteId(messages)) + 1
   }
+  const messageCount = transcriptFacts?.messageCount ?? messages.length
   // Armed by onImagePaste; if the very next keystroke is a non-space
   // printable, inputFilter prepends a space before it. Any other input
   // (arrow, escape, backspace, paste, space) disarms without inserting.
@@ -1864,7 +1884,7 @@ function PromptInput({
         return
       }
 
-      if (messages.length > 0 && !input && !isLoading) {
+      if (messageCount > 0 && !input && !isLoading) {
         doublePressEscFromEmpty()
       }
     }
@@ -2085,7 +2105,10 @@ function PromptInput({
           currentValue={thinkingEnabled ?? true}
           onSelect={handleThinkingSelect}
           onCancel={handleThinkingCancel}
-          isMidConversation={messages.some(m => m.type === 'assistant')}
+          isMidConversation={
+            transcriptFacts?.hasAssistantMessage ??
+            messages.some(m => m.type === 'assistant')
+          }
         />
       </Box>
     )
@@ -2094,7 +2117,7 @@ function PromptInput({
     thinkingEnabled,
     handleThinkingSelect,
     handleThinkingCancel,
-    messages.length,
+    messageCount,
   ])
 
   if (showBashesDialog) {
@@ -2423,7 +2446,10 @@ function PromptInput({
  * Compute the initial paste ID by finding the max ID used in existing messages.
  * This handles --continue/--resume scenarios where we need to avoid ID collisions.
  */
-function getInitialPasteId(messages: Message[]): number {
+/** Highest paste id present in the transcript (0 when none). The caller
+ *  bumps by one to get the next id — transcriptFacts.maxPasteId reports the
+ *  same fact for hosts without the message array. */
+function getMaxPasteId(messages: Message[]): number {
   let maxId = 0
   for (const message of messages) {
     if (message.type === 'user') {
@@ -2446,7 +2472,7 @@ function getInitialPasteId(messages: Message[]): number {
       }
     }
   }
-  return maxId + 1
+  return maxId
 }
 
 function buildBorderText(
