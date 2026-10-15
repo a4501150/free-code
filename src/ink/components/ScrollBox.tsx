@@ -28,6 +28,12 @@ export type ScrollBoxHandle = {
    * SAME Yoga pass that computes scrollHeight. Deterministic. One-shot.
    */
   scrollToElement: (el: DOMElement, offset?: number) => void
+  /**
+   * One-shot: the next content growth skips the sticky at-bottom follow,
+   * so the view stays where the user put it while a mid-list row expands
+   * (click-to-expand). Set BEFORE the state change that grows the content.
+   */
+  holdNextGrowth: () => void
   scrollToBottom: () => void
   getScrollTop: () => number
   getPendingDelta: () => number
@@ -177,6 +183,17 @@ function ScrollBox({
         box.pendingScrollDelta = undefined
         box.scrollAnchor = { el, offset }
         scrollMutated(box)
+      },
+      holdNextGrowth() {
+        const box = domRef.current
+        if (!box) return
+        // Break stickiness like scrollTo/scrollBy: while the sticky attr is
+        // set, every later frame re-pins scrollTop to maxScroll, so holding
+        // only the follow would jump back to the bottom on the next
+        // re-render. The next submit's scrollToBottom (or the user
+        // scrolling down) re-engages following.
+        breakSticky(box)
+        box.holdFollowOnce = true
       },
       scrollBy(dy: number) {
         const el = domRef.current

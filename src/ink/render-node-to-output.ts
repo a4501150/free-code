@@ -913,8 +913,31 @@ function renderNodeToOutput(
           // spacer) making scrollTop >= prevMaxScroll true by artifact, not
           // because the user was at bottom.
           const grew = scrollHeight >= prevScrollHeight
-          const atBottom =
+          // One-shot hold (ScrollBoxHandle.holdNextGrowth, set with sticky
+          // broken): a click-to-expand grows the transcript mid-list — the
+          // follow would scroll by the growth and push what the user was
+          // reading off the top. Captured BEFORE the consume: the growth
+          // frame itself must be suppressed. Consumed by the first frame
+          // whose scrollHeight actually increased; unchanged-height frames
+          // keep the hold for the frame the growth lands in. The suppression
+          // applies only while the growth fits the viewport (see below).
+          const holdFollow = node.holdFollowOnce === true
+          if (holdFollow && scrollHeight > prevScrollHeight) {
+            node.holdFollowOnce = false
+          }
+          let atBottom =
             sticky || (grew && scrollTopBeforeFollow >= prevMaxScroll)
+          // Hold applies only when the growth fits the viewport: a
+          // bigger-than-screen expansion can't stay in place — the expanded
+          // block itself wouldn't be visible — so it follows to its tail
+          // like an un-held growth (the repeated-expansion e2e).
+          if (
+            holdFollow &&
+            scrollHeight > prevScrollHeight &&
+            scrollHeight - prevScrollHeight <= innerHeight
+          ) {
+            atBottom = false
+          }
           if (atBottom && (node.pendingScrollDelta ?? 0) >= 0) {
             node.scrollTop = maxScroll
             node.pendingScrollDelta = undefined

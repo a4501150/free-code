@@ -101,6 +101,13 @@ export type DOMElement = {
   // time the paced render fires, the element ref defers the position
   // read to paint time. One-shot.
   scrollAnchor?: { el: DOMElement; offset: number }
+  // One-shot, set via ScrollBoxHandle.holdNextGrowth(): the next content
+  // growth does NOT trigger the sticky at-bottom follow. A click-to-expand
+  // grows the transcript mid-list; the follow would scroll the view by the
+  // growth and push what the user was reading off the top. Consumed by the
+  // first frame whose scrollHeight actually increases (unchanged-height
+  // frames keep the hold for the frame the growth lands in).
+  holdFollowOnce?: boolean
   // Only set on ink-root. The document owns focus — any node can
   // reach it by walking parentNode, like browser getRootNode().
   focusManager?: FocusManager

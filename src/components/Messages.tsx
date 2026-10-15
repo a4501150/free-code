@@ -686,12 +686,16 @@ const MessagesImpl = ({
   )
   const onItemClick = useCallback((msg: RenderableMessage) => {
     const k = expandKey(msg)
+    // Expanding grows the transcript below the clicked row — hold the view
+    // so the sticky bottom-follow doesn't jump it by the growth.
+    scrollRef?.current?.holdNextGrowth()
     setExpandedKeys(prev => {
       const next = new Set(prev)
       if (next.has(k)) next.delete(k)
       else next.add(k)
       return next
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scrollRef is a stable ref object
   }, [])
   const isItemExpanded = useCallback(
     (msg: RenderableMessage) =>
