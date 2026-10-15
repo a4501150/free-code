@@ -2,7 +2,7 @@ import React from 'react'
 import { FpsMetricsProvider } from '../context/fpsMetrics.js'
 import { StatsProvider, type StatsStore } from '../context/stats.js'
 import { AppStateProvider } from '../state/AppState.js'
-import type { AppState } from '../state/AppStateStore.js'
+import type { AppState, AppStateStore } from '../state/AppStateStore.js'
 import { onChangeAppState } from '../state/onChangeAppState.js'
 import type { FpsMetrics } from '../utils/fpsTracker.js'
 
@@ -10,6 +10,8 @@ type Props = {
   getFpsMetrics: () => FpsMetrics | undefined
   stats?: StatsStore
   initialState?: AppState
+  /** Adopt an externally-owned AppState store (see AppStateProvider). */
+  store?: AppStateStore
   children: React.ReactNode
 }
 
@@ -21,6 +23,7 @@ export function App({
   getFpsMetrics,
   stats,
   initialState,
+  store,
   children,
 }: Props): React.ReactNode {
   return (
@@ -29,6 +32,7 @@ export function App({
         <AppStateProvider
           initialState={initialState}
           onChangeAppState={onChangeAppState}
+          store={store}
         >
           {children}
         </AppStateProvider>

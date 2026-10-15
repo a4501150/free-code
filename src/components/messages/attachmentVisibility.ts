@@ -98,6 +98,16 @@ export function rendersNoSummaryLine(attachment: Attachment): boolean {
 }
 
 /**
+ * The set half of rendersNoSummaryLine, by type name alone — for callers
+ * holding a wire attachment whose shape is not the full Attachment union
+ * (the attached-session transcript skips these rows without reading the
+ * per-type fields the full predicate checks).
+ */
+export function typeHasNoSummaryLine(type: string): boolean {
+  return ATTACHMENTS_WITHOUT_SUMMARY_LINE.has(type as Attachment['type'])
+}
+
+/**
  * A queued task notification renders its own detail through
  * UserAgentNotificationMessage. normalizeAttachmentForAPI additionally wraps it
  * in a system reminder, so AttachmentMessage skips the generic reminder row.

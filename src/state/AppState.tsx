@@ -31,6 +31,13 @@ type Props = {
   children: React.ReactNode
   initialState?: AppState
   onChangeAppState?: (args: { newState: AppState; oldState: AppState }) => void
+  /**
+   * Adopt an externally-owned store instead of creating one. The hosted TUI
+   * passes the hosted session's store, so context-reading components (the
+   * classic dialogs the viewer mirrors, the task panel) read the session's
+   * real state — one store per in-process session, not a UI-local copy.
+   */
+  store?: AppStateStore
 }
 
 const HasAppStateContext = React.createContext<boolean>(false)
@@ -39,6 +46,7 @@ export function AppStateProvider({
   children,
   initialState,
   onChangeAppState,
+  store: providedStore,
 }: Props): React.ReactNode {
   // Don't allow nested AppStateProviders.
   const hasAppStateContext = useContext(HasAppStateContext)
@@ -51,11 +59,13 @@ export function AppStateProvider({
   // Store is created once and never changes -- stable context value means
   // the provider never triggers re-renders. Consumers subscribe to slices
   // via useSyncExternalStore in useAppState(selector).
-  const [store] = useState(() =>
-    createStore<AppState>(
-      initialState ?? getDefaultAppState(),
-      onChangeAppState,
-    ),
+  const [store] = useState(
+    () =>
+      providedStore ??
+      createStore<AppState>(
+        initialState ?? getDefaultAppState(),
+        onChangeAppState,
+      ),
   )
 
   // Check on mount if bypass mode should be disabled
