@@ -8,6 +8,7 @@ import {
 import { shouldOfferTerminalSetup } from '../../commands/terminalSetup/terminalSetup.js'
 import { color } from '../../components/design-system/color.js'
 import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
+import { isBypassPermissionsModeDisabled } from '../../utils/permissions/permissionSetup.js'
 import { isAssistantCronEnabled } from '../../tools/ScheduleCronTool/prompt.js'
 import { is1PApiCustomer } from '../../utils/auth.js'
 import { countConcurrentSessions } from '../../utils/concurrentSessions.js'
@@ -267,8 +268,8 @@ const externalTips: Tip[] = [
   {
     id: 'shift-tab',
     content: async () =>
-      `Hit ${getShortcutDisplay('chat:cycleMode', 'Chat')} to cycle between default mode, auto-accept edit mode, and plan mode`,
-    isRelevant: async () => true,
+      `Hit ${getShortcutDisplay('chat:cycleMode', 'Chat')} to cycle between default mode, auto-accept edit mode, plan mode, and bypass permissions mode`,
+    isRelevant: async () => !isBypassPermissionsModeDisabled(),
   },
   {
     id: 'image-paste',

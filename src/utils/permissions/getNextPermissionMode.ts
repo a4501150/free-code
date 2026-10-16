@@ -4,6 +4,7 @@ import type { PermissionMode } from './PermissionMode.js'
 import {
   getAutoModeUnavailableReason,
   isAutoModeGateEnabled,
+  isBypassPermissionsModeDisabled,
   transitionPermissionMode,
 } from './permissionSetup.js'
 
@@ -24,6 +25,16 @@ function canCycleToAuto(ctx: ToolPermissionContext): boolean {
   return can
 }
 
+// The exit when the next hop is not reachable: auto behind its gate,
+// otherwise wrap to default. Shared by the plan (kill-switch on) and bypass
+// cases so their exits stay in lockstep.
+function nextWithoutBypass(ctx: ToolPermissionContext): PermissionMode {
+  if (canCycleToAuto(ctx)) {
+    return 'auto'
+  }
+  return 'default'
+}
+
 /**
  * Determines the next permission mode when cycling through modes with Shift+Tab.
  */
@@ -38,19 +49,15 @@ export function getNextPermissionMode(
       return 'plan'
 
     case 'plan':
-      if (toolPermissionContext.isBypassPermissionsModeAvailable) {
+      // Bypass is part of the cycle: the Shift+Tab keypress is itself a
+      // deliberate user action, so the launch-flag gate does not apply here.
+      if (!isBypassPermissionsModeDisabled()) {
         return 'bypassPermissions'
       }
-      if (canCycleToAuto(toolPermissionContext)) {
-        return 'auto'
-      }
-      return 'default'
+      return nextWithoutBypass(toolPermissionContext)
 
     case 'bypassPermissions':
-      if (canCycleToAuto(toolPermissionContext)) {
-        return 'auto'
-      }
-      return 'default'
+      return nextWithoutBypass(toolPermissionContext)
 
     case 'dontAsk':
       // Not exposed in UI cycle yet, but return default if somehow reached
@@ -73,12 +80,20 @@ export function cyclePermissionMode(
   toolPermissionContext: ToolPermissionContext,
 ): { nextMode: PermissionMode; context: ToolPermissionContext } {
   const nextMode = getNextPermissionMode(toolPermissionContext)
-  return {
+  let context = transitionPermissionMode(
+    toolPermissionContext.mode,
     nextMode,
-    context: transitionPermissionMode(
-      toolPermissionContext.mode,
-      nextMode,
-      toolPermissionContext,
-    ),
+    toolPermissionContext,
+  )
+  // Entering bypass without the launch flag (Shift+Tab is enough now) must
+  // still look bypass-capable to the readers of this flag — the live
+  // settings-change kick-out and the SDK set_permission_mode gate — or they
+  // would silently ignore a session sitting in bypass.
+  if (
+    nextMode === 'bypassPermissions' &&
+    !context.isBypassPermissionsModeAvailable
+  ) {
+    context = { ...context, isBypassPermissionsModeAvailable: true }
   }
+  return { nextMode, context }
 }
