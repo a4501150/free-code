@@ -4118,7 +4118,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
       const parts: string[] = []
       if (attachment.addedBlocks.length > 0) {
         parts.push(
-          `# MCP Server Instructions\n\nThe following MCP servers have provided instructions for how to use their tools and resources:\n\n${attachment.addedBlocks.join('\n\n')}`,
+          `# MCP Server Instructions\n\nThe following MCP servers have provided instructions for how to use their tools and resources. Tool names in these instructions are not script globals: call them from a ${RUN_CODE_TOOL_NAME} script only after importing them from "mcp/<server>" (see the tool catalog directory in your environment context for declarations).\n\n${attachment.addedBlocks.join('\n\n')}`,
         )
       }
       if (attachment.removedNames.length > 0) {
