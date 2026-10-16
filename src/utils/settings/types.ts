@@ -1599,6 +1599,12 @@ const _settingsSchemaValue = z
           .describe(
             'The assistant session runs as a coordinator over its own subagent workers (delegation, follow-ups, inter-agent messaging). Defaults to on; set to false for a plain single-agent assistant.',
           ),
+        dangerouslySkipPermissions: z
+          .boolean()
+          .optional()
+          .describe(
+            'The assistant runs with all permission checks bypassed (--dangerously-skip-permissions). Defaults to on: nobody is attached to answer its permission prompts, so a gated call would otherwise stall until someone opens the web UI. Set to false to keep it permission-gated (prompts surface in the web UI). Takes effect on gateway restart.',
+          ),
       })
       .optional()
       .describe('Assistant persona settings.'),

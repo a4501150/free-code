@@ -10,8 +10,11 @@ import type { ChildSession, ChildSessions } from './childSessions.js'
  * The gateway always keeps one long-lived assistant session alive across
  * restarts (opt out with `assistant.enabled: false`), and the browser presents
  * it as the main chat (`role: 'assistant'` on its session-list row). It is an
- * ordinary gateway child — headless, attachable, permission-gated — spawned
- * with `--assistant` so it carries the assistant persona. It is event-driven:
+ * ordinary gateway child — headless, attachable — spawned with `--assistant`
+ * so it carries the assistant persona, and by default with
+ * `--dangerously-skip-permissions` (nobody is attached to answer its prompts;
+ * opt out with assistant.dangerouslySkipPermissions: false). It is
+ * event-driven:
  * browser/terminal submits, scheduled cron tasks, and `assistant.notify`
  * control requests wake it; there is no polling loop.
  *
@@ -81,6 +84,11 @@ export async function bootstrapAssistantSession(
   // its default door; opt out with assistant.coordinator: false).
   if (assistant?.coordinator !== false) {
     extraArgs.push('--coordinator')
+  }
+  // Rides extraArgs, not ChildSessionDefaults: the defaults stay bypass-free
+  // for browser-spawned sessions.
+  if (assistant?.dangerouslySkipPermissions !== false) {
+    extraArgs.push('--dangerously-skip-permissions')
   }
 
   const resumeSessionId = await readResumeId()

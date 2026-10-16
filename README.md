@@ -94,7 +94,7 @@ Subcommands: `web` (start/status/restart the browser session UI), `daemon`,
 
 Subsystems that need runtime activation rather than a build flag:
 
-- **Assistant** — the webui gateway hosts one assistant session per machine (`web start` starts it; opt out with `assistant.enabled: false`). It is event-driven: browser/terminal submits, scheduled cron tasks, and `assistant.notify` control requests wake it — there is no tick loop. `--assistant` in the TUI joins that session; it cannot initialize one. `--brief` opts a normal session into brief replies.
+- **Assistant** — the webui gateway hosts one assistant session per machine (`web start` starts it; opt out with `assistant.enabled: false`). It is event-driven: browser/terminal submits, scheduled cron tasks, and `assistant.notify` control requests wake it — there is no tick loop. It runs with permission checks bypassed by default (nobody is attached to answer its prompts; `assistant.dangerouslySkipPermissions: false` keeps it gated, prompts surface in the web UI). `--assistant` in the TUI joins that session; it cannot initialize one. `--brief` opts a normal session into brief replies.
 - **Coordinator mode** — `coordinatorMode` setting or `--tasks`.
 - **Voice mode** — `voiceEnabled` setting + OAuth; `/voice`.
 - **Scheduled tasks** (`CronCreate`/`CronList`, `/loop`) — `scheduledTasksEnabled` setting, on by default.
