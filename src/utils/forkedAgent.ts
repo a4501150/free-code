@@ -18,7 +18,7 @@ import { EMPTY_USAGE, type NonNullableUsage } from '../services/api/logging.js'
 import type { ToolUseContext, CanUseToolFn } from '../Tool.js'
 import type { AgentDefinition } from '../tools/AgentTool/loadAgentsDir.js'
 import type { AgentId } from '../types/ids.js'
-import type { Message } from '../types/message.js'
+import type { Message, StreamEvent } from '../types/message.js'
 import { createChildAbortController } from './abortController.js'
 import { withAgenticSystemPromptInvariants } from './agenticSystemPrompt.js'
 import { logForDebugging } from './debug.js'
@@ -104,6 +104,10 @@ export type ForkedAgentParams = {
   maxTurns?: number
   /** Optional callback invoked for each message as it arrives (for streaming UI) */
   onMessage?: (message: Message) => void
+  /** Optional callback for raw stream_event messages — these never reach
+   *  onMessage. For callers that measure decode progress while the fork
+   *  streams (the compact summary feeds the spinner's token counters). */
+  onStreamEvent?: (message: StreamEvent) => void
   /** Skip sidechain transcript recording (e.g., for ephemeral work like speculation) */
   skipTranscript?: boolean
   /** Skip writing new prompt cache entries on the last message. For
@@ -496,6 +500,7 @@ export async function runForkedAgent({
   maxOutputTokens,
   maxTurns,
   onMessage,
+  onStreamEvent,
   skipTranscript,
   skipCacheWrite,
 }: ForkedAgentParams): Promise<ForkedAgentResult> {
@@ -555,6 +560,7 @@ export async function runForkedAgent({
     })) {
       // Extract real usage from message_delta stream events (final usage per API call)
       if (message.type === 'stream_event') {
+        onStreamEvent?.(message as StreamEvent)
         if (
           'event' in message &&
           message.event?.type === 'message_delta' &&

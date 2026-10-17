@@ -1034,6 +1034,22 @@ async function streamCompactSummary({
         // fork — same signal the streaming fallback uses at
         // `signal: context.abortController.signal` below.
         overrides: { abortController: context.abortController },
+        // Feed the spinner's response-length channel with the summary's
+        // decode progress, exactly as the fallback loop does below —
+        // without this the compact row shows no tokens and no tok/s while
+        // the fork streams.
+        onStreamEvent: event => {
+          const e = event.event
+          if (
+            e?.type === 'content_block_delta' &&
+            e.delta?.type === 'text_delta'
+          ) {
+            const text = (e.delta as { text?: unknown }).text
+            if (typeof text === 'string') {
+              context.setResponseLength?.(length => length + text.length)
+            }
+          }
+        },
       })
       const assistantMsg = getLastAssistantMessage(result.messages)
       const assistantText = assistantMsg

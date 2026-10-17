@@ -62,6 +62,12 @@ export type SpinnerAnimationRowProps = {
 
   // Viewed local agent (coordinator panel subagent) — overrides leader timing/tokens
   viewedLocalAgent?: LocalAgentTaskState
+  /** True while the row shows a compaction. The compact request is not
+   *  wired to the per-request metrics channel, so the baseline recorded at
+   *  the previous request's message_start is stale and would suppress the
+   *  decode window; with the response-length channel restarting at 0 on
+   *  compact start, a zero baseline is also the correct one. */
+  compacting?: boolean
 }
 
 /**
@@ -93,6 +99,7 @@ export function SpinnerAnimationRow({
   thinkingStatus,
   effortSuffix,
   viewedLocalAgent,
+  compacting = false,
 }: SpinnerAnimationRowProps): React.ReactNode {
   const [viewportRef, time] = useAnimationFrame(reducedMotion ? null : 50)
 
@@ -211,10 +218,10 @@ export function SpinnerAnimationRow({
           rate.doneMs += rate.lastAt - rate.firstAt
         }
         rate.seq = metrics.seq
-        rate.baseline = metrics.baseline
+        rate.baseline = compacting ? 0 : metrics.baseline
         rate.firstAt = 0
         rate.lastAt = 0
-        rate.lastRaw = metrics.baseline
+        rate.lastRaw = compacting ? 0 : metrics.baseline
       }
       if (rate.firstAt === 0) {
         if (currentResponseLength > rate.baseline) {
@@ -258,7 +265,13 @@ export function SpinnerAnimationRow({
 
   const wantsThinking = thinkingStatus !== null
   const wantsTimerAndTokens =
-    verbose || isLocalAgentView || effectiveElapsedMs > SHOW_TOKENS_AFTER_MS
+    verbose ||
+    isLocalAgentView ||
+    // Compaction bypasses the long-turn threshold: the decode rate is
+    // exactly the observability its row exists to give, and compacts
+    // typically finish well before the threshold is reached.
+    compacting ||
+    effectiveElapsedMs > SHOW_TOKENS_AFTER_MS
 
   const availableSpace = columns - messageWidth - 5
 

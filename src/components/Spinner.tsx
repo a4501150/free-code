@@ -336,6 +336,7 @@ function SpinnerWithVerbInner({
           thinkingStatus={thinkingStatus}
           effortSuffix={effortSuffix}
           viewedLocalAgent={viewedLocalAgent}
+          compacting={viewCompactionStart != null}
         />
         {viewCompactionStart != null ? (
           <Box width="100%" flexDirection="column">
