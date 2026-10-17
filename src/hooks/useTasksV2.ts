@@ -1,6 +1,6 @@
 import { type FSWatcher, watch } from 'fs'
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { useSetAppState } from '../state/AppState.js'
+import { useAppState, useSetAppState } from '../state/AppState.js'
 import { createSignal } from '../utils/signal.js'
 import type { Task } from '../utils/tasks.js'
 import {
@@ -228,13 +228,20 @@ export function useTasksV2WithCollapseEffect(): Task[] | undefined {
   const setAppState = useSetAppState()
 
   const hidden = tasks === undefined
+  // A view up on an agent makes the visible list that agent's own. Without
+  // this guard a subagent's TaskCreate/TaskUpdate auto-expand is undone
+  // moments later in the same process: the update re-fetches the MAIN list
+  // here, which is empty → hidden → collapse. Listing it as a dependency
+  // makes view exit re-run this effect, so a still-hidden main list
+  // collapses then.
+  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   useEffect(() => {
-    if (!hidden) return
+    if (!hidden || viewingAgentTaskId) return
     setAppState(prev => {
       if (prev.expandedView !== 'tasks') return prev
       return { ...prev, expandedView: 'none' as const }
     })
-  }, [hidden, setAppState])
+  }, [hidden, viewingAgentTaskId, setAppState])
 
   return tasks
 }
@@ -294,6 +301,21 @@ export function useSubagentTasksV2(
       clearInterval(poll)
     }
   }, [agentId])
+
+  // The agent's own TaskCreate auto-expand lands while its list has
+  // content; re-apply it here so a view entered after the expand was
+  // collapsed (empty main list, before this hook's caller viewed the
+  // agent) still shows the panel. Same semantics as the tool-side
+  // expansion: any non-empty list expands the shared view.
+  const setAppStateForExpand = useSetAppState()
+  useEffect(() => {
+    if (!tasks || tasks.length === 0) return
+    setAppStateForExpand(prev =>
+      prev.expandedView === 'tasks'
+        ? prev
+        : { ...prev, expandedView: 'tasks' as const },
+    )
+  }, [tasks, setAppStateForExpand])
 
   return tasks
 }
