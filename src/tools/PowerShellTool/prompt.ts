@@ -59,7 +59,7 @@ export async function getPrompt(): Promise<string> {
 
 Two run patterns:
 - Foreground (default): blocks until the command finishes and returns its output.
-- Background (\`run_in_background: true\`): returns immediately with a task ID and an output file path; a system task notification reports its completion — no waiting or polling.`
+- Background (\`run_in_background: true\`): returns immediately with a task ID and an output file path; a system task notification reports its completion — no waiting or polling. Run the command bare — your own \`> log 2>&1\` redirect hides from the UI the output the harness already captures.`
     : ''
 
   return `Executes a given PowerShell command and returns its output. Shell state (variables, functions) does not persist between commands.${backgroundSection}
