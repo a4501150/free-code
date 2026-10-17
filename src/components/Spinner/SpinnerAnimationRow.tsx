@@ -62,11 +62,12 @@ export type SpinnerAnimationRowProps = {
 
   // Viewed local agent (coordinator panel subagent) — overrides leader timing/tokens
   viewedLocalAgent?: LocalAgentTaskState
-  /** True while the row shows a compaction. The compact request is not
-   *  wired to the per-request metrics channel, so the baseline recorded at
-   *  the previous request's message_start is stale and would suppress the
-   *  decode window; with the response-length channel restarting at 0 on
-   *  compact start, a zero baseline is also the correct one. */
+  /** True while the row shows a compaction. The compact request does not
+   *  publish per-request metrics, and the response-length channel restarts
+   *  at 0 on compact start (the reset-on-zero branch below then holds a
+   *  zero baseline). The flag only backstops the seq-change branch: compaction
+   *  itself never advances seq, but a concurrent request could, and its
+   *  stale baseline would suppress the compact's decode window. */
   compacting?: boolean
 }
 

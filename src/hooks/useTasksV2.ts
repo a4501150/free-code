@@ -306,16 +306,21 @@ export function useSubagentTasksV2(
   // content; re-apply it here so a view entered after the expand was
   // collapsed (empty main list, before this hook's caller viewed the
   // agent) still shows the panel. Same semantics as the tool-side
-  // expansion: any non-empty list expands the shared view.
+  // expansion: a non-empty list expands the shared view. Depend on the
+  // presence transition only — setTasks stores non-empty-or-undefined,
+  // and the 3s poll refreshes the array reference, so depending on
+  // `tasks` itself would re-expand on every poll even after a manual
+  // collapse.
   const setAppStateForExpand = useSetAppState()
+  const hasTasks = tasks !== undefined
   useEffect(() => {
-    if (!tasks || tasks.length === 0) return
+    if (!hasTasks) return
     setAppStateForExpand(prev =>
       prev.expandedView === 'tasks'
         ? prev
         : { ...prev, expandedView: 'tasks' as const },
     )
-  }, [tasks, setAppStateForExpand])
+  }, [hasTasks, setAppStateForExpand])
 
   return tasks
 }

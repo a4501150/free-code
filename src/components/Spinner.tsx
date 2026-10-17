@@ -181,6 +181,7 @@ function SpinnerWithVerbInner({
   const viewCompactionStart = viewedLocalAgent
     ? (viewedCompacting?.startedAt ?? null)
     : compactingStartTime
+  const isCompacting = viewCompactionStart != null
 
   // The live task-list panel is hosted by this component (every variant) and
   // renders FLUSH below the spinner row: the spinner's own marginTop=1 is the
@@ -191,10 +192,7 @@ function SpinnerWithVerbInner({
   // on screen stands the panel down; the store collapses expandedView itself
   // once the all-completed window ends.
   const panel =
-    showExpandedTodos &&
-    viewCompactionStart == null &&
-    tasksV2 &&
-    tasksV2.length > 0 ? (
+    showExpandedTodos && !isCompacting && tasksV2 && tasksV2.length > 0 ? (
       <TaskPanelRows tasks={tasksV2} />
     ) : null
 
@@ -336,9 +334,9 @@ function SpinnerWithVerbInner({
           thinkingStatus={thinkingStatus}
           effortSuffix={effortSuffix}
           viewedLocalAgent={viewedLocalAgent}
-          compacting={viewCompactionStart != null}
+          compacting={isCompacting}
         />
-        {viewCompactionStart != null ? (
+        {isCompacting ? (
           <Box width="100%" flexDirection="column">
             <CompactProgressBar
               startTime={viewCompactionStart}

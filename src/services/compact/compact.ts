@@ -12,6 +12,7 @@ import {
   FILE_READ_TOOL_NAME,
   FILE_UNCHANGED_STUB,
 } from '../../tools/FileReadTool/prompt.js'
+import type { DomainStreamEvent } from '../../types/domain.js'
 import type { AgentId } from '../../types/ids.js'
 import type {
   AssistantMessage,
@@ -976,6 +977,26 @@ export function createCompactCanUseTool(): CanUseToolFn {
   })
 }
 
+/**
+ * Add a text-delta stream event's size to the response-length channel the
+ * spinner reads. The delta union's open-record variant blocks narrowing
+ * `.text` to string after the type check, hence the cast.
+ */
+function countStreamedTextCharacters(
+  streamEvent: DomainStreamEvent | undefined,
+  setResponseLength: ToolUseContext['setResponseLength'] | undefined,
+): void {
+  if (
+    streamEvent?.type === 'content_block_delta' &&
+    streamEvent.delta?.type === 'text_delta'
+  ) {
+    const text = (streamEvent.delta as { text?: unknown }).text
+    if (typeof text === 'string') {
+      setResponseLength?.(length => length + text.length)
+    }
+  }
+}
+
 async function streamCompactSummary({
   messages,
   summaryRequest,
@@ -1038,18 +1059,8 @@ async function streamCompactSummary({
         // decode progress, exactly as the fallback loop does below —
         // without this the compact row shows no tokens and no tok/s while
         // the fork streams.
-        onStreamEvent: event => {
-          const e = event.event
-          if (
-            e?.type === 'content_block_delta' &&
-            e.delta?.type === 'text_delta'
-          ) {
-            const text = (e.delta as { text?: unknown }).text
-            if (typeof text === 'string') {
-              context.setResponseLength?.(length => length + text.length)
-            }
-          }
-        },
+        onStreamEvent: event =>
+          countStreamedTextCharacters(event.event, context.setResponseLength),
       })
       const assistantMsg = getLastAssistantMessage(result.messages)
       const assistantText = assistantMsg
@@ -1135,14 +1146,8 @@ async function streamCompactSummary({
           context.setStreamMode?.('responding')
         }
 
-        if (
-          event.type === 'stream_event' &&
-          event.event.type === 'content_block_delta' &&
-          event.event.delta.type === 'text_delta' &&
-          typeof event.event.delta.text === 'string'
-        ) {
-          const charactersStreamed = event.event.delta.text.length
-          context.setResponseLength?.(length => length + charactersStreamed)
+        if (event.type === 'stream_event') {
+          countStreamedTextCharacters(event.event, context.setResponseLength)
         }
 
         if (event.type === 'assistant') {
