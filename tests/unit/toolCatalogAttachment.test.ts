@@ -49,10 +49,15 @@ describe('tool_catalog attachment', () => {
     expect(getToolCatalogAttachment([])).toHaveLength(1)
   })
 
-  test('a prior row silences it: replay once per window, never re-baseline', () => {
+  test('a prior row with the same flag silences it', () => {
+    // Build the prior row from the emitter's own current flag so the
+    // assertion does not depend on this machine's project configs.
+    const current = getToolCatalogAttachment(undefined)[0] as {
+      hasProjectScope: boolean
+    }
     const prior = attachMessage({
       type: 'tool_catalog',
-      hasProjectScope: false,
+      hasProjectScope: current.hasProjectScope,
     })
     expect(getToolCatalogAttachment([prior])).toEqual([])
     // A different carrier's row is not a prior row.
@@ -64,6 +69,22 @@ describe('tool_catalog attachment', () => {
       builtinsRemoved: [],
     })
     expect(getToolCatalogAttachment([other])).toHaveLength(1)
+  })
+
+  test('a flag flip re-announces the pointer', () => {
+    const current = getToolCatalogAttachment(undefined)[0] as {
+      hasProjectScope: boolean
+    }
+    const stale = attachMessage({
+      type: 'tool_catalog',
+      hasProjectScope: !current.hasProjectScope,
+    })
+    const atts = getToolCatalogAttachment([stale])
+    expect(atts).toHaveLength(1)
+    expect(atts[0]).toMatchObject({
+      type: 'tool_catalog',
+      hasProjectScope: current.hasProjectScope,
+    })
   })
 
   test('the kill switch reports no catalog', async () => {

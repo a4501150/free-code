@@ -663,12 +663,12 @@ export type Attachment =
     }
   | {
       /**
-       * One-shot tool-catalog pointer: where the generated declarations
-       * live and how to drive them. Carries no domain and no diff — the
-       * whole guard is the scan for a prior row, so it replays once per
-       * window (session start, post-compaction re-arm), never
-       * re-baselines. The volatile per-server and built-in rows ride the
-       * delta carriers.
+       * The tool-catalog pointer: where the generated declarations live
+       * and how to drive them. Carries no domain and no diff — the whole
+       * guard is the scan for a prior row's flag, so it replays once per
+       * window (session start, post-compaction re-arm) and re-announces
+       * when project configs first appear mid-session. The volatile
+       * per-server and built-in rows ride the delta carriers.
        */
       type: 'tool_catalog'
       /** True when project-scope servers render into the project-keyed catalog. */
@@ -1725,20 +1725,27 @@ export async function getDeferredToolsDeltaAttachment(
 }
 
 /**
- * The one-shot tool-catalog pointer. No catalog write: the directories are
+ * The tool-catalog pointer row. No catalog write: the directories are
  * known up front; only the per-server rows need the render pipeline.
  */
 export function getToolCatalogAttachment(
   messages: Message[] | undefined,
 ): Attachment[] {
   if (mcpToolCatalogDisabled()) return []
-  const seen = (messages ?? []).some(
-    msg => msg.type === 'attachment' && msg.attachment.type === 'tool_catalog',
-  )
-  if (seen) return []
   const hasProjectScope =
     Object.keys(getMcpConfigsByScope('project')).length > 0 ||
     Object.keys(getMcpConfigsByScope('local')).length > 0
+  // Last row wins, like the delta carriers: silence while the flag holds,
+  // a refreshed pointer row the window project configs first appear (the
+  // only mid-session change the directories can undergo).
+  let announced: boolean | null = null
+  for (const msg of messages ?? []) {
+    if (msg.type !== 'attachment') continue
+    if (msg.attachment.type === 'tool_catalog') {
+      announced = msg.attachment.hasProjectScope
+    }
+  }
+  if (announced === hasProjectScope) return []
   return [{ type: 'tool_catalog', hasProjectScope }]
 }
 
