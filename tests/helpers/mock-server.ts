@@ -38,6 +38,18 @@ function encodeSuccessJSON(response: MockSuccessResponse, id: string): string {
   })
 }
 
+/**
+ * A queue entry that is only consumed by a request whose body matches.
+ * Lets a test route concurrent callers (e.g. a backgrounded subagent
+ * racing the main thread's ack turn) without guessing the arrival order.
+ * Plain MockResponse entries match any request and stay FIFO.
+ */
+export type QueueSelectorEntry = {
+  selector: (body: RequestLogEntry['body']) => boolean
+  response: MockResponse
+}
+export type QueueEntry = MockResponse | QueueSelectorEntry
+
 export interface RequestLogEntry {
   method: string
   url: string
@@ -56,7 +68,7 @@ export interface RequestLogEntry {
 
 export class MockAnthropicServer {
   private server: ReturnType<typeof Bun.serve> | null = null
-  private responses: MockResponse[] = []
+  private responses: QueueEntry[] = []
   private requestCounter = 0
   private requestLog: RequestLogEntry[] = []
   private _port = 0
@@ -91,7 +103,7 @@ export class MockAnthropicServer {
     }
   }
 
-  reset(responses: MockResponse[]): void {
+  reset(responses: QueueEntry[]): void {
     this.responses = [...responses]
     this.requestCounter = 0
     this.requestLog = []
@@ -164,15 +176,24 @@ export class MockAnthropicServer {
       timestamp: Date.now(),
     })
 
-    // Get next response from queue
+    // Get next response from queue: the first entry whose selector
+    // matches this request (plain entries match anything).
     const responseIndex = this.requestCounter++
-    if (responseIndex >= this.responses.length) {
+    const loggedBody = this.requestLog[this.requestLog.length - 1].body
+    const queueIdx = this.responses.findIndex(q =>
+      'selector' in q ? q.selector(loggedBody) : true,
+    )
+    if (queueIdx === -1) {
+      const suffix =
+        this.responses.length > 0
+          ? `no queue entry matched this request (${this.responses.length} unmatched entries remain)`
+          : `no more responses in queue (only ${this.responses.length} responses configured)`
       return new Response(
         JSON.stringify({
           type: 'error',
           error: {
             type: 'server_error',
-            message: `Mock server: no more responses in queue (got request #${responseIndex + 1}, only ${this.responses.length} responses configured)`,
+            message: `Mock server: request #${responseIndex + 1}: ${suffix}`,
           },
         }),
         {
@@ -182,7 +203,9 @@ export class MockAnthropicServer {
       )
     }
 
-    const mockResponse = this.responses[responseIndex]
+    const entry = this.responses[queueIdx]
+    this.responses.splice(queueIdx, 1)
+    const mockResponse = 'selector' in entry ? entry.response : entry
 
     // Non-streaming callers (sideQuery / client.beta.messages.create without
     // stream:true) need JSON, not SSE. The Anthropic SDK only parses SSE when
