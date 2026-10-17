@@ -4015,6 +4015,18 @@ You have exited auto mode. The user may now want to interact more directly. You 
         createUserMessage({ content: parts.join('\n\n'), isMeta: true }),
       ])
     }
+    case 'tool_catalog': {
+      const base = `Tool catalog directory: ${toolCatalogDir()} (servers/<name>.ts, builtins.ts)`
+      const line = attachment.hasProjectScope
+        ? `${base}; project-scope servers: ${projectCatalogDir()}/servers/<name>.ts`
+        : base
+      return wrapMessagesInSystemReminder([
+        createUserMessage({
+          content: `${line}\nFind the exact names and argument types of the deferred tools announced in your context in these declarations, and orchestrate them from a ${RUN_CODE_TOOL_NAME} script.`,
+          isMeta: true,
+        }),
+      ])
+    }
     case 'deferred_tools_delta': {
       // ToolSearch-era rows carry this same tag with the old
       // addedNames/addedLines/removedNames shape; they render inert.

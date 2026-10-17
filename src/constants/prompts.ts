@@ -17,13 +17,6 @@ import { isEnvTruthy } from '../utils/envUtils.js'
 import { getFreecodeSettingsFilePath } from '../utils/settings/freecodeSettings.js'
 import { getModelSettingsFilePath } from '../utils/settings/modelSettings.js'
 import {
-  RUN_CODE_TOOL_NAME,
-  mcpToolCatalogDisabled,
-} from '../services/toolCatalog/exposure.js'
-import { toolCatalogDir } from '../services/toolCatalog/writer.js'
-import { projectCatalogDir } from '../services/toolCatalog/scopes.js'
-import { getMcpConfigsByScope } from '../services/mcp/config.js'
-import {
   systemPromptSection,
   resolveSystemPromptSections,
 } from './systemPromptSections.js'
@@ -156,27 +149,6 @@ export async function getSystemPrompt(
   ].filter(s => s !== null)
 }
 
-/**
- * Catalog facts shared by both env-info builders: where the generated
- * declarations live and how to drive them. One gate for the whole block:
- * the kill switch defers nothing when set — MCP servers and lazily-exposed
- * built-ins alike ride the request's tools[] array directly — so there is
- * no per-carrier (MCP vs built-in) gate to split until the setting is.
- */
-function toolCatalogEnvLines(): string[] {
-  if (mcpToolCatalogDisabled()) return []
-  const hasProjectConfigs =
-    Object.keys(getMcpConfigsByScope('project')).length > 0 ||
-    Object.keys(getMcpConfigsByScope('local')).length > 0
-  const base = `Tool catalog directory: ${toolCatalogDir()} (servers/<name>.ts, builtins.ts)`
-  return [
-    hasProjectConfigs
-      ? `${base}; project-scope servers: ${projectCatalogDir()}/servers/<name>.ts`
-      : base,
-    `Find the exact names and argument types of the deferred tools announced in your context in these declarations, and orchestrate them from a ${RUN_CODE_TOOL_NAME} script.`,
-  ]
-}
-
 export async function computeEnvInfo(
   modelId: string,
   additionalWorkingDirectories?: string[],
@@ -193,18 +165,15 @@ export async function computeEnvInfo(
       ? `Additional working directories: ${additionalWorkingDirectories.join(', ')}\n`
       : ''
 
-  // Rides with the env facts so the config-home path never enters the tools or
-  // system blocks; see the catalog notes in CLAUDE.md. Config-derived (not
-  // connection-derived) so the lines stay byte-stable within a session.
-  const catalogLines = toolCatalogEnvLines()
-  const catalogLine = catalogLines.length ? `\n${catalogLines.join('\n')}` : ''
+  // No catalog facts here: they ride the `tool_catalog` attachment
+  // (src/utils/attachments.ts), which re-arms after compaction.
   return `Here is useful information about the environment you are running in:
 <env>
 Working directory: ${getCwd()}
 Is directory a git repo: ${isGit ? 'Yes' : 'No'}
 ${additionalDirsInfo}Platform: ${env.platform}
 ${getShellInfoLine()}
-OS Version: ${unameSR}${catalogLine}
+OS Version: ${unameSR}
 </env>
 ${modelDescription}`
 }
@@ -241,7 +210,6 @@ export async function computeSimpleEnvInfo(
     modelDescription,
     `Settings file: ${getFreecodeSettingsFilePath()}`,
     `Model settings file: ${getModelSettingsFilePath()}`,
-    ...toolCatalogEnvLines(),
     // The memory prompt names these instead of interpolating them, so the
     // system prefix stays byte-identical across projects.
     ...getMemoryEnvItems(),
