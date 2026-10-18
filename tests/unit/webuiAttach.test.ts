@@ -23,6 +23,8 @@ import {
   type WebTaskSummary,
 } from '../../src/webui/protocol/attachSchemas.js'
 import { StopTaskError } from '../../src/tasks/stopTask.js'
+import { BACKGROUND_BASH_SUMMARY_PREFIX } from '../../src/tasks/LocalShellTask/notifications.js'
+import { escapeXml } from '../../src/utils/xml.js'
 import { applyEvent, emptyView } from '../../src/session/viewStore.js'
 import { renderTaskNotificationBlock } from '../../src/utils/task/notification.js'
 import {
@@ -999,5 +1001,55 @@ describe('task notification cards', () => {
     expect(item.notification?.raw).toContain('<task-notification>broken')
     expect(item.notification?.summary).toBe('')
     expect(snapshot.items.every(i => i.kind !== 'user')).toBe(true)
+  })
+
+  test('a background-bash completion becomes a card item, non-openable by type', () => {
+    // Built exactly as LocalShellTask/notifications.ts emits it: the
+    // 'Background command ' prefix, exit code folded into the summary,
+    // escapeXml'd, and no result/usage sections at all.
+    const description = 'npm test -- --watch'
+    const summary = escapeXml(
+      `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" completed (exit code 0)`,
+    )
+    const block = renderTaskNotificationBlock({
+      taskId: 'b7c3d9e01',
+      status: 'completed',
+      summary,
+      toolUseId: 'toolu_2',
+    })
+    const snapshot = toWireSnapshot([noticeMessage(block, true)])
+
+    const item = notificationItem(snapshot.items)
+    expect(item.notification).toEqual({
+      taskId: 'b7c3d9e01',
+      toolUseId: 'toolu_2',
+      status: 'completed',
+      summary,
+    })
+    // Openability is a client-side join and the reducer does not expose it,
+    // so assert the fields it keys off: no task-type in the block (the join
+    // would find a local_bash row, which the card renders non-clickable),
+    // and the task id carries the bash prefix.
+    expect(item.notification?.taskType).toBeUndefined()
+    expect(item.notification?.taskId?.startsWith('b')).toBe(true)
+    expect(snapshot.items.every(i => i.kind !== 'user')).toBe(true)
+    expect(JSON.stringify(snapshot.items)).not.toContain('task-notification')
+  })
+
+  test('an oversized result is clipped on the wire', () => {
+    // The clip the monitor output shares: a background notice carrying a
+    // full final-message result must not put a megabyte on every snapshot.
+    const big = 'x'.repeat(64 * 1024 + 100)
+    const block = renderTaskNotificationBlock({
+      taskId: 'a9',
+      summary: 'Background agent "long" finished',
+      status: 'completed',
+      extraSections: `\n<result>${big}</result>`,
+    })
+    const snapshot = toWireSnapshot([noticeMessage(block, true)])
+    const result = notificationItem(snapshot.items).notification?.result
+    expect(result).toBeDefined()
+    expect(result!.length).toBeLessThan(big.length)
+    expect(result!.endsWith('\n… truncated')).toBe(true)
   })
 })
