@@ -378,3 +378,135 @@
     padding: 0.15rem 0 0.15rem 0.75rem;
   }
 }
+
+/* ── background-task notification cards ────────────────────────── */
+
+.notif {
+  display: flex;
+  gap: 0.6rem;
+  margin: 0 0 0.85rem;
+  padding: 0.5rem 0.6rem;
+  border-left: 2px solid var(--rule-bright);
+  background: var(--bg-raised);
+  font-size: 12px;
+}
+
+.notif.is-openable {
+  cursor: pointer;
+}
+
+.notif.is-openable:hover {
+  border-left-color: var(--signal);
+}
+
+.notif__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-radius: 50%;
+}
+
+.notif__dot.is-running {
+  background: var(--signal);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.notif__dot.is-done {
+  background: var(--add);
+}
+
+.notif__dot.is-error {
+  background: var(--del);
+}
+
+/* Killed is a warning, not a failure: orange, no pulse. */
+.notif__dot.is-killed {
+  background: var(--signal);
+}
+
+.notif__body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.notif__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.notif__name {
+  color: var(--signal);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.notif__status {
+  margin-left: auto;
+  flex: none;
+}
+
+.notif__status.is-running,
+.notif__status.is-pending {
+  color: var(--signal);
+}
+
+.notif__status.is-completed {
+  color: var(--add);
+}
+
+.notif__status.is-failed {
+  color: var(--del);
+}
+
+.notif__status.is-killed {
+  color: var(--text-dim);
+}
+
+.notif__summary {
+  color: var(--text);
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.notif__meta {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.notif__details {
+  margin-top: 0.15rem;
+}
+
+.notif__details > summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.notif__details > summary:hover {
+  color: var(--signal);
+}
+
+.notif__pre {
+  margin: 0.3rem 0 0;
+  padding: 0.4rem 0.5rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  max-height: 18rem;
+  overflow-y: auto;
+}

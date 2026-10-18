@@ -24,7 +24,11 @@ import {
 } from '../../src/webui/protocol/attachSchemas.js'
 import { StopTaskError } from '../../src/tasks/stopTask.js'
 import { applyEvent, emptyView } from '../../src/session/viewStore.js'
-import type { WebTranscriptItem } from '../../src/webui/protocol/transcriptWire.js'
+import { renderTaskNotificationBlock } from '../../src/utils/task/notification.js'
+import {
+  toWireSnapshot,
+  type WebTranscriptItem,
+} from '../../src/webui/protocol/transcriptWire.js'
 import type { Message } from '../../src/types/message.js'
 import type { UUID } from 'crypto'
 
@@ -865,5 +869,135 @@ describe('background task panel', () => {
       },
     })
     expect(view.order).toEqual([item.id])
+  })
+})
+
+describe('task notification cards', () => {
+  function noticeMessage(text: string, withOrigin: boolean): Message {
+    return {
+      type: 'user',
+      uuid: randomUUID() as UUID,
+      timestamp: new Date().toISOString(),
+      ...(withOrigin ? { origin: { kind: 'task-notification' as const } } : {}),
+      message: { role: 'user', content: text },
+    } as unknown as Message
+  }
+
+  function notificationItem(items: WebTranscriptItem[]): WebTranscriptItem {
+    const item = items.find(candidate => candidate.kind === 'notification')
+    expect(item).toBeDefined()
+    return item!
+  }
+
+  test('an idle-drain agent notice becomes a structured card item', () => {
+    const block = renderTaskNotificationBlock({
+      taskId: 'a1',
+      summary: 'Background agent "reader" finished',
+      status: 'completed',
+      toolUseId: 'toolu_1',
+      extraSections:
+        '\n<result>the wiring is parallel</result>\n<usage><total_tokens>1234</total_tokens><tool_uses>3</tool_uses><duration_ms>45000</duration_ms></usage>',
+    })
+    const snapshot = toWireSnapshot([noticeMessage(block, true)])
+
+    const item = notificationItem(snapshot.items)
+    expect(item.notification).toEqual({
+      taskId: 'a1',
+      toolUseId: 'toolu_1',
+      status: 'completed',
+      summary: 'Background agent "reader" finished',
+      result: 'the wiring is parallel',
+      usage: { totalTokens: 1234, toolUses: 3, durationMs: 45000 },
+    })
+    // No raw-XML user bubble remains anywhere.
+    expect(snapshot.items.every(i => i.kind !== 'user')).toBe(true)
+    expect(JSON.stringify(snapshot.items)).not.toContain('task-notification')
+  })
+
+  test('classification keys off the block shape when origin is absent', () => {
+    const block = renderTaskNotificationBlock({
+      taskId: 'a2',
+      summary: 'Background agent "old" finished',
+      status: 'killed',
+    })
+    const snapshot = toWireSnapshot([noticeMessage(block, false)])
+    const item = notificationItem(snapshot.items)
+    expect(item.notification?.taskId).toBe('a2')
+    expect(item.notification?.status).toBe('killed')
+  })
+
+  test('a monitor notice parses its output and drops the trailing prose', () => {
+    const block =
+      renderTaskNotificationBlock({
+        taskId: 'm1',
+        summary: 'Background monitor "logs" produced new output',
+        taskType: 'monitor',
+        extraSections:
+          '\n<monitor-output>\n  first line\n  second line\n</monitor-output>',
+      }) +
+      '\nOne or more background monitors produced new output since the last turn. Review the output and react if relevant.'
+    const snapshot = toWireSnapshot([noticeMessage(block, true)])
+
+    const item = notificationItem(snapshot.items)
+    expect(item.notification?.taskType).toBe('monitor')
+    expect(item.notification?.status).toBeUndefined()
+    expect(item.notification?.outputTail).toContain('first line')
+    const wire = JSON.stringify(snapshot.items)
+    expect(wire).not.toContain('react if relevant')
+    expect(wire).not.toContain('task-notification')
+  })
+
+  test('a progress ping parses without a status', () => {
+    const block = renderTaskNotificationBlock({
+      taskId: 'a3',
+      summary: 'Background agent "worker" is still running',
+    })
+    const snapshot = toWireSnapshot([noticeMessage(block, true)])
+    const item = notificationItem(snapshot.items)
+    expect(item.notification?.taskId).toBe('a3')
+    expect(item.notification?.status).toBeUndefined()
+    expect(item.notification?.summary).toBe(
+      'Background agent "worker" is still running',
+    )
+  })
+
+  test('a mid-turn drain parses behind the reminder wrapper and prose', () => {
+    const block = renderTaskNotificationBlock({
+      taskId: 'a4',
+      summary: 'Background agent "mid" finished',
+      status: 'failed',
+    })
+    // The shape normalizeAttachmentForAPI puts on the request path: prose
+    // prefix from wrapCommandText inside the system-reminder wrapper.
+    const wrapped = `<system-reminder>\nA background agent completed a task:\n${block}\n</system-reminder>`
+    const attachmentMessage = {
+      type: 'attachment',
+      uuid: randomUUID() as UUID,
+      timestamp: new Date().toISOString(),
+      attachment: {
+        type: 'queued_command',
+        prompt: wrapped,
+        commandMode: 'task-notification',
+        isMeta: true,
+      },
+    } as unknown as Message
+
+    const snapshot = toWireSnapshot([attachmentMessage])
+    const item = notificationItem(snapshot.items)
+    expect(item.notification?.taskId).toBe('a4')
+    expect(item.notification?.status).toBe('failed')
+    expect(item.isMeta).toBe(true)
+    const wire = JSON.stringify(snapshot.items)
+    expect(wire).not.toContain('A background agent completed a task')
+    expect(wire).not.toContain('task-notification')
+  })
+
+  test('an unparsable stamped notice falls back to raw text, not the bubble', () => {
+    const message = noticeMessage('<task-notification>broken', true)
+    const snapshot = toWireSnapshot([message])
+    const item = notificationItem(snapshot.items)
+    expect(item.notification?.raw).toContain('<task-notification>broken')
+    expect(item.notification?.summary).toBe('')
+    expect(snapshot.items.every(i => i.kind !== 'user')).toBe(true)
   })
 })

@@ -491,6 +491,8 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
               pendingCommands={[]}
               followSignal={followSignal}
               onFetchImage={fetchImage}
+              tasks={view.tasks}
+              onOpenTask={taskId => void openTask(taskId)}
             />
           ) : (
             <Transcript
@@ -501,6 +503,8 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
               activity={view.meta?.activity}
               followSignal={followSignal}
               onFetchImage={fetchImage}
+              tasks={view.tasks}
+              onOpenTask={taskId => void openTask(taskId)}
             />
           )
         ) : (

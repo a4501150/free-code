@@ -7,8 +7,12 @@ import {
   useState,
 } from 'react'
 import type { WebTranscriptItem } from '../../protocol/transcriptWire.js'
-import type { WebPendingCommand } from '../../protocol/attachSchemas.js'
+import type {
+  WebPendingCommand,
+  WebTaskSummary,
+} from '../../protocol/attachSchemas.js'
 import { renderMarkdown } from '../markdown.js'
+import { NotificationCard } from './NotificationCard.js'
 import { ToolCard } from './ToolCard.js'
 
 function sizeLabel(bytes: number): string {
@@ -33,11 +37,17 @@ const Row = memo(function Row({
   result,
   inProgressToolUseIds,
   onOpenImage,
+  tasks,
+  onOpenTask,
 }: {
   item: WebTranscriptItem
   result?: WebTranscriptItem
   inProgressToolUseIds?: string[]
   onOpenImage(item: WebTranscriptItem): void
+  /** The session's live task list, for a notification card's status join. */
+  tasks?: WebTaskSummary[]
+  /** Opens the subagent transcript viewer, from an agent's card. */
+  onOpenTask?(taskId: string): void
 }): React.ReactElement | null {
   switch (item.kind) {
     case 'user':
@@ -97,6 +107,11 @@ const Row = memo(function Row({
         <div className={`row row--system is-${item.level ?? 'info'}`}>
           <div className="row__body">{item.text}</div>
         </div>
+      )
+
+    case 'notification':
+      return (
+        <NotificationCard item={item} tasks={tasks} onOpenTask={onOpenTask} />
       )
 
     // Tool results render inside their tool card, and attachments are noise.
@@ -176,12 +191,18 @@ export function Transcript({
   activity,
   followSignal,
   onFetchImage,
+  tasks,
+  onOpenTask,
 }: {
   items: Map<string, WebTranscriptItem>
   order: string[]
   pendingCommands: WebPendingCommand[]
   inProgressToolUseIds?: string[]
   activity?: string
+  /** The session's live task list, joined into notification cards. */
+  tasks?: WebTaskSummary[]
+  /** Opens the subagent transcript viewer for an agent's notification. */
+  onOpenTask?(taskId: string): void
   /**
    * Bumped when the reader does something that means "show me the newest",
    * which sending a message is. Without it, a reader who scrolled up to quote
@@ -352,6 +373,8 @@ export function Transcript({
                   result={entry.result}
                   inProgressToolUseIds={inProgressToolUseIds}
                   onOpenImage={target => void openImage(target)}
+                  tasks={tasks}
+                  onOpenTask={onOpenTask}
                 />
               ),
             )}

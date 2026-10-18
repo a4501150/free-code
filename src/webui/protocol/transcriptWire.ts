@@ -16,6 +16,17 @@ import type {
   DomainContentBlock,
   DomainUserContentBlock,
 } from '../../types/domain.js'
+import { extractTag, isTaskNotificationText } from '../../utils/messages.js'
+import {
+  MONITOR_OUTPUT_TAG,
+  STATUS_TAG,
+  SUMMARY_TAG,
+  SYSTEM_REMINDER_TAG,
+  TASK_ID_TAG,
+  TASK_NOTIFICATION_TAG,
+  TASK_TYPE_TAG,
+  TOOL_USE_ID_TAG,
+} from '../../constants/xml.js'
 
 export type WebTranscriptItemKind =
   | 'user'
@@ -25,6 +36,33 @@ export type WebTranscriptItemKind =
   | 'tool_result'
   | 'attachment'
   | 'system'
+  | 'notification'
+
+/** The structured body of a `<task-notification>` block, parsed server-side. */
+export type WebTaskNotification = {
+  /** Absent only when the block was classified but too broken to parse. */
+  taskId?: string
+  toolUseId?: string
+  /** Distinguishes notice kinds sharing the wrapper (e.g. 'monitor'). */
+  taskType?: string
+  /** Absent on progress pings; present on terminal notices. */
+  status?: 'completed' | 'failed' | 'killed'
+  summary: string
+  /** The agent's final message, when the notice carried one. */
+  result?: string
+  usage?: {
+    totalTokens?: number
+    toolUses?: number
+    durationMs?: number
+  }
+  /** Monitor notices only: the trailing output the notice quoted. */
+  outputTail?: string
+  /**
+   * The original text, kept only when parsing yielded nothing meaningful, so
+   * a malformed notice still shows something instead of vanishing.
+   */
+  raw?: string
+}
 
 export type WebTranscriptItem = {
   id: string
@@ -54,7 +92,10 @@ export type WebTranscriptItem = {
   isError?: boolean
   /** system */
   subtype?: string
+  /** system */
   level?: string
+  /** notification — the parsed <task-notification> block */
+  notification?: WebTaskNotification
 }
 
 export type WebTranscriptSnapshot = {
@@ -141,6 +182,90 @@ function stripSyntheticTags(text: string): string {
   return result.trim()
 }
 
+/**
+ * Parses a `<task-notification>` block into card fields, server-side, so no
+ * browser parses XML. Tolerates both storage shapes: the raw block as written
+ * by `renderTaskNotificationBlock` (idle drain), and the same block behind
+ * the system-reminder wrapper and prose prefix a mid-turn drain gets from
+ * `wrapCommandText` / `wrapMessagesInSystemReminder`. Trailing guidance
+ * prose after the closing tag is dropped — it is written for the model.
+ */
+export function parseTaskNotification(
+  text: string,
+): WebTaskNotification | null {
+  // Cheap gate first: this runs for every user item on every publish.
+  if (!text.includes(`<${TASK_NOTIFICATION_TAG}`)) return null
+  let body = text.trim()
+  const reminder = extractTag(body, SYSTEM_REMINDER_TAG)
+  if (reminder) body = reminder.trim()
+  body = body.replace(/^A background agent completed a task:\n?/, '').trim()
+  if (!isTaskNotificationText(body)) return null
+  const block = extractTag(body, TASK_NOTIFICATION_TAG)
+  if (!block) return null
+
+  const taskId = extractTag(block, TASK_ID_TAG)?.trim()
+  const summary = extractTag(block, SUMMARY_TAG)?.trim() ?? ''
+  const rawStatus = extractTag(block, STATUS_TAG)?.trim()
+  const status =
+    rawStatus === 'completed' ||
+    rawStatus === 'failed' ||
+    rawStatus === 'killed'
+      ? rawStatus
+      : undefined
+  const notification: WebTaskNotification = {
+    summary,
+    ...(taskId ? { taskId } : {}),
+    ...(extractTag(block, TOOL_USE_ID_TAG)?.trim()
+      ? { toolUseId: extractTag(block, TOOL_USE_ID_TAG)!.trim() }
+      : {}),
+    ...(extractTag(block, TASK_TYPE_TAG)?.trim()
+      ? { taskType: extractTag(block, TASK_TYPE_TAG)!.trim() }
+      : {}),
+    ...(status ? { status } : {}),
+  }
+  if (!taskId && !summary) {
+    // A recognized wrapper with nothing readable inside. Keep the original
+    // text so the card shows something instead of an empty shell.
+    notification.raw = text.trim()
+    return notification
+  }
+  const result = extractTag(block, 'result')?.trim()
+  if (result) notification.result = clip(result)
+  const usageBlock = extractTag(block, 'usage')
+  if (usageBlock) {
+    const usage: NonNullable<WebTaskNotification['usage']> = {}
+    const tokens = Number(extractTag(usageBlock, 'total_tokens')?.trim())
+    const toolUses = Number(extractTag(usageBlock, 'tool_uses')?.trim())
+    const durationMs = Number(extractTag(usageBlock, 'duration_ms')?.trim())
+    if (Number.isFinite(tokens)) usage.totalTokens = tokens
+    if (Number.isFinite(toolUses)) usage.toolUses = toolUses
+    if (Number.isFinite(durationMs)) usage.durationMs = durationMs
+    if (Object.keys(usage).length) notification.usage = usage
+  }
+  const outputTail = extractTag(block, MONITOR_OUTPUT_TAG)?.trim()
+  if (outputTail) notification.outputTail = clip(outputTail)
+  return notification
+}
+
+/** The one-line reason a user item becomes a notification item, if any. */
+function userNotificationText(
+  message: Message & { type: 'user' },
+): string | undefined {
+  const content = message.message.content
+  const text =
+    typeof content === 'string'
+      ? content
+      : content.length === 1 && content[0]?.type === 'text'
+        ? content[0].text
+        : undefined
+  if (text !== undefined && parseTaskNotification(text)) return text
+  // Notices stamped with an origin but no longer shaped like the block (an
+  // older or damaged record) still deserve the card, with the raw text inside.
+  if (message.origin?.kind === 'task-notification' && text !== undefined)
+    return text
+  return undefined
+}
+
 function userBlockItems(
   message: Message & { type: 'user' },
 ): WebTranscriptItem[] {
@@ -168,6 +293,23 @@ function userBlockItems(
         : undefined,
     isSidechain: message.isSidechain,
     agentId: message.agentId,
+  }
+
+  // A background-task notice renders as a card, not a user bubble, so the
+  // raw XML never reaches the browser.
+  const notificationText = userNotificationText(message)
+  if (notificationText !== undefined) {
+    const parsed =
+      parseTaskNotification(notificationText) ??
+      ({ summary: '', raw: notificationText.trim() } as WebTaskNotification)
+    return [
+      finish({
+        ...base,
+        id: `${message.uuid}:0`,
+        kind: 'notification',
+        notification: parsed,
+      }),
+    ]
   }
 
   if (typeof content === 'string') {
@@ -335,6 +477,29 @@ export function toWireSnapshot(
                     .join('\n')
                 : ''
           if (text) {
+            // A mid-turn task-notification drain: same card as the idle path,
+            // keyed off the queue metadata rather than the text shape.
+            const isNotice =
+              att.origin?.kind === 'task-notification' ||
+              att.commandMode === 'task-notification'
+            const parsed = isNotice
+              ? (parseTaskNotification(text) ?? {
+                  summary: '',
+                  raw: text.trim(),
+                })
+              : parseTaskNotification(text)
+            if (parsed) {
+              items.push(
+                finish({
+                  id: `${message.uuid}:0`,
+                  kind: 'notification',
+                  timestamp: message.timestamp,
+                  isMeta: true,
+                  notification: parsed,
+                }),
+              )
+              break
+            }
             items.push(
               finish({
                 id: `${message.uuid}:0`,
