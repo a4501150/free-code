@@ -6,6 +6,7 @@ import {
   STATUS_TAG,
   SUMMARY_TAG,
   TASK_NOTIFICATION_TAG,
+  TASK_TYPE_TAG,
 } from '../../constants/xml.js'
 import { extractTag } from '../../utils/messages.js'
 import { MessageResponse } from '../MessageResponse.js'
@@ -17,7 +18,12 @@ type Props = {
   showInjectedContext: boolean
 }
 
-function getStatusColor(status: string | null): TextProps['color'] {
+// Exported for tests: renders strip color in non-TTY, so the mapping is
+// tested directly rather than through ANSI output.
+export function getStatusColor(
+  status: string | null,
+  taskType: string | null,
+): TextProps['color'] {
   switch (status) {
     case 'completed':
       return 'success'
@@ -26,7 +32,10 @@ function getStatusColor(status: string | null): TextProps['color'] {
     case 'killed':
       return 'warning'
     default:
-      return 'text'
+      // Statusless notices are progress pings. Monitor pings report new
+      // output worth reading (the shell stall ping warns about a likely
+      // hang, so it stays neutral).
+      return taskType === 'monitor' ? 'success' : 'text'
   }
 }
 
@@ -38,7 +47,8 @@ export function UserAgentNotificationMessage({
 }: Props): React.ReactNode {
   const summary = extractTag(text, SUMMARY_TAG)
   const status = extractTag(text, STATUS_TAG)
-  const color = getStatusColor(status)
+  const taskType = extractTag(text, TASK_TYPE_TAG)?.trim() ?? null
+  const color = getStatusColor(status, taskType)
 
   // The notification's own fields (task id, output file, usage, result) are
   // the injected detail; the summary line stays the collapsed form so the
