@@ -31,6 +31,14 @@ import applyStyles, { type Styles, type TextStyles } from './styles.js'
 // accidentally breaking other third-party code.
 // See https://github.com/vadimdemedes/ink/issues/384
 if (process.env.NODE_ENV === 'development') {
+  // React 19's dev reconciler appends one performance.measure user-timing
+  // entry per component render whenever console.timeStamp exists (Bun
+  // provides it, Node did not), and nothing ever clears that buffer — a
+  // long dev session retained 16.6M entries (~8GB) this way. Blank the
+  // gate before the createReconciler call below reads it to opt out of
+  // the browser "Components" track; react-devtools-core profiling does
+  // not depend on user timing.
+  ;(console as { timeStamp?: unknown }).timeStamp = undefined
   try {
     // eslint-disable-next-line custom-rules/no-top-level-dynamic-import -- dev-only; NODE_ENV check is DCE'd in production
     void import('./devtools.js')
