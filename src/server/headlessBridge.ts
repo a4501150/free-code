@@ -9,6 +9,7 @@
  */
 import { isWebuiManagedProcess } from '../utils/webuiManagedProcess.ts'
 import type { CanUseToolFn } from '../Tool.ts'
+import type { AppState } from '../state/AppStateStore.ts'
 import type { Message } from '../types/message.ts'
 import {
   enqueue,
@@ -31,10 +32,16 @@ import {
   getAttachHost,
   publishAttachMeta,
   publishAttachPendingCommands,
+  publishAttachTasks,
   publishAttachTranscript,
   registerAttachRuntime,
   startProcessAttachHost,
 } from './hostSingleton.ts'
+import {
+  buildWebTaskSummaries,
+  getTaskTranscriptMessages,
+  killAttachTask,
+} from './taskSummaries.ts'
 import { executePermissionRequestHooksForHost } from '../cli/structuredIO.ts'
 import {
   applyPermissionUpdates,
@@ -49,6 +56,9 @@ export function shouldAttachHeadless(): boolean {
 export type HeadlessAttachParams = {
   cwd: string
   getMessages(): readonly Message[]
+  /** The live AppState: source for task summaries, transcripts and kills. */
+  getAppState(): AppState
+  setAppState(f: (prev: AppState) => AppState): void
   isRunning(): boolean
   getModel(): string | undefined
   getPermissionMode(): string | undefined
@@ -107,6 +117,17 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
     getInProgressToolUseIds: () =>
       params.getInProgressToolUseIds?.() ?? getGlobalInProgressIds(),
 
+    getTasks: () => buildWebTaskSummaries(params.getAppState()),
+
+    getTaskTranscript: taskId =>
+      getTaskTranscriptMessages(params.getAppState(), taskId),
+
+    killTask: taskId =>
+      killAttachTask(taskId, {
+        getAppState: params.getAppState,
+        setAppState: params.setAppState,
+      }),
+
     submit(content, delivery, commandId, images) {
       enqueue({
         mode: 'prompt',
@@ -139,6 +160,7 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
     publishAttachTranscript()
     publishAttachMeta()
     publishAttachPendingCommands()
+    publishAttachTasks()
   }, 400)
   timer.unref?.()
 
@@ -152,6 +174,7 @@ export function publishHeadlessTranscript(): void {
   publishAttachTranscript()
   publishAttachMeta()
   publishAttachPendingCommands()
+  publishAttachTasks()
 }
 
 /**

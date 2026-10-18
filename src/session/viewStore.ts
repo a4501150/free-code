@@ -10,6 +10,7 @@ import type {
   WebPermissionRequest,
   WebModelOption,
   WebSessionMeta,
+  WebTaskSummary,
   WebTodo,
 } from '../webui/protocol/attachSchemas.js'
 import type { WebTranscriptItem } from '../webui/protocol/transcriptWire.js'
@@ -23,6 +24,8 @@ export type SessionView = {
   pendingCommands: WebPendingCommand[]
   models: WebModelOption[]
   commands: string[]
+  /** Background tasks (subagents, shells, monitors). Newest first. */
+  tasks: WebTaskSummary[]
   lastSeq: number
 }
 
@@ -36,6 +39,7 @@ export function emptyView(): SessionView {
     pendingCommands: [],
     models: [],
     commands: [],
+    tasks: [],
     lastSeq: 0,
   }
 }
@@ -64,6 +68,7 @@ export function applyEvent(
       next.pendingCommands = event.pendingCommands ?? []
       next.models = event.models
       next.commands = event.commands ?? []
+      next.tasks = event.tasks ?? []
       next.lastSeq = seq
       return next
     }
@@ -110,6 +115,15 @@ export function applyEvent(
 
     case 'pending_commands':
       next.pendingCommands = event.commands
+      return next
+
+    case 'tasks':
+      next.tasks = event.tasks
+      return next
+
+    case 'task_transcript':
+      // Task patches belong to the per-task viewer store, which the shell
+      // feeds directly. Here they only advance the sequence watermark.
       return next
 
     case 'session_changed':

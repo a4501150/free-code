@@ -1116,6 +1116,8 @@ function runHeadlessStreaming(
     startHeadlessAttach({
       cwd: cwd(),
       getMessages: () => mutableMessages,
+      getAppState,
+      setAppState,
       // `running` spans the whole drain loop and is cleared in its finally.
       // `abortController` is only ever assigned, so it would report a turn in
       // flight for the life of the process after the first one.

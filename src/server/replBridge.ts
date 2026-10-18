@@ -4,6 +4,7 @@
  */
 import { useEffect, useRef } from 'react'
 import type { UUID } from 'crypto'
+import type { AppState } from '../state/AppStateStore.ts'
 import type { Message } from '../types/message.ts'
 import type { Task } from '../utils/taskSchemas.ts'
 import {
@@ -19,10 +20,16 @@ import type {
 import {
   publishAttachMeta,
   publishAttachPendingCommands,
+  publishAttachTasks,
   publishAttachTodos,
   registerAttachRuntime,
 } from './hostSingleton.ts'
 import { buildSubmitValue, type AttachRuntime } from './runtime.ts'
+import {
+  buildWebTaskSummaries,
+  getTaskTranscriptMessages,
+  killAttachTask,
+} from './taskSummaries.ts'
 
 export type ReplAttachBridgeParams = {
   messagesRef: { current: readonly Message[] }
@@ -34,6 +41,9 @@ export type ReplAttachBridgeParams = {
   getInProgressToolUseIds: () => ReadonlySet<string>
   todos: Task[] | undefined
   commandNames: string[]
+  /** The live AppState: source for task summaries, transcripts and kills. */
+  getAppState: () => AppState
+  setAppState: (f: (prev: AppState) => AppState) => void
   onCancel: () => void
   onSetPermissionMode: (mode: WebPermissionMode) => void
   onSetModel: (model: string) => void
@@ -86,6 +96,17 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
       },
       getInProgressToolUseIds: () => latest.current.getInProgressToolUseIds(),
 
+      getTasks: () => buildWebTaskSummaries(latest.current.getAppState()),
+
+      getTaskTranscript: taskId =>
+        getTaskTranscriptMessages(latest.current.getAppState(), taskId),
+
+      killTask: taskId =>
+        killAttachTask(taskId, {
+          getAppState: () => latest.current.getAppState(),
+          setAppState: prev => latest.current.setAppState(prev),
+        }),
+
       submit(content, delivery, commandId, images) {
         enqueue({
           mode: 'prompt',
@@ -117,6 +138,10 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
   useEffect(() => {
     publishAttachMeta()
     publishAttachPendingCommands()
+    // Task churn happens between renders (a tool call spawning an agent), so
+    // the JSON diff in the host rides this tick instead of a store
+    // subscription. The host drops an unchanged payload.
+    publishAttachTasks()
   })
 
   useEffect(() => {

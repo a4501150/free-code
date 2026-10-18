@@ -19,7 +19,10 @@ import {
 import {
   ATTACH_PROTOCOL_VERSION,
   MAX_ATTACH_LINE_BYTES,
+  type AttachEventBody,
+  type WebTaskSummary,
 } from '../../src/webui/protocol/attachSchemas.js'
+import { StopTaskError } from '../../src/tasks/stopTask.js'
 import type { Message } from '../../src/types/message.js'
 import type { UUID } from 'crypto'
 
@@ -217,6 +220,9 @@ describe('idle cost', () => {
       getPendingCommands: () => [],
       getIsCompacting: () => false,
       getInProgressToolUseIds: () => new Set(),
+      getTasks: () => [],
+      getTaskTranscript: async () => null,
+      killTask: async () => {},
       submit: () => {},
       interrupt: () => {},
       setPermissionMode: () => {},
@@ -371,6 +377,9 @@ describe('image prompts', () => {
       getPendingCommands: () => [],
       getIsCompacting: () => false,
       getInProgressToolUseIds: () => new Set(),
+      getTasks: () => [],
+      getTaskTranscript: async () => null,
+      killTask: async () => {},
       submit: (content, _delivery, _commandId, images) => {
         submitted.push({ content, images })
       },
@@ -508,6 +517,268 @@ describe('image prompts', () => {
         itemId: 'nonsense',
       })
       expect(malformed.error?.code).toBe('no_such_image')
+    } finally {
+      session.close()
+    }
+  })
+})
+
+describe('background task panel', () => {
+  const AGENT_UUID = '55555555-5555-5555-5555-555555555555'
+
+  function agentTask(overrides: Partial<WebTaskSummary> = {}): WebTaskSummary {
+    return {
+      id: 'a123',
+      taskType: 'local_agent',
+      status: 'running',
+      description: 'read the wiring docs',
+      name: 'reader',
+      agentType: 'general-purpose',
+      startTime: Date.now() - 1000,
+      toolUseCount: 2,
+      ...overrides,
+    }
+  }
+
+  function agentMessage(text: string): Message[] {
+    return [
+      {
+        type: 'user',
+        uuid: AGENT_UUID as UUID,
+        timestamp: new Date().toISOString(),
+        isSidechain: true,
+        agentId: 'a123',
+        message: { role: 'user', content: text },
+      } as unknown as Message,
+    ]
+  }
+
+  /**
+   * Host + authenticated, subscribed client with a captured event stream and
+   * a mutable task list behind the runtime seam.
+   */
+  async function taskSession(options: {
+    tasks: WebTaskSummary[]
+    /** When set, kill_task rejects with this StopTaskError code. */
+    killFailsWith?: 'not_found' | 'not_running' | 'unsupported_type'
+    killThrows?: boolean
+  }): Promise<{
+    events: AttachEventBody[]
+    ask: (request: unknown) => Promise<{
+      ok?: boolean
+      result?: unknown
+      error?: { code: string }
+    }>
+    killed: () => string[]
+    publishTasks: () => void
+    close: () => void
+  }> {
+    const host = startAttachHost({
+      sessionId: randomUUID(),
+      cwd: process.cwd(),
+    })
+    await host!.ready
+
+    const killed: string[] = []
+    host!.registerRuntime({
+      getMessages: () => [],
+      getState: () => 'idle',
+      getActivity: () => undefined,
+      getModel: () => 'm',
+      getPermissionMode: () => 'default',
+      getTodos: () => [],
+      getCommands: () => [],
+      getPendingCommands: () => [],
+      getIsCompacting: () => false,
+      getInProgressToolUseIds: () => new Set(),
+      getTasks: () => options.tasks,
+      getTaskTranscript: async () => ({ messages: agentMessage('working') }),
+      killTask: async taskId => {
+        killed.push(taskId)
+        if (options.killFailsWith) {
+          throw new StopTaskError('cannot stop', options.killFailsWith)
+        }
+      },
+      submit: () => {},
+      interrupt: () => {},
+      setPermissionMode: () => {},
+      setModel: () => {},
+    })
+
+    const events: AttachEventBody[] = []
+    const pending = new Map<string, (value: never) => void>()
+    const client = createConnection(host!.descriptor.socketPath)
+    readNdjsonSocket(client, {
+      onLine: line => {
+        const message = JSON.parse(line) as {
+          type?: string
+          seq?: number
+          event?: AttachEventBody
+          requestId?: string
+        }
+        if (message.type === 'event' && message.event) {
+          events.push(message.event)
+          return
+        }
+        const settle = message.requestId && pending.get(message.requestId)
+        if (settle) settle(message as never)
+      },
+      onError: () => {},
+      onClose: () => {},
+    })
+
+    let id = 0
+    const ask = (request: unknown): Promise<never> =>
+      new Promise(resolve => {
+        id += 1
+        pending.set(String(id), resolve)
+        writeNdjson(client, { type: 'request', requestId: String(id), request })
+      })
+
+    await ask({
+      kind: 'hello',
+      token: host!.descriptor.attachToken,
+      protocolVersion: ATTACH_PROTOCOL_VERSION,
+    })
+    await ask({ kind: 'subscribe' })
+
+    return {
+      events,
+      ask,
+      killed: () => killed,
+      publishTasks: () => host!.publishTasks(),
+      close: () => {
+        client.destroy()
+        host!.stop()
+      },
+    }
+  }
+
+  test('carries the task list on the snapshot and answers list_tasks', async () => {
+    const tasks = [agentTask()]
+    const session = await taskSession({ tasks })
+    try {
+      const snapshot = session.events.find(event => event.kind === 'snapshot')
+      expect(snapshot?.kind).toBe('snapshot')
+      expect((snapshot as { tasks?: WebTaskSummary[] }).tasks).toEqual(tasks)
+
+      const response = await session.ask({ kind: 'list_tasks' })
+      expect(response.ok).toBe(true)
+      expect((response.result as { tasks: WebTaskSummary[] }).tasks).toEqual(
+        tasks,
+      )
+    } finally {
+      session.close()
+    }
+  })
+
+  test('publishes a tasks event only when the list changed', async () => {
+    const tasks: WebTaskSummary[] = []
+    const session = await taskSession({ tasks })
+    try {
+      session.publishTasks()
+      const countAfterEmpty = session.events.filter(
+        event => event.kind === 'tasks',
+      ).length
+
+      tasks.push(agentTask())
+      session.publishTasks()
+      tasks.push(agentTask({ id: 'a999', name: undefined }))
+      session.publishTasks()
+      // The frames travel over a socket; give the client a tick to read them.
+      await Bun.sleep(50)
+
+      const taskEvents = session.events.filter(event => event.kind === 'tasks')
+      // The empty publish rode the snapshot watermark and re-sent nothing new:
+      // one event per distinct payload, and the empty one is not counted
+      // because the snapshot already carried it.
+      expect(taskEvents.length - countAfterEmpty).toBeLessThanOrEqual(2)
+      const last = taskEvents[taskEvents.length - 1]
+      expect(last?.kind).toBe('tasks')
+      expect((last as { tasks: WebTaskSummary[] }).tasks).toHaveLength(2)
+    } finally {
+      session.close()
+    }
+  })
+
+  test('kill_task routes through the runtime and maps its errors', async () => {
+    const stopped = await taskSession({ tasks: [agentTask()] })
+    try {
+      const response = await stopped.ask({ kind: 'kill_task', taskId: 'a123' })
+      expect(response.ok).toBe(true)
+      expect(stopped.killed()).toEqual(['a123'])
+    } finally {
+      stopped.close()
+    }
+
+    const failed = await taskSession({
+      tasks: [agentTask({ status: 'completed' })],
+      killFailsWith: 'not_running',
+    })
+    try {
+      const response = await failed.ask({ kind: 'kill_task', taskId: 'a123' })
+      expect(response.ok).toBe(false)
+      expect(response.error?.code).toBe('not_running')
+    } finally {
+      failed.close()
+    }
+  })
+
+  test('get_task_transcript answers with wire items and the terminal flag', async () => {
+    const session = await taskSession({ tasks: [agentTask()] })
+    try {
+      const response = await session.ask({
+        kind: 'get_task_transcript',
+        taskId: 'a123',
+      })
+      expect(response.ok).toBe(true)
+      const body = response.result as { items: unknown[]; done: boolean }
+      expect(body.items.length).toBeGreaterThan(0)
+      expect(body.done).toBe(false)
+
+      const missing = await session.ask({
+        kind: 'get_task_transcript',
+        taskId: 'nope',
+      })
+      expect(missing.ok).toBe(false)
+      expect(missing.error?.code).toBe('no_such_task')
+    } finally {
+      session.close()
+    }
+  })
+
+  test('subscribe_task streams task_transcript patches', async () => {
+    const session = await taskSession({ tasks: [agentTask()] })
+    try {
+      const response = await session.ask({
+        kind: 'subscribe_task',
+        taskId: 'a123',
+      })
+      expect(response.ok).toBe(true)
+
+      // The poll fires at 700ms; give it two ticks.
+      await Bun.sleep(1500)
+      const streamed = session.events.filter(
+        event => event.kind === 'task_transcript',
+      )
+      expect(streamed.length).toBeGreaterThanOrEqual(1)
+      const first = streamed[0] as {
+        taskId: string
+        patch: { upsert: Array<{ text?: string }> }
+      }
+      expect(first.taskId).toBe('a123')
+      expect(first.patch.upsert.some(item => item.text === 'working')).toBe(
+        true,
+      )
+
+      await session.ask({ kind: 'unsubscribe_task', taskId: 'a123' })
+      const after = session.events.length
+      await Bun.sleep(1500)
+      expect(
+        session.events
+          .slice(after)
+          .filter(event => event.kind === 'task_transcript'),
+      ).toHaveLength(0)
     } finally {
       session.close()
     }

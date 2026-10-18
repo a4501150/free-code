@@ -23,8 +23,11 @@
   grid-area: main;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto auto auto;
+  /* The first row is the subagent-viewer banner: auto, so it costs nothing
+     when no task is being viewed. */
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   grid-template-areas:
+    'viewer'
     'transcript'
     'tray'
     'sheet'
@@ -144,8 +147,9 @@
 @media (min-width: 64rem) {
   .main {
     grid-template-columns: minmax(0, 1fr) var(--instruments-w);
-    grid-template-rows: minmax(0, 1fr) auto auto;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
     grid-template-areas:
+      'viewer sheet'
       'transcript sheet'
       'tray sheet'
       'composer sheet';

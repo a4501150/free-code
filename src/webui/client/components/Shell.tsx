@@ -3,6 +3,7 @@ import type { SessionListEntry } from '../../../sessiond/sessionList.js'
 import type {
   WebPermissionDecision,
   WebPermissionRequest,
+  WebTaskTranscript,
 } from '../../protocol/attachSchemas.js'
 import { useGateway } from '../hooks/useGateway.js'
 import { useSessions } from '../hooks/useSessions.js'
@@ -89,6 +90,17 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   const store = useMemo(() => createViewStore(), [])
   const view = useViewStore(store)
 
+  // Subagent transcripts are watched through the same socket but land in their
+  // own store, so the main transcript keeps accumulating underneath a viewer.
+  const viewerStore = useMemo(() => createViewStore(), [])
+  const viewerView = useViewStore(viewerStore)
+  const [viewedTaskId, setViewedTaskId] = useState<string | null>(null)
+  const viewedTaskIdRef = useRef<string | null>(null)
+  viewedTaskIdRef.current = viewedTaskId
+  // Highest event seq seen, so a seeded viewer compares against the same
+  // watermark as the store it mirrors.
+  const seqRef = useRef(0)
+
   // Process keys that are known dead. The session list is a poll behind, so
   // without this the follow below re-attaches to the very process that just
   // ended and lands on an `attach_failed` with no snapshot to show for it.
@@ -100,7 +112,18 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
 
   const gateway = useGateway({
     csrf,
-    onEvent: (seq, event) => store.apply(seq, event),
+    onEvent: (seq, event) => {
+      seqRef.current = seq
+      // A task's transcript patch goes only to the viewer watching it; the
+      // main store would otherwise mix a subagent into the main stream.
+      if (event.kind === 'task_transcript') {
+        if (event.taskId === viewedTaskIdRef.current) {
+          viewerStore.apply(seq, { kind: 'transcript', patch: event.patch })
+        }
+        return
+      }
+      store.apply(seq, event)
+    },
     onProcessGone: info => {
       goneKeys.current.add(info.processKey)
       // A close for a process the user already left must not disturb the one
@@ -110,6 +133,8 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
       setActiveKey(null)
       setActiveSessionId(info.sessionId)
       store.reset()
+      setViewedTaskId(null)
+      viewerStore.reset()
       void sessions.refresh()
     },
     onAttachFailed: () => {
@@ -120,6 +145,8 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
       gateway.detach()
       setActiveKey(null)
       store.reset()
+      setViewedTaskId(null)
+      viewerStore.reset()
       void sessions.refresh()
     },
     onRestartReady: info => {
@@ -128,14 +155,60 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     },
   })
 
+  /**
+   * Open a subagent's transcript in the main pane: seed a snapshot with a
+   * request, then keep the viewer store current with `subscribe_task` deltas.
+   * The request is answered before the subscribe is even sent, so no delta can
+   * arrive against an unseeded store.
+   */
+  const openTask = useCallback(
+    async (taskId: string) => {
+      if (viewedTaskIdRef.current === taskId) return
+      if (viewedTaskIdRef.current) {
+        gateway.send({
+          kind: 'unsubscribe_task',
+          taskId: viewedTaskIdRef.current,
+        })
+      }
+      viewerStore.reset()
+      setViewedTaskId(taskId)
+      const answer = await gateway.request({
+        kind: 'get_task_transcript',
+        taskId,
+      })
+      // The user may have left (or switched) while the read was in flight.
+      if (viewedTaskIdRef.current !== taskId) return
+      if (answer.ok) {
+        const { items } = answer.result as WebTaskTranscript
+        viewerStore.apply(seqRef.current, {
+          kind: 'transcript',
+          patch: {
+            type: 'replace',
+            snapshot: { items, order: items.map(item => item.id) },
+          },
+        })
+      }
+      gateway.send({ kind: 'subscribe_task', taskId })
+    },
+    [gateway, viewerStore],
+  )
+
+  const closeTask = useCallback(() => {
+    const taskId = viewedTaskIdRef.current
+    if (taskId) gateway.send({ kind: 'unsubscribe_task', taskId })
+    setViewedTaskId(null)
+    viewerStore.reset()
+  }, [gateway, viewerStore])
+
   const attachTo = useCallback(
     (processKey: string, sessionId: string) => {
       store.reset()
+      closeTask()
       setActiveKey(processKey)
       setActiveSessionId(sessionId)
       gateway.attach(processKey)
     },
-    [gateway, store],
+    [gateway, store, closeTask],
   )
 
   /** Attaching is always the same steps, whatever produced the key. */
@@ -229,6 +302,16 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     return () => window.removeEventListener('keydown', onKey)
   }, [railOpen])
 
+  // Escape also steps out of a subagent transcript, back to the session.
+  useEffect(() => {
+    if (!viewedTaskId) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') closeTask()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [viewedTaskId, closeTask])
+
   // Paths the session has touched, which is what @ mentions can offer without
   // giving the browser filesystem access.
   const knownPaths = useMemo(() => {
@@ -255,6 +338,14 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   )
 
   const meta = view.meta
+  const viewedTask = viewedTaskId
+    ? view.tasks.find(task => task.id === viewedTaskId)
+    : undefined
+  const viewedTaskLabel = viewedTask
+    ? viewedTask.name
+      ? `${viewedTask.name} — ${viewedTask.description}`
+      : viewedTask.description
+    : (viewedTaskId ?? '')
   const busy = meta?.state === 'running'
   const pending = view.permissions[0]
   // The browser cannot browse the filesystem, so the only sensible default is a
@@ -384,16 +475,34 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
       ) : null}
 
       <main className="main">
+        {activeKey && viewedTaskId ? (
+          <div className="viewer__banner">
+            <button type="button" className="viewer__back" onClick={closeTask}>
+              ← session
+            </button>
+            <span className="viewer__label">subagent: {viewedTaskLabel}</span>
+          </div>
+        ) : null}
         {activeKey ? (
-          <Transcript
-            items={view.items}
-            order={view.order}
-            pendingCommands={view.pendingCommands}
-            inProgressToolUseIds={view.meta?.inProgressToolUseIds}
-            activity={view.meta?.activity}
-            followSignal={followSignal}
-            onFetchImage={fetchImage}
-          />
+          viewedTaskId ? (
+            <Transcript
+              items={viewerView.items}
+              order={viewerView.order}
+              pendingCommands={[]}
+              followSignal={followSignal}
+              onFetchImage={fetchImage}
+            />
+          ) : (
+            <Transcript
+              items={view.items}
+              order={view.order}
+              pendingCommands={view.pendingCommands}
+              inProgressToolUseIds={view.meta?.inProgressToolUseIds}
+              activity={view.meta?.activity}
+              followSignal={followSignal}
+              onFetchImage={fetchImage}
+            />
+          )
         ) : (
           <div className="transcript transcript--empty">
             {following
@@ -419,11 +528,15 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
             <Instruments
               meta={meta}
               todos={view.todos}
+              tasks={view.tasks}
               models={view.models}
+              viewedTaskId={viewedTaskId ?? undefined}
               onSetMode={mode =>
                 gateway.send({ kind: 'set_permission_mode', mode })
               }
               onSetModel={model => gateway.send({ kind: 'set_model', model })}
+              onViewTask={taskId => void openTask(taskId)}
+              onKillTask={taskId => gateway.send({ kind: 'kill_task', taskId })}
             />
           </InstrumentSheet>
         ) : null}

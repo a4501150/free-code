@@ -6,8 +6,10 @@ import type {
   WebSessionActivity,
   WebSessionState,
   WebSubmitImage,
+  WebTaskSummary,
   WebTodo,
 } from '../webui/protocol/attachSchemas.ts'
+import type { TaskTranscriptMessages } from './taskSummaries.ts'
 
 /**
  * The seam between the attach socket and the process that owns the session.
@@ -29,6 +31,19 @@ export type AttachRuntime = {
   getCommands(): string[]
   getPendingCommands(): WebPendingCommand[]
   getInProgressToolUseIds(): ReadonlySet<string>
+
+  /** Background tasks (subagents, shells, monitors, dreams) as summaries. */
+  getTasks(): WebTaskSummary[]
+  /**
+   * The transcript behind one task, or null when it has none. Async because
+   * an evicted agent's only copy is the sidechain JSONL on disk.
+   */
+  getTaskTranscript(taskId: string): Promise<TaskTranscriptMessages | null>
+  /**
+   * Stop a task through the terminal's kill path. Rejects with `StopTaskError`
+   * (carrying a `code`) when the task cannot be stopped.
+   */
+  killTask(taskId: string): Promise<void>
 
   /**
    * Queue a prompt. `interrupt` aborts the running turn and runs this next, as

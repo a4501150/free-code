@@ -260,3 +260,171 @@
     transition: none;
   }
 }
+
+/* ── tasks (background tasks and subagents) ────────────────────── */
+
+.tasks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.task {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
+.task__main {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.15rem 0.25rem;
+  margin-left: -0.25rem;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.task__main:not(:disabled) {
+  cursor: pointer;
+}
+
+.task__main:not(:disabled):hover {
+  background: var(--bg-raised);
+}
+
+.task__main:disabled {
+  cursor: default;
+}
+
+.task.is-viewed .task__main {
+  background: var(--bg-raised);
+  box-shadow: inset 2px 0 0 var(--signal);
+}
+
+.task__icon {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.task.is-running .task__icon {
+  color: var(--signal);
+}
+
+.task__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.task__desc {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task__name {
+  color: var(--signal);
+  margin-right: 0.4em;
+}
+
+.task__meta {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.task__status {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.task__status.is-running {
+  color: var(--signal);
+}
+
+.task__status.is-pending {
+  color: var(--text-dim);
+}
+
+.task__status.is-completed {
+  color: var(--text-faint);
+}
+
+.task__status.is-failed {
+  color: var(--del);
+}
+
+.task__status.is-killed {
+  color: var(--text-dim);
+}
+
+.task.is-completed .task__desc,
+.task.is-killed .task__desc {
+  color: var(--text-dim);
+}
+
+.task.is-failed .task__desc {
+  color: var(--del);
+}
+
+.task__kill {
+  flex: none;
+  padding: 0 0.35rem;
+  background: none;
+  border: 1px solid var(--rule-bright);
+  color: var(--text-dim);
+  font-size: 9px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.task__kill:hover {
+  border-color: var(--del);
+  color: var(--del);
+}
+
+/* ── subagent transcript viewer (rendered in the main column) ──── */
+
+.viewer__banner {
+  grid-area: viewer;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.3rem 0.6rem;
+  padding-top: max(0.3rem, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-raised);
+  font-size: 12px;
+}
+
+.viewer__back {
+  flex: none;
+  padding: 0.15rem 0.5rem;
+  background: none;
+  border: 1px solid var(--rule-bright);
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.viewer__back:hover {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.viewer__label {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

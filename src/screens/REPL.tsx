@@ -1695,6 +1695,8 @@ export function REPL({
     getInProgressToolUseIds: () => inProgressToolUseIDs,
     todos: tasksV2,
     commandNames,
+    getAppState: () => store.getState(),
+    setAppState,
     onCancel,
     onSetPermissionMode: mode => {
       setAppState(prev => {

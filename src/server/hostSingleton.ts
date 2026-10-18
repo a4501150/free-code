@@ -48,6 +48,10 @@ export function publishAttachPendingCommands(): void {
   host?.publishPendingCommands()
 }
 
+export function publishAttachTasks(): void {
+  host?.publishTasks()
+}
+
 /**
  * Starts the attach host for this process.
  *

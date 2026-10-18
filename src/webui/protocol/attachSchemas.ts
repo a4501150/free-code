@@ -107,6 +107,25 @@ export const AttachRequestBodySchema = z.discriminatedUnion('kind', [
     /** A transcript item id, which is `${message.uuid}:${blockIndex}`. */
     itemId: z.string().min(1).max(200),
   }),
+  z.object({
+    kind: z.literal('list_tasks'),
+  }),
+  z.object({
+    kind: z.literal('get_task_transcript'),
+    taskId: z.string().min(1).max(200),
+  }),
+  z.object({
+    kind: z.literal('subscribe_task'),
+    taskId: z.string().min(1).max(200),
+  }),
+  z.object({
+    kind: z.literal('unsubscribe_task'),
+    taskId: z.string().min(1).max(200),
+  }),
+  z.object({
+    kind: z.literal('kill_task'),
+    taskId: z.string().min(1).max(200),
+  }),
 ])
 
 export type AttachRequestBody = z.infer<typeof AttachRequestBodySchema>
@@ -209,6 +228,44 @@ export type WebPendingCommand = {
   text: string
 }
 
+/**
+ * A background task as the browser sees it: the display fields of
+ * `TaskStateBase` and its variants, with nothing that would drag live
+ * objects (messages, abort controllers) across the socket.
+ */
+export type WebTaskSummary = {
+  id: string
+  taskType:
+    | 'local_agent'
+    | 'remote_agent'
+    | 'local_bash'
+    | 'monitor_mcp'
+    | 'dream'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'killed'
+  description: string
+  /** Steering name from the agent-name registry, when the agent registered one. */
+  name?: string
+  /** local_agent / remote_agent */
+  agentType?: string
+  model?: string
+  /** Epoch ms. */
+  startTime: number
+  endTime?: number
+  /** local_bash: the shell's exit code once it has one. */
+  exitCode?: number
+  /** local_agent progress, absent until the agent records any. */
+  toolUseCount?: number
+  tokenCount?: number
+  /** Messages queued for the agent via SendMessage, not yet drained. */
+  pendingCount?: number
+}
+
+/** The `get_task_transcript` answer. `done` means the task is terminal. */
+export type WebTaskTranscript = {
+  items: import('./transcriptWire.js').WebTranscriptItem[]
+  done: boolean
+}
+
 export type AttachEventBody =
   | {
       kind: 'snapshot'
@@ -220,9 +277,17 @@ export type AttachEventBody =
       /** Static for the process, so it rides the snapshot and not every meta. */
       models: WebModelOption[]
       commands: string[]
+      tasks?: WebTaskSummary[]
     }
   | { kind: 'transcript'; patch: TranscriptPatch }
   | { kind: 'meta'; meta: WebSessionMeta }
+  | { kind: 'tasks'; tasks: WebTaskSummary[] }
+  /**
+   * Transcript deltas for one background task, for connections that sent
+   * `subscribe_task`. The client routes these into the per-task view; the
+   * main transcript never sees them.
+   */
+  | { kind: 'task_transcript'; taskId: string; patch: TranscriptPatch }
   | { kind: 'permission_opened'; request: WebPermissionRequest }
   | { kind: 'permission_closed'; requestId: string; outcome: string }
   | { kind: 'todos'; todos: WebTodo[] }

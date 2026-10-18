@@ -15,6 +15,8 @@ import {
   type WebModelOption,
   type WebSessionContext,
 } from '../webui/protocol/attachSchemas.js'
+import { isTerminalTaskStatus } from '../Task.js'
+import { StopTaskError } from '../tasks/stopTask.js'
 import { getModelOptions } from '../utils/model/modelOptions.js'
 import { buildContextMeter } from './contextMeter.ts'
 import {
@@ -66,6 +68,8 @@ export type AttachHost = {
   publishMeta(): void
   publishTodos(): void
   publishPendingCommands(): void
+  /** Diff the background-task list and push it. No-op with no subscribers. */
+  publishTasks(): void
   setSessionId(sessionId: string): void
   stop(): void
 }
@@ -262,6 +266,114 @@ export function startAttachHost(
     emit({ kind: 'pending_commands', commands })
   }
 
+  let lastTasksJson = ''
+  function publishTasks(): void {
+    if (!hasSubscribers() || !runtime) return
+    const tasks = runtime.getTasks()
+    const json = JSON.stringify(tasks)
+    if (json === lastTasksJson) return
+    lastTasksJson = json
+    emit({ kind: 'tasks', tasks })
+  }
+
+  /**
+   * Per-task transcript streaming for `subscribe_task`.
+   *
+   * The agent loop has no publish seam to hook (it streams into the task's own
+   * message array, and an evicted agent's chain lives only in the sidechain
+   * JSONL), so a subscribed task is polled instead — every tick re-renders the
+   * wire snapshot and diffs, exactly like the headless transcript poll. The
+   * poll stops once the task is terminal (or gone): there is nothing left to
+   * stream, and an evicted agent means a disk read per tick.
+   */
+  const TASK_TRANSCRIPT_POLL_MS = 700
+  type TaskSubscription = {
+    subscribers: Set<Connection>
+    last: WebTranscriptSnapshot
+    timer?: ReturnType<typeof setInterval>
+    inFlight?: boolean
+  }
+  const taskSubs = new Map<string, TaskSubscription>()
+
+  function stopTaskPoll(taskId: string): void {
+    const sub = taskSubs.get(taskId)
+    if (!sub) return
+    if (sub.timer) clearInterval(sub.timer)
+    sub.timer = undefined
+  }
+
+  function dropTaskSubscription(taskId: string): void {
+    stopTaskPoll(taskId)
+    taskSubs.delete(taskId)
+  }
+
+  async function pollTaskTranscript(taskId: string): Promise<void> {
+    const sub = taskSubs.get(taskId)
+    if (!sub || !runtime || sub.subscribers.size === 0) return
+    if (sub.inFlight) return
+    sub.inFlight = true
+    try {
+      const got = await runtime.getTaskTranscript(taskId)
+      if (!got) {
+        // The task is gone from AppState and never had a disk chain.
+        dropTaskSubscription(taskId)
+        return
+      }
+      const next = toWireSnapshot(got.messages)
+      const patch = diffSnapshots(sub.last, next)
+      sub.last = next
+      if (patch) emit({ kind: 'task_transcript', taskId, patch })
+      const summary = runtime.getTasks().find(task => task.id === taskId)
+      if (!summary || isTerminalTaskStatus(summary.status)) {
+        // One final diff above carried the tail; nothing more will arrive.
+        stopTaskPoll(taskId)
+      }
+    } catch {
+      // A failed read is retryable on the next tick; a browser at worst sees
+      // the transcript a poll late.
+    } finally {
+      sub.inFlight = false
+    }
+  }
+
+  function subscribeTask(connection: Connection, taskId: string): void {
+    let sub = taskSubs.get(taskId)
+    if (!sub) {
+      sub = { subscribers: new Set(), last: { items: [], order: [] } }
+      taskSubs.set(taskId, sub)
+    }
+    sub.subscribers.add(connection)
+    if (!sub.timer) {
+      sub.timer = setInterval(() => {
+        void pollTaskTranscript(taskId)
+      }, TASK_TRANSCRIPT_POLL_MS)
+      sub.timer.unref?.()
+    }
+  }
+
+  function unsubscribeTask(connection: Connection, taskId: string): void {
+    const sub = taskSubs.get(taskId)
+    if (!sub) return
+    sub.subscribers.delete(connection)
+    if (sub.subscribers.size === 0) dropTaskSubscription(taskId)
+  }
+
+  function clearTaskSubscriptions(): void {
+    for (const taskId of [...taskSubs.keys()]) dropTaskSubscription(taskId)
+  }
+
+  /**
+   * A connection is gone: drop it from the task subscriptions so its polling
+   * dies with it rather than streaming into a closed socket.
+   */
+  function forgetConnection(connection: Connection): void {
+    connections.delete(connection)
+    for (const [taskId, sub] of [...taskSubs]) {
+      sub.subscribers.delete(connection)
+      if (sub.subscribers.size === 0) dropTaskSubscription(taskId)
+    }
+  }
+
   function sendSnapshot(connection: Connection, afterSeq?: number): void {
     // Replay is only valid if every event the client missed is still buffered.
     if (afterSeq !== undefined && replay.length > 0) {
@@ -282,6 +394,7 @@ export function startAttachHost(
       : { items: [], order: [] }
     lastTranscript = transcript
 
+    const tasks = runtime?.getTasks() ?? []
     const snapshot: AttachEventEnvelope = {
       type: 'event',
       seq: watermark,
@@ -294,8 +407,10 @@ export function startAttachHost(
         pendingCommands: runtime?.getPendingCommands() ?? [],
         models: listModels(),
         commands: runtime?.getCommands() ?? [],
+        tasks,
       },
     }
+    lastTasksJson = JSON.stringify(tasks)
     writeNdjson(connection.socket, snapshot)
 
     for (const envelope of replay) {
@@ -326,7 +441,11 @@ export function startAttachHost(
     connections.add(connection)
 
     readNdjsonSocket(socket, {
-      onLine(line) {
+      // Async because task requests read transcripts, which may mean a disk
+      // read. The socket serializes lines, so responses still order correctly:
+      // each `respond` runs after its own await, and the NDJSON writer is
+      // synchronous per frame.
+      async onLine(line) {
         let parsed: unknown
         try {
           parsed = JSON.parse(line)
@@ -471,13 +590,92 @@ export function startAttachHost(
             respond(socket, requestId, true)
             return
           }
+
+          case 'list_tasks': {
+            respond(socket, requestId, true, {
+              result: { tasks: runtime?.getTasks() ?? [] },
+            })
+            return
+          }
+
+          case 'get_task_transcript': {
+            if (!runtime) {
+              respond(socket, requestId, false, {
+                error: {
+                  code: 'runtime_not_ready',
+                  message: 'the session is still starting',
+                },
+              })
+              return
+            }
+            const summary = runtime
+              .getTasks()
+              .find(task => task.id === body.taskId)
+            if (!summary) {
+              respond(socket, requestId, false, {
+                error: {
+                  code: 'no_such_task',
+                  message: 'no task with that id',
+                },
+              })
+              return
+            }
+            const got = await runtime.getTaskTranscript(body.taskId)
+            respond(socket, requestId, true, {
+              result: {
+                items: got ? toWireSnapshot(got.messages).items : [],
+                done: isTerminalTaskStatus(summary.status),
+              },
+            })
+            return
+          }
+
+          case 'subscribe_task': {
+            subscribeTask(connection, body.taskId)
+            respond(socket, requestId, true)
+            return
+          }
+
+          case 'unsubscribe_task': {
+            unsubscribeTask(connection, body.taskId)
+            respond(socket, requestId, true)
+            return
+          }
+
+          case 'kill_task': {
+            if (!runtime) {
+              respond(socket, requestId, false, {
+                error: {
+                  code: 'runtime_not_ready',
+                  message: 'the session is still starting',
+                },
+              })
+              return
+            }
+            try {
+              await runtime.killTask(body.taskId)
+              respond(socket, requestId, true)
+            } catch (err) {
+              respond(socket, requestId, false, {
+                error: {
+                  code: err instanceof StopTaskError ? err.code : 'kill_failed',
+                  message:
+                    err instanceof Error ? err.message : 'failed to stop task',
+                },
+              })
+            }
+            // The kill flips the status; do not wait for the next tick.
+            publishTasks()
+            publishMeta()
+            return
+          }
         }
       },
       onError() {
-        connections.delete(connection)
+        forgetConnection(connection)
       },
       onClose() {
-        connections.delete(connection)
+        forgetConnection(connection)
       },
     })
   })
@@ -515,6 +713,7 @@ export function startAttachHost(
   function stop(): void {
     if (stopped) return
     stopped = true
+    clearTaskSubscriptions()
     for (const connection of connections) {
       connection.socket.destroy()
     }
@@ -539,6 +738,7 @@ export function startAttachHost(
     publishMeta,
     publishTodos,
     publishPendingCommands,
+    publishTasks,
     setSessionId(sessionId: string) {
       if (sessionId === descriptor.sessionId) return
       // The socket path stays put. Only the identity on it moves, and the epoch
@@ -547,6 +747,10 @@ export function startAttachHost(
       descriptor.sessionId = sessionId
       sessionEpoch += 1
       lastTranscript = { items: [], order: [] }
+      // The tasks belonged to the session we just left. Clients re-seed from
+      // the new snapshot and re-subscribe whatever they are still viewing.
+      clearTaskSubscriptions()
+      lastTasksJson = ''
       try {
         writeAttachDescriptor(descriptor)
       } catch {
