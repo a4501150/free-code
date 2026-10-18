@@ -23,6 +23,8 @@ import {
   type WebTaskSummary,
 } from '../../src/webui/protocol/attachSchemas.js'
 import { StopTaskError } from '../../src/tasks/stopTask.js'
+import { applyEvent, emptyView } from '../../src/session/viewStore.js'
+import type { WebTranscriptItem } from '../../src/webui/protocol/transcriptWire.js'
 import type { Message } from '../../src/types/message.js'
 import type { UUID } from 'crypto'
 
@@ -563,7 +565,7 @@ describe('background task panel', () => {
     killFailsWith?: 'not_found' | 'not_running' | 'unsupported_type'
     killThrows?: boolean
   }): Promise<{
-    events: AttachEventBody[]
+    events: Array<{ seq: number; event: AttachEventBody }>
     ask: (request: unknown) => Promise<{
       ok?: boolean
       result?: unknown
@@ -605,7 +607,7 @@ describe('background task panel', () => {
       setModel: () => {},
     })
 
-    const events: AttachEventBody[] = []
+    const events: Array<{ seq: number; event: AttachEventBody }> = []
     const pending = new Map<string, (value: never) => void>()
     const client = createConnection(host!.descriptor.socketPath)
     readNdjsonSocket(client, {
@@ -617,7 +619,7 @@ describe('background task panel', () => {
           requestId?: string
         }
         if (message.type === 'event' && message.event) {
-          events.push(message.event)
+          events.push({ seq: message.seq ?? 0, event: message.event })
           return
         }
         const settle = message.requestId && pending.get(message.requestId)
@@ -658,7 +660,9 @@ describe('background task panel', () => {
     const tasks = [agentTask()]
     const session = await taskSession({ tasks })
     try {
-      const snapshot = session.events.find(event => event.kind === 'snapshot')
+      const snapshot = session.events.find(
+        frame => frame.event.kind === 'snapshot',
+      )?.event
       expect(snapshot?.kind).toBe('snapshot')
       expect((snapshot as { tasks?: WebTaskSummary[] }).tasks).toEqual(tasks)
 
@@ -678,7 +682,7 @@ describe('background task panel', () => {
     try {
       session.publishTasks()
       const countAfterEmpty = session.events.filter(
-        event => event.kind === 'tasks',
+        frame => frame.event.kind === 'tasks',
       ).length
 
       tasks.push(agentTask())
@@ -688,12 +692,14 @@ describe('background task panel', () => {
       // The frames travel over a socket; give the client a tick to read them.
       await Bun.sleep(50)
 
-      const taskEvents = session.events.filter(event => event.kind === 'tasks')
+      const taskEvents = session.events.filter(
+        frame => frame.event.kind === 'tasks',
+      )
       // The empty publish rode the snapshot watermark and re-sent nothing new:
       // one event per distinct payload, and the empty one is not counted
       // because the snapshot already carried it.
       expect(taskEvents.length - countAfterEmpty).toBeLessThanOrEqual(2)
-      const last = taskEvents[taskEvents.length - 1]
+      const last = taskEvents[taskEvents.length - 1]?.event
       expect(last?.kind).toBe('tasks')
       expect((last as { tasks: WebTaskSummary[] }).tasks).toHaveLength(2)
     } finally {
@@ -747,7 +753,7 @@ describe('background task panel', () => {
     }
   })
 
-  test('subscribe_task streams task_transcript patches', async () => {
+  test('subscribe_task answers with a full replace, and the poll adds nothing stale', async () => {
     const session = await taskSession({ tasks: [agentTask()] })
     try {
       const response = await session.ask({
@@ -756,31 +762,108 @@ describe('background task panel', () => {
       })
       expect(response.ok).toBe(true)
 
-      // The poll fires at 700ms; give it two ticks.
-      await Bun.sleep(1500)
+      // The first frame is the baseline replace, delivered with the subscribe
+      // answer. Later ticks diff against that baseline, so an unchanged
+      // transcript must not re-send the rows the client already seeded.
+      await Bun.sleep(100)
       const streamed = session.events.filter(
-        event => event.kind === 'task_transcript',
+        frame => frame.event.kind === 'task_transcript',
       )
-      expect(streamed.length).toBeGreaterThanOrEqual(1)
-      const first = streamed[0] as {
+      expect(streamed).toHaveLength(1)
+      const first = streamed[0]!.event as {
         taskId: string
-        patch: { upsert: Array<{ text?: string }> }
+        patch: { type: string; snapshot?: { items: Array<{ text?: string }> } }
       }
       expect(first.taskId).toBe('a123')
-      expect(first.patch.upsert.some(item => item.text === 'working')).toBe(
-        true,
-      )
+      expect(first.patch.type).toBe('replace')
+      expect(
+        (first.patch.snapshot?.items ?? []).some(
+          item => item.text === 'working',
+        ),
+      ).toBe(true)
 
       await session.ask({ kind: 'unsubscribe_task', taskId: 'a123' })
       const after = session.events.length
+      // Two poll ticks after unsubscribing: the timer must be gone.
       await Bun.sleep(1500)
       expect(
         session.events
           .slice(after)
-          .filter(event => event.kind === 'task_transcript'),
+          .filter(frame => frame.event.kind === 'task_transcript'),
       ).toHaveLength(0)
     } finally {
       session.close()
     }
+  })
+
+  test('the seed-to-subscribe handoff re-appends no seeded ids', async () => {
+    const session = await taskSession({ tasks: [agentTask()] })
+    try {
+      // The browser's exact sequence: read the seed first, subscribe second.
+      const seed = await session.ask({
+        kind: 'get_task_transcript',
+        taskId: 'a123',
+      })
+      expect(seed.ok).toBe(true)
+      const items = (seed.result as { items: WebTranscriptItem[] }).items
+      expect(items.length).toBeGreaterThan(0)
+
+      await session.ask({ kind: 'subscribe_task', taskId: 'a123' })
+      await Bun.sleep(100)
+
+      // Replay the client's routing: seed the view at the watermark it had,
+      // then feed every task patch through the same reducer the browser uses.
+      let view = applyEvent(emptyView(), Math.max(1, session.events[0]!.seq), {
+        kind: 'transcript',
+        patch: {
+          type: 'replace',
+          snapshot: { items, order: items.map(item => item.id) },
+        },
+      })
+      for (const frame of session.events) {
+        const event = frame.event
+        if (event.kind === 'task_transcript' && event.taskId === 'a123') {
+          view = applyEvent(view, frame.seq, {
+            kind: 'transcript',
+            patch: event.patch,
+          })
+        }
+      }
+      // No duplicated ids in the order: that is what rendered every row twice
+      // and tripped React's duplicate-key warning.
+      expect(view.order.length).toBe(new Set(view.order).size)
+      expect(view.order).toEqual(items.map(item => item.id))
+    } finally {
+      session.close()
+    }
+  })
+
+  test('an orderAppend cannot duplicate an id already in the order', () => {
+    // The reducer's defensive path, independent of any host version: a stale
+    // host whose baseline starts empty would append every seeded id.
+    const item: WebTranscriptItem = {
+      id: `${AGENT_UUID}:0`,
+      kind: 'user',
+      rev: '1',
+      timestamp: new Date().toISOString(),
+      text: 'working',
+    }
+    let view = applyEvent(emptyView(), 1, {
+      kind: 'transcript',
+      patch: {
+        type: 'replace',
+        snapshot: { items: [item], order: [item.id] },
+      },
+    })
+    view = applyEvent(view, 2, {
+      kind: 'transcript',
+      patch: {
+        type: 'delta',
+        upsert: [item],
+        remove: [],
+        orderAppend: [item.id],
+      },
+    })
+    expect(view.order).toEqual([item.id])
   })
 })

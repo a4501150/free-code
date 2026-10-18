@@ -336,13 +336,34 @@ export function startAttachHost(
     }
   }
 
-  function subscribeTask(connection: Connection, taskId: string): void {
+  async function subscribeTask(
+    connection: Connection,
+    taskId: string,
+  ): Promise<void> {
     let sub = taskSubs.get(taskId)
+    const fresh = !sub
     if (!sub) {
       sub = { subscribers: new Set(), last: { items: [], order: [] } }
       taskSubs.set(taskId, sub)
     }
     sub.subscribers.add(connection)
+    if (fresh && runtime) {
+      // Baseline the diff on the current chain, not on empty: a client that
+      // seeded from `get_task_transcript` before subscribing would otherwise
+      // get every id back in the first poll's `orderAppend` and render each
+      // row twice. The poll has not started yet, so nothing races this read.
+      const got = await runtime.getTaskTranscript(taskId)
+      sub.last = got ? toWireSnapshot(got.messages) : { items: [], order: [] }
+    }
+    // The first frame for a new subscriber is always a full replace: it
+    // reconciles anything the seed read and this baseline read disagree on,
+    // in either arrival order, and it composes with the client's idempotent
+    // replace handling instead of relying on delta bookkeeping.
+    emit({
+      kind: 'task_transcript',
+      taskId,
+      patch: { type: 'replace', snapshot: sub.last },
+    })
     if (!sub.timer) {
       sub.timer = setInterval(() => {
         void pollTaskTranscript(taskId)
@@ -631,7 +652,7 @@ export function startAttachHost(
           }
 
           case 'subscribe_task': {
-            subscribeTask(connection, body.taskId)
+            await subscribeTask(connection, body.taskId)
             respond(socket, requestId, true)
             return
           }

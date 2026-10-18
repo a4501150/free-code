@@ -85,8 +85,16 @@ export function applyEvent(
       for (const item of patch.upsert) items.set(item.id, item)
       next.items = items
       if (patch.order) next.order = [...patch.order]
-      else if (patch.orderAppend)
-        next.order = [...view.order, ...patch.orderAppend]
+      else if (patch.orderAppend) {
+        // A well-formed append only ever carries ids the order does not have
+        // yet. Skip the rest rather than trust it: a duplicated id in the
+        // order renders the same row twice and React keys collide on it.
+        const known = new Set(view.order)
+        next.order = [
+          ...view.order,
+          ...patch.orderAppend.filter(id => !known.has(id)),
+        ]
+      }
       return next
     }
 
