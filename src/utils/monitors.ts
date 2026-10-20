@@ -59,6 +59,8 @@ export type SpawnFn = (
   options: {
     cwd: string
     env: NodeJS.ProcessEnv
+    /** Shell binary to run the command with; `true` uses the platform default. */
+    shell?: string | true
   },
 ) => ChildProcess
 
@@ -74,7 +76,7 @@ const defaultSpawn: SpawnFn = (command, options) =>
   spawn(command, {
     cwd: options.cwd,
     env: options.env,
-    shell: true,
+    shell: options.shell ?? true,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
   })
@@ -233,9 +235,10 @@ export class MonitorManager {
     opts: {
       agentId?: AgentId
       notifyIntervalMs?: number
+      shell?: string
     } = {},
   ): Monitor {
-    const { agentId, notifyIntervalMs } = opts
+    const { agentId, notifyIntervalMs, shell } = opts
     const id = `mon_${++this._counter}_${Date.now().toString(36)}`
     const monitor: Monitor = {
       id,
@@ -262,7 +265,11 @@ export class MonitorManager {
         GIT_SEQUENCE_EDITOR: 'true',
         CLAUDECODE: '1',
       }
-      const child = this._spawnFn(command, { cwd: this._cwd(), env })
+      const child = this._spawnFn(command, {
+        cwd: this._cwd(),
+        env,
+        ...(shell !== undefined ? { shell } : {}),
+      })
       monitor.child = child
 
       const appendLine = (line: string) => {

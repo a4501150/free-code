@@ -82,6 +82,23 @@ describe('MonitorManager', () => {
     expect(manager.activeCount).toBe(1)
   })
 
+  test('passes the requested shell to spawn, and omits it when unset', () => {
+    const shells: Array<string | true | undefined> = []
+    const spawnFn: SpawnFn = (_command, options) => {
+      shells.push(options.shell)
+      return fakeChild() as unknown as ChildProcess
+    }
+    const manager = new MonitorManager({
+      spawnFn,
+      killFn: noopKill,
+      debounceMs: 10,
+      attachExitHook: false,
+    })
+    manager.start('echo $((1 + 1))', 'bash-arith', { shell: '/bin/bash' })
+    manager.start('echo hi', 'default-shell')
+    expect(shells).toEqual(['/bin/bash', undefined])
+  })
+
   test('captures stdout lines as output', async () => {
     const manager = makeManager(fakeChild())
     const monitor = manager.start('echo', 'e')

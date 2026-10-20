@@ -4,6 +4,7 @@ import type { ToolDef, ToolUseContext } from '../../Tool.js'
 import { buildTool } from '../../Tool.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import { getMonitorManager } from '../../utils/monitors.js'
+import { findSuitableShell } from '../../utils/Shell.js'
 import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
 import {
   notifyIntervalError,
@@ -186,9 +187,13 @@ export const MonitorTool = buildTool({
 
     const label =
       input.description ?? truncate(input.command, TOOL_SUMMARY_MAX_LENGTH)
+    // Run watches in the Bash tool's shell: the platform default (/bin/sh,
+    // dash on Debian/Ubuntu) rejects bash syntax the model writes for Bash.
+    const shell = await findSuitableShell()
     const monitor = manager.start(input.command, label, {
       agentId: context.agentId,
       notifyIntervalMs,
+      shell,
     })
     registerMonitorTaskState(monitor, setAppState, context.toolUseId)
 
