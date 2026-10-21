@@ -10,6 +10,12 @@ export function renderToolCallParams(
   input: Record<string, unknown>,
   mode: ToolCallDisplayMode,
   compactParamKeys?: readonly string[],
+  options?: {
+    /** Verbose rows (ctrl+o transcript, click-expanded) show every param
+     * value in full — the compact 80/200-char caps and the 6-param cap are
+     * inline-mode truncation, not transcript policy. */
+    verbose?: boolean
+  },
 ): string {
   let entries: [string, unknown][]
 
@@ -30,7 +36,10 @@ export function renderToolCallParams(
 
   const maxValueChars =
     mode === 'compact' ? COMPACT_MAX_VALUE_CHARS : FULL_MAX_VALUE_CHARS
-  const maxParams = mode === 'compact' ? COMPACT_MAX_PARAMS : entries.length
+  const maxParams =
+    mode === 'compact' && !options?.verbose
+      ? COMPACT_MAX_PARAMS
+      : entries.length
 
   const visible = entries.slice(0, maxParams)
   const parts = visible.map(([key, value]) => {
@@ -44,7 +53,7 @@ export function renderToolCallParams(
     if (mode === 'compact') {
       rendered = rendered.replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ')
     }
-    if (rendered.length > maxValueChars) {
+    if (!options?.verbose && rendered.length > maxValueChars) {
       rendered = rendered.slice(0, maxValueChars).trimEnd() + '…'
     }
     return `${key}: ${rendered}`

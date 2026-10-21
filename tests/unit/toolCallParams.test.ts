@@ -123,4 +123,39 @@ describe('renderToolCallParams', () => {
     const result = renderToolCallParams(manyParams, 'compact')
     expect(result).toContain('…+4 more')
   })
+
+  test('verbose shows long values in full', () => {
+    const longCommand = 'x'.repeat(500)
+    const result = renderToolCallParams(
+      { command: longCommand },
+      'compact',
+      ['command'],
+      { verbose: true },
+    )
+    expect(result).toContain(`command: "${longCommand}"`)
+    expect(result).not.toContain('…')
+  })
+
+  test('verbose drops the 6-param cap', () => {
+    const manyParams: Record<string, unknown> = {}
+    for (let i = 0; i < 10; i++) {
+      manyParams[`key${i}`] = `val${i}`
+    }
+    const result = renderToolCallParams(manyParams, 'compact', undefined, {
+      verbose: true,
+    })
+    expect(result).toContain('key9')
+    expect(result).not.toContain('more')
+  })
+
+  test('verbose keeps escaped-newline flattening (header stays one line)', () => {
+    const result = renderToolCallParams(
+      { instance_id: '### Result\n{\n  "a": 1\n}' },
+      'compact',
+      ['instance_id'],
+      { verbose: true },
+    )
+    expect(result).not.toContain('\\n')
+    expect(result).toContain('### Result {')
+  })
 })

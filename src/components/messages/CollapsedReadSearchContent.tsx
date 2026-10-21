@@ -97,6 +97,8 @@ function VerboseToolUse({
         rawInput,
         toolCallDisplay ?? 'compact',
         tool.compactParamKeys,
+        // This component only renders expanded groups — show full values.
+        { verbose: true },
       )
     : null
 

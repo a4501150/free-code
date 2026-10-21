@@ -181,6 +181,9 @@ export function AssistantToolUseMessage({
     displayInput ?? rawInput,
     toolCallDisplay ?? 'compact',
     displayCompactParamKeys ?? tool.compactParamKeys,
+    // Transcript mode (ctrl+o) and click-expanded rows show params in
+    // full; inline mode keeps the setting-driven caps.
+    { verbose },
   )
   return (
     <Box
@@ -218,7 +221,7 @@ export function AssistantToolUseMessage({
               isError={lookups.erroredToolUseIDs.has(param.id)}
             />
           )}
-          <Text wrap="truncate-end">
+          <Text wrap={verbose ? 'wrap' : 'truncate-end'}>
             <Text
               bold
               backgroundColor={userFacingToolNameBackgroundColor}
