@@ -84,14 +84,12 @@ import { getActiveAgentForInput } from '../../state/selectors.js'
 import {
   enterAgentView,
   exitAgentView,
+  getScopedBackgroundTasks,
   stopOrDismissAgent,
 } from '../../state/agentViewHelpers.js'
 import type { ToolPermissionContext } from '../../Tool.js'
-import {
-  isLocalAgentTask,
-  isPanelAgentTask,
-} from '../../tasks/LocalAgentTask/LocalAgentTask.js'
-import { isBackgroundTask } from '../../tasks/types.js'
+import { isLocalAgentTask } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
+import { isPillVisibleTask } from '../../tasks/pillTaskFilter.js'
 import { getAgentColor } from '../../tools/AgentTool/agentColorManager.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import type { Message } from '../../types/message.js'
@@ -458,14 +456,14 @@ function PromptInput({
   // pill is absent, so the -1 sentinel would leave nothing visually selected.
   // In that case, skip -1 and treat 0 as the minimum selectable index.
   const isCoordinatorModeActive = isCoordinatorMode()
+  // Scoped to match the pill the sentinel selects: in agent transcript view
+  // the pill renders only for the viewed agent's own background work.
   const hasBgTaskPill = useMemo(
     () =>
-      Object.values(tasks).some(
-        t =>
-          isBackgroundTask(t) &&
-          !(isCoordinatorModeActive ? isPanelAgentTask(t) : false),
+      Object.values(getScopedBackgroundTasks(tasks, viewingAgentTaskId)).some(
+        t => isPillVisibleTask(t, isCoordinatorModeActive),
       ),
-    [tasks, isCoordinatorModeActive],
+    [tasks, viewingAgentTaskId, isCoordinatorModeActive],
   )
   const minCoordinatorIndex = hasBgTaskPill ? -1 : 0
   // Clamp index when tasks complete and the list shrinks beneath the cursor
@@ -1726,11 +1724,17 @@ function PromptInput({
           case 'tasks':
             if (coordinatorTaskIndex === 0 && coordinatorTaskCount > 0) {
               exitAgentView(setAppState)
+              selectFooterItem(null)
             } else {
               const selectedTaskId =
                 getVisibleAgentTasks(tasks)[coordinatorTaskIndex - 1]?.id
               if (selectedTaskId) {
                 enterAgentView(selectedTaskId, setAppState)
+                // Clear the selection: a stuck footerItemSelected keeps
+                // isPromptDispatchTarget false, so the agent view loses
+                // every prompt-container keydown handler (Shift+Down
+                // dialog, Escape exit, voice, palette/history).
+                selectFooterItem(null)
               } else {
                 setShowBashesDialog(true)
                 selectFooterItem(null)

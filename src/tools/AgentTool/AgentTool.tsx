@@ -615,6 +615,8 @@ export const AgentTool = buildTool({
           void writeAgentMetadata(asAgentId(earlyAgentId), {
             agentType: selectedAgent.agentType,
             description,
+            // Full overwrite — keep the parent link that runAgent persisted
+            parentAgentId: toolUseContext.agentId,
           }).catch(_err =>
             logForDebugging(`Failed to clear worktree metadata: ${_err}`),
           )
@@ -637,6 +639,7 @@ export const AgentTool = buildTool({
         // survive when the user presses ESC to cancel the main thread.
         // They are killed explicitly via chat:killAgents.
         toolUseId: toolUseContext.toolUseId,
+        parentAgentId: toolUseContext.agentId,
         model: resolvedAgentModel,
       })
 
@@ -777,6 +780,7 @@ export const AgentTool = buildTool({
               selectedAgent,
               setAppState: rootSetAppState,
               toolUseId: toolUseContext.toolUseId,
+              parentAgentId: toolUseContext.agentId,
               autoBackgroundMs: getAutoBackgroundMs() || undefined,
               model: resolvedAgentModel,
             })
@@ -1443,9 +1447,7 @@ export const AgentTool = buildTool({
   },
   mapToolResultToToolResultBlockParam(data, toolUseID) {
     if (data.status === 'async_launched') {
-      const sendMsgHint = isCoordinatorMode()
-        ? ` Use ${SEND_MESSAGE_TOOL_NAME} with to: '${data.agentId}' to continue this agent.`
-        : ''
+      const sendMsgHint = ` Use ${SEND_MESSAGE_TOOL_NAME} with to: '${data.agentId}' to continue this agent.`
       const prefix = `Async agent launched successfully.\nagentId: ${data.agentId} (internal ID - do not mention to user.${sendMsgHint})\nThe agent is working in the background; its final report will be delivered to you as a system notification in a later turn — sleeping or polling does not change when it arrives.`
       const instructions = data.canReadOutputFile
         ? `Do not duplicate this agent's work — avoid working with the same files or topics it is using. Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.\noutput_file: ${data.outputFile}\nDo NOT ${FILE_READ_TOOL_NAME} or tail this file — it is the agent's full JSONL transcript and reading it overflows your context. If asked for progress before the completion notification arrives, say the agent is still running.`
@@ -1504,9 +1506,7 @@ export const AgentTool = buildTool({
           content: contentOrMarker,
         }
       }
-      const sendMsgHint = isCoordinatorMode()
-        ? ` (use ${SEND_MESSAGE_TOOL_NAME} with to: '${data.agentId}' to continue this agent)`
-        : ''
+      const sendMsgHint = ` (use ${SEND_MESSAGE_TOOL_NAME} with to: '${data.agentId}' to continue this agent)`
       return {
         tool_use_id: toolUseID,
         type: 'tool_result',

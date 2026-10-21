@@ -46,11 +46,13 @@ import {
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { resumeAgentBackground } from '../../tools/AgentTool/resumeAgent.js'
 import {
+  findCommand,
   getCommandName,
   isCommandEnabled,
   type Command,
   type CommandResultDisplay,
 } from '../../commands.js'
+import { parseSlashCommand } from '../../utils/slashCommandParsing.js'
 import type {
   PromptInputMode,
   QueuedCommand,
@@ -513,52 +515,64 @@ export function useReplSubmission(deps: {
       task: LocalAgentTaskState,
       helpers: PromptInputHelpers,
     ) => {
-      {
-        appendMessageToLocalAgent(
-          task.id,
-          createUserMessage({ content: input }),
-          setAppState,
-        )
-        if (task.status === 'running') {
-          queuePendingMessage(task.id, input, setAppState)
-        } else {
-          void resumeAgentBackground({
-            agentId: task.id,
-            prompt: input,
-            toolUseContext: d.getToolUseContext(
-              d.messagesRef.current,
-              [],
-              new AbortController(),
-              mainLoopModel,
-            ),
-            canUseTool: d.canUseTool,
-          }).catch(err => {
-            logForDebugging(
-              `resumeAgentBackground failed: ${errorMessage(err)}`,
-            )
-            d.addNotification({
-              key: `resume-agent-failed-${task.id}`,
-              jsx: (
-                <Text color="error">
-                  Failed to resume agent: {errorMessage(err)}
-                </Text>
-              ),
-              priority: 'low',
-            })
-          })
+      // Slash commands are UI-level and shared with the main session: run
+      // them through the main submit path so agent view has the same
+      // command surface (/tasks, /model, ...). Unknown slash text keeps
+      // steering the agent, as does plain text.
+      const parsed = parseSlashCommand(
+        expandPastedTextRefs(input, d.pastedContents),
+      )
+      if (parsed) {
+        const cmd = findCommand(parsed.commandName, d.commands)
+        if (cmd && isCommandEnabled(cmd)) {
+          return onSubmit(input, helpers)
         }
+      }
+      appendMessageToLocalAgent(
+        task.id,
+        createUserMessage({ content: input }),
+        setAppState,
+      )
+      if (task.status === 'running') {
+        queuePendingMessage(task.id, input, setAppState)
+      } else {
+        void resumeAgentBackground({
+          agentId: task.id,
+          prompt: input,
+          toolUseContext: d.getToolUseContext(
+            d.messagesRef.current,
+            [],
+            new AbortController(),
+            mainLoopModel,
+          ),
+          canUseTool: d.canUseTool,
+        }).catch(err => {
+          logForDebugging(`resumeAgentBackground failed: ${errorMessage(err)}`)
+          d.addNotification({
+            key: `resume-agent-failed-${task.id}`,
+            jsx: (
+              <Text color="error">
+                Failed to resume agent: {errorMessage(err)}
+              </Text>
+            ),
+            priority: 'low',
+          })
+        })
       }
       d.setInputValue('')
       helpers.setCursorOffset(0)
       helpers.clearBuffer()
     },
     [
+      onSubmit,
       setAppState,
       d.setInputValue,
       d.getToolUseContext,
       d.canUseTool,
       mainLoopModel,
       d.addNotification,
+      d.pastedContents,
+      d.commands,
     ],
   )
 

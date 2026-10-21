@@ -1,5 +1,6 @@
 import { isTerminalTaskStatus } from '../Task.js'
 import type { LocalAgentTaskState } from '../tasks/LocalAgentTask/LocalAgentTask.js'
+import type { TaskState } from '../tasks/types.js'
 
 // Inlined from framework.ts — importing creates a cycle through
 // BackgroundTasksDialog. Keep in sync with PANEL_GRACE_MS there.
@@ -104,6 +105,33 @@ export function exitAgentView(
       tasks: { ...prev.tasks, [id]: release(task) },
     }
   })
+}
+
+/**
+ * The background tasks visible while viewing an agent's transcript: work
+ * OWNED by that agent — its bash/monitor tasks (task.agentId) and its own
+ * background agents (local_agent parentAgentId). The viewed agent's own row
+ * is excluded (its status lives in the agents panel, which stays visible in
+ * agent view). With no agent view open, returns the task map unchanged.
+ * Only narrows ownership — running/background filtering stays with the
+ * consumers (isBackgroundTask).
+ */
+export function getScopedBackgroundTasks(
+  tasks: Record<string, TaskState>,
+  viewingAgentTaskId: string | undefined,
+): Record<string, TaskState> {
+  if (viewingAgentTaskId === undefined) return tasks
+  const scoped: Record<string, TaskState> = {}
+  for (const [id, task] of Object.entries(tasks)) {
+    if (id === viewingAgentTaskId) continue
+    if (isLocalAgent(task)) {
+      if (task.parentAgentId !== viewingAgentTaskId) continue
+    } else if (!('agentId' in task) || task.agentId !== viewingAgentTaskId) {
+      continue
+    }
+    scoped[id] = task
+  }
+  return scoped
 }
 
 /**

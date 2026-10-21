@@ -261,6 +261,7 @@ export async function* runAgent({
   contentReplacementState,
   worktreePath,
   description,
+  parentAgentId,
   transcriptSubdir,
   onQueryProgress,
   onStreamingThinking,
@@ -313,6 +314,10 @@ export async function* runAgent({
   /** Original task description from AgentTool input. Persisted to metadata
    * so a resumed agent's notification can show the original description. */
   description?: string
+  /** Original spawner for resumed agents, so the parent link survives a resume
+   * by a different agent. When omitted, the parent is derived from
+   * toolUseContext.agentId (the invoking context of this run). */
+  parentAgentId?: string
   /** Optional subdirectory under subagents/ to group this agent's transcript
    * with related ones (e.g. workflows/<runId> for workflow subagents). */
   transcriptSubdir?: string
@@ -797,10 +802,15 @@ export async function* runAgent({
   void recordSidechainTranscript(initialMessages, agentId).catch(_err =>
     logForDebugging(`Failed to record sidechain transcript: ${_err}`),
   )
+  // Spawner for the parent link; explicit param wins (resume keeps the
+  // original parent even when the resumer differs), otherwise it's the
+  // invoking context of this run. Absent = spawned by the main session.
+  const resolvedParentAgentId = parentAgentId ?? toolUseContext.agentId
   void writeAgentMetadata(agentId, {
     agentType: agentDefinition.agentType,
     ...(worktreePath && { worktreePath }),
     ...(description && { description }),
+    ...(resolvedParentAgentId && { parentAgentId: resolvedParentAgentId }),
   }).catch(_err => logForDebugging(`Failed to write agent metadata: ${_err}`))
 
   // Track the last recorded message UUID for parent chain continuity. Derived

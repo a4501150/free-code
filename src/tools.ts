@@ -127,13 +127,11 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
     // so the coordinator gets Agent+BackgroundTaskStop (via useMergedTools filtering) and
     // workers get Bash/Read/Edit (via filterToolsForAgent filtering).
     if (coordinatorModeMod.isCoordinatorMode()) {
-      simpleTools.push(
-        AgentTool,
-        BackgroundTaskStopTool,
-        SendMessageTool,
-        ListAgentsTool,
-      )
+      simpleTools.push(AgentTool, BackgroundTaskStopTool)
     }
+    // Messaging peers exist in every mode (background agents, live sessions),
+    // so SendMessage/ListAgents stay available even in simple mode.
+    simpleTools.push(SendMessageTool, ListAgentsTool)
     return filterToolsByDenyRules(simpleTools, permissionContext)
   }
 

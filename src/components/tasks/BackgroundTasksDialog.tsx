@@ -7,7 +7,9 @@
  */
 
 import * as React from 'react'
+import { useMemo } from 'react'
 import { useAppState, useSetAppState } from 'src/state/AppState.js'
+import { getScopedBackgroundTasks } from 'src/state/agentViewHelpers.js'
 import { DreamTask } from 'src/tasks/DreamTask/DreamTask.js'
 import { LocalAgentTask } from 'src/tasks/LocalAgentTask/LocalAgentTask.js'
 import { LocalShellTask } from 'src/tasks/LocalShellTask/LocalShellTask.js'
@@ -33,6 +35,17 @@ export function BackgroundTasksDialog({
   const tasks = useAppState(s => s.tasks) as
     | Record<string, TaskState>
     | undefined
+  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
+  // Memoized so the panel's sort/filter memo keeps a stable `tasks` prop
+  // between parent re-renders while the dialog is open (the scoped record
+  // is a fresh allocation per call).
+  const scopedTasks = useMemo(
+    () =>
+      tasks !== undefined
+        ? getScopedBackgroundTasks(tasks, viewingAgentTaskId)
+        : undefined,
+    [tasks, viewingAgentTaskId],
+  )
   const foregroundedTaskId = useAppState(s => s.foregroundedTaskId)
   const setAppState = useSetAppState()
 
@@ -54,7 +67,7 @@ export function BackgroundTasksDialog({
     <BackgroundTasksDialogPanel
       onDone={onDone}
       initialDetailTaskId={initialDetailTaskId}
-      tasks={tasks}
+      tasks={scopedTasks}
       foregroundedTaskId={foregroundedTaskId}
       onKill={onKill}
     />

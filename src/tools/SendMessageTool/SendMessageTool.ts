@@ -4,11 +4,12 @@ import { buildTool, type ToolDef } from '../../Tool.js'
 import {
   isLocalAgentTask,
   queuePendingMessage,
+  resolveParentAgentId,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { isMainSessionTask } from '../../tasks/LocalMainSessionTask.js'
 import { toAgentId } from '../../types/ids.js'
-import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import { errorMessage } from '../../utils/errors.js'
+import { enqueuePendingNotification } from '../../utils/messageQueueManager.js'
 import { deliverToSession } from '../../utils/sessionMessaging.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { resumeAgentBackground } from '../AgentTool/resumeAgent.js'
@@ -20,7 +21,7 @@ const inputSchema = z.object({
   to: z
     .string()
     .describe(
-      'Recipient: agent name or ID of a subagent you spawned, or "session:<id>" for another live session.',
+      'Recipient: agent name or ID of a subagent you spawned, "parent" for the agent that spawned you (from a depth-1 agent that is the main session), or "session:<id>" for another live session.',
     ),
   message: z.string().describe('Plain text message content'),
 })
@@ -53,9 +54,10 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
     },
 
     isEnabled() {
-      // Coordinator mode must see SendMessage: the coordinator system prompt
-      // instructs it to continue workers by agent ID unconditionally.
-      return isCoordinatorMode()
+      // Available in every mode: any session can spawn background agents,
+      // and subagents address their parent via to: 'parent'. Coordinator
+      // mode additionally instructs continuation by agent ID in its prompt.
+      return true
     },
 
     isReadOnly() {
@@ -121,13 +123,18 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
               },
         }
       }
-      // Route to in-process subagent by name or raw agentId. Stopped agents
-      // are auto-resumed.
       const appState = context.getAppState()
-      const registered = appState.agentNameRegistry.get(input.to)
-      const agentId = registered ?? toAgentId(input.to)
-      if (agentId) {
-        const task = appState.tasks[agentId]
+
+      // Shared in-process recipient routing: a running agent gets the
+      // message queued for its next tool round; a stopped or evicted agent
+      // is auto-resumed from its transcript with the message as prompt.
+      // Re-reads the task store per call — an await (parent resolution,
+      // resume) may have changed it since the caller's snapshot.
+      const routeToAgent = async (
+        agentId: string,
+        label: string,
+      ): Promise<{ data: MessageOutput }> => {
+        const task = context.getAppState().tasks[agentId]
         if (isLocalAgentTask(task) && !isMainSessionTask(task)) {
           if (task.status === 'running') {
             queuePendingMessage(
@@ -138,7 +145,7 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
             return {
               data: {
                 success: true,
-                message: `Message queued for delivery to ${input.to} at its next tool round.`,
+                message: `Message queued for delivery to ${label} at its next tool round.`,
               },
             }
           }
@@ -154,14 +161,14 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
             return {
               data: {
                 success: true,
-                message: `Agent "${input.to}" was stopped (${task.status}); resumed it in the background with your message. You'll be notified when it finishes. Output: ${result.outputFile}`,
+                message: `Agent "${label}" was stopped (${task.status}); resumed it in the background with your message. You'll be notified when it finishes. Output: ${result.outputFile}`,
               },
             }
           } catch (e) {
             return {
               data: {
                 success: false,
-                message: `Agent "${input.to}" is stopped (${task.status}) and could not be resumed: ${errorMessage(e)}`,
+                message: `Agent "${label}" is stopped (${task.status}) and could not be resumed: ${errorMessage(e)}`,
               },
             }
           }
@@ -181,24 +188,71 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
             return {
               data: {
                 success: true,
-                message: `Agent "${input.to}" had no active task; resumed from transcript in the background with your message. You'll be notified when it finishes. Output: ${result.outputFile}`,
+                message: `Agent "${label}" had no active task; resumed from transcript in the background with your message. You'll be notified when it finishes. Output: ${result.outputFile}`,
               },
             }
           } catch (e) {
             return {
               data: {
                 success: false,
-                message: `Agent "${input.to}" is registered but has no transcript to resume. It may have been cleaned up. (${errorMessage(e)})`,
+                message: `Agent "${label}" is registered but has no transcript to resume. It may have been cleaned up. (${errorMessage(e)})`,
               },
             }
           }
         }
       }
 
+      // Parent addressing: the agent that spawned the caller. From a
+      // depth-1 agent the parent is the main session — not routable by
+      // name/ID (the isMainSessionTask guard below), so deliver on the
+      // main thread's notification lane instead: mode 'task-notification'
+      // with agentId undefined is drained at the main session's next tool
+      // round, rendered with the agent-message origin.
+      if (input.to === 'parent') {
+        const senderAgentId = context.agentId
+        if (!senderAgentId) {
+          return {
+            data: {
+              success: false,
+              message:
+                '"parent" addressing is only available from a subagent. Use ListAgents to find other recipients.',
+            },
+          }
+        }
+        const parentAgentId = await resolveParentAgentId(
+          senderAgentId,
+          appState.tasks,
+        )
+        if (parentAgentId === undefined) {
+          enqueuePendingNotification({
+            value: input.message,
+            mode: 'task-notification',
+            priority: 'next',
+            origin: { kind: 'agent-message', from: senderAgentId },
+          })
+          return {
+            data: {
+              success: true,
+              message:
+                'Message delivered to the main session; it arrives at the next tool round.',
+            },
+          }
+        }
+        return routeToAgent(parentAgentId, parentAgentId)
+      }
+
+      // Route to in-process subagent by name or raw agentId. Stopped agents
+      // are auto-resumed.
+      const registered = appState.agentNameRegistry.get(input.to)
+      const agentId = registered ?? toAgentId(input.to)
+      if (agentId) {
+        return routeToAgent(agentId, input.to)
+      }
+
       return {
         data: {
           success: false,
-          message: `Unknown recipient "${input.to}". Use an agent name/ID from ListAgents, or "session:<id>" for a live session.`,
+          message: `Unknown recipient "${input.to}". Use an agent name/ID from ListAgents, "parent" for your spawning agent, or "session:<id>" for a live session.`,
         },
       }
     },

@@ -51,6 +51,7 @@ export type MessageOrigin =
   | { kind: 'plan_verification' }
   | { kind: 'sdk' }
   | { kind: 'webui' }
+  | { kind: 'agent-message'; from?: string }
 
 // ---------------------------------------------------------------------------
 // Compact metadata

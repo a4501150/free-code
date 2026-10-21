@@ -24,7 +24,10 @@ import { registerCleanup } from '../../utils/cleanupRegistry.js'
 import { getSearchOrReadInfo } from '../../utils/collapseReadSearch.js'
 import { enqueuePendingNotification } from '../../utils/messageQueueManager.js'
 import type { StreamingThinking } from '../../utils/messages.js'
-import { getAgentTranscriptPath } from '../../utils/sessionStorage.js'
+import {
+  getAgentTranscriptPath,
+  readAgentMetadata,
+} from '../../utils/sessionStorage.js'
 import {
   evictTaskOutput,
   initTaskOutputAsSymlink,
@@ -207,6 +210,9 @@ export function createActivityDescriptionResolver(
 export type LocalAgentTaskState = TaskStateBase & {
   type: 'local_agent'
   agentId: string
+  // Owning agent (the spawner); undefined = spawned by the main session.
+  // `agentId` is this agent's OWN id — the parent link lives only here.
+  parentAgentId?: string
   prompt: string
   selectedAgent?: AgentDefinition
   agentType: string
@@ -285,6 +291,27 @@ export function queuePendingMessage(
     ...task,
     pendingMessages: [...task.pendingMessages, msg],
   }))
+}
+
+/**
+ * Resolve the agent that spawned the given agent: undefined = spawned by
+ * the main session (depth-1). In-memory task state wins; the metadata
+ * sidecar covers agents whose task was evicted. Shared by SendMessage's
+ * to:"parent" routing and ListAgents' parent row.
+ */
+export async function resolveParentAgentId(
+  agentId: string,
+  tasks: Record<string, TaskState>,
+): Promise<string | undefined> {
+  const task = tasks[agentId]
+  if (isLocalAgentTask(task)) {
+    return task.parentAgentId
+  }
+  try {
+    return (await readAgentMetadata(asAgentId(agentId)))?.parentAgentId
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -716,6 +743,7 @@ export function registerAsyncAgent({
   selectedAgent,
   setAppState,
   parentAbortController,
+  parentAgentId,
   toolUseId,
   model,
 }: {
@@ -725,6 +753,7 @@ export function registerAsyncAgent({
   selectedAgent: AgentDefinition
   setAppState: SetAppState
   parentAbortController?: AbortController
+  parentAgentId?: string
   toolUseId?: string
   model?: string
 }): LocalAgentTaskState {
@@ -743,6 +772,7 @@ export function registerAsyncAgent({
     type: 'local_agent',
     status: 'running',
     agentId,
+    parentAgentId,
     prompt,
     selectedAgent,
     agentType: selectedAgent.agentType ?? 'general-purpose',
@@ -786,6 +816,7 @@ export function registerAgentForeground({
   selectedAgent,
   setAppState,
   autoBackgroundMs,
+  parentAgentId,
   toolUseId,
   model,
 }: {
@@ -795,6 +826,7 @@ export function registerAgentForeground({
   selectedAgent: AgentDefinition
   setAppState: SetAppState
   autoBackgroundMs?: number
+  parentAgentId?: string
   toolUseId?: string
   model?: string
 }): {
@@ -818,6 +850,7 @@ export function registerAgentForeground({
     type: 'local_agent',
     status: 'running',
     agentId,
+    parentAgentId,
     prompt,
     selectedAgent,
     agentType: selectedAgent.agentType ?? 'general-purpose',

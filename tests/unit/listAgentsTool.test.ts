@@ -46,4 +46,31 @@ describe('ListAgentsTool formatting', () => {
       'No messaging peers yet.',
     )
   })
+
+  test('renders a subagent parent row with the parent: addressing form', () => {
+    const text = formatListAgentsResult({
+      parent: {
+        id: 'aparent000000001',
+        name: 'lead',
+        description: 'coordinate the build',
+        status: 'running',
+      },
+      agents: [],
+      sessions: [],
+    })
+    expect(text).toContain(
+      'parent aparent000000001 "lead" [running] — coordinate the build — SendMessage to:"parent"',
+    )
+  })
+
+  test('renders the main session as the depth-1 parent', () => {
+    const text = formatListAgentsResult({
+      parent: 'main-session',
+      agents: [],
+      sessions: [],
+    })
+    expect(text).toContain('parent (main session) — SendMessage to:"parent"')
+    // A parent row alone means peers exist — never the empty message.
+    expect(text).not.toContain('No messaging peers yet')
+  })
 })

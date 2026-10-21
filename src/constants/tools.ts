@@ -50,9 +50,9 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
   RUN_CODE_TOOL_NAME,
   // Async agents can message each other: siblings share the process's task
   // registry, so SendMessage routes worker→worker directly (address targets
-  // via ListAgents). Worker→main-session is NOT routed — the coordinator's
-  // return channel is the worker's final report, and its inbound channel is
-  // queued follow-ups.
+  // via ListAgents). Worker→main-session routes via to: 'parent' — from a
+  // depth-1 worker that lands on the main session's notification lane, and
+  // from deeper workers it reaches the spawning agent directly.
   SEND_MESSAGE_TOOL_NAME,
   LIST_AGENTS_TOOL_NAME,
   // Monitors register against the shared task registry with the worker's

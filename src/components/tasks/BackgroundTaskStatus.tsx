@@ -3,9 +3,10 @@ import * as React from 'react'
 import { useMemo, useState } from 'react'
 import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import { useAppState } from 'src/state/AppState.js'
-import { isPanelAgentTask } from 'src/tasks/LocalAgentTask/LocalAgentTask.js'
+import { getScopedBackgroundTasks } from 'src/state/agentViewHelpers.js'
 import { getPillLabel, pillNeedsCta } from 'src/tasks/pillLabel.js'
-import { isBackgroundTask, type TaskState } from 'src/tasks/types.js'
+import { isPillVisibleTask } from 'src/tasks/pillTaskFilter.js'
+import type { TaskState } from 'src/tasks/types.js'
 import { Box, Text } from '../../ink.js'
 
 type Props = {
@@ -18,15 +19,19 @@ export function BackgroundTaskStatus({
   onOpenDialog,
 }: Props): React.ReactNode {
   const tasks = useAppState(s => s.tasks)
+  // Agent transcript view: the pill counts the viewed agent's own background
+  // work — it must match the scoped set the tasks dialog shows.
+  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
+  const isCoordinator = isCoordinatorMode()
 
   const runningTasks = useMemo(
     () =>
-      (Object.values(tasks ?? {}) as TaskState[]).filter(
-        t =>
-          isBackgroundTask(t) &&
-          !(isCoordinatorMode() ? isPanelAgentTask(t) : false),
-      ),
-    [tasks],
+      (
+        Object.values(
+          getScopedBackgroundTasks(tasks ?? {}, viewingAgentTaskId),
+        ) as TaskState[]
+      ).filter(t => isPillVisibleTask(t, isCoordinator)),
+    [tasks, viewingAgentTaskId, isCoordinator],
   )
 
   if (runningTasks.length === 0) {

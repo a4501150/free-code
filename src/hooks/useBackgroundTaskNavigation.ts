@@ -1,6 +1,9 @@
 import { KeyboardEvent } from '../ink/events/keyboard-event.js'
 import { useAppState, useSetAppState } from '../state/AppState.js'
-import { exitAgentView } from '../state/agentViewHelpers.js'
+import {
+  exitAgentView,
+  getScopedBackgroundTasks,
+} from '../state/agentViewHelpers.js'
 import { isBackgroundTask } from '../tasks/types.js'
 
 /**
@@ -16,7 +19,11 @@ export function useBackgroundTaskNavigation(options?: {
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const setAppState = useSetAppState()
 
-  const hasBackgroundTasks = Object.values(tasks).some(t => isBackgroundTask(t))
+  // In agent transcript view, only the viewed agent's own background work
+  // counts — the dialog shows the scoped set, so the shortcut must match.
+  const hasBackgroundTasks = Object.values(
+    getScopedBackgroundTasks(tasks, viewingAgentTaskId),
+  ).some(t => isBackgroundTask(t))
 
   const handleKeyDown = (e: KeyboardEvent): void => {
     // Escape in viewing mode: exit the agent transcript view.

@@ -255,6 +255,10 @@ export type AgentMetadata = {
    * resumed agent's notification can show the original description instead
    * of a placeholder. Optional — older metadata files lack this field. */
   description?: string
+  /** Id of the agent that spawned this one; absent = main session. Persisted
+   * so a resumed agent keeps its original parent (the resumer may differ).
+   * Optional — older metadata files lack this field. */
+  parentAgentId?: string
 }
 
 /**

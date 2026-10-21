@@ -4,8 +4,10 @@ import { MessageResponse } from '../../components/MessageResponse.js'
 import { Text } from '../../ink.js'
 import type { TaskStateBase } from '../../Task.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
-import { isLocalAgentTask } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
+import {
+  isLocalAgentTask,
+  resolveParentAgentId,
+} from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { isMainSessionTask } from '../../tasks/LocalMainSessionTask.js'
 import type { TaskState } from '../../tasks/types.js'
 import { listLiveSessions } from '../../utils/concurrentSessions.js'
@@ -30,17 +32,30 @@ interface SessionRow {
 }
 
 interface Output {
+  /** Present when called from a subagent: the spawning agent ("main-session"
+   * when the caller is depth-1). */
+  parent?: AgentRow | 'main-session'
   agents: AgentRow[]
   sessions: SessionRow[]
 }
 
 export function formatListAgentsResult(output: Output): string {
   const lines: string[] = []
+  const formatAgentLine = (
+    prefix: 'parent' | 'agent',
+    row: AgentRow,
+    toAddr: string,
+  ) => {
+    const name = row.name ? ` "${row.name}"` : ''
+    return `${prefix} ${row.id}${name} [${row.status}] — ${row.description} — SendMessage to:"${toAddr}"`
+  }
+  if (output.parent === 'main-session') {
+    lines.push('parent (main session) — SendMessage to:"parent"')
+  } else if (output.parent) {
+    lines.push(formatAgentLine('parent', output.parent, 'parent'))
+  }
   for (const agent of output.agents) {
-    const name = agent.name ? ` "${agent.name}"` : ''
-    lines.push(
-      `agent ${agent.id}${name} [${agent.status}] — ${agent.description} — SendMessage to:"${agent.name ?? agent.id}"`,
-    )
+    lines.push(formatAgentLine('agent', agent, agent.name ?? agent.id))
   }
   for (const session of output.sessions) {
     const name = session.name ? ` "${session.name}"` : ''
@@ -58,7 +73,11 @@ export function renderToolResultMessage(content: unknown): React.ReactNode {
       {lines.map((line, i) => (
         <Text
           key={i}
-          dimColor={!line.startsWith('agent ') && !line.startsWith('session ')}
+          dimColor={
+            !line.startsWith('agent ') &&
+            !line.startsWith('session ') &&
+            !line.startsWith('parent ')
+          }
         >
           {line}
         </Text>
@@ -71,6 +90,17 @@ export const ListAgentsTool = buildTool({
   name: LIST_AGENTS_TOOL_NAME,
   userFacingName: () => 'List Agents',
   outputSchema: z.object({
+    parent: z
+      .union([
+        z.object({
+          id: z.string(),
+          name: z.string().optional(),
+          description: z.string(),
+          status: z.string(),
+        }),
+        z.literal('main-session'),
+      ])
+      .optional(),
     agents: z.array(
       z.object({
         id: z.string(),
@@ -96,9 +126,8 @@ export const ListAgentsTool = buildTool({
     return DESCRIPTION
   },
   isEnabled() {
-    // Mirrors SendMessage: the orchestrating modes must be able to discover
-    // what they may message.
-    return isCoordinatorMode()
+    // Mirrors SendMessage: every mode can discover its messaging targets.
+    return true
   },
   isReadOnly() {
     return true
@@ -120,9 +149,9 @@ export const ListAgentsTool = buildTool({
       content: formatListAgentsResult(output),
     }
   },
-  async call(_input, { getAppState }) {
+  async call(_input, { getAppState, agentId }) {
     const appState = getAppState()
-    const allTasks = Object.values(appState.tasks ?? {}) as TaskState[]
+    const tasks = (appState.tasks ?? {}) as Record<string, TaskState>
 
     // Name → agentId; invert it so a named agent shows its name too.
     const nameById = new Map<string, string>()
@@ -130,20 +159,44 @@ export const ListAgentsTool = buildTool({
       nameById.set(String(id), name)
     }
 
-    const agents: AgentRow[] = allTasks
-      .filter(t => isLocalAgentTask(t) && !isMainSessionTask(t))
-      .map(t => {
-        const base = t as TaskStateBase
-        const name = nameById.get(base.id)
-        return {
-          id: base.id,
-          ...(name ? { name } : {}),
-          description: base.description,
-          status: base.status,
-        }
-      })
+    const toAgentRow = (task: TaskState): AgentRow => {
+      const base = task as TaskStateBase
+      const name = nameById.get(base.id)
+      return {
+        id: base.id,
+        ...(name ? { name } : {}),
+        description: base.description,
+        status: base.status,
+      }
+    }
 
-    const sessions: SessionRow[] = (await listLiveSessions())
+    // From a subagent: surface the spawning agent (or the main session for
+    // a depth-1 caller) so the caller learns its "parent" address.
+    const [liveSessions, parentAgentId] = await Promise.all([
+      listLiveSessions(),
+      agentId
+        ? resolveParentAgentId(agentId, tasks)
+        : Promise.resolve(undefined),
+    ])
+    let parent: Output['parent']
+    if (agentId) {
+      if (parentAgentId === undefined) {
+        parent = 'main-session'
+      } else {
+        const parentTask = tasks[parentAgentId]
+        parent = parentTask
+          ? toAgentRow(parentTask)
+          : // Evicted from state — the address still routes via SendMessage
+            // (auto-resume from transcript), so list it with that status.
+            { id: parentAgentId, description: '(evicted)', status: 'stopped' }
+      }
+    }
+
+    const agents: AgentRow[] = Object.values(tasks)
+      .filter(t => isLocalAgentTask(t) && !isMainSessionTask(t))
+      .map(toAgentRow)
+
+    const sessions: SessionRow[] = liveSessions
       .filter(s => s.pid !== process.pid)
       .map(s => ({
         session_id: s.sessionId,
@@ -153,6 +206,6 @@ export const ListAgentsTool = buildTool({
         ...(s.name ? { name: s.name } : {}),
       }))
 
-    return { data: { agents, sessions } }
+    return { data: { ...(parent ? { parent } : {}), agents, sessions } }
   },
 } satisfies ToolDef<InputSchema, Output>)

@@ -22,29 +22,15 @@ setDefaultTimeout(180_000)
 import type { MockResponse } from '../helpers/sse-encoder'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import type { QueueSelectorEntry } from '../helpers/mock-server'
+import {
+  AGENT_SYSTEM_PHRASE,
+  forAgent,
+  forMain,
+  MAIN_SYSTEM_PHRASE,
+} from '../helpers/agent-routes'
 import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 const test = createLoggingTest(bunTest)
-
-// Route by system prompt: the subagent's prompt names it an agent, the
-// main thread's static prompt names it an interactive agent. Concurrent
-// requests then consume the entry meant for them, in any arrival order.
-// The phrases are coupled to the prompt wording — if a prompt reword
-// breaks this test, pick phrases still unique to each side.
-const AGENT_SYSTEM_PHRASE = 'agent for Claude Code'
-const MAIN_SYSTEM_PHRASE = 'interactive agent'
-function route(
-  systemPhrase: string,
-  response: MockResponse,
-): QueueSelectorEntry {
-  return {
-    selector: body => JSON.stringify(body.system ?? '').includes(systemPhrase),
-    response,
-  }
-}
-const forAgent = (response: MockResponse) =>
-  route(AGENT_SYSTEM_PHRASE, response)
-const forMain = (response: MockResponse) => route(MAIN_SYSTEM_PHRASE, response)
 
 const SUBJECT_A = 'Panel task alpha probe'
 const SUBJECT_B = 'Panel task beta probe'

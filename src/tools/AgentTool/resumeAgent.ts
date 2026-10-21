@@ -3,6 +3,7 @@ import { getSdkAgentProgressSummariesEnabled } from '../../bootstrap/state.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import type { ToolUseContext, CanUseToolFn } from '../../Tool.js'
 import {
+  isLocalAgentTask,
   registerAsyncAgent,
   updateAgentStreamingThinking,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
@@ -106,6 +107,15 @@ export async function resumeAgentBackground({
 
   const uiDescription = meta?.description ?? '(resumed)'
 
+  // Preserve the original parent across resume — the resumer may be a
+  // different agent (or the main session) than the original spawner.
+  // Metadata wins; in-memory task state covers agents spawned before the
+  // first resume wrote the new field.
+  const prevTask = appState.tasks[agentId]
+  const resumedParentAgentId =
+    meta?.parentAgentId ??
+    (isLocalAgentTask(prevTask) ? prevTask.parentAgentId : undefined)
+
   // Resolve model for analytics metadata (runAgent resolves its own internally)
   const resolvedAgentModel = getAgentModel(
     selectedAgent.model,
@@ -141,6 +151,7 @@ export async function resumeAgentBackground({
     // Re-persist so metadata survives runAgent's writeAgentMetadata overwrite
     worktreePath: resumedWorktreePath,
     description: meta?.description,
+    parentAgentId: resumedParentAgentId,
     contentReplacementState: resumedReplacementState,
   }
 
@@ -152,6 +163,7 @@ export async function resumeAgentBackground({
     selectedAgent,
     setAppState: rootSetAppState,
     toolUseId: toolUseContext.toolUseId,
+    parentAgentId: resumedParentAgentId,
     model: resolvedAgentModel,
   })
 

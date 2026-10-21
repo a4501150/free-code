@@ -16,11 +16,11 @@ import {
 } from '../../utils/permissions/PermissionMode.js'
 import { PAUSE_ICON } from '../../constants/figures.js'
 import { BackgroundTaskStatus } from '../tasks/BackgroundTaskStatus.js'
-import { isBackgroundTask } from '../../tasks/types.js'
-import { isPanelAgentTask } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
+import { isPillVisibleTask } from '../../tasks/pillTaskFilter.js'
 import { getVisibleAgentTasks } from '../CoordinatorAgentStatus.js'
 import { count } from '../../utils/array.js'
 import { useAppState } from 'src/state/AppState.js'
+import { getScopedBackgroundTasks } from '../../state/agentViewHelpers.js'
 import HistorySearchInput from './HistorySearchInput.js'
 import { usePrStatus } from '../../hooks/usePrStatus.js'
 import { KeyboardShortcutHint } from '../design-system/KeyboardShortcutHint.js'
@@ -144,14 +144,16 @@ function ModeIndicator({
   const hasSelection = useHasSelection()
   const selGetState = useSelection().getState
   const isCoordinator = isCoordinatorMode()
+  // In agent transcript view, count the viewed agent's own background work
+  // (the scoped set the tasks dialog shows), not the parent session's.
+  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
   const runningTaskCount = useMemo(
     () =>
       count(
-        Object.values(tasks),
-        t =>
-          isBackgroundTask(t) && !(isCoordinator ? isPanelAgentTask(t) : false),
+        Object.values(getScopedBackgroundTasks(tasks, viewingAgentTaskId)),
+        t => isPillVisibleTask(t, isCoordinator),
       ),
-    [tasks, isCoordinator],
+    [tasks, viewingAgentTaskId, isCoordinator],
   )
   const tasksV2 = useTasksV2()
   const hasTaskItems = tasksV2 !== undefined && tasksV2.length > 0
