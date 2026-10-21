@@ -65,6 +65,9 @@ export function getClipboardPath(): ClipboardPath {
   const nativeAvailable =
     process.platform === 'darwin' && !process.env['SSH_CONNECTION']
   if (nativeAvailable) return 'native'
+  // Probed on the first copy: an external tool (or the pygi helper) wrote
+  // the system clipboard natively — OSC 52 riding along is only a bonus.
+  if (process.platform === 'linux' && linuxCopy != null) return 'native'
   if (process.env['TMUX']) return 'tmux-buffer'
   return 'osc52'
 }
@@ -158,9 +161,118 @@ export async function setClipboard(text: string): Promise<string> {
 }
 
 // Linux clipboard tool: undefined = not yet probed, null = none available.
-// Probe order: wl-copy (Wayland) → xclip (X11) → xsel (X11 fallback).
+// Probe order: wl-copy (Wayland) → xclip (X11) → xsel (X11 fallback) →
+// python3 + PyGObject (stock-GNOME fallback — see PYGI_COPY).
 // Cached after first attempt so repeated mouse-ups skip the probe chain.
-let linuxCopy: 'wl-copy' | 'xclip' | 'xsel' | null | undefined
+type LinuxCopyTool = 'wl-copy' | 'xclip' | 'xsel' | 'pygi'
+let linuxCopy: LinuxCopyTool | null | undefined
+
+/** stdin-reading arg vectors for the external clipboard tools. */
+const LINUX_COPY_ARGS: Record<Exclude<LinuxCopyTool, 'pygi'>, string[]> = {
+  'wl-copy': [],
+  xclip: ['-selection', 'clipboard'],
+  xsel: ['--clipboard', '--input'],
+}
+
+/**
+ * python3 + PyGObject clipboard-set helper (last-resort Linux tier). Reads
+ * the text on stdin, then forks to a background session that owns the X11
+ * CLIPBOARD selection — the compositor bridges XWayland selections to the
+ * Wayland clipboard, so the text reaches the system paste even though a
+ * focus-less plain Wayland client cannot set the clipboard at all (which
+ * is why stock GNOME, with no wl-clipboard/xclip/xsel installed, otherwise
+ * has no native path at all). The daemon exits when another client takes
+ * the selection, or after the 1h safety cap.
+ *
+ * The fork must happen BEFORE `import gi`: GLib loads threads at import
+ * time, and forking a threaded interpreter deadlocks the child. The
+ * parent's immediate exit also means the spawn's exit code says nothing
+ * about the clipboard write itself — capability is probed separately
+ * (PYGI_PROBE) and only that probe's exit code is trusted for caching.
+ */
+const PYGI_COPY = `import os, sys
+text = sys.stdin.read()
+pid = os.fork()
+if pid > 0:
+    os._exit(0)
+os.setsid()
+devnull = os.open(os.devnull, os.O_RDWR)
+for fd in (0, 1, 2):
+    try:
+        os.dup2(devnull, fd)
+    except OSError:
+        pass
+import gi
+gi.require_version('Gtk', '3.0')
+gi.require_version('Gdk', '3.0')
+from gi.repository import Gdk, GLib, Gtk
+clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+# owner-change fires once for our own set_text ("armed"), then again when
+# another client takes the selection — exit then.
+armed = [False]
+def owner_changed(*args):
+    if armed[0]:
+        Gtk.main_quit()
+    else:
+        armed[0] = True
+clipboard.connect('owner-change', owner_changed)
+clipboard.set_text(text, -1)
+GLib.timeout_add_seconds(3600, Gtk.main_quit)
+Gtk.main()
+`
+
+/** Capability probe for the pygi tier: exits 0 only when python3 can load
+ * GTK3 (PyGObject + its typelibs are present). */
+const PYGI_PROBE =
+  "import gi\ngi.require_version('Gtk', '3.0')\nfrom gi.repository import Gtk\n"
+
+function runLinuxCopy(tool: LinuxCopyTool, text: string): void {
+  if (tool === 'pygi') {
+    void execFileNoThrow('python3', ['-c', PYGI_COPY], {
+      input: text,
+      useCwd: false,
+      timeout: 2000,
+      env: { ...process.env, GDK_BACKEND: 'x11' },
+    })
+    return
+  }
+  void execFileNoThrow(tool, LINUX_COPY_ARGS[tool], {
+    input: text,
+    useCwd: false,
+    timeout: 2000,
+  })
+}
+
+/** First copy on Linux: run each tool with the real text (a successful
+ * probe IS a copy), cache the winner. The pygi tier needs a separate
+ * capability probe because its spawn always exits 0 in the parent. */
+async function probeLinuxCopy(text: string): Promise<void> {
+  for (const tool of ['wl-copy', 'xclip', 'xsel'] as const) {
+    const { code } = await execFileNoThrow(tool, LINUX_COPY_ARGS[tool], {
+      input: text,
+      useCwd: false,
+      timeout: 2000,
+    })
+    if (code === 0) {
+      linuxCopy = tool
+      return
+    }
+  }
+  // X11 reachable (XWayland or a plain X session) — the pygi helper needs
+  // it, since the Wayland backend can't set the clipboard without focus.
+  if (process.env['DISPLAY']) {
+    const { code } = await execFileNoThrow('python3', ['-c', PYGI_PROBE], {
+      useCwd: false,
+      timeout: 5000,
+    })
+    if (code === 0) {
+      linuxCopy = 'pygi'
+      runLinuxCopy('pygi', text)
+      return
+    }
+  }
+  linuxCopy = null
+}
 
 /**
  * Shell out to a native clipboard utility as a safety net for OSC 52.
@@ -176,38 +288,11 @@ function copyNative(text: string): void {
       return
     case 'linux': {
       if (linuxCopy === null) return
-      if (linuxCopy === 'wl-copy') {
-        void execFileNoThrow('wl-copy', [], opts)
+      if (linuxCopy !== undefined) {
+        runLinuxCopy(linuxCopy, text)
         return
       }
-      if (linuxCopy === 'xclip') {
-        void execFileNoThrow('xclip', ['-selection', 'clipboard'], opts)
-        return
-      }
-      if (linuxCopy === 'xsel') {
-        void execFileNoThrow('xsel', ['--clipboard', '--input'], opts)
-        return
-      }
-      // First call: probe wl-copy (Wayland) then xclip/xsel (X11), cache winner.
-      void execFileNoThrow('wl-copy', [], opts).then(r => {
-        if (r.code === 0) {
-          linuxCopy = 'wl-copy'
-          return
-        }
-        void execFileNoThrow('xclip', ['-selection', 'clipboard'], opts).then(
-          r2 => {
-            if (r2.code === 0) {
-              linuxCopy = 'xclip'
-              return
-            }
-            void execFileNoThrow('xsel', ['--clipboard', '--input'], opts).then(
-              r3 => {
-                linuxCopy = r3.code === 0 ? 'xsel' : null
-              },
-            )
-          },
-        )
-      })
+      void probeLinuxCopy(text)
       return
     }
     case 'win32':
