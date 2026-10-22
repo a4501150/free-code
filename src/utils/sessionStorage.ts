@@ -400,9 +400,14 @@ class Project {
     string,
     Array<{ entry: Entry; resolve: () => void }>
   >()
-  private flushTimer: ReturnType<typeof setTimeout> | null = null
-  private activeDrain: Promise<void> | null = null
-  private FLUSH_INTERVAL_MS = 100
+  // A drain is chained onto this promise so drains run one at a time in
+  // scheduling order. Drains are driven by microtasks, not timers: in some
+  // environments (compiled binary under a detached tmux pane) the event
+  // loop's timer phase can stall indefinitely while microtasks and I/O
+  // keep running, so a timer-batched drain would never fire and the
+  // transcript would stay in memory until a graceful flush.
+  private drainScheduled = false
+  private drainChain: Promise<void> = Promise.resolve()
   private readonly MAX_CHUNK_BYTES = 100 * 1024 * 1024
 
   constructor() {}
@@ -411,9 +416,8 @@ class Project {
   _resetFlushState(): void {
     this.pendingWriteCount = 0
     this.flushResolvers = []
-    if (this.flushTimer) clearTimeout(this.flushTimer)
-    this.flushTimer = null
-    this.activeDrain = null
+    this.drainScheduled = false
+    this.drainChain = Promise.resolve()
     this.writeQueues = new Map()
   }
 
@@ -454,19 +458,23 @@ class Project {
   }
 
   private scheduleDrain(): void {
-    if (this.flushTimer) {
+    if (this.drainScheduled) {
       return
     }
-    this.flushTimer = setTimeout(async () => {
-      this.flushTimer = null
-      this.activeDrain = this.drainWriteQueue()
-      await this.activeDrain
-      this.activeDrain = null
-      // If more items arrived during drain, schedule again
-      if (this.writeQueues.size > 0) {
-        this.scheduleDrain()
+    this.drainScheduled = true
+    this.drainChain = this.drainChain.then(async () => {
+      this.drainScheduled = false
+      try {
+        await this.drainWriteQueue()
+      } catch (error) {
+        // A failing append must not re-arm from inside the drain — that
+        // could spin the microtask queue on a persistent error. The next
+        // enqueue or an explicit flush() retries. (Entries queued while
+        // the failing drain ran are re-scheduled by their own
+        // enqueueWrite call.)
+        console.error('[sessionStorage] transcript drain failed:', error)
       }
-    }, this.FLUSH_INTERVAL_MS)
+    })
   }
 
   private async appendToFile(filePath: string, data: string): Promise<void> {
@@ -683,17 +691,13 @@ class Project {
   }
 
   async flush(): Promise<void> {
-    // Cancel pending timer
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer)
-      this.flushTimer = null
+    // Wait for any scheduled drain to finish, then drain whatever remains
+    // directly. Enqueues can arrive while we wait, so loop until the chain
+    // is idle and the queues are empty.
+    while (this.drainScheduled || this.writeQueues.size > 0) {
+      await this.drainChain
+      await this.drainWriteQueue()
     }
-    // Wait for any in-flight drain to finish
-    if (this.activeDrain) {
-      await this.activeDrain
-    }
-    // Drain anything remaining in the queues
-    await this.drainWriteQueue()
 
     // Wait for non-queue tracked operations (e.g. removeMessageByUuid)
     if (this.pendingWriteCount === 0) {

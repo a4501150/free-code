@@ -33,7 +33,12 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
+import {
+  TmuxSession,
+  createLoggingTest,
+  setupE2ESuite,
+  sleep,
+} from './tmux-helpers'
 
 const PROJECT_ROOT = join(import.meta.dir, '..', '..')
 const CLI_BINARY = join(PROJECT_ROOT, 'cli-dev')
@@ -120,9 +125,20 @@ describe('Resume session ownership', () => {
 
     const files = await transcripts()
     expect(files).toHaveLength(1)
+    // stop() hard-kills the CLI (SIGKILL — no exit cleanup runs), and the
+    // drain's append is async I/O that can still be in flight. Poll until
+    // the primed turn is actually on disk before stopping, or the file can
+    // be left with session-start metadata only and every downstream
+    // --resume finds an empty conversation.
+    const primedFile = join(await projectDir(), files[0]!)
+    for (let i = 0; i < 40; i++) {
+      const content = await readFile(primedFile, 'utf8').catch(() => '')
+      if (content.includes('"type":"user"')) break
+      await sleep(250)
+    }
     // stop() does not wait for the CLI's exit cleanup, which re-appends
     // last-prompt and mode. Let the file settle before anything snapshots it.
-    await settle(join(await projectDir(), files[0]!))
+    await settle(primedFile)
     return files[0]!.replace(/\.jsonl$/, '')
   }
 
