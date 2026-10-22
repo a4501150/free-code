@@ -40,11 +40,21 @@ describe('Clear after scroll blank screen', () => {
       width: 120,
     })
 
-    // Submit 8 prompts, wait for each turn to complete
+    // Submit 8 prompts, wait for each turn to complete. waitForPrompt
+    // matches the already-idle screen before the turn starts, so a
+    // rapid-fire loop lands questions in the message queue; a queued
+    // submission rides the next request and several questions consume one
+    // mock response — leaving the transcript far short of the intended
+    // 8 turns of content.
     const TURNS = 8
     for (let i = 0; i < TURNS; i++) {
       await session.sendLine(`question ${i}`)
-      await session.waitForPrompt(20_000)
+      await session.waitForScreen(s => s.includes(`R${i} L79`), {
+        timeoutMs: 30_000,
+        intervalMs: 250,
+        description: `response ${i} rendered`,
+        currentPaneOnly: true,
+      })
     }
 
     // Scroll up to the middle (~8 PageUps)

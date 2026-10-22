@@ -106,10 +106,20 @@ describe('Shell detail command panel', () => {
     expect(initial).not.toContain('cmdmarker_39')
 
     // Tab moves the pager to the command panel; End walks it to the bottom.
+    // Pane-state wait, not waitForText: the raw pane log already contains
+    // "cmdmarker_39" from the truncated transcript header behind the modal,
+    // and capturePane can run before tmux has drained the pty — a log-based
+    // wait plus an immediate capture races both ways.
     await session.sendSpecialKey('Tab')
     await sleep(200)
     await session.sendSpecialKey('End')
-    await session.waitForText('cmdmarker_39', 10_000)
+    await session.waitForScreen(
+      s => s.includes('sleep 120') && !s.includes('cmdmarker_00'),
+      {
+        timeoutMs: 10_000,
+        description: 'command panel at the bottom after End',
+      },
+    )
 
     const scrolled = await session.capturePane()
     expect(scrolled).toContain('sleep 120')
@@ -135,7 +145,21 @@ describe('Shell detail command panel', () => {
     await session.sendMouseClick(10, labelRow + 3)
     await sleep(200)
     await session.sendSpecialKey('Home')
-    await session.waitForText('cmdmarker_00', 10_000)
+    // Pane-state wait (see the End assertion above for why not waitForText).
+    // The "lines X-Y" label refreshes on a 500ms interval while the Home
+    // scroll lands instantly, so the wait must settle both the content and
+    // the label — otherwise the capture can show top content with a stale
+    // "lines 34-41" footer.
+    await session.waitForScreen(
+      s =>
+        s.includes('cmdmarker_00') &&
+        !s.includes('cmdmarker_39') &&
+        s.includes('lines 1-'),
+      {
+        timeoutMs: 10_000,
+        description: 'command panel back at the top after Home',
+      },
+    )
 
     const afterClick = await session.capturePane()
     expect(afterClick).toContain('lines 1-')
@@ -147,7 +171,14 @@ describe('Shell detail command panel', () => {
     // panel can travel, so the landing spot is the bottom whatever the
     // acceleration curve does with them.
     await session.sendMouseWheel('down', 10, labelRow + 3, 40)
-    await session.waitForText('cmdmarker_39', 10_000)
+    // Pane-state wait (see the End assertion above for why not waitForText).
+    await session.waitForScreen(
+      s => s.includes('cmdmarker_39') && !s.includes('cmdmarker_00'),
+      {
+        timeoutMs: 10_000,
+        description: 'wheel drives the panel to the bottom',
+      },
+    )
     expect(await session.capturePane()).not.toContain('cmdmarker_00')
   })
 

@@ -45,7 +45,18 @@ describe('Jump to bottom pill', () => {
 
     for (let i = 0; i < TURNS; i++) {
       await session.sendLine(`question ${i}`)
-      await session.waitForPrompt(30_000)
+      // Wait for THIS turn's response before submitting the next.
+      // waitForPrompt matches the already-idle screen before the turn
+      // starts, so a rapid-fire loop would land questions in the message
+      // queue; a queued submission rides the next request and two
+      // questions consume one mock response — shifting the queue so R5 is
+      // never sent and the transcript legitimately ends at R4.
+      await session.waitForScreen(s => s.includes(`R${i} L7`), {
+        timeoutMs: 30_000,
+        intervalMs: 250,
+        description: `response ${i} rendered`,
+        currentPaneOnly: true,
+      })
     }
 
     // Transcript is finished growing, prompt is idle — so the only renders
