@@ -181,8 +181,22 @@ const LINUX_COPY_ARGS: Record<Exclude<LinuxCopyTool, 'pygi'>, string[]> = {
  * Wayland clipboard, so the text reaches the system paste even though a
  * focus-less plain Wayland client cannot set the clipboard at all (which
  * is why stock GNOME, with no wl-clipboard/xclip/xsel installed, otherwise
- * has no native path at all). The daemon exits when another client takes
- * the selection, or after the 1h safety cap.
+ * has no native path at all). The daemon exits when the X server confirms
+ * another client (or none) owns the selection, or after the 1h safety cap.
+ *
+ * Losing ownership is detected by content, not events: on every XFIXES
+ * owner-change broadcast (and a 30s backstop poll — a burst of copies from
+ * several sessions can consume the takeover event before a superseded
+ * daemon even finished starting) the daemon asks the clipboard for its
+ * current text and exits once the answer differs from the text it set.
+ * The current owner always answers with its own text, so an owner never
+ * quits and a quit can never strand the clipboard on a dead process. The
+ * previous event-counting version ("first event arms, second quits") had
+ * exactly that failure: a takeover racing our startup armed the daemon
+ * early, its own set_text then read as displacement, and it quit
+ * immediately after taking ownership — later copies showed their toast
+ * but pasted nothing. Content comparison needs no identity bookkeeping,
+ * so no state can go stale.
  *
  * The fork must happen BEFORE `import gi`: GLib loads threads at import
  * time, and forking a threaded interpreter deadlocks the child. The
@@ -207,16 +221,26 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, GLib, Gtk
 clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
-# owner-change fires once for our own set_text ("armed"), then again when
-# another client takes the selection — exit then.
-armed = [False]
-def owner_changed(*args):
-    if armed[0]:
+# Exit once the clipboard no longer holds our text. request_text is
+# async — the reply arrives as a normal event, no nested main loop — and
+# the current owner always answers with its own text, so an owner never
+# quits while a superseded daemon (even one whose takeover event fired
+# mid-startup, before any state could be recorded) sees the new text and
+# exits. Text comparison carries no identity state to mis-capture.
+def verify(clip, got):
+    if got != text:
         Gtk.main_quit()
-    else:
-        armed[0] = True
+def check(*args):
+    clipboard.request_text(verify)
+    return False
+def owner_changed(*args):
+    GLib.idle_add(check)
 clipboard.connect('owner-change', owner_changed)
 clipboard.set_text(text, -1)
+def poll():
+    GLib.idle_add(check)
+    return True
+GLib.timeout_add_seconds(30, poll)
 GLib.timeout_add_seconds(3600, Gtk.main_quit)
 Gtk.main()
 `
