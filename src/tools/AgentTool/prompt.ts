@@ -1,5 +1,10 @@
 import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
-import { getAgentModelDisplay as getAgentModelDisplayName } from '../../utils/model/agent.js'
+import {
+  getAgentModel,
+  getAgentModelDisplay as getAgentModelDisplayName,
+  isModelInheritKeyword,
+} from '../../utils/model/agent.js'
+import { getMainLoopModel } from '../../utils/model/model.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import { AGENT_PARALLELISM_GUIDANCE, AGENT_TOOL_NAME } from './constants.js'
 import {
@@ -36,16 +41,17 @@ function getToolsDescription(agent: AgentDefinition): string {
  * Format one agent line for the agent_listing_delta attachment message:
  * `- type: whenToUse (Tools: ...)`.
  */
-function getModelDisplayForPrompt(model: string | undefined): string {
-  if (!model) return ''
+function getModelDisplayForPrompt(agent: AgentDefinition): string {
+  const model = agent.model
+  if (!model || isModelInheritKeyword(model)) return ''
   try {
-    const display = getAgentModelDisplayName(model)
-    if (
-      display === 'Inherit from parent (default)' ||
-      display === 'Inherit from parent'
-    )
-      return ''
-    return ` (Default model: ${display})`
+    // Advertise what the agent will actually run: resolve through
+    // getAgentModel so a defaultSubagentModel override is reflected
+    // (role-configured models — advisor, plan — are exempt via their flag).
+    const effective = getAgentModel(model, getMainLoopModel(), {
+      roleConfiguredModel: agent.roleConfiguredModel,
+    })
+    return ` (Default model: ${getAgentModelDisplayName(effective)})`
   } catch {
     return ` (Default model: ${model})`
   }
@@ -53,7 +59,7 @@ function getModelDisplayForPrompt(model: string | undefined): string {
 
 export function formatAgentLine(agent: AgentDefinition): string {
   const toolsDescription = getToolsDescription(agent)
-  const modelDisplay = getModelDisplayForPrompt(agent.model)
+  const modelDisplay = getModelDisplayForPrompt(agent)
   return `- ${agent.agentType}: ${agent.whenToUse}${modelDisplay} (Tools: ${toolsDescription})`
 }
 
