@@ -12,7 +12,11 @@ const clear = {
   name: 'clear',
   description: 'Clear conversation history and free up context',
   aliases: ['reset', 'new'],
-  supportsNonInteractive: false, // Should just create a new session
+  // Headless/web GUI: the attach protocol handles the session switch a
+  // /clear causes (hostSingleton's onSessionSwitch → session_changed), and
+  // clearConversation only needs the headless command context, so it is
+  // safe to expose where a fresh session isn't an option.
+  supportsNonInteractive: true,
   call: (...args) =>
     import('./clear.js').then(mod => Reflect.apply(mod.call, undefined, args)),
 } satisfies Command
