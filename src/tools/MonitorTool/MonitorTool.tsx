@@ -162,7 +162,7 @@ export const MonitorTool = buildTool({
     { stdout, monitorTaskId }: MonitorOut,
     toolUseID: string,
   ): DomainToolResultBlockParam {
-    const started = `Monitor started with ID: ${monitorTaskId}. It runs detached; whenever the latest output line changes you will get a system task notification in a later turn (at most once per the requested interval; exit or error notifies immediately) — you do not need to wait or poll. Full output file, safe to read mid-run: ${getTaskOutputPath(monitorTaskId)}. Stop it with ${BACKGROUND_TASK_STOP_TOOL_NAME}.`
+    const started = `Monitor started with ID: ${monitorTaskId}. It runs detached; whenever the latest output line changes you will get a system task notification in a later turn (at most once per the requested interval; exit or error notifies immediately) — do not run \`sleep\` or a foreground polling loop next to wait for it, which would only waste the turn. Full output file, safe to read mid-run: ${getTaskOutputPath(monitorTaskId)}. Stop it with ${BACKGROUND_TASK_STOP_TOOL_NAME}.`
     const content = [stdout.trim(), started].filter(Boolean).join('\n')
     return {
       tool_use_id: toolUseID,
