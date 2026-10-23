@@ -353,6 +353,8 @@ function AttachmentMessageContent({
     }
     case 'task_status':
       return <TaskStatusMessage attachment={attachment} />
+    case 'end_turn_requested':
+      return <Line>Run complete (End Turn)</Line>
     default:
       // Exhaustiveness: every type reaching here must be in
       // TYPES_WITHOUT_SUMMARY_LINE. If TS errors, a new Attachment type was

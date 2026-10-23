@@ -52,6 +52,7 @@ import type { UnseenDivider } from './FullscreenLayout.js'
 import { LogoV2 } from './LogoV2/LogoV2.js'
 import { StreamingMarkdown } from './Markdown.js'
 import { MessageRow } from './MessageRow.js'
+import { appendRenderOnlyTools } from './renderOnlyTools.js'
 import {
   InVirtualListContext,
   type MessageActionsNav,
@@ -379,7 +380,7 @@ export function computeSliceStart(
 
 const MessagesImpl = ({
   messages,
-  tools,
+  tools: requestTools,
   commands,
   verbose,
   toolJSX,
@@ -415,6 +416,13 @@ const MessagesImpl = ({
   const toggleShowAllShortcut = useShortcutDisplay(
     'transcript:toggleShowAll',
     'Transcript',
+  )
+
+  // Subagent-only tools (EndTurn) appear in agent transcripts this process
+  // renders but never in the request toolset — augment at render time only.
+  const tools = useMemo(
+    () => appendRenderOnlyTools(requestTools),
+    [requestTools],
   )
 
   const normalizedMessages = useMemo(
