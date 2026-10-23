@@ -18,7 +18,8 @@ Provide actionable guidance. Focus on:
 
 Be specific and direct. Reference concrete files, functions, or code when relevant.
 Do not repeat what the assistant already described. Add new insight or correct errors.
-Keep your response concise. Use the file read and search tools only when you need to verify a specific claim or check actual code. Do not explore broadly.`
+Keep your response concise. Use the file read and search tools only when you need to verify a specific claim or check actual code. Do not explore broadly.
+Once you can answer the question, stop calling tools and give your final advice — your last message must be the complete advice, never a bare tool call.`
 }
 
 export const ADVISOR_AGENT: BuiltInAgentDefinition = {
@@ -33,6 +34,5 @@ export const ADVISOR_AGENT: BuiltInAgentDefinition = {
   source: 'built-in',
   baseDir: 'built-in',
   model: 'inherit',
-  maxTurns: 3,
   getSystemPrompt: () => getAdvisorSystemPrompt(),
 }
