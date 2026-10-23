@@ -111,6 +111,10 @@ export type BaseAgentDefinition = {
   initialPrompt?: string // Prepended to the first user turn (slash commands work)
   memory?: AgentMemoryScope // Persistent memory scope
   isolation?: 'worktree' // Run in an isolated git worktree
+  /** Role-configured built-ins only (advisor, plan): the model comes from a
+   * dedicated settings key, so it outranks defaultSubagentModel — the blanket
+   * override must not silently mask an explicitly configured role model. */
+  roleConfiguredModel?: boolean
   pendingSnapshotUpdate?: { snapshotTimestamp: string }
   /** Omit CLAUDE.md hierarchy from the agent's userContext. Read-only agents
    * (Explore, Plan) don't need commit/PR/lint guidelines — the main agent has

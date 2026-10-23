@@ -41,7 +41,9 @@ export function getBuiltInAgents(): AgentDefinition[] {
     const planConfig = getPlanAgentConfig()
     agents.push({
       ...PLAN_AGENT,
-      ...(planConfig.planModel ? { model: planConfig.planModel } : {}),
+      ...(planConfig.planModel
+        ? { model: planConfig.planModel, roleConfiguredModel: true }
+        : {}),
     })
   }
 
@@ -54,6 +56,7 @@ export function getBuiltInAgents(): AgentDefinition[] {
     agents.push({
       ...ADVISOR_AGENT,
       model: advisorConfig.advisorModel,
+      roleConfiguredModel: true,
     })
   }
 

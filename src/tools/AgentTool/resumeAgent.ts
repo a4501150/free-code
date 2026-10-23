@@ -120,7 +120,10 @@ export async function resumeAgentBackground({
   const resolvedAgentModel = getAgentModel(
     selectedAgent.model,
     toolUseContext.options.mainLoopModel,
-    { permissionMode },
+    {
+      permissionMode,
+      roleConfiguredModel: selectedAgent.roleConfiguredModel,
+    },
   )
 
   const workerPermissionContext = {

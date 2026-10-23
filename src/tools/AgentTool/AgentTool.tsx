@@ -449,7 +449,10 @@ export const AgentTool = buildTool({
     const resolvedAgentModel = getAgentModel(
       selectedAgent.model,
       toolUseContext.options.mainLoopModel,
-      { permissionMode },
+      {
+        permissionMode,
+        roleConfiguredModel: selectedAgent.roleConfiguredModel,
+      },
     )
 
     // Resolve effective isolation mode (explicit param overrides agent def;

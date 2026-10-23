@@ -372,7 +372,11 @@ export async function* runAgent({
   const resolvedAgentModel = getAgentModel(
     agentDefinition.model,
     toolUseContext.options.mainLoopModel,
-    { commandModel: model, permissionMode },
+    {
+      commandModel: model,
+      permissionMode,
+      roleConfiguredModel: agentDefinition.roleConfiguredModel,
+    },
   )
 
   const agentId = override?.agentId ? override.agentId : createAgentId()

@@ -3,6 +3,7 @@ import {
   getAgentModel,
   isModelInheritKeyword,
 } from '../../src/utils/model/agent.js'
+import { parseUserSpecifiedModel } from '../../src/utils/model/model.js'
 import { getRuntimeMainLoopModel } from '../../src/utils/model/model.js'
 import {
   initProviderRegistry,
@@ -63,4 +64,37 @@ describe('getAgentModel with inherit keywords', () => {
       ).toBe(expectedRuntimeModel())
     })
   }
+})
+
+describe('getAgentModel role-configured precedence', () => {
+  // defaultSubagentModel installed as the blanket override. parseUserSpecifiedModel
+  // resolves the same string both inside getAgentModel and here, so comparing
+  // against its output sidesteps normalization differences.
+  const override = 'anthropic:claude-haiku-4-5'
+  const parent = 'anthropic:claude-sonnet-4-5'
+
+  beforeEach(() => initProviderRegistry({}, { defaultSubagentModel: override }))
+  afterEach(() => resetProviderRegistry())
+
+  test('blanket override still wins without the role flag', () => {
+    expect(getAgentModel('anthropic:claude-opus-4-1', parent)).toBe(
+      parseUserSpecifiedModel(override),
+    )
+  })
+
+  test('role-configured model (advisor, plan) beats the blanket override', () => {
+    expect(
+      getAgentModel('anthropic:claude-opus-4-1', parent, {
+        roleConfiguredModel: true,
+      }),
+    ).toBe(parseUserSpecifiedModel('anthropic:claude-opus-4-1'))
+  })
+
+  test('utility sentinel stays subject to the blanket override', () => {
+    // Tier agents (model: utility) keep the documented behavior: the
+    // override wins over the sentinel (e2e provider-config clause a).
+    expect(getAgentModel('utility', parent)).toBe(
+      parseUserSpecifiedModel(override),
+    )
+  })
 })

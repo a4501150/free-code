@@ -56,14 +56,18 @@ export function getAgentModel(
      * the Agent tool has no model param — the LLM cannot pick a subagent model). */
     commandModel?: string
     permissionMode?: PermissionMode
+    /** Role-configured built-ins (advisor, plan) only: the agent model is an
+     * explicit settings choice and wins over defaultSubagentModel. */
+    roleConfiguredModel?: boolean
   },
 ): string {
-  // Priority: modelSettings.json defaultSubagentModel > model defaults
+  // Priority: modelSettings.json defaultSubagentModel > model defaults.
+  // Exception: role-configured models (advisor, plan) are explicit settings
+  // choices and outrank the blanket override.
   const configSubagent =
     getProviderRegistry().getConfiguredDefaultSubagentModel()
-  const subagentOverride = configSubagent
-  if (subagentOverride) {
-    return parseUserSpecifiedModel(subagentOverride)
+  if (configSubagent && !options?.roleConfiguredModel) {
+    return parseUserSpecifiedModel(configSubagent)
   }
 
   const registry = getProviderRegistry()

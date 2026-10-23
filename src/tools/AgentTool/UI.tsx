@@ -540,9 +540,12 @@ export function renderToolUseMessage({
  */
 export function renderAgentToolUseTag(
   agentDefinitionModel: string | undefined,
+  roleConfiguredModel?: boolean,
 ): React.ReactNode {
   const mainModel = getMainLoopModel()
-  const effectiveModel = getAgentModel(agentDefinitionModel, mainModel)
+  const effectiveModel = getAgentModel(agentDefinitionModel, mainModel, {
+    roleConfiguredModel,
+  })
 
   if (effectiveModel !== mainModel) {
     return (
@@ -1328,10 +1331,12 @@ function GroupedAgentToolUseView({
       const subagentType = parsedInput.success
         ? parsedInput.data.subagent_type
         : undefined
-      const agentDefinitionModel = subagentType
-        ? activeAgents?.find(a => a.agentType === subagentType)?.model
+      const agentDefinition = subagentType
+        ? activeAgents?.find(a => a.agentType === subagentType)
         : undefined
-      const resolvedModel = getAgentModel(agentDefinitionModel, mainModel)
+      const resolvedModel = getAgentModel(agentDefinition?.model, mainModel, {
+        roleConfiguredModel: agentDefinition?.roleConfiguredModel,
+      })
       const effectiveModel = resolvedModel !== mainModel ? resolvedModel : null
 
       return {

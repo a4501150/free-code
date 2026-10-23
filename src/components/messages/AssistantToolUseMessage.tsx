@@ -64,16 +64,16 @@ export function AssistantToolUseMessage({
   const toggleAgentExpansion = useToggleAgentToolUseExpansion(param.id)
   const isAgentTool = param.name === AGENT_TOOL_NAME
 
-  // Look up the agent definition model for AgentTool so renderAgentToolUseTag
-  // can show the effective model tag.
-  const agentDefinitionModel = useAppStateMaybeOutsideOfProvider(state => {
+  // Look up the agent definition for AgentTool so renderAgentToolUseTag
+  // can show the effective model tag (with the role-configured exemption).
+  const agentDefinition = useAppStateMaybeOutsideOfProvider(state => {
     if (param.name !== AGENT_TOOL_NAME) return undefined
     const subagentType = (param.input as { subagent_type?: string })
       ?.subagent_type
     if (!subagentType) return undefined
     return state.agentDefinitions.activeAgents.find(
       a => a.agentType === subagentType,
-    )?.model
+    )
   })
 
   // Memoize on param identity (stable — from the persisted message object).
@@ -236,7 +236,10 @@ export function AssistantToolUseMessage({
           {/* Render tool-specific tags (timeout, model, resume ID, etc.) */}
           {input.success &&
             (param.name === AGENT_TOOL_NAME
-              ? renderAgentToolUseTag(agentDefinitionModel)
+              ? renderAgentToolUseTag(
+                  agentDefinition?.model,
+                  agentDefinition?.roleConfiguredModel,
+                )
               : tool.renderToolUseTag?.(input.data))}
         </Box>
         {!isResolved &&
