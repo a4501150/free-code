@@ -4,6 +4,7 @@ import { ENTER_PLAN_MODE_TOOL_NAME } from '../tools/EnterPlanModeTool/constants.
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt.js'
 import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../tools/BackgroundTaskStopTool/prompt.js'
+import { BACKGROUND_TASK_LIST_TOOL_NAME } from '../tools/BackgroundTaskListTool/constants.js'
 import { MONITOR_TOOL_NAME } from '../tools/MonitorTool/toolName.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { SHELL_TOOL_NAMES } from '../utils/shell/shellToolUtils.js'
@@ -26,7 +27,6 @@ export const ALL_AGENT_DISALLOWED_TOOLS = new Set([
   ENTER_PLAN_MODE_TOOL_NAME,
   AGENT_TOOL_NAME,
   ASK_USER_QUESTION_TOOL_NAME,
-  BACKGROUND_TASK_STOP_TOOL_NAME,
 ])
 
 export const CUSTOM_AGENT_DISALLOWED_TOOLS = new Set([
@@ -65,13 +65,17 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
   SYNTHETIC_OUTPUT_TOOL_NAME,
   ENTER_WORKTREE_TOOL_NAME,
   EXIT_WORKTREE_TOOL_NAME,
+  // Background task management is ownership-scoped at the tool layer
+  // (mayStopTask in src/tasks/ownership.ts): a subagent may list/stop only
+  // tasks it owns or agents it spawned; the main session may stop anything.
+  BACKGROUND_TASK_LIST_TOOL_NAME,
+  BACKGROUND_TASK_STOP_TOOL_NAME,
 ])
 
 /*
  * BLOCKED FOR ASYNC AGENTS:
  * - AgentTool: Blocked to prevent recursion
  * - ExitPlanModeTool: Plan mode is a main thread abstraction.
- * - BackgroundTaskStopTool: Requires access to main thread task state.
  *
  * ENABLE LATER (NEED WORK):
  * - MCPTool: TBD

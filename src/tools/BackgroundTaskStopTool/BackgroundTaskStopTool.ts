@@ -1,7 +1,8 @@
 import { z } from 'zod/v4'
-import type { TaskStateBase } from '../../Task.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { stopTask } from '../../tasks/stopTask.js'
+import { mayStopTask, taskCoordinationAgentId } from '../../tasks/ownership.js'
+import type { TaskState } from '../../tasks/types.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { DESCRIPTION, BACKGROUND_TASK_STOP_TOOL_NAME } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
@@ -57,7 +58,7 @@ export const BackgroundTaskStopTool = buildTool({
   toAutoClassifierInput(input) {
     return input.task_id ?? input.shell_id ?? ''
   },
-  async validateInput({ task_id, shell_id }, { getAppState }) {
+  async validateInput({ task_id, shell_id }, context) {
     // Support both task_id and shell_id (deprecated KillShell compat)
     const id = task_id ?? shell_id
     if (!id) {
@@ -68,8 +69,8 @@ export const BackgroundTaskStopTool = buildTool({
       }
     }
 
-    const appState = getAppState()
-    const task = appState.tasks?.[id] as TaskStateBase | undefined
+    const appState = context.getAppState()
+    const task = appState.tasks?.[id] as TaskState | undefined
 
     if (!task) {
       return {
@@ -84,6 +85,28 @@ export const BackgroundTaskStopTool = buildTool({
         result: false,
         message: `Task ${id} is not running (status: ${task.status})`,
         errorCode: 3,
+      }
+    }
+
+    // Ownership: the main thread may stop anything; a subagent only the
+    // shell/monitor tasks it spawned or the agents it spawned.
+    if (!mayStopTask(task, context.agentId)) {
+      const ownerAgentId = taskCoordinationAgentId(task)
+      const ownerName = ownerAgentId
+        ? [...(appState.agentNameRegistry ?? [])].find(
+            ([, agentId]) => agentId === ownerAgentId,
+          )?.[0]
+        : undefined
+      const ownerLabel = ownerAgentId
+        ? `agent ${ownerName ? `${ownerName} (${ownerAgentId})` : ownerAgentId}`
+        : 'the main session'
+      const coordination = ownerAgentId
+        ? ` Coordinate via SendMessage to: "${ownerAgentId}".`
+        : ''
+      return {
+        result: false,
+        message: `Task ${id} belongs to ${ownerLabel} — you can only stop tasks you own or agents you spawned.${coordination}`,
+        errorCode: 4,
       }
     }
 
@@ -106,7 +129,7 @@ export const BackgroundTaskStopTool = buildTool({
   renderToolResultMessage,
   async call(
     { task_id, shell_id },
-    { getAppState, setAppState, abortController },
+    { getAppState, setAppState, setAppStateForTasks, abortController },
   ) {
     // Support both task_id and shell_id (deprecated KillShell compat)
     const id = task_id ?? shell_id
@@ -114,9 +137,12 @@ export const BackgroundTaskStopTool = buildTool({
       throw new Error('Missing required parameter: task_id')
     }
 
+    // Route through the always-shared task channel (same pattern as
+    // BashTool): an async agent's setAppState is a no-op, so a plain
+    // setAppState would silently drop the kill for the registry.
     const result = await stopTask(id, {
       getAppState,
-      setAppState,
+      setAppState: setAppStateForTasks ?? setAppState,
     })
 
     return {
