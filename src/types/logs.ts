@@ -3,7 +3,10 @@ import type { FileHistorySnapshot } from 'src/utils/fileHistory.js'
 import type { ContentReplacementRecord } from 'src/utils/toolResultStorage.js'
 import type { AgentId } from './ids.js'
 import type { Message } from './message.js'
-import type { QueueOperationMessage } from './messageQueueTypes.js'
+import type {
+  QueueOperationMessage,
+  QueueStateMessage,
+} from './messageQueueTypes.js'
 
 export type SerializedMessage = Message & {
   cwd: string
@@ -232,6 +235,7 @@ export type Entry =
   | PRLinkMessage
   | FileHistorySnapshotMessage
   | QueueOperationMessage
+  | QueueStateMessage
   | SpeculationAcceptMessage
   | ModeEntry
   | CacheTtl1hEntry

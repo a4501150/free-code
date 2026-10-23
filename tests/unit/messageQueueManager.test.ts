@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { asAgentId } from '../../src/types/ids.js'
 import type { QueuedCommand } from '../../src/types/textInputTypes.js'
 import {
   clearCommandQueue,
@@ -9,6 +10,7 @@ import {
   getCommandQueueLength,
   getCommandQueueSnapshot,
   popAllEditable,
+  restoreQueue,
 } from '../../src/utils/messageQueueManager.js'
 
 const cmd = (
@@ -97,5 +99,32 @@ describe('command queue', () => {
     enqueue(cmd('meta', { isMeta: true }))
     expect(popAllEditable('typed', 0)).toBeUndefined()
     expect(getCommandQueueLength()).toBe(1)
+  })
+
+  test('restoreQueue replaces the queue and keeps only user commands', () => {
+    enqueue(cmd('stale from the previous view'))
+    restoreQueue([
+      cmd('restored'),
+      cmd('notification', { mode: 'task-notification' }),
+      cmd('meta', { isMeta: true }),
+      cmd('agent-scoped', { agentId: asAgentId('agent-1') }),
+    ])
+    expect(getCommandQueueLength()).toBe(1)
+    expect(getCommandQueueSnapshot()[0]?.value).toBe('restored')
+  })
+
+  test('restoreQueue emits a fresh frozen snapshot', () => {
+    const before = getCommandQueueSnapshot()
+    restoreQueue([cmd('restored')])
+    const after = getCommandQueueSnapshot()
+    expect(after).not.toBe(before)
+    expect(Object.isFrozen(after)).toBe(true)
+    expect(after[0]?.value).toBe('restored')
+  })
+
+  test('restoreQueue with an empty snapshot clears the queue', () => {
+    enqueue(cmd('user'))
+    restoreQueue([])
+    expect(getCommandQueueLength()).toBe(0)
   })
 })

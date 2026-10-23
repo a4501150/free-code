@@ -24,6 +24,7 @@ import type { PermissionMode } from './permissions.js'
 import type {
   QueueOperation,
   QueueOperationMessage,
+  QueueStateMessage,
 } from './messageQueueTypes.js'
 import type { HookProgress } from './hooks.js'
 import type { UUID } from 'crypto'
@@ -31,7 +32,7 @@ import type { UUID } from 'crypto'
 // Re-export so downstream imports of these symbols from types/message.js
 // resolve transparently (many files import QueueOperation{,Message} through
 // types/message rather than types/messageQueueTypes).
-export type { QueueOperation, QueueOperationMessage }
+export type { QueueOperation, QueueOperationMessage, QueueStateMessage }
 
 // ---------------------------------------------------------------------------
 // Level + origin

@@ -1,3 +1,4 @@
+import type { UUID } from 'crypto'
 import type { DomainUserContentBlock } from '../types/domain.js'
 import type { AgentId } from '../types/ids.js'
 import type { Permutations } from 'src/types/utils.js'
@@ -6,6 +7,7 @@ import type { AppState } from '../state/AppStateStore.js'
 import type {
   QueueOperation,
   QueueOperationMessage,
+  QueueStateMessage,
 } from '../types/messageQueueTypes.js'
 import type {
   EditablePromptInputMode,
@@ -16,7 +18,12 @@ import type {
 import type { PastedContent } from './config.js'
 import { extractTextContent } from './messages.js'
 import { objectGroupBy } from './objectGroupBy.js'
-import { recordQueueOperation } from './sessionStorage.js'
+import { registerCleanup } from './cleanupRegistry.js'
+import {
+  flushSessionStorage,
+  recordQueueOperation,
+  recordQueueState,
+} from './sessionStorage.js'
 import { createSignal } from './signal.js'
 
 export type SetAppState = (f: (prev: AppState) => AppState) => void
@@ -35,6 +42,61 @@ function logOperation(operation: QueueOperation, content?: string): void {
     ...(content !== undefined && { content }),
   }
   void recordQueueOperation(queueOp)
+}
+
+/**
+ * Set while restoreQueue replays a persisted snapshot — suppresses the
+ * persist-on-mutate write so a resume doesn't append an identical record.
+ */
+let restoringQueue = false
+
+/**
+ * Serialized write chain for queue-state snapshots. Fire-and-forget
+ * recordQueueState calls can interleave at appendEntry's materialization
+ * await and land out of order — the latest-wins read would then pick a
+ * stale snapshot — so each write waits for the previous one. Content is
+ * captured at mutation time, before chaining.
+ */
+let queueStateWriteChain: Promise<void> = Promise.resolve()
+
+/**
+ * Wait until every queued snapshot write has at least been handed to the
+ * storage layer (its own flush then drains it to disk). Registered as an
+ * exit cleanup ahead of the storage flush so the final snapshot survives
+ * the process; also the handle tests use to make flushes deterministic.
+ */
+export function flushQueueStatePersistence(): Promise<void> {
+  return queueStateWriteChain.catch(() => {})
+}
+
+// Registered at module init so it lands ahead of the storage layer's own
+// lazy-registered flush cleanup — but self-sufficient either way: it drains
+// storage itself, so it is correct even when it ends up running last.
+registerCleanup(async () => {
+  await flushQueueStatePersistence()
+  await flushSessionStorage()
+})
+
+/**
+ * Persist a latest-wins snapshot of the user-typed commands still queued.
+ * Written on every queue mutation (including the empty state, so a drained
+ * queue overwrites older snapshots on the read side). Only commands a human
+ * typed are kept — task notifications, channel messages and agent-scoped
+ * commands are stale or non-restorable across a restart.
+ */
+function persistQueueState(commands: readonly QueuedCommand[]): void {
+  if (restoringQueue) return
+  const queueState: QueueStateMessage = {
+    type: 'queue-state',
+    timestamp: new Date().toISOString(),
+    sessionId: getSessionId() as UUID,
+    commands: commands.filter(
+      cmd => isQueuedCommandEditable(cmd) && !cmd.agentId,
+    ),
+  }
+  queueStateWriteChain = queueStateWriteChain
+    .catch(() => {})
+    .then(() => recordQueueState(queueState))
 }
 
 // ============================================================================
@@ -72,6 +134,7 @@ const store = scopedStore<CommandQueueStore>(() => ({
 function notifySubscribers(): void {
   const st = store()
   st.snapshot = Object.freeze([...st.commands])
+  persistQueueState(st.commands)
   st.changed.emit()
 }
 
@@ -357,6 +420,28 @@ export function clearCommandQueue(): void {
   }
   store().commands.length = 0
   notifySubscribers()
+}
+
+/**
+ * Replace the live queue with a persisted queue-state snapshot (resume).
+ * Bulk-set + one change-signal emit; the persist-on-mutate write is
+ * suppressed (the snapshot on disk already is this state). Re-filters
+ * defensively — only user-typed, main-thread commands are restorable;
+ * anything else riding in the record is stale across a restart.
+ */
+export function restoreQueue(commands: readonly QueuedCommand[]): void {
+  const restorable = commands.filter(
+    cmd => isQueuedCommandEditable(cmd) && !cmd.agentId,
+  )
+  const st = store()
+  try {
+    restoringQueue = true
+    st.commands = [...restorable]
+    st.snapshot = Object.freeze([...restorable])
+    st.changed.emit()
+  } finally {
+    restoringQueue = false
+  }
 }
 
 // ============================================================================

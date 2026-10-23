@@ -46,7 +46,11 @@ import type {
   SystemMessage,
   UserMessage,
 } from '../types/message.js'
-import type { QueueOperationMessage } from '../types/messageQueueTypes.js'
+import type {
+  QueueOperationMessage,
+  QueueStateMessage,
+} from '../types/messageQueueTypes.js'
+import type { QueuedCommand } from '../types/textInputTypes.js'
 import { registerCleanup } from './cleanupRegistry.js'
 import { updateSessionName } from './concurrentSessions.js'
 import { getCwd } from './cwd.js'
@@ -145,6 +149,18 @@ export function isTranscriptMessage(entry: Entry): entry is TranscriptMessage {
  */
 export function isChainParticipant(m: Pick<Message, 'type'>): boolean {
   return m.type !== 'progress'
+}
+
+/**
+ * Runtime-shape guard for queue-state snapshots. Unlike the other flat
+ * metadata entries, queue-state embeds a nested command array — a truncated
+ * or hand-edited record must not inject garbage into the restored queue.
+ */
+function isQueueStateEntry(entry: Entry): entry is QueueStateMessage {
+  return (
+    entry.type === 'queue-state' &&
+    Array.isArray((entry as QueueStateMessage).commands)
+  )
 }
 
 type LegacyProgressEntry = {
@@ -946,6 +962,12 @@ class Project {
     })
   }
 
+  async insertQueueState(queueState: QueueStateMessage) {
+    return this.trackWrite(async () => {
+      await this.appendEntry(queueState)
+    })
+  }
+
   async insertContentReplacement(
     replacements: ContentReplacementRecord[],
     agentId?: AgentId,
@@ -1033,6 +1055,10 @@ class Project {
     } else if (entry.type === 'cache-ttl-1h') {
       void this.enqueueWrite(sessionFile, entry)
     } else if (entry.type === 'worktree-state') {
+      void this.enqueueWrite(sessionFile, entry)
+    } else if (entry.type === 'queue-state') {
+      // Latest-wins queue snapshots always append to the session file
+      // (restored on resume alongside worktree-state)
       void this.enqueueWrite(sessionFile, entry)
     } else if (entry.type === 'content-replacement') {
       // Content replacement records can always be appended. Subagent records
@@ -1219,6 +1245,10 @@ export function getLastLoggedMessageUuid(
 
 export async function recordQueueOperation(queueOp: QueueOperationMessage) {
   await getProject().insertQueueOperation(queueOp)
+}
+
+export async function recordQueueState(queueState: QueueStateMessage) {
+  await getProject().insertQueueState(queueState)
 }
 
 /**
@@ -2809,6 +2839,7 @@ export async function loadTranscriptFile(
   modes: Map<UUID, string>
   cacheTtl1hs: Map<UUID, boolean>
   worktreeStates: Map<UUID, PersistedWorktreeSession | null>
+  queueStates: Map<UUID, QueuedCommand[]>
   fileHistorySnapshots: Map<UUID, FileHistorySnapshotMessage>
   contentReplacements: Map<UUID, ContentReplacementRecord[]>
   agentContentReplacements: Map<AgentId, ContentReplacementRecord[]>
@@ -2827,6 +2858,7 @@ export async function loadTranscriptFile(
   const modes = new Map<UUID, string>()
   const cacheTtl1hs = new Map<UUID, boolean>()
   const worktreeStates = new Map<UUID, PersistedWorktreeSession | null>()
+  const queueStates = new Map<UUID, QueuedCommand[]>()
   const fileHistorySnapshots = new Map<UUID, FileHistorySnapshotMessage>()
   const contentReplacements = new Map<UUID, ContentReplacementRecord[]>()
   const agentContentReplacements = new Map<
@@ -2921,6 +2953,9 @@ export async function loadTranscriptFile(
           cacheTtl1hs.set(entry.sessionId, entry.eligible)
         } else if (entry.type === 'worktree-state' && entry.sessionId) {
           worktreeStates.set(entry.sessionId, entry.worktreeSession)
+        } else if (isQueueStateEntry(entry) && entry.sessionId) {
+          // Latest-wins: a later snapshot (including an empty one) overwrites
+          queueStates.set(entry.sessionId, entry.commands)
         } else if (entry.type === 'pr-link' && entry.sessionId) {
           prNumbers.set(entry.sessionId, entry.prNumber)
           prUrls.set(entry.sessionId, entry.prUrl)
@@ -2994,6 +3029,8 @@ export async function loadTranscriptFile(
         cacheTtl1hs.set(entry.sessionId, entry.eligible)
       } else if (entry.type === 'worktree-state' && entry.sessionId) {
         worktreeStates.set(entry.sessionId, entry.worktreeSession)
+      } else if (isQueueStateEntry(entry) && entry.sessionId) {
+        queueStates.set(entry.sessionId, entry.commands)
       } else if (entry.type === 'pr-link' && entry.sessionId) {
         prNumbers.set(entry.sessionId, entry.prNumber)
         prUrls.set(entry.sessionId, entry.prUrl)
@@ -3092,6 +3129,7 @@ export async function loadTranscriptFile(
     modes,
     cacheTtl1hs,
     worktreeStates,
+    queueStates,
     fileHistorySnapshots,
     contentReplacements,
     agentContentReplacements,
@@ -3109,6 +3147,7 @@ async function loadSessionFile(sessionId: UUID): Promise<{
   tags: Map<UUID, string>
   agentSettings: Map<UUID, string>
   worktreeStates: Map<UUID, PersistedWorktreeSession | null>
+  queueStates: Map<UUID, QueuedCommand[]>
   fileHistorySnapshots: Map<UUID, FileHistorySnapshotMessage>
   contentReplacements: Map<UUID, ContentReplacementRecord[]>
 }> {
@@ -3148,6 +3187,18 @@ export async function doesMessageExistInSession(
 ): Promise<boolean> {
   const messageSet = await getSessionMessages(sessionId)
   return messageSet.has(messageUuid)
+}
+
+/**
+ * Latest persisted queue-state snapshot for a session — the user-typed
+ * commands still queued when the session ended. Restored into the in-memory
+ * queue on resume; undefined when the session has no snapshot on disk.
+ */
+export async function getPersistedQueueState(
+  sessionId: UUID,
+): Promise<QueuedCommand[] | undefined> {
+  const { queueStates } = await loadSessionFile(sessionId)
+  return queueStates.get(sessionId)
 }
 
 export async function getLastSessionLog(

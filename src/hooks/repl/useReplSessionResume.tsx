@@ -32,6 +32,7 @@ import {
   checkResumeSessionOwnership,
   computeStandaloneAgentContext,
   restoreAgentFromSession,
+  restoreQueueFromSession,
   restoreSessionStateFromLog,
   restoreWorktreeForResume,
   exitRestoredWorktree,
@@ -231,6 +232,10 @@ export function useReplSessionResume({
           exitRestoredWorktree()
           restoreWorktreeForResume(log.worktreeSession)
           adoptResumedSessionFile()
+          // Re-enqueue user-typed messages still queued when the resumed
+          // session ended; replaces anything queued for the session we
+          // just switched away from.
+          await restoreQueueFromSession(sessionId)
         } else {
           const ws = getCurrentWorktreeSession()
           if (ws) saveWorktreeState(ws)

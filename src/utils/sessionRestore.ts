@@ -30,6 +30,7 @@ import { getCwd } from './cwd.js'
 import { logForDebugging } from './debug.js'
 import type { FileHistorySnapshot } from './fileHistory.js'
 import { fileHistoryRestoreStateFromLog } from './fileHistory.js'
+import { restoreQueue } from './messageQueueManager.js'
 import { createSystemMessage } from './messages.js'
 import { parseUserSpecifiedModel } from './model/model.js'
 import { getPlansDirectory } from './plans.js'
@@ -41,6 +42,7 @@ import {
   restoreSessionMetadata,
   saveMode,
   saveWorktreeState,
+  getPersistedQueueState,
 } from './sessionStorage.js'
 import type { ContentReplacementRecord } from './toolResultStorage.js'
 import {
@@ -365,6 +367,21 @@ export function exitRestoredWorktree(): void {
  * mints a new ID) and clears metadata first, and print mode has no cost UI
  * and no worktree of its own.
  */
+/**
+ * Replace the live command queue with the session's persisted queue-state
+ * snapshot (user-typed messages still queued when it ended). Called on
+ * resume: the snapshot replaces any in-memory queue so stale commands from
+ * the previous session don't leak into the resumed one, and useQueueProcessor
+ * drains the restored messages once the REPL is idle. Sessions written
+ * before queue-state persistence have no snapshot — an empty restore.
+ */
+export async function restoreQueueFromSession(
+  sessionId: string,
+): Promise<void> {
+  const commands = await getPersistedQueueState(sessionId as UUID)
+  restoreQueue(commands ?? [])
+}
+
 export async function adoptResumedSessionAtStartup(
   result: ResumeLoadResult,
   opts: {
@@ -418,6 +435,12 @@ export async function adoptResumedSessionAtStartup(
     // from the transcript) so if the directory is gone we can override
     // the cache before adoptResumedSessionFile writes it.
     restoreWorktreeForResume(result.worktreeSession)
+
+    // Re-enqueue user-typed messages that were still queued at exit —
+    // the queue is in-memory only, so without this a --resume starts idle
+    // and the messages are lost. Same guard as adoptResumedSessionFile
+    // below: nothing to restore into without an adopted transcript.
+    if (sid) await restoreQueueFromSession(sid)
 
     // Point sessionFile at the resumed transcript and re-append metadata
     // now. resetSessionFilePointer above nulled it (so the old fresh-session

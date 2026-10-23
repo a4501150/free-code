@@ -92,11 +92,9 @@ function processQueuedCommands(
 
 function PromptInputQueuedCommandsImpl(): React.ReactNode {
   const queuedCommands = useCommandQueue()
-  const viewingAgent = useAppState(s => !!s.viewingAgentTaskId)
   // Brief layout: dim queue items + skip the paddingX (brief messages
   // already indent themselves). Gate mirrors the brief-spinner/message
-  // check elsewhere — no agent-view override needed since this
-  // component early-returns when viewing an agent.
+  // check elsewhere.
   const useBriefLayout = useAppState(s => s.isBriefOnly)
 
   // createUserMessage mints a fresh UUID per call; without memoization, streaming
@@ -123,8 +121,10 @@ function PromptInputQueuedCommandsImpl(): React.ReactNode {
     )
   }, [queuedCommands])
 
-  // Don't show leader's queued commands when viewing any agent's transcript
-  if (viewingAgent || messages === null) {
+  // Show the leader's queued commands in every view, agent transcripts
+  // included — input typed while viewing an agent lands in this same queue,
+  // and hiding it there made queued messages look like they vanished.
+  if (messages === null) {
     return null
   }
 
