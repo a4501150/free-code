@@ -137,9 +137,13 @@ describe('subagent background task scope', () => {
     expect(pillPane).toContain('2 shells')
 
     // Keyboard parity: Shift+Down opens the scoped tasks dialog from
-    // inside the agent view. Entering the view clears the footer
-    // selection, which keeps the prompt container as the keydown dispatch
-    // target.
+    // inside the agent view. Entering the view now RETAINS the footer
+    // selection (focus stays on the agent list for continued navigation),
+    // and while the selection is held the prompt container is not the
+    // keydown dispatch target — so first Escape once (footer:
+    // clearSelection) to hand focus back to the prompt input.
+    await session.sendSpecialKey('Escape')
+    await sleep(500)
     await session.sendSpecialKey('S-Down')
     await session.waitForText('Background tasks', 10_000)
 

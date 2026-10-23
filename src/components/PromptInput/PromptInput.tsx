@@ -1730,11 +1730,15 @@ function PromptInput({
                 getVisibleAgentTasks(tasks)[coordinatorTaskIndex - 1]?.id
               if (selectedTaskId) {
                 enterAgentView(selectedTaskId, setAppState)
-                // Clear the selection: a stuck footerItemSelected keeps
-                // isPromptDispatchTarget false, so the agent view loses
-                // every prompt-container keydown handler (Shift+Down
-                // dialog, Escape exit, voice, palette/history).
-                selectFooterItem(null)
+                // Keep the footer selection: focus stays on the agent list
+                // so ↑/↓ keep moving the row selection and Enter flips
+                // between transcript views without re-aiming the keyboard
+                // at the prompt input. Escape (footer:clearSelection) or
+                // typing (onChange deselects) returns focus to the prompt.
+                // While the selection is held the prompt container is not
+                // the key dispatch target, so its channel (Shift+Down
+                // dialog, Escape exit, palette/history) is paused — by
+                // design, the list owns the keys.
               } else {
                 setShowBashesDialog(true)
                 selectFooterItem(null)
