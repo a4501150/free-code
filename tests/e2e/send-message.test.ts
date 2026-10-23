@@ -71,7 +71,7 @@ describe('SendMessage in normal mode', () => {
         ]),
       ),
       // Agent iteration 2: sees the drained message, finishes.
-      forAgent(textResponse('4')),
+      forAgent(toolUseResponse([{ name: 'EndTurn', input: {} }], '4')),
       // Main turn 3: acknowledge the SendMessage result / agent completion.
       forMain(textResponse('noted.')),
     ])
@@ -142,7 +142,7 @@ describe('SendMessage in normal mode', () => {
         ]),
       ),
       // Agent iteration 2: finish.
-      forAgent(textResponse('child done')),
+      forAgent(toolUseResponse([{ name: 'EndTurn', input: {} }], 'child done')),
       // Main turn 2 (drains the agent message): acknowledge.
       forMain(textResponse('acknowledged the child update.')),
       // Main turn 3: agent completion notification turn.

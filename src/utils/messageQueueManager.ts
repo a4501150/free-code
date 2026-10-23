@@ -1,4 +1,5 @@
 import type { DomainUserContentBlock } from '../types/domain.js'
+import type { AgentId } from '../types/ids.js'
 import type { Permutations } from 'src/types/utils.js'
 import { getSessionId, scopedStore } from '../bootstrap/state.js'
 import type { AppState } from '../state/AppStateStore.js'
@@ -86,6 +87,16 @@ export const subscribeToCommandQueue: (cb: () => void) => () => void = cb =>
   store().changed.subscribe(cb)
 
 /**
+ * Wake queue subscribers without a queue mutation: a parked agent's wake
+ * condition can change outside the queue (its task entry's pendingMessages
+ * grows via SendMessage). Listeners re-check their own conditions; the
+ * snapshot is unchanged.
+ */
+export function notifyCommandQueueListeners(): void {
+  store().changed.emit()
+}
+
+/**
  * Get current snapshot of the command queue.
  * Compatible with React's useSyncExternalStore.
  * Returns a frozen array that only changes reference on mutation.
@@ -111,6 +122,28 @@ export function getCommandQueue(): QueuedCommand[] {
  */
 export function getCommandQueueLength(): number {
   return store().commands.length
+}
+
+/**
+ * Test the queue without copying it. Subscribed predicates run on every
+ * queue mutation, so they must not allocate (getCommandQueue copies).
+ */
+export function someCommand(
+  predicate: (command: QueuedCommand) => boolean,
+): boolean {
+  return store().commands.some(predicate)
+}
+
+/**
+ * Agent-addressed task notification — the drain predicate shared by the
+ * mid-turn gate (query.ts) and the parked-agent wake delivery (runAgent),
+ * so the two cannot drift apart.
+ */
+export function isAgentTaskNotification(
+  command: QueuedCommand,
+  agentId: AgentId,
+): boolean {
+  return command.mode === 'task-notification' && command.agentId === agentId
 }
 
 /**

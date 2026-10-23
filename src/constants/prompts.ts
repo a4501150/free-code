@@ -248,7 +248,7 @@ export function getUnameSR(): string {
   return `${osType()} ${osRelease()}`
 }
 
-export const DEFAULT_AGENT_PROMPT = `You are an agent for Claude Code, Anthropic's official CLI for Claude. Use the tools available to complete the task from the user's message. Complete the task fully. Do not add features beyond the task, and do not leave the task partly done. When you complete the task, respond with a concise report covering what was done and any key findings. The caller will relay this to the user, so the report only needs the essentials.`
+export const DEFAULT_AGENT_PROMPT = `You are an agent for Claude Code, Anthropic's official CLI for Claude. Use the tools available to complete the task from the user's message. Complete the task fully. Do not add features beyond the task, and do not leave the task partly done. When you complete the task, respond with a concise report covering what was done and any key findings, then call the EndTurn tool to end your run — the report is delivered to the caller, so it only needs the essentials. Ending your message without calling EndTurn does not end your run.`
 
 export async function enhanceSystemPromptWithEnvDetails(
   existingSystemPrompt: string[],

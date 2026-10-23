@@ -19,6 +19,8 @@ import { count, uniq } from './array.js'
 import { getFsImplementation } from './fsOperations.js'
 import { readdir, stat } from 'fs/promises'
 import type { IDESelection } from '../types/ide.js'
+import type { AgentId } from '../types/ids.js'
+import type { AppState } from '../state/AppStateStore.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { POWERSHELL_TOOL_NAME } from '../tools/PowerShellTool/toolName.js'
 import {
@@ -144,7 +146,10 @@ import {
   applyTaskOffsetsAndEvictions,
 } from './task/framework.js'
 import { getTaskOutputPath } from './task/diskOutput.js'
-import { drainPendingMessages } from '../tasks/LocalAgentTask/LocalAgentTask.js'
+import {
+  drainPendingMessages,
+  isLocalAgentTask,
+} from '../tasks/LocalAgentTask/LocalAgentTask.js'
 import type { TaskType, TaskStatus } from '../Task.js'
 import {
   getOriginalCwd,
@@ -625,6 +630,11 @@ export type Attachment =
       type: 'max_turns_reached'
       maxTurns: number
       turnCount: number
+    }
+  | {
+      // Internal signal: the model called EndTurn; query ends the loop and
+      // runAgent consumes this. Never rendered to the API.
+      type: 'end_turn_requested'
     }
   | {
       type: 'current_session_memory'
@@ -1137,6 +1147,19 @@ export function getAgentPendingMessageAttachments(
     origin: { kind: 'coordinator' as const },
     isMeta: true,
   }))
+}
+
+/**
+ * Pending SendMessage count for an agent — read-only, unlike
+ * getAgentPendingMessageAttachments which drains. The park loop polls it
+ * as its wake predicate for incoming coordinator traffic.
+ */
+export function getAgentPendingMessageCount(
+  agentId: AgentId,
+  getAppState: () => AppState,
+): number {
+  const task = getAppState().tasks[agentId]
+  return task && isLocalAgentTask(task) ? task.pendingMessages.length : 0
 }
 
 async function buildImageContentBlocks(

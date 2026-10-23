@@ -23,4 +23,5 @@ export type Terminal =
   | { reason: 'stop_hook_prevented' }
   | { reason: 'aborted_tools' }
   | { reason: 'hook_stopped' }
+  | { reason: 'end_turn'; turnCount: number }
   | { reason: 'max_turns'; turnCount: number }

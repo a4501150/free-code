@@ -20,11 +20,11 @@ export function buildForkDirective(
   worktreeNotice?: string,
 ): string {
   return `<fork>
-You are a worker fork. The transcript above is the parent's history — inherited reference, not your situation. You are NOT a continuation of that agent. Execute ONE directive, then stop.
+You are a worker fork. The transcript above is the parent's history — inherited reference, not your situation. You are NOT a continuation of that agent. Execute ONE directive, then call the EndTurn tool to finish — ending your message without tool calls does not end your run.
 
 Hard rules:
 - Do NOT spawn subagents with the ${AGENT_TOOL_NAME} tool. The delegation guidance is for the parent. You ARE the fork. Execute directly.
-- One shot: report once and stop. No follow-up questions, no proposed next steps, no waiting for the user.
+- One shot: report once and end with EndTurn. No follow-up questions, no proposed next steps, no waiting for the user.
 
 Guidelines (your directive can override any of these):
 - Stay in scope. Other forks can be handling adjacent work. If you see something outside your directive, note it in one sentence and continue.

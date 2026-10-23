@@ -11,6 +11,7 @@ import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
 import type { RequestLogEntry } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
+import { forMain } from '../helpers/agent-routes'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
 import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
@@ -90,14 +91,15 @@ describe('Fork run_in_background', () => {
           },
         },
       ]),
-      // The fork's own turn.
-      textResponse('fg-fork-report'),
+      // The fork's own turn: report + explicit EndTurn (strict end_turn —
+      // a text-only message would not end the run).
+      toolUseResponse([{ name: 'EndTurn', input: {} }], 'fg-fork-report'),
       // Main's final turn, after receiving the report as the tool_result.
       textResponse('The fork reported fg-fork-report.'),
     ])
 
     session = await startSession({ settings: SETTINGS })
-    await session.submitAndApprove('Fork something in the foreground', 90_000)
+    await session.submitAndApprove('Fork something in the foreground', 30_000)
 
     const log = await waitForRequestCount(server, 3, {
       description: 'foreground fork round-trip',
@@ -128,17 +130,29 @@ describe('Fork run_in_background', () => {
           },
         },
       ]),
-      // The main's ack turn and the fork's own turn can race, so both get
-      // the same marker text — whichever consumes which, the notification
-      // still carries the marker.
-      textResponse('bg-fork-report'),
-      textResponse('bg-fork-report'),
+      // The main's ack turn and the fork's own turn race. Route by request
+      // body: the fork's directive wrapper ("You are a worker fork") rides in
+      // the MESSAGE content, not the system prompt (the fork's system is the
+      // generic agent prompt), so a system-phrase selector never matches and
+      // the fork silently consumes a plain fixture. Main gets its own entry
+      // regardless of arrival order.
+      {
+        selector: body =>
+          JSON.stringify(body.messages ?? '').includes('worker fork'),
+        response: toolUseResponse(
+          [{ name: 'EndTurn', input: {} }],
+          'bg-fork-report',
+        ),
+      },
+      forMain(textResponse('bg-fork-report')),
       // The main's turn auto-fired by the fork's completion notification.
       textResponse('Acknowledged the notification.'),
     ])
 
     session = await startSession({ settings: SETTINGS })
-    await session.submitAndApprove('Fork something in the background', 90_000)
+    // Mock-backed flow: seconds, not 90 — a stall here means a fixture
+    // mismatch (the SDK retries mock 500s), so fail fast instead of burning.
+    await session.submitAndApprove('Fork something in the background', 30_000)
 
     const log = await waitForRequestCount(server, 4, {
       description: 'backgrounded fork launch + completion notification',

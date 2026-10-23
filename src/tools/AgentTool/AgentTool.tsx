@@ -133,7 +133,9 @@ const baseInputSchema = z.object({
     .describe('A short (3-5 word) description of the task'),
   prompt: z
     .string()
-    .describe('The detailed prompt for the agent to perform the task'),
+    .describe(
+      'The detailed prompt for the agent to perform the task. The agent sees ONLY this prompt — never your conversation — so it must be self-contained: the full goal and constraints, relevant file paths, and the expected deliverable. Brief it like a colleague who just entered the room.',
+    ),
   subagent_type: z
     .string()
     .optional()

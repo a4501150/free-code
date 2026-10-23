@@ -91,7 +91,11 @@ describe('subagent background task scope', () => {
           { name: 'Bash', input: { command: AGENT_HOLD, description: 'hold' } },
         ]),
       ),
-      forAgent(textResponse('agent holding')),
+      // Strict end_turn: the agent must call EndTurn to finish (a text-only
+      // message would park it on its owned background sleeps).
+      forAgent(
+        toolUseResponse([{ name: 'EndTurn', input: {} }], 'agent holding'),
+      ),
       // Main turn 2: acknowledge and end the turn.
       forMain(textResponse('probe spawned, standing by')),
       forMain(textResponse('probe acknowledged')),

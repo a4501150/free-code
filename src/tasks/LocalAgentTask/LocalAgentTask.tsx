@@ -22,7 +22,10 @@ import {
 } from '../../utils/abortController.js'
 import { registerCleanup } from '../../utils/cleanupRegistry.js'
 import { getSearchOrReadInfo } from '../../utils/collapseReadSearch.js'
-import { enqueuePendingNotification } from '../../utils/messageQueueManager.js'
+import {
+  enqueuePendingNotification,
+  notifyCommandQueueListeners,
+} from '../../utils/messageQueueManager.js'
 import type { StreamingThinking } from '../../utils/messages.js'
 import {
   getAgentTranscriptPath,
@@ -291,6 +294,9 @@ export function queuePendingMessage(
     ...task,
     pendingMessages: [...task.pendingMessages, msg],
   }))
+  // A pending message is a wake condition for a parked agent (SendMessage
+  // mid-run delivery); the command queue itself did not change.
+  notifyCommandQueueListeners()
 }
 
 /**

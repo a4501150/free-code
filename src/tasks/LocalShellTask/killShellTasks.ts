@@ -7,6 +7,7 @@ import type { AgentId } from '../../types/ids.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { logError } from '../../utils/log.js'
 import { dequeueAllMatching } from '../../utils/messageQueueManager.js'
+import { getRunningOwnedShellTasks } from '../ownership.js'
 import { evictTaskOutput } from '../../utils/task/diskOutput.js'
 import { updateTaskState } from '../../utils/task/framework.js'
 import { type BashTaskKind, isLocalShellTask } from './guards.js'
@@ -127,18 +128,11 @@ export function killShellTasksForAgent(
   getAppState: () => AppState,
   setAppState: SetAppStateFn,
 ): void {
-  const tasks = getAppState().tasks ?? {}
-  for (const [taskId, task] of Object.entries(tasks)) {
-    if (
-      isLocalShellTask(task) &&
-      task.agentId === agentId &&
-      task.status === 'running'
-    ) {
-      logForDebugging(
-        `killShellTasksForAgent: killing orphaned shell task ${taskId} (agent ${agentId} exiting)`,
-      )
-      killTask(taskId, setAppState)
-    }
+  for (const task of getRunningOwnedShellTasks(agentId, getAppState)) {
+    logForDebugging(
+      `killShellTasksForAgent: killing orphaned shell task ${task.id} (agent ${agentId} exiting)`,
+    )
+    killTask(task.id, setAppState)
   }
   // Purge any queued notifications addressed to this agent — its query loop
   // has exited and won't drain them. killTask fires 'killed' notifications

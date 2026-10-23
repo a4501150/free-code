@@ -11,6 +11,7 @@ import {
 import type { QuerySource } from '../../constants/querySource.js'
 import { getSystemContext, getUserContext } from '../../context.js'
 import { query } from '../../query.js'
+import type { Terminal } from '../../query/transitions.js'
 import { cleanupAgentTracking } from '../../services/api/promptCacheBreakDetection.js'
 import {
   connectToServer,
@@ -29,6 +30,27 @@ import type {
   ToolUseContext,
 } from '../../Tool.js'
 import { killShellTasksForAgent } from '../../tasks/LocalShellTask/killShellTasks.js'
+import { getRunningOwnedShellTasks } from '../../tasks/ownership.js'
+import type { TaskState } from '../../tasks/types.js'
+import { executeStopHooks } from '../../utils/hooks.js'
+import {
+  dequeueAllMatching,
+  isAgentTaskNotification,
+} from '../../utils/messageQueueManager.js'
+import {
+  getAgentPendingMessageAttachments,
+  getAgentPendingMessageCount,
+  getQueuedCommandAttachments,
+} from '../../utils/attachments.js'
+import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../BackgroundTaskStopTool/prompt.js'
+import { END_TURN_TOOL_NAME } from '../EndTurnTool/constants.js'
+import { EndTurnTool } from '../EndTurnTool/EndTurnTool.js'
+import {
+  MAX_END_REMINDERS,
+  PARK_INITIAL_IDLE_MS,
+  PARK_MAX_IDLE_MS,
+  parkUntilOwnedTaskSignal,
+} from './agentPark.js'
 import type { Command } from '../../types/command.js'
 import { isAnyReasoningBlock } from '../../types/domainGuards.js'
 import type { AgentId } from '../../types/ids.js'
@@ -507,11 +529,16 @@ export async function* runAgent({
     availableTools.filter(tool => tool.isEnabled()),
   )
 
-  const resolvedTools = resolveAgentTools(
-    agentDefinition,
-    modelCapableTools,
-    isAsync,
-  ).resolvedTools
+  const resolvedTools = [
+    ...resolveAgentTools(agentDefinition, modelCapableTools, isAsync)
+      .resolvedTools,
+    // Subagent-only completion signal. Not registered in the global tool
+    // pool (tools.ts) so main-thread sessions never see it — every runAgent
+    // run is a subagent. Injected after the async-allowlist filter on
+    // purpose: async agents need it most (nobody can wrap them up
+    // interactively).
+    EndTurnTool,
+  ]
 
   const additionalWorkingDirectories = Array.from(
     appState.toolPermissionContext.additionalWorkingDirectories.keys(),
@@ -831,183 +858,349 @@ export async function* runAgent({
     `[Agent: ${agentDefinition.agentType}] Starting query | model=${resolvedAgentModel ?? 'default'} initialMessages=${initialMessages.length} systemPromptChars=${agentSystemPrompt.length} tools=${allTools.length}`,
   )
 
+  // Strict end_turn model: the run ends only when the model calls EndTurn.
+  // An implicit end (assistant message with no tool calls) is not a
+  // completion — it gets one reminder round, and if the agent still owns
+  // running background tasks it parks between rounds until one of them
+  // signals. See agentPark.ts for the wake sources and backoff.
+  const runMessages: Message[] = []
+  // `turnsUsed` carries the maxTurns budget across re-entries — query counts
+  // turns per call, so a fresh budget per round would multiply the cap.
+  const totalMaxTurns = maxTurns ?? agentDefinition.maxTurns
+  let turnsUsed = 0
+  let consecutiveEndReminders = 0
+  let remindedAboutOwnedTasks = false
+  let parkIdleMs = PARK_INITIAL_IDLE_MS
+  // Set at the two true-completion break sites (EndTurn, force-complete
+  // backstop) — the gate for the relocated SubagentStop hooks below.
+  let fireStopHooks = false
+  const pushReminder = (content: string) => {
+    runMessages.push(createUserMessage({ content, isMeta: true }))
+  }
+
   try {
-    for await (const message of query({
-      messages: initialMessages,
-      systemPrompt: agentSystemPrompt,
-      userContext: resolvedUserContext,
-      systemContext: resolvedSystemContext,
-      canUseTool,
-      toolUseContext: agentToolUseContext,
-      querySource,
-      maxTurns: maxTurns ?? agentDefinition.maxTurns,
-    })) {
-      onQueryProgress?.()
-      // Track thinking state from stream events. content_block carries the
-      // DOMAIN block type ('reasoning'), not the wire type ('thinking').
-      if (message.type === 'stream_request_start') {
-        // Drop the previous request's completed thinking readout (mirrors the
-        // leader path in handleMessageFromStream). A still-streaming block
-        // carries over — it lands in this request's assistant message.
-        onStreamingThinking?.(current =>
-          current && !current.isStreaming ? null : current,
-        )
-      }
-      if (message.type === 'stream_event') {
-        if (message.event.type === 'content_block_start') {
-          const isReasoning = isAnyReasoningBlock(message.event.content_block)
-          if (isReasoning) {
-            if (thinkingStartedAt === null) {
-              thinkingStartedAt = Date.now()
+    while (true) {
+      const agentQuery = query({
+        messages: [...initialMessages, ...runMessages],
+        systemPrompt: agentSystemPrompt,
+        userContext: resolvedUserContext,
+        systemContext: resolvedSystemContext,
+        canUseTool,
+        toolUseContext: agentToolUseContext,
+        querySource,
+        maxTurns:
+          totalMaxTurns === undefined
+            ? undefined
+            : Math.max(totalMaxTurns - turnsUsed, 1),
+        skipStopHooks: true,
+      })
+      // Manual iteration instead of for-await so query's Terminal return —
+      // WHY the round ended — is captured: the strict loop must separate a
+      // genuine implicit end from end_turn, max_turns, aborts, hook stops,
+      // and API errors, which all end the run like the old single-query
+      // model.
+      let terminal: Terminal | undefined
+      let assistantTurnsThisRound = 0
+      let lastAssistantIsApiError = false
+      while (true) {
+        const next = await agentQuery.next()
+        if (next.done) {
+          terminal = next.value
+          break
+        }
+        const message = next.value
+        onQueryProgress?.()
+        // Track thinking state from stream events. content_block carries the
+        // DOMAIN block type ('reasoning'), not the wire type ('thinking').
+        if (message.type === 'stream_request_start') {
+          // Drop the previous request's completed thinking readout (mirrors the
+          // leader path in handleMessageFromStream). A still-streaming block
+          // carries over — it lands in this request's assistant message.
+          onStreamingThinking?.(current =>
+            current && !current.isStreaming ? null : current,
+          )
+        }
+        if (message.type === 'stream_event') {
+          if (message.event.type === 'content_block_start') {
+            const isReasoning = isAnyReasoningBlock(message.event.content_block)
+            if (isReasoning) {
+              if (thinkingStartedAt === null) {
+                thinkingStartedAt = Date.now()
+              }
+              const startedAt = thinkingStartedAt
+              // Re-arm on each reasoning block; a second block extends the
+              // same duration rather than starting an independent one.
+              thinkingBlockIndex = message.event.index
+              thinkingDurationMs = undefined
+              onStreamingThinking?.(current =>
+                current?.isStreaming
+                  ? { ...current, durationMs: undefined }
+                  : { thinking: '', isStreaming: true, startedAt },
+              )
             }
-            const startedAt = thinkingStartedAt
-            // Re-arm on each reasoning block; a second block extends the
-            // same duration rather than starting an independent one.
-            thinkingBlockIndex = message.event.index
-            thinkingDurationMs = undefined
-            onStreamingThinking?.(current =>
-              current?.isStreaming
-                ? { ...current, durationMs: undefined }
-                : { thinking: '', isStreaming: true, startedAt },
-            )
-          }
-        } else if (
-          message.event.type === 'content_block_delta' &&
-          message.event.delta.type === 'thinking_delta'
-        ) {
-          const deltaThinking =
-            typeof message.event.delta.thinking === 'string'
-              ? message.event.delta.thinking
-              : ''
-          if (deltaThinking) {
-            onStreamingThinking?.(current =>
-              current
-                ? { ...current, thinking: current.thinking + deltaThinking }
-                : null,
-            )
-          }
-        } else if (message.event.type === 'content_block_stop') {
-          // Record the authoritative thinking duration when the open
-          // reasoning block stops (mirrors the leader path in
-          // handleMessageFromStream). isStreaming stays true until the
-          // assistant message lands.
-          if (
-            thinkingBlockIndex !== null &&
-            message.event.index === thinkingBlockIndex &&
-            thinkingStartedAt !== null
+          } else if (
+            message.event.type === 'content_block_delta' &&
+            message.event.delta.type === 'thinking_delta'
           ) {
+            const deltaThinking =
+              typeof message.event.delta.thinking === 'string'
+                ? message.event.delta.thinking
+                : ''
+            if (deltaThinking) {
+              onStreamingThinking?.(current =>
+                current
+                  ? { ...current, thinking: current.thinking + deltaThinking }
+                  : null,
+              )
+            }
+          } else if (message.event.type === 'content_block_stop') {
+            // Record the authoritative thinking duration when the open
+            // reasoning block stops (mirrors the leader path in
+            // handleMessageFromStream). isStreaming stays true until the
+            // assistant message lands.
+            if (
+              thinkingBlockIndex !== null &&
+              message.event.index === thinkingBlockIndex &&
+              thinkingStartedAt !== null
+            ) {
+              thinkingBlockIndex = null
+              const stopAt = Date.now()
+              const blockDurationMs = stopAt - thinkingStartedAt
+              thinkingDurationMs = blockDurationMs
+              onStreamingThinking?.(current =>
+                current
+                  ? {
+                      ...current,
+                      streamingEndedAt: stopAt,
+                      durationMs: blockDurationMs,
+                    }
+                  : current,
+              )
+            }
+          } else if (message.event.type === 'message_stop') {
+            // A stopped reasoning block must not finalize against the next
+            // request's block indices.
             thinkingBlockIndex = null
-            const stopAt = Date.now()
-            const blockDurationMs = stopAt - thinkingStartedAt
-            thinkingDurationMs = blockDurationMs
+          }
+        }
+        // Forward subagent API request starts to parent's metrics display
+        // so TTFT/OTPS update during subagent execution.
+        if (
+          message.type === 'stream_event' &&
+          message.event.type === 'message_start' &&
+          message.ttftMs != null
+        ) {
+          toolUseContext.pushApiMetricsEntry?.(message.ttftMs)
+          continue
+        }
+
+        // Forward message_delta usage events to the caller so the subagent
+        // progress tracker can pick up real usage from non-Anthropic providers
+        // (which only emit final usage at message_delta, not message_start).
+        // Don't record to transcript; the assistant message recorded later
+        // already carries the same usage (claude.ts mutates message.usage).
+        if (
+          message.type === 'stream_event' &&
+          message.event.type === 'message_delta' &&
+          message.event.usage
+        ) {
+          yield message
+          continue
+        }
+
+        // Yield attachment messages (e.g., structured_output) without
+        // recording them. The end_turn / max_turns signals ride the
+        // Terminal return, not flags here.
+        if (message.type === 'attachment') {
+          if (message.attachment.type === 'max_turns_reached') {
+            logForDebugging(
+              `[Agent: ${agentDefinition.agentType}] Reached max turns limit (${message.attachment.maxTurns})`,
+            )
+          }
+          yield message
+          continue
+        }
+
+        if (message.type === 'assistant' && thinkingStartedAt !== null) {
+          // Prefer the duration recorded at content_block_stop; providers that
+          // omit block-stop events fall back to message arrival.
+          const durationMs =
+            thinkingDurationMs ?? Date.now() - thinkingStartedAt
+          thinkingStartedAt = null
+          thinkingBlockIndex = null
+          thinkingDurationMs = undefined
+          if (
+            message.message.content.some(
+              block =>
+                block.type === 'reasoning' ||
+                block.type === 'redacted_reasoning',
+            )
+          ) {
+            ;(message as Record<string, unknown>).thinkingDurationMs =
+              durationMs
             onStreamingThinking?.(current =>
               current
                 ? {
                     ...current,
-                    streamingEndedAt: stopAt,
-                    durationMs: blockDurationMs,
+                    isStreaming: false,
+                    streamingEndedAt: Date.now(),
+                    durationMs,
                   }
-                : current,
+                : null,
             )
           }
-        } else if (message.event.type === 'message_stop') {
-          // A stopped reasoning block must not finalize against the next
-          // request's block indices.
-          thinkingBlockIndex = null
+        }
+
+        if (isRecordableMessage(message)) {
+          // Record only the new message with correct parent (O(1) per message)
+          await recordSidechainTranscript(
+            [message],
+            agentId,
+            lastRecordedUuid,
+          ).catch(err =>
+            logForDebugging(`Failed to record sidechain transcript: ${err}`),
+          )
+          if (message.type !== 'progress') {
+            lastRecordedUuid = message.uuid
+          }
+          if (message.type === 'assistant') {
+            assistantTurnsThisRound++
+            lastAssistantIsApiError = message.isApiErrorMessage === true
+          }
+          // Accumulate for strict-loop re-entry: the next round's query() is
+          // seeded with these on top of the initial messages.
+          runMessages.push(message)
+          yield message
         }
       }
-      // Forward subagent API request starts to parent's metrics display
-      // so TTFT/OTPS update during subagent execution.
-      if (
-        message.type === 'stream_event' &&
-        message.event.type === 'message_start' &&
-        message.ttftMs != null
-      ) {
-        toolUseContext.pushApiMetricsEntry?.(message.ttftMs)
-        continue
+
+      turnsUsed += assistantTurnsThisRound
+
+      // The round ended. Abort first, then non-implicit terminals —
+      // end_turn, max_turns, aborts, hook stops, and API errors all end
+      // the run like the old single-query model. Only a genuine implicit
+      // end (completed, last assistant not an API error) continues into
+      // the reminder handler below.
+      if (agentAbortController.signal.aborted) break
+
+      const implicitEnd =
+        terminal?.reason === 'completed' && !lastAssistantIsApiError
+      if (!implicitEnd) {
+        fireStopHooks = terminal?.reason === 'end_turn'
+        break
       }
 
-      // Forward message_delta usage events to the caller so the subagent
-      // progress tracker can pick up real usage from non-Anthropic providers
-      // (which only emit final usage at message_delta, not message_start).
-      // Don't record to transcript; the assistant message recorded later
-      // already carries the same usage (claude.ts mutates message.usage).
-      if (
-        message.type === 'stream_event' &&
-        message.event.type === 'message_delta' &&
-        message.event.usage
-      ) {
-        yield message
-        continue
-      }
+      // The reminder rounds share one maxTurns budget with the work rounds.
+      if (totalMaxTurns !== undefined && turnsUsed >= totalMaxTurns) break
 
-      // Yield attachment messages (e.g., structured_output) without recording them
-      if (message.type === 'attachment') {
-        // Handle max turns reached signal from query.ts
-        if (message.attachment.type === 'max_turns_reached') {
+      const ownedTasks = getRunningOwnedShellTasks(agentId, agentGetAppState)
+      if (ownedTasks.length === 0) {
+        // A round that did work before ending answered the previous
+        // reminder — only consecutive no-work implicit ends count.
+        if (assistantTurnsThisRound > 1) consecutiveEndReminders = 0
+        consecutiveEndReminders++
+        if (consecutiveEndReminders > MAX_END_REMINDERS) {
+          // Backstop: MAX_END_REMINDERS reminders were delivered and
+          // ignored. End like maxTurns does — silently, with the last
+          // text as the result.
           logForDebugging(
-            `[Agent
-: $
-{
-  agentDefinition.agentType
-}
-] Reached max turns limit ($
-{
-  message.attachment.maxTurns
-}
-)`,
+            `[Agent: ${agentDefinition.agentType}] Ignored ${MAX_END_REMINDERS} end reminders without EndTurn; force-completing`,
           )
+          fireStopHooks = true
           break
         }
-        yield message
+        pushReminder(END_TURN_REMINDER)
         continue
       }
 
-      if (message.type === 'assistant' && thinkingStartedAt !== null) {
-        // Prefer the duration recorded at content_block_stop; providers that
-        // omit block-stop events fall back to message arrival.
-        const durationMs = thinkingDurationMs ?? Date.now() - thinkingStartedAt
-        thinkingStartedAt = null
-        thinkingBlockIndex = null
-        thinkingDurationMs = undefined
-        if (
-          message.message.content.some(
-            block =>
-              block.type === 'reasoning' || block.type === 'redacted_reasoning',
-          )
-        ) {
-          ;(message as Record<string, unknown>).thinkingDurationMs = durationMs
-          onStreamingThinking?.(current =>
-            current
-              ? {
-                  ...current,
-                  isStreaming: false,
-                  streamingEndedAt: Date.now(),
-                  durationMs,
-                }
-              : null,
-          )
-        }
+      consecutiveEndReminders = 0
+      if (!remindedAboutOwnedTasks) {
+        // The first implicit end with owned tasks never parks silently —
+        // the model must consciously choose to wait.
+        remindedAboutOwnedTasks = true
+        pushReminder(ownedTasksReminderText(ownedTasks))
+        continue
       }
 
-      if (isRecordableMessage(message)) {
-        // Record only the new message with correct parent (O(1) per message)
-        await recordSidechainTranscript(
-          [message],
-          agentId,
-          lastRecordedUuid,
-        ).catch(err =>
-          logForDebugging(`Failed to record sidechain transcript: ${err}`),
+      const wake = await parkUntilOwnedTaskSignal({
+        agentId,
+        idleMs: parkIdleMs,
+        abortSignal: agentAbortController.signal,
+        getPendingMessageCount: () =>
+          getAgentPendingMessageCount(agentId, agentGetAppState),
+      })
+      logForDebugging(
+        `[Agent: ${agentDefinition.agentType}] Park wake: ${wake} (owned tasks: ${ownedTasks.length})`,
+      )
+      if (wake === 'abort') break
+      if (wake === 'idle') {
+        parkIdleMs = Math.min(parkIdleMs * 2, PARK_MAX_IDLE_MS)
+        // Re-check ownership: a task may have exited without queueing a
+        // notification during the idle window — remind about what is still
+        // running, not the pre-park snapshot.
+        const stillOwned = getRunningOwnedShellTasks(agentId, agentGetAppState)
+        pushReminder(
+          stillOwned.length > 0
+            ? ownedTasksReminderText(stillOwned, true)
+            : END_TURN_REMINDER,
         )
-        if (message.type !== 'progress') {
-          lastRecordedUuid = message.uuid
-        }
-        yield message
+        continue
       }
+      // Meaningful signal. Deliver its payload into the next round
+      // directly: the drain gate runs at tool-loop iteration END, so the
+      // freshly woken request would otherwise carry nothing new — the
+      // notification that woke the agent would only land in the round
+      // after, which never comes if the model ends on an empty context.
+      const notificationAttachments = await getQueuedCommandAttachments(
+        dequeueAllMatching(cmd => isAgentTaskNotification(cmd, agentId)),
+      )
+      for (const attachment of notificationAttachments) {
+        runMessages.push(createAttachmentMessage(attachment))
+      }
+      for (const attachment of getAgentPendingMessageAttachments(
+        agentToolUseContext,
+      )) {
+        runMessages.push(createAttachmentMessage(attachment))
+      }
+      parkIdleMs = PARK_INITIAL_IDLE_MS
+      remindedAboutOwnedTasks = false
+      continue
     }
 
     if (agentAbortController.signal.aborted) {
       throw new AbortError()
+    }
+
+    // SubagentStop hooks, relocated here from query's per-round stop-hook
+    // path (skipStopHooks above): strict end_turn would otherwise fire them
+    // once per implicit-end reminder round. They now fire once at true
+    // completion — EndTurn or the force-complete backstop — matching the
+    // single 'completed' firing of the old model. maxTurns and abort never
+    // fired them and still don't. Blocking results are ignored: the agent
+    // explicitly ended its run.
+    if (fireStopHooks) {
+      void (async () => {
+        try {
+          const permissionMode = agentGetAppState().toolPermissionContext.mode
+          for await (const _result of executeStopHooks(
+            permissionMode,
+            agentAbortController.signal,
+            undefined,
+            false,
+            agentId,
+            agentToolUseContext,
+            [...initialMessages, ...runMessages],
+            agentDefinition.agentType,
+          )) {
+            // Results are deliberately dropped: the agent's run is over,
+            // so nothing downstream can consume hook progress.
+          }
+        } catch (err) {
+          logForDebugging(
+            `[Agent: ${agentDefinition.agentType}] SubagentStop hooks failed: ${err}`,
+          )
+        }
+      })()
     }
 
     // Run callback if provided (only built-in agents have callbacks)
@@ -1082,6 +1275,28 @@ export function filterIncompleteToolCalls(messages: Message[]): Message[] {
     // Keep all non-assistant messages and assistant messages without tool calls
     return true
   })
+}
+
+// Reminder texts for the strict end_turn model. isMeta user messages: the
+// model sees them, the transcript hides them.
+const END_TURN_REMINDER = `You ended your message without calling the ${END_TURN_TOOL_NAME} tool, so your run is still active. If your work is complete, call ${END_TURN_TOOL_NAME} now — your most recent text message is delivered to the caller as your result. Otherwise, continue working.`
+
+function ownedTasksReminderText(tasks: TaskState[], idle = false): string {
+  const lines = tasks
+    .map(task => {
+      const kind =
+        task.type === 'local_bash' && task.kind ? task.kind : 'background'
+      const what =
+        task.type === 'local_bash'
+          ? (task.command ?? task.description)
+          : task.description
+      return `- ${task.id} (${kind}): ${what}`
+    })
+    .join('\n')
+  const lead = idle
+    ? `Still waiting on ${tasks.length} background task(s) you own:\n${lines}`
+    : `You ended your message while still owning ${tasks.length} running background task(s):\n${lines}`
+  return `${lead}\nWait for them to finish (their notifications are delivered to you), stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME}, or call ${END_TURN_TOOL_NAME} to end your run — ending it kills the tasks you still own.`
 }
 
 async function getAgentSystemPrompt(

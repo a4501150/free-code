@@ -3,6 +3,7 @@
 // validation, headless stopTask paths) don't pull ink into their module graph.
 
 import type { AgentId } from '../types/ids.js'
+import { isLocalShellTask } from './LocalShellTask/guards.js'
 import type { TaskState } from './types.js'
 
 /**
@@ -32,6 +33,26 @@ export function mayStopTask(
     )
   }
   return false
+}
+
+/**
+ * Running shell/monitor tasks owned by `agentId` — the park condition for the
+ * strict end_turn model (an agent that still owns running background tasks
+ * does not complete on an implicit end) and the kill list for
+ * killShellTasksForAgent, so the predicate lives in one place. Structural on
+ * the state reader so React-free callers don't import the store.
+ */
+export function getRunningOwnedShellTasks(
+  agentId: AgentId,
+  getAppState: () => { tasks?: { [taskId: string]: TaskState } },
+): TaskState[] {
+  const tasks = getAppState().tasks ?? {}
+  return Object.values(tasks).filter(
+    task =>
+      isLocalShellTask(task) &&
+      task.agentId === agentId &&
+      task.status === 'running',
+  )
 }
 
 /**

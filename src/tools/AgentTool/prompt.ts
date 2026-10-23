@@ -102,6 +102,8 @@ ${agentListSection}
 
 Set the ${AGENT_TOOL_NAME} tool's subagent_type parameter to pick a type; when omitted, the general-purpose agent is used.
 
+The agent you launch sees only its own prompt — none of your conversation. Send self-contained prompts: the full goal and constraints, the relevant file paths, and the expected deliverable. References like "the bug above" or "that file we discussed" reach the agent as noise.
+
 ${AGENT_PARALLELISM_GUIDANCE}`
 
   // Coordinator mode gets the slim prompt -- the coordinator system prompt

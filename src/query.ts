@@ -58,6 +58,7 @@ import {
 import {
   remove as removeFromQueue,
   getCommandsByMaxPriority,
+  isAgentTaskNotification,
   isSlashCommand,
 } from './utils/messageQueueManager.js'
 import { notifyCommandLifecycle } from './utils/commandLifecycle.js'
@@ -82,6 +83,7 @@ import { buildQueryConfig } from './query/config.js'
 import { productionDeps, type QueryDeps } from './query/deps.js'
 import type { Terminal, Continue } from './query/transitions.js'
 import { count } from './utils/array.js'
+import { END_TURN_TOOL_NAME } from './tools/EndTurnTool/constants.js'
 
 const STREAM_RECOVERY_MAX_ATTEMPTS = 25
 
@@ -136,6 +138,10 @@ export type QueryParams = {
   querySource: QuerySource
   maxOutputTokensOverride?: number
   maxTurns?: number
+  // Subagent strict-end_turn mode: skip the stop-hook pass on implicit ends
+  // (runAgent re-enters query and fires SubagentStop once at true completion
+  // instead — per-round firing would spam hooks once per reminder round).
+  skipStopHooks?: boolean
   skipCacheWrite?: boolean
   // API task_budget (output_config.task_budget, beta task-budgets-2026-03-13).
   // `total` is the
@@ -202,6 +208,7 @@ async function* queryLoop(
     canUseTool,
     querySource,
     maxTurns,
+    skipStopHooks,
     skipCacheWrite,
   } = params
   const deps = params.deps ?? productionDeps()
@@ -817,6 +824,11 @@ async function* queryLoop(
         return { reason: 'completed' }
       }
 
+      // Caller owns the stop-hook pass (see skipStopHooks).
+      if (skipStopHooks) {
+        return { reason: 'completed' }
+      }
+
       const stopHookResult = yield* handleStopHooks(
         messagesForQuery,
         assistantMessages,
@@ -994,6 +1006,16 @@ async function* queryLoop(
       return { reason: 'hook_stopped' }
     }
 
+    // Explicit completion: the model called EndTurn (subagent pools only).
+    // All tools in the round — EndTurn included — have executed; end the
+    // loop instead of recursing. Mirrors the max-turns early return below.
+    // The attachment is an internal signal consumed by runAgent; it never
+    // renders to the API.
+    if (toolUseBlocks.some(block => block.name === END_TURN_TOOL_NAME)) {
+      yield createAttachmentMessage({ type: 'end_turn_requested' })
+      return { reason: 'end_turn', turnCount: turnCount + 1 }
+    }
+
     if (tracking?.compacted) {
       tracking.turnCounter++
     }
@@ -1029,7 +1051,8 @@ async function* queryLoop(
         // Subagents only drain task-notifications addressed to them — never
         // user prompts, even if someone stamps an agentId on one.
         return (
-          cmd.mode === 'task-notification' && cmd.agentId === currentAgentId
+          currentAgentId !== undefined &&
+          isAgentTaskNotification(cmd, currentAgentId)
         )
       },
     )

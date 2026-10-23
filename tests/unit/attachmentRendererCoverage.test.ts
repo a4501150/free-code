@@ -169,6 +169,7 @@ const INERT_FIXTURES: Attachment[] = [
     displayPath: 'a.ts',
   },
   { type: 'command_permissions', allowedTools: ['Bash'] },
+  { type: 'end_turn_requested' },
   {
     type: 'edited_image_file',
     filename: '/p/a.png',
