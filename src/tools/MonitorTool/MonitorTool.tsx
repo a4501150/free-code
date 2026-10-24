@@ -2,6 +2,7 @@ import { z } from 'zod/v4'
 import type { DomainToolResultBlockParam } from '../../types/domain.js'
 import type { ToolDef, ToolUseContext } from '../../Tool.js'
 import { buildTool } from '../../Tool.js'
+import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import { getMonitorManager } from '../../utils/monitors.js'
 import { findSuitableShell } from '../../utils/Shell.js'
@@ -150,14 +151,8 @@ export const MonitorTool = buildTool({
           : result,
     )
   },
-  renderToolUseMessage(input) {
-    const label = input.description ?? input.command ?? ''
-    return `Starting monitor: ${label}`
-  },
-  renderToolResultMessage(output: MonitorOut) {
-    const tail = output.stdout ? `\n${output.stdout}` : ''
-    return `Monitor started (id: ${output.monitorTaskId})${tail}`
-  },
+  renderToolUseMessage,
+  renderToolResultMessage,
   mapToolResultToToolResultBlockParam(
     { stdout, monitorTaskId }: MonitorOut,
     toolUseID: string,
