@@ -3775,17 +3775,29 @@ You have exited auto mode. The user may now want to interact more directly. You 
       // For running tasks, warn against spawning a duplicate — this attachment
       // is only emitted post-compaction, where the original spawn message is gone.
       if (attachment.status === 'running') {
+        const kindLabel =
+          attachment.taskType === 'local_agent'
+            ? 'Background agent'
+            : attachment.taskType === 'monitor_mcp' ||
+                attachment.kind === 'monitor'
+              ? 'Monitor'
+              : 'Background command'
         const parts = [
-          `Background agent "${attachment.description}" (${attachment.taskId}) is still running.`,
+          `${kindLabel} "${attachment.description}" (${attachment.taskId}) is still running.`,
         ]
+        if (attachment.command) {
+          parts.push(`Command: ${attachment.command}`)
+        }
         if (attachment.deltaSummary) {
           parts.push(`Progress: ${attachment.deltaSummary}`)
         }
         // SendMessage is exposed only in coordinator mode, where continuing a
-        // running worker by ID is a supported follow-up.
-        const sendMsgSuffix = isCoordinatorMode()
-          ? ` You can send it a message with ${SEND_MESSAGE_TOOL_NAME}.`
-          : ''
+        // running worker by ID is a supported follow-up. Only agents are
+        // addressable that way — shells and monitors are not.
+        const sendMsgSuffix =
+          attachment.taskType === 'local_agent' && isCoordinatorMode()
+            ? ` You can send it a message with ${SEND_MESSAGE_TOOL_NAME}.`
+            : ''
         if (attachment.outputFilePath) {
           parts.push(
             `Do NOT spawn a duplicate. You will be notified when it completes. You can read partial output at ${attachment.outputFilePath}.`,

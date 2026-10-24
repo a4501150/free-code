@@ -7,6 +7,8 @@ import { getInvokedSkillsForAgent } from '../../bootstrap/state.js'
 import type { QuerySource } from '../../constants/querySource.js'
 import type { ToolUseContext, CanUseToolFn } from '../../Tool.js'
 import type { LocalAgentTaskState } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
+import { isLocalShellTask } from '../../tasks/LocalShellTask/guards.js'
+import type { TaskState } from '../../tasks/types.js'
 import { FileReadTool } from '../../tools/FileReadTool/FileReadTool.js'
 import {
   FILE_READ_TOOL_NAME,
@@ -518,7 +520,7 @@ export async function compactConversation(
         context,
         POST_COMPACT_MAX_FILES_TO_RESTORE,
       ),
-      createAsyncAgentAttachmentsIfNeeded(context),
+      createBackgroundTaskAttachmentsIfNeeded(context),
     ])
 
     const postCompactFileAttachments: AttachmentMessage[] = [
@@ -815,7 +817,7 @@ export async function partialCompactConversation(
         POST_COMPACT_MAX_FILES_TO_RESTORE,
         messagesToKeep,
       ),
-      createAsyncAgentAttachmentsIfNeeded(context),
+      createBackgroundTaskAttachmentsIfNeeded(context),
     ])
 
     const postCompactFileAttachments: AttachmentMessage[] = [
@@ -1347,41 +1349,77 @@ export async function createPlanModeAttachmentIfNeeded(
 }
 
 /**
- * Creates attachments for async agents so the model knows about them after
- * compaction. Covers both agents still running in the background (so the model
- * doesn't spawn a duplicate) and agents that have finished but whose results
- * haven't been retrieved yet.
+ * Creates attachments for background tasks so the model knows about them
+ * after compaction. Compaction eats the spawn tool_result rows, so without
+ * this re-announce the post-compact context has no record that a task is
+ * still running — the model would re-spawn duplicates or claim the task
+ * never existed. Covers every background task kind the compacting thread
+ * owns: background agents (running, or completed with the result still
+ * unretrieved), backgrounded shell commands and monitors. Tasks owned by
+ * other agents are skipped — their spawn records live in those agents'
+ * contexts, not in this one.
  */
-export async function createAsyncAgentAttachmentsIfNeeded(
+export async function createBackgroundTaskAttachmentsIfNeeded(
   context: ToolUseContext,
 ): Promise<AttachmentMessage[]> {
   const appState = context.getAppState()
-  const asyncAgents = Object.values(appState.tasks).filter(
-    (task): task is LocalAgentTaskState => task.type === 'local_agent',
-  )
+  return Object.values(appState.tasks)
+    .filter(task => isPostCompactAnnounceTarget(task, context.agentId))
+    .map(task => createTaskStatusAttachmentMessage(task))
+}
 
-  return asyncAgents.flatMap(agent => {
-    if (
-      agent.retrieved ||
-      agent.status === 'pending' ||
-      agent.agentId === context.agentId
-    ) {
-      return []
-    }
-    return [
-      createAttachmentMessage({
-        type: 'task_status',
-        taskId: agent.agentId,
-        taskType: 'local_agent',
-        description: agent.description,
-        status: agent.status,
-        deltaSummary:
-          agent.status === 'running'
-            ? (agent.progress?.summary ?? null)
-            : (agent.error ?? null),
-        outputFilePath: getTaskOutputPath(agent.agentId),
-      }),
-    ]
+function isPostCompactAnnounceTarget(
+  task: TaskState,
+  threadAgentId: AgentId | undefined,
+): boolean {
+  if (isLocalShellTask(task)) {
+    // Only the compacting thread's own backgrounded shells: the spawn
+    // tool_result this compaction eats belonged to that thread. Foreground
+    // shells are excluded — their tool_result is still pending and will be
+    // delivered into the post-compact context when the command finishes.
+    return (
+      task.agentId === threadAgentId &&
+      task.status === 'running' &&
+      task.isBackgrounded === true
+    )
+  }
+  if (task.type === 'local_agent') {
+    if (task.retrieved || task.status === 'pending') return false
+    // The agent's own task entry is never announced to itself.
+    if (task.agentId === threadAgentId) return false
+    // Main thread (threadAgentId undefined) owns every agent row — same
+    // scoping BackgroundTaskList uses. A subagent owns only the agents it
+    // spawned; foreign agents' spawn records aren't in its context anyway.
+    return threadAgentId === undefined || task.parentAgentId === threadAgentId
+  }
+  if (task.type === 'monitor_mcp') {
+    // External monitors carry no agent stamp; only the main thread ever
+    // announced them, so only the main thread re-announces.
+    return threadAgentId === undefined && task.status === 'running'
+  }
+  // Dream tasks are self-managed housekeeping, never model-spawned work.
+  return false
+}
+
+function createTaskStatusAttachmentMessage(task: TaskState): AttachmentMessage {
+  const isAgent = task.type === 'local_agent'
+  return createAttachmentMessage({
+    type: 'task_status',
+    taskId: isAgent ? (task as LocalAgentTaskState).agentId : task.id,
+    taskType: task.type,
+    status: task.status,
+    description: task.description,
+    deltaSummary: isAgent
+      ? task.status === 'running'
+        ? ((task as LocalAgentTaskState).progress?.summary ?? null)
+        : ((task as LocalAgentTaskState).error ?? null)
+      : null,
+    outputFilePath: isAgent
+      ? getTaskOutputPath((task as LocalAgentTaskState).agentId)
+      : task.outputFile,
+    ...(isLocalShellTask(task)
+      ? { command: task.command, kind: task.kind ?? 'bash' }
+      : {}),
   })
 }
 

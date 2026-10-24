@@ -596,6 +596,11 @@ export type Attachment =
       description: string
       deltaSummary: string | null
       outputFilePath?: string
+      // local_bash only: the command line and whether it's a monitor-kind
+      // shell. Lets the post-compact re-announce name the exact command —
+      // the spawn tool_result (which carried them) was compacted away.
+      command?: string
+      kind?: 'bash' | 'monitor'
     }
   | AsyncHookResponseAttachment
   | {
