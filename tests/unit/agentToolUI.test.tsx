@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import * as React from 'react'
 import {
   calculateAgentProgressTokens,
+  processProgressMessages,
   renderToolUseErrorMessage,
   renderToolUseRejectedMessage,
 } from '../../src/tools/AgentTool/UI.js'
@@ -175,5 +176,97 @@ describe('AgentTool UI', () => {
     })
 
     expect(collectPropValues(node, 'isAgentRunning')).toEqual([false])
+  })
+
+  test('EndTurn completion call is stripped from the progress/expand display', () => {
+    const endTurnMessage = {
+      ...agentProgressMessage({ toolUseId: 'tool-endturn' }),
+      data: {
+        ...agentProgressMessage({ toolUseId: 'tool-endturn' }).data,
+        message: {
+          ...agentProgressMessage({ toolUseId: 'tool-endturn' }).data.message,
+          message: {
+            ...agentProgressMessage({ toolUseId: 'tool-endturn' }).data.message
+              .message,
+            content: [
+              { type: 'text', text: 'Final report.' },
+              {
+                type: 'tool_use',
+                id: 'tool-endturn',
+                name: 'EndTurn',
+                input: {},
+              },
+            ],
+          },
+        },
+      },
+    } as ProgressMessage<Progress>
+
+    const processed = processProgressMessages(
+      [agentProgressMessage(), endTurnMessage],
+      [] as never,
+      false,
+    )
+
+    // The response text survives; the EndTurn card does not.
+    expect(processed).toHaveLength(2)
+    const last = processed[1]!.message.data.message.message
+    expect(
+      (last.content as Array<{ type: string; text?: string }>).find(
+        b => b.type === 'text',
+      )?.text,
+    ).toBe('Final report.')
+    expect(
+      (last.content as Array<{ type: string; name?: string }>).filter(
+        b => b.type === 'tool_use' && b.name === 'EndTurn',
+      ),
+    ).toHaveLength(0)
+    // Display copy only — the original message keeps its EndTurn block
+    // (recorded transcripts and full transcript views still show it).
+    expect(
+      (
+        endTurnMessage.data.message.message.content as Array<{ name?: string }>
+      ).some(b => b.name === 'EndTurn'),
+    ).toBe(true)
+  })
+
+  test('an EndTurn-only final message is dropped from the progress display', () => {
+    const endTurnOnly = {
+      ...agentProgressMessage({ toolUseId: 'tool-endturn' }),
+      data: {
+        ...agentProgressMessage({ toolUseId: 'tool-endturn' }).data,
+        message: {
+          ...agentProgressMessage({ toolUseId: 'tool-endturn' }).data.message,
+          message: {
+            ...agentProgressMessage({ toolUseId: 'tool-endturn' }).data.message
+              .message,
+            content: [
+              {
+                type: 'tool_use',
+                id: 'tool-endturn',
+                name: 'EndTurn',
+                input: {},
+              },
+            ],
+          },
+        },
+      },
+    } as ProgressMessage<Progress>
+
+    const processed = processProgressMessages(
+      [agentProgressMessage(), endTurnOnly],
+      [] as never,
+      false,
+    )
+
+    // Only the real Bash call remains.
+    expect(processed).toHaveLength(1)
+    expect(
+      (
+        processed[0]!.message.data.message.message.content as Array<{
+          name?: string
+        }>
+      )[0]!.name,
+    ).toBe('Bash')
   })
 })

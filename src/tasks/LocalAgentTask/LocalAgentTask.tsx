@@ -14,6 +14,7 @@ import { compactProgressLabel } from '../../services/compact/compactProgressLabe
 import type { AgentToolResult } from '../../tools/AgentTool/agentToolUtils.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from '../../tools/SyntheticOutputTool/SyntheticOutputTool.js'
+import { isEndTurnToolUse } from '../../tools/EndTurnTool/constants.js'
 import { asAgentId } from '../../types/ids.js'
 import type { Message } from '../../types/message.js'
 import {
@@ -160,7 +161,14 @@ export function updateProgressFromMessage(
   }
   for (const content of message.message.content) {
     if (content.type === 'tool_use') {
-      tracker.toolUseCount++
+      // EndTurn is completion protocol, not work — the count feeds the
+      // panel and task_progress events and must match the tool-use counts
+      // shown in the Agent row ("Done (N tool uses)"). It stays in
+      // recentActivities (the panel's last-activity preview) like any other
+      // call, matching the transcript views that show it deliberately.
+      if (!isEndTurnToolUse(content)) {
+        tracker.toolUseCount++
+      }
       // Omit StructuredOutput from preview - it's an internal tool
       if (content.name !== SYNTHETIC_OUTPUT_TOOL_NAME) {
         const input = content.input as Record<string, unknown>

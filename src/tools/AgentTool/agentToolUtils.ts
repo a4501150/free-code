@@ -51,6 +51,7 @@ import {
 import { emitTaskProgress as emitTaskProgressEvent } from '../../utils/task/structuredProgress.js'
 import { getTokenCountFromUsage } from '../../utils/tokens.js'
 import { EXIT_PLAN_MODE_TOOL_NAME } from '../ExitPlanModeTool/constants.js'
+import { isEndTurnToolUse } from '../EndTurnTool/constants.js'
 import { AGENT_TOOL_NAME, LEGACY_AGENT_TOOL_NAME } from './constants.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 export type ResolvedAgentTools = {
@@ -219,7 +220,10 @@ export function countToolUses(messages: MessageType[]): number {
   for (const m of messages) {
     if (m.type === 'assistant') {
       for (const block of m.message.content) {
-        if (block.type === 'tool_use') {
+        // EndTurn is the completion protocol, not a tool call — counting it
+        // would report one extra tool use to the parent (<usage> trailer,
+        // "Done (N tool uses)") for every strict-end_turn run.
+        if (block.type === 'tool_use' && !isEndTurnToolUse(block)) {
           count++
         }
       }
