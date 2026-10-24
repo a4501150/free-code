@@ -1,6 +1,8 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import * as modelModule from '../../src/utils/model/model.js'
+import * as settingsModule from '../../src/utils/settings/settings.js'
 
 type TestSettings = {
   attribution?: {
@@ -14,18 +16,41 @@ type TestSettings = {
 let settings: TestSettings = {}
 let currentModel = 'anthropic:claude-sonnet-4-6'
 
-mock.module('../../src/utils/settings/settings.js', () => ({
-  getInitialSettings: () => settings,
-}))
+// Unit tests share one process, and mock.module patches are permanent —
+// mocking settings.js/model.js wholesale here froze getMainLoopModel for
+// every later test file. Spy on the namespaces instead and restore after
+// each test; attribution.js and gitSettings.js read these through the
+// module namespace at call time, so the spies intercept them.
+let restores: Array<{ mockRestore(): void }> = []
 
-mock.module('../../src/utils/model/model.js', () => ({
-  getMainLoopModel: () => currentModel,
-  getDefaultMainLoopModelSetting: () => 'anthropic:claude-sonnet-4-6',
-  getPublicModelDisplayName: (model: string) =>
-    model.startsWith('anthropic:') ? model : null,
-  getPublicModelName: (model: string) =>
-    model === 'internal:secret' ? 'Secret Internal' : 'Claude Sonnet 4.6',
-}))
+beforeEach(() => {
+  restores = [
+    spyOn(settingsModule, 'getInitialSettings').mockImplementation(
+      () => settings as never,
+    ),
+    spyOn(modelModule, 'getMainLoopModel').mockImplementation(
+      () => currentModel as never,
+    ),
+    spyOn(modelModule, 'getDefaultMainLoopModelSetting').mockImplementation(
+      () => 'anthropic:claude-sonnet-4-6' as never,
+    ),
+    spyOn(modelModule, 'getPublicModelDisplayName').mockImplementation(
+      (model: string) =>
+        (model.startsWith('anthropic:') ? model : null) as never,
+    ),
+    spyOn(modelModule, 'getPublicModelName').mockImplementation(
+      (model: string) =>
+        (model === 'internal:secret'
+          ? 'Secret Internal'
+          : 'Claude Sonnet 4.6') as never,
+    ),
+  ]
+})
+
+afterEach(() => {
+  for (const restore of restores) restore.mockRestore()
+  restores = []
+})
 
 const { getAttributionTexts } = await import('../../src/utils/attribution.js')
 const { getCommitAndPRInstructions } =

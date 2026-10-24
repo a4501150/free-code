@@ -22,13 +22,21 @@ const SAMPLE_HOOKS = {
   ],
 }
 
+// Unit tests share one process: an unrestored spy on getSettings_DEPRECATED
+// freezes settings for every later test file (tool exposure, catalog, mode
+// cycle all read through it), so restore it after each test.
+let settingsSpy: ReturnType<typeof spyOn> | undefined
+
 function mockSettings(settings: Record<string, unknown>) {
-  return spyOn(settingsModule, 'getSettings_DEPRECATED').mockReturnValue(
+  settingsSpy = spyOn(settingsModule, 'getSettings_DEPRECATED').mockReturnValue(
     settings as never,
   )
+  return settingsSpy
 }
 
 afterEach(() => {
+  settingsSpy?.mockRestore()
+  settingsSpy = undefined
   resetHooksConfigSnapshot()
 })
 

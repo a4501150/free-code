@@ -197,7 +197,11 @@ describe('tool catalog writer', () => {
     })
     const { readdir } = await import('fs/promises')
     expect(await readdir(dir)).toEqual(['servers'])
-    expect(await readdir(join(dir, 'servers'))).toEqual(['gone.ts', 'srv.ts'])
+    // readdir order is filesystem-dependent, not insertion order.
+    expect((await readdir(join(dir, 'servers'))).sort()).toEqual([
+      'gone.ts',
+      'srv.ts',
+    ])
   })
 
   test('union: a server missing from the render keeps its file and entry', async () => {
