@@ -440,6 +440,7 @@ export function createAssistantAPIErrorMessage({
 export function createUserMessage({
   content,
   isMeta,
+  isUserContext,
   isVisibleInTranscriptOnly,
   isVirtual,
   isCompactSummary,
@@ -459,6 +460,7 @@ export function createUserMessage({
     | DomainUserContentBlock[]
     | Array<DomainUserContentBlock | DomainUserContentBlock>
   isMeta?: true
+  isUserContext?: true
   isVisibleInTranscriptOnly?: true
   isVirtual?: true
   isCompactSummary?: true
@@ -493,6 +495,7 @@ export function createUserMessage({
       content: normalizedContent || NO_CONTENT_MESSAGE, // Make sure we don't send empty messages
     },
     isMeta,
+    isUserContext,
     isVisibleInTranscriptOnly,
     isVirtual,
     isCompactSummary,
@@ -1466,6 +1469,8 @@ export function getToolUseIDs(
  * Reorders messages so that attachments bubble up until they hit either:
  * - A tool call result (user message with tool_result content)
  * - Any assistant message
+ * - The prepended session-context message (isUserContext) — an announcement
+ *   must never reorder above the context block it annotates
  */
 export function reorderAttachmentsForAPI(messages: Message[]): Message[] {
   // We build `result` backwards (push) and reverse once at the end — O(N).
@@ -1487,8 +1492,9 @@ export function reorderAttachmentsForAPI(messages: Message[]): Message[] {
       const isStoppingPoint =
         message.type === 'assistant' ||
         (message.type === 'user' &&
-          Array.isArray(message.message.content) &&
-          message.message.content[0]?.type === 'tool_result')
+          (message.isUserContext === true ||
+            (Array.isArray(message.message.content) &&
+              message.message.content[0]?.type === 'tool_result')))
 
       if (isStoppingPoint && pendingAttachments.length > 0) {
         // Hit a stopping point — attachments stop here (go after the stopping point).

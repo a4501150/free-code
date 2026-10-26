@@ -27,6 +27,7 @@ import {
   type AgentMentionAttachment,
   createAttachmentMessage,
   getAttachmentMessages,
+  hoistContextGroupAttachments,
   takeUserInputAttachmentPrefetch,
 } from '../attachments.js'
 import type { PastedContent } from '../config.js'
@@ -444,7 +445,7 @@ async function processUserInputBase(
 
   // Bash commands
   if (inputString !== null && mode === 'bash') {
-    return addImageMetadataMessage(
+    return finalizeResult(
       await processBashCommand(
         inputString,
         precedingInputBlocks,
@@ -473,7 +474,7 @@ async function processUserInputBase(
       isAlreadyProcessing,
       canUseTool,
     )
-    return addImageMetadataMessage(slashResult, imageMetadataTexts)
+    return finalizeResult(slashResult, imageMetadataTexts)
   }
 
   // Log agent mention queries for analysis
@@ -496,7 +497,7 @@ async function processUserInputBase(
   }
 
   // Regular user prompt
-  return addImageMetadataMessage(
+  return finalizeResult(
     processTextPrompt(
       normalizedInput,
       imageContentBlocks,
@@ -510,8 +511,13 @@ async function processUserInputBase(
   )
 }
 
-// Adds image metadata texts as isMeta message to result
-function addImageMetadataMessage(
+// Final assembly for every return path: adds image metadata texts as an
+// isMeta message, then places the session-context attachment group (session
+// guidance, git instructions, catalog pointers, listings) ahead of the user
+// message. The context group frames the question, so it must read first;
+// input-scoped attachments (mentioned files, diagnostics, mode reminders)
+// stay after it.
+function finalizeResult(
   result: ProcessUserInputBaseResult,
   imageMetadataTexts: string[],
 ): ProcessUserInputBaseResult {
@@ -523,5 +529,6 @@ function addImageMetadataMessage(
       }),
     )
   }
+  result.messages = hoistContextGroupAttachments(result.messages)
   return result
 }

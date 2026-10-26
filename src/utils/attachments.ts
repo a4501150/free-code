@@ -973,7 +973,10 @@ export async function getAttachments(
     // catalog), deferred_tools_delta (built-ins only move with settings, so
     // they sit ahead of the mid-session-fragile MCP pair),
     // mcp_instructions_delta, mcp_tools_delta, agent_listing_delta, then
-    // skill_listing below.
+    // skill_listing below. When announced with user input on the main
+    // thread, hoistContextGroupAttachments moves this whole group ahead of
+    // the user message; the mid-turn drain in query.ts keeps re-announcements
+    // after the tool results.
     maybe('assistant_mode', () =>
       Promise.resolve(getAssistantModeAttachment(toolUseContext, messages)),
     ),
@@ -3699,6 +3702,50 @@ export function createAttachmentMessage(
     uuid: randomUUID(),
     timestamp: new Date().toISOString(),
   }
+}
+
+/**
+ * The session-context carrier group: announced at session start (and at the
+ * compact re-announce / runAgent.ts turn-0 seed), not tied to the user's
+ * input. Same set as the context-group ordering comment in getAttachments.
+ * assistant_context_files is excluded: it reuses the generic file-carrier
+ * types that also serve user-input attachments.
+ */
+export const CONTEXT_GROUP_ATTACHMENT_TYPES: ReadonlySet<Attachment['type']> =
+  new Set([
+    'assistant_mode',
+    'session_guidance',
+    'git_instructions',
+    'companion_intro',
+    'tool_catalog',
+    'deferred_tools_delta',
+    'mcp_instructions_delta',
+    'mcp_tools_delta',
+    'agent_listing_delta',
+    'skill_listing',
+  ])
+
+/**
+ * Moves session-context announcements ahead of the turn's user messages so
+ * the model reads the context group before the question it frames. The
+ * transcript persists this order, so every later request replays the same
+ * bytes from the same position. At request time reorderAttachmentsForAPI
+ * bubbles these attachments no further: they stay inside the block that
+ * follows the session-context prepend, ahead of the user message.
+ */
+export function hoistContextGroupAttachments<T extends Message>(
+  messages: T[],
+): T[] {
+  const firstUser = messages.findIndex(m => m.type === 'user')
+  if (firstUser === -1) return messages
+  const isHoisted = (m: T, i: number): boolean =>
+    i > firstUser &&
+    m.type === 'attachment' &&
+    CONTEXT_GROUP_ATTACHMENT_TYPES.has(m.attachment.type)
+  const hoisted = messages.filter(isHoisted)
+  if (hoisted.length === 0) return messages
+  const rest = messages.filter((m, i) => !isHoisted(m, i))
+  return [...rest.slice(0, firstUser), ...hoisted, ...rest.slice(firstUser)]
 }
 
 /**

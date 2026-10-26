@@ -122,6 +122,12 @@ export type UserMessage = {
     content: string | DomainUserContentBlock[]
   }
   isMeta?: true | boolean
+  /**
+   * The prepended session-context message (contextInjection.ts). A stop
+   * point for attachment bubbling in reorderAttachmentsForAPI, so
+   * announcements never reorder above the context they annotate.
+   */
+  isUserContext?: true | boolean
   isVisibleInTranscriptOnly?: true | boolean
   isVirtual?: true | boolean
   isCompactSummary?: true | boolean

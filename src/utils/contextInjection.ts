@@ -36,7 +36,10 @@ export function prependUserContext(
     return messages
   }
 
-  return [createUserMessage({ content, isMeta: true }), ...messages]
+  return [
+    createUserMessage({ content, isMeta: true, isUserContext: true }),
+    ...messages,
+  ]
 }
 
 export function prependUserContextFromSnapshot(
@@ -48,7 +51,11 @@ export function prependUserContextFromSnapshot(
   }
 
   return [
-    createUserMessage({ content: snapshotContent, isMeta: true }),
+    createUserMessage({
+      content: snapshotContent,
+      isMeta: true,
+      isUserContext: true,
+    }),
     ...messages,
   ]
 }
