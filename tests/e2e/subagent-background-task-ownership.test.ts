@@ -102,7 +102,7 @@ describe('subagent background task ownership', () => {
       },
     })
 
-    await session.submitAndApprove('spawn the probe agent', 90_000)
+    await session.submitAndApprove('spawn the probe agent', 30_000)
 
     // The strict flow adds rounds after submitAndApprove returns — wait for
     // the reminder round and then the parent's receipt before asserting.
@@ -220,7 +220,7 @@ describe('subagent background task ownership', () => {
       },
     })
 
-    await session.submitAndApprove('spawn the park probe agent', 90_000)
+    await session.submitAndApprove('spawn the park probe agent', 30_000)
 
     // The agent parks until the 10s sleep completes — wait for the wake
     // round (identified by the delivered task notification; the parked

@@ -99,7 +99,7 @@ describe('subagent task panel', () => {
       },
     })
 
-    await session.submitAndApprove('spawn the probe agent', 90_000)
+    await session.submitAndApprove('spawn the probe agent', 30_000)
 
     // Focus the footer task list and move down to the agent row (main is
     // the first row), then open the agent's transcript view.

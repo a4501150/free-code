@@ -118,6 +118,11 @@ export class MockAnthropicServer {
     return this.requestCounter
   }
 
+  /** Queue entries still unconsumed — the number a stuck turn overdrew on. */
+  getPendingResponseCount(): number {
+    return this.responses.length
+  }
+
   private async handleRequest(req: Request): Promise<Response> {
     const url = new URL(req.url)
 

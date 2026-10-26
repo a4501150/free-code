@@ -547,7 +547,7 @@ describe('Tool Use E2E', () => {
       // rendering and never returns to idle — submitAndApprove times out.
       const screen = await session.submitAndApprove(
         'Run two agents in parallel',
-        90_000,
+        30_000,
       )
 
       // Verify no crash error appeared in the terminal
@@ -611,7 +611,7 @@ describe('Tool Use E2E', () => {
         toolUseResponse([{ name: 'EndTurn', input: {} }], 'hello'),
         textResponse('Agent finished'),
       ])
-      const screen = await session.submitAndApprove('Run an agent', 90_000)
+      const screen = await session.submitAndApprove('Run an agent', 30_000)
 
       // The resolved header should read "Agent(nospace header test)" with
       // no space before the paren — NOT "Agent (nospace header test)".

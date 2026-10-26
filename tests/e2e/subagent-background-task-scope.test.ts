@@ -110,7 +110,7 @@ describe('subagent background task scope', () => {
       },
     })
 
-    await session.submitAndApprove('spawn the probe agent', 90_000)
+    await session.submitAndApprove('spawn the probe agent', 30_000)
 
     // Give both shell-task state machines a beat to register their
     // backgrounded sleeps before navigating.

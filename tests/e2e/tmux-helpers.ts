@@ -24,7 +24,12 @@ import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, setDefaultTimeout } from 'bun:test'
 import { MODEL_SETTINGS_KEYS } from '../../src/utils/settings/modelSettingsKeys'
 import { MockAnthropicServer } from '../helpers/mock-server'
-import { sleep, waitFor, type WaitForOptions } from '../helpers/wait-helpers'
+import {
+  registerTimeoutDiagnostics,
+  sleep,
+  waitFor,
+  type WaitForOptions,
+} from '../helpers/wait-helpers'
 
 // E2E tests run through tmux and need generous timeouts. Each test file
 // should call setDefaultTimeout explicitly (bun's parallel workers don't
@@ -725,7 +730,7 @@ export class TmuxSession {
    * @param prompt The user prompt to submit
    * @param timeout Total timeout for the entire operation
    */
-  async submitAndApprove(prompt: string, timeout = 60_000): Promise<string> {
+  async submitAndApprove(prompt: string, timeout = 30_000): Promise<string> {
     await this.submitPrompt(prompt)
 
     // Keep approving permission dialogs until the CLI returns to idle
@@ -818,10 +823,24 @@ export function setupE2ESuite(): {
 } {
   const server = new MockAnthropicServer()
   const sessions: TmuxSession[] = []
+  // Every e2e timeout message carries the request log: which requests the
+  // CLI made (model, streaming, tool count) and how many queued responses
+  // it overdrew — the diff between a stuck turn and a fixture gap.
+  const unregisterDiagnostics = registerTimeoutDiagnostics(() => {
+    const log = server.getRequestLog()
+    const rows = log
+      .map(
+        (r, i) =>
+          `  [${i}] model=${r.body.model ?? '?'} stream=${r.body.stream === true} tools=${(r.body.tools ?? []).length}`,
+      )
+      .join('\n')
+    return `Mock request log (${log.length} served, ${server.getPendingResponseCount()} queue entries remaining):\n${rows}`
+  })
   beforeAll(async () => {
     await server.start()
   })
   afterAll(() => {
+    unregisterDiagnostics()
     server.stop()
   })
   afterEach(async () => {

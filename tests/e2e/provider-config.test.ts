@@ -620,7 +620,7 @@ describe('Provider Config E2E', () => {
         // TmuxSession's env -i isolation already prevents host settings pollution.
       })
 
-      await session.submitAndApprove('Run tier test', 90_000)
+      await session.submitAndApprove('Run tier test', 30_000)
       await session.waitForText('Main done', 30_000)
 
       const requests = anthropicServer.getRequestLog()
@@ -673,7 +673,7 @@ describe('Provider Config E2E', () => {
         },
       })
 
-      await session.submitAndApprove('Run tier test', 90_000)
+      await session.submitAndApprove('Run tier test', 30_000)
       await session.waitForText('Main done', 30_000)
 
       const requests = anthropicServer.getRequestLog()
@@ -718,7 +718,7 @@ describe('Provider Config E2E', () => {
         },
       })
 
-      await session.submitAndApprove('Run tier test', 90_000)
+      await session.submitAndApprove('Run tier test', 30_000)
       await session.waitForText('Main done', 30_000)
 
       const requests = anthropicServer.getRequestLog()

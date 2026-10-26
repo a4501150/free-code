@@ -87,7 +87,7 @@ describe('SendMessage in normal mode', () => {
 
     await session.submitAndApprove(
       'spawn the probe worker and message it',
-      90_000,
+      30_000,
     )
 
     // The messaging tools are in the main pool in normal mode.
@@ -158,7 +158,7 @@ describe('SendMessage in normal mode', () => {
       },
     })
 
-    await session.submitAndApprove('spawn the child probe agent', 90_000)
+    await session.submitAndApprove('spawn the child probe agent', 30_000)
 
     // The parent message reached the main session's request stream.
     const mainRequest = await waitForRequest(
