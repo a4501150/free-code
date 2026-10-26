@@ -87,7 +87,6 @@ import {
   isToolExposedToModel,
   mcpToolCatalogDisabled,
 } from '../services/toolCatalog/exposure.js'
-import { getMcpConfigsByScope } from '../services/mcp/config.js'
 import { prependBullets } from '../constants/prompts.js'
 import {
   buildAssistantModeBlock,
@@ -685,19 +684,6 @@ export type Attachment =
       level: 'high'
     }
   | {
-      /**
-       * The tool-catalog pointer: where the generated declarations live
-       * and how to drive them. Carries no domain and no diff — the whole
-       * guard is the scan for a prior row's flag, so it replays once per
-       * window (session start, post-compaction re-arm) and re-announces
-       * when project configs first appear mid-session. The volatile
-       * per-server and built-in rows ride the delta carriers.
-       */
-      type: 'tool_catalog'
-      /** True when project-scope servers render into the project-keyed catalog. */
-      hasProjectScope: boolean
-    }
-  | {
       // The lazily-exposed built-ins deferred to the catalog; MCP servers
       // ride mcp_tools_delta. ToolSearch-era rows sharing this tag lack
       // `builtins` and render inert.
@@ -969,8 +955,7 @@ export async function getAttachments(
     // Context-group ordering (same in compact.ts re-announce and the
     // runAgent.ts turn-0 seed): assistant_mode (main-thread only, so absent
     // from the seed), session_guidance, git_instructions, companion_intro,
-    // tool_catalog (the one-shot directory pointer, ahead of everything
-    // catalog), deferred_tools_delta (built-ins only move with settings, so
+    // deferred_tools_delta (built-ins only move with settings, so
     // they sit ahead of the mid-session-fragile MCP pair),
     // mcp_instructions_delta, mcp_tools_delta, agent_listing_delta, then
     // skill_listing below. When announced with user input on the main
@@ -993,9 +978,6 @@ export async function getAttachments(
     ),
     maybe('companion_intro', () =>
       Promise.resolve(getCompanionIntroAttachment(messages)),
-    ),
-    maybe('tool_catalog', () =>
-      Promise.resolve(getToolCatalogAttachment(messages)),
     ),
     maybe('deferred_tools_delta', async () => (await catalogDeltas).deferred),
     maybe('mcp_instructions_delta', () =>
@@ -1766,31 +1748,6 @@ export async function getDeferredToolsDeltaAttachment(
 ): Promise<Attachment[]> {
   return (await computeToolCatalogDeltas(toolUseContext, messages, opts))
     .deferred
-}
-
-/**
- * The tool-catalog pointer row. No catalog write: the directories are
- * known up front; only the per-server rows need the render pipeline.
- */
-export function getToolCatalogAttachment(
-  messages: Message[] | undefined,
-): Attachment[] {
-  if (mcpToolCatalogDisabled()) return []
-  const hasProjectScope =
-    Object.keys(getMcpConfigsByScope('project')).length > 0 ||
-    Object.keys(getMcpConfigsByScope('local')).length > 0
-  // Last row wins, like the delta carriers: silence while the flag holds,
-  // a refreshed pointer row the window project configs first appear (the
-  // only mid-session change the directories can undergo).
-  let announced: boolean | null = null
-  for (const msg of messages ?? []) {
-    if (msg.type !== 'attachment') continue
-    if (msg.attachment.type === 'tool_catalog') {
-      announced = msg.attachment.hasProjectScope
-    }
-  }
-  if (announced === hasProjectScope) return []
-  return [{ type: 'tool_catalog', hasProjectScope }]
 }
 
 /** Catalog announce for the deferred MCP servers only. Same single-write
@@ -3717,7 +3674,6 @@ export const CONTEXT_GROUP_ATTACHMENT_TYPES: ReadonlySet<Attachment['type']> =
     'session_guidance',
     'git_instructions',
     'companion_intro',
-    'tool_catalog',
     'deferred_tools_delta',
     'mcp_instructions_delta',
     'mcp_tools_delta',

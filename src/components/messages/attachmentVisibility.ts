@@ -41,7 +41,6 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'plan_mode_exit',
   'plan_mode_reentry',
   'structured_output',
-  'tool_catalog',
   'deferred_tools_delta',
   'mcp_tools_delta',
   'mcp_instructions_delta',

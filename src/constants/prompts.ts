@@ -171,8 +171,9 @@ export async function computeEnvInfo(
       ? `Additional working directories: ${additionalWorkingDirectories.join(', ')}\n`
       : ''
 
-  // No catalog facts here: they ride the `tool_catalog` attachment
-  // (src/utils/attachments.ts), which re-arms after compaction.
+  // No catalog facts here: they ride the `deferred_tools_delta` /
+  // `mcp_tools_delta` attachments (src/utils/attachments.ts), which
+  // re-arm after compaction.
   return `Here is useful information about the environment you are running in:
 <env>
 Working directory: ${getCwd()}

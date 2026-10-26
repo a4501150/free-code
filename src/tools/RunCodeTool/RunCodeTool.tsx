@@ -94,7 +94,7 @@ export const RunCodeTool = buildTool({
   },
   async prompt() {
     return [
-      `Run a TypeScript script that imports cataloged tools and orchestrates them in one execution. The catalog directories are stated in the tool catalog reminder in your context ("Tool catalog directory: ...", plus "project-scope servers: ..." when present): read index declarations in servers/<name>.ts (import specifier "mcp/<server>") and builtins.ts (import specifier "freecode:builtins") for exact function names and argument types. Server declarations live in the catalog directory the announce named for that server.`,
+      `Run a TypeScript script that imports cataloged tools and orchestrates them in one execution. Each deferred tool's declarations file is named by absolute path in the deferred_tools_delta and mcp_tools_delta system reminders in your context: read those index files (import specifier "mcp/<server>" for server declarations, "freecode:builtins" for built-ins) for exact function names and argument types.`,
       'Each tool call from the script goes through the normal permission and hook pipeline, so rules for the underlying tools apply unchanged. Use await for each call and console.log to report intermediate findings; only your logs and the call results come back.',
       'A `state` object persists across RunCode calls within this session: stash intermediate results with state.key = value and read them in later calls. It is in-memory only; write files to disk for anything durable.',
       'Runtime access: dynamic import() resolves Node and Bun builtins (await import("node:fs"), await import("bun:sqlite")) and bundled modules (' +

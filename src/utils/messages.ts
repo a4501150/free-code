@@ -4033,18 +4033,6 @@ You have exited auto mode. The user may now want to interact more directly. You 
         createUserMessage({ content: parts.join('\n\n'), isMeta: true }),
       ])
     }
-    case 'tool_catalog': {
-      const base = `Tool catalog directory: ${toolCatalogDir()} (servers/<name>.ts, builtins.ts)`
-      const line = attachment.hasProjectScope
-        ? `${base}; project-scope servers: ${projectCatalogDir()}/servers/<name>.ts`
-        : base
-      return wrapMessagesInSystemReminder([
-        createUserMessage({
-          content: `${line}\nFind the exact names and argument types of the deferred tools announced in your context in these declarations, and orchestrate them from a ${RUN_CODE_TOOL_NAME} script.`,
-          isMeta: true,
-        }),
-      ])
-    }
     case 'deferred_tools_delta': {
       // ToolSearch-era rows carry this same tag with the old
       // addedNames/addedLines/removedNames shape; they render inert.
@@ -4148,7 +4136,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
       const parts: string[] = []
       if (attachment.addedBlocks.length > 0) {
         parts.push(
-          `# MCP Server Instructions\n\nThe following MCP servers have provided instructions for how to use their tools and resources. Tool names in these instructions are not script globals: call them from a ${RUN_CODE_TOOL_NAME} script only after importing them from "mcp/<server>" (see the tool catalog directory in your environment context for declarations).\n\n${attachment.addedBlocks.join('\n\n')}`,
+          `# MCP Server Instructions\n\nThe following MCP servers have provided instructions for how to use their tools and resources. Tool names in these instructions are not script globals: call them from a ${RUN_CODE_TOOL_NAME} script only after importing them from "mcp/<server>" (the mcp_tools_delta announcement in your context names each server's declarations file).\n\n${attachment.addedBlocks.join('\n\n')}`,
         )
       }
       if (attachment.removedNames.length > 0) {
@@ -4194,6 +4182,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
     'ultramemory', // removed in PR #23596
     'task_reminder',
     'terminal_focus', // proactive-mode focus carrier, removed with the tick loop
+    'tool_catalog', // directory pointer carrier; paths now ride the delta carriers
   ]
   if (LEGACY_ATTACHMENT_TYPES.includes((attachment as { type: string }).type)) {
     return []

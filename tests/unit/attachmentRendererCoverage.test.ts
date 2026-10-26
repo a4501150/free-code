@@ -25,13 +25,6 @@ const VISIBLE_FIXTURES: Array<[Attachment, string]> = [
   ],
   [
     {
-      type: 'tool_catalog',
-      hasProjectScope: false,
-    },
-    'Tool catalog directory:',
-  ],
-  [
-    {
       type: 'deferred_tools_delta',
       generation: 1,
       builtins: ['CronCreate'],

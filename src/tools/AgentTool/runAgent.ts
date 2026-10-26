@@ -69,7 +69,6 @@ import {
   createAttachmentMessage,
   getGitInstructionsAttachment,
   getMcpInstructionsDeltaAttachment,
-  getToolCatalogAttachment,
   getDeferredToolsDeltaAttachment,
   getMcpToolsDeltaAttachment,
   getSkillListingAttachments,
@@ -760,14 +759,11 @@ export async function* runAgent({
     initialMessages.push(createAttachmentMessage(attachment))
   }
 
-  // Turn-0 tool-catalog pointer and deferred built-ins seed (forks skip
-  // them: they inherit the parent transcript, announcements included).
-  // Seeded ahead of the MCP instructions to match the context-group
-  // ordering in attachments.ts and compact.ts.
+  // Turn-0 deferred built-ins seed (forks skip it: they inherit the parent
+  // transcript, announcements included). Seeded ahead of the MCP
+  // instructions to match the context-group ordering in attachments.ts and
+  // compact.ts.
   if (forkContextMessages === undefined) {
-    for (const attachment of getToolCatalogAttachment(initialMessages)) {
-      initialMessages.push(createAttachmentMessage(attachment))
-    }
     for (const attachment of await getDeferredToolsDeltaAttachment(
       agentToolUseContext,
       initialMessages,

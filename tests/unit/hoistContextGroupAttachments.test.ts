@@ -1,6 +1,6 @@
 /**
- * The session-context attachment group (session_guidance, tool_catalog, the
- * MCP pair, listings) must land ahead of the user message so the model reads
+ * The session-context attachment group (session_guidance, the deferred/MCP
+ * delta carriers, listings) must land ahead of the user message so the model reads
  * the context before the question it frames. These guards pin the reorder in
  * hoistContextGroupAttachments — the transcript persists this order, so a
  * regression here shifts persisted bytes, not just rendering.
@@ -59,12 +59,12 @@ describe('hoistContextGroupAttachments', () => {
       group('mcp_tools_delta'),
       group('git_instructions'),
       attach({ type: 'diagnostics' } as Attachment),
-      group('tool_catalog'),
+      group('session_guidance'),
     ])
     expect(types(out)).toEqual([
       'attachment:mcp_tools_delta',
       'attachment:git_instructions',
-      'attachment:tool_catalog',
+      'attachment:session_guidance',
       'user',
       'attachment:diagnostics',
     ])
