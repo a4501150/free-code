@@ -192,12 +192,16 @@ export class MockAnthropicServer {
         JSON.stringify({
           type: 'error',
           error: {
-            type: 'server_error',
+            // 400, not 500: the SDK retries 5xx with backoff, so an
+            // under-provisioned fixture looks like a minutes-long hang
+            // (agent stuck at "Initializing"). A 4xx fails the call
+            // immediately and the request-log dump names the gap.
+            type: 'invalid_request_error',
             message: `Mock server: request #${responseIndex + 1}: ${suffix}`,
           },
         }),
         {
-          status: 500,
+          status: 400,
           headers: { 'Content-Type': 'application/json' },
         },
       )
