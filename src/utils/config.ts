@@ -868,7 +868,58 @@ export function saveCurrentProjectConfig(
     Object.assign(TEST_PROJECT_CONFIG_FOR_TESTING, config)
     return
   }
-  const absolutePath = getProjectPathForConfig()
+  saveProjectConfigAt(getProjectPathForConfig(), updater)
+}
+
+/**
+ * Update the projects-map entry for an arbitrary directory (not the session
+ * cwd) through the same locked read-modify-write that saveCurrentProjectConfig
+ * uses, so concurrent state.json writers (gateway and its children) serialize
+ * on the lockfile instead of clobbering each other.
+ */
+export function saveProjectConfigForPath(
+  dir: string,
+  updater: (currentConfig: ProjectConfig) => ProjectConfig,
+): void {
+  const absolutePath = normalizePathForConfigKey(resolve(dir))
+  if (process.env.NODE_ENV === 'test') {
+    const current =
+      TEST_GLOBAL_CONFIG_FOR_TESTING.projects?.[absolutePath] ??
+      DEFAULT_PROJECT_CONFIG
+    const config = updater(current)
+    // Skip if no changes (same reference returned)
+    if (config === current) {
+      return
+    }
+    TEST_GLOBAL_CONFIG_FOR_TESTING.projects = {
+      ...TEST_GLOBAL_CONFIG_FOR_TESTING.projects,
+      [absolutePath]: config,
+    }
+    return
+  }
+  saveProjectConfigAt(absolutePath, updater)
+}
+
+/**
+ * Persist trust for a directory that will host a session with no UI to accept
+ * the trust dialog — headless gateway children (e.g. the webui assistant) read
+ * checkHasTrustDialogAccepted() from a fresh process and disable their
+ * trust-gated features without a record here. Idempotent: a no-op when `dir`
+ * or any ancestor already has trust persisted.
+ */
+export function ensureWorkspaceTrustPersisted(dir: string): void {
+  if (isPathTrusted(dir)) return
+  saveProjectConfigForPath(dir, current =>
+    current.hasTrustDialogAccepted
+      ? current
+      : { ...current, hasTrustDialogAccepted: true },
+  )
+}
+
+function saveProjectConfigAt(
+  absolutePath: string,
+  updater: (currentConfig: ProjectConfig) => ProjectConfig,
+): void {
   const file = getStateFilePath()
   let release: (() => void) | undefined
 

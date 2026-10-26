@@ -10,16 +10,20 @@ import { join } from 'path'
 
 // getInitialSettings is patched locally (mutable, like memoryPromptPaths)
 // rather than driven through a real freecode.json: mock.module is
-// process-wide in the shared unit-test process. Only this one export is
-// patched — Bun merges the patch over the real namespace, so other exports
-// stay real for later files.
+// process-wide in the shared unit-test process. The factory spreads the real
+// namespace because Bun replaces the module wholesale for later loads — a
+// bare single-export factory would strip every other settings export from
+// files that import them after this one runs.
 let testSettings: Record<string, unknown> = {}
+const actualSettings = await import('../../src/utils/settings/settings.js')
 mock.module('../../src/utils/settings/settings.js', () => ({
+  ...actualSettings,
   getInitialSettings: () => testSettings,
 }))
 
-const { bootstrapAssistantSession } =
+const { assistantWorkspaceDir, bootstrapAssistantSession } =
   await import('../../src/webui/gateway/assistantSession.js')
+const configModule = await import('../../src/utils/config.js')
 const { SettingsSchema } = await import('../../src/utils/settings/types.js')
 
 type StartOptions = {
@@ -52,6 +56,7 @@ let configDir: string
 beforeEach(async () => {
   testSettings = {}
   started = []
+  configModule.resetTrustDialogAcceptedCacheForTesting()
   configDir = await mkdtemp(join(tmpdir(), 'assistant-spawn-'))
   process.env.FREECODE_CONFIG_DIR = configDir
 })
@@ -92,5 +97,25 @@ describe('bootstrapAssistantSession spawn flags', () => {
           assistant: { dangerouslySkipPermissions: false },
         }).success,
     ).toBe(true)
+  })
+})
+
+/**
+ * The headless child gates assistant-mode activation on a persisted trust
+ * record and has no UI to accept the dialog, so bootstrap writes one for the
+ * assistant workspace before spawning.
+ */
+describe('bootstrapAssistantSession workspace trust', () => {
+  test('persists trust for the assistant workspace before spawning', async () => {
+    expect(configModule.isPathTrusted(assistantWorkspaceDir())).toBe(false)
+    const child = await bootstrapAssistantSession(fakeChildren())
+    expect(child).not.toBeNull()
+    expect(configModule.isPathTrusted(assistantWorkspaceDir())).toBe(true)
+  })
+
+  test('the opt-out starts nothing and writes no trust record', async () => {
+    testSettings = { assistant: { enabled: false } }
+    await bootstrapAssistantSession(fakeChildren())
+    expect(configModule.isPathTrusted(assistantWorkspaceDir())).toBe(false)
   })
 })

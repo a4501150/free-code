@@ -7,12 +7,28 @@ let settings: {
 } = {}
 let globalConfig = { autoCompactEnabled: true }
 
+// Additive for the same reason as the config mock below: later files import
+// other settings exports (e.g. getSettings_DEPRECATED via config's dep graph).
+const actualSettings = await import('../../src/utils/settings/settings.js')
 mock.module('../../src/utils/settings/settings.js', () => ({
+  ...actualSettings,
   getInitialSettings: () => settings,
 }))
 
+// Load the real module before patching and spread it: when config.js has not
+// loaded yet, mock.module replaces it wholesale from the factory, so a bare
+// single-export factory would strip every other config export from files that
+// import them after this one runs (bun's unit files share one process and the
+// order is not fixed). The real getGlobalConfig is captured pre-patch —
+// mock.module rewrites the live namespace in place, so calling through the
+// namespace object afterwards would recurse. The patch layers this test's
+// overrides over the real (test-mode) config so unrelated exports keep seeing
+// a realistic object.
+const actualConfig = await import('../../src/utils/config.js')
+const realGetGlobalConfig = actualConfig.getGlobalConfig
 mock.module('../../src/utils/config.js', () => ({
-  getGlobalConfig: () => globalConfig,
+  ...actualConfig,
+  getGlobalConfig: () => ({ ...realGetGlobalConfig(), ...globalConfig }),
 }))
 
 const {

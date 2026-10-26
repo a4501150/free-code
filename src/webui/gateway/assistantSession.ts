@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
+import { ensureWorkspaceTrustPersisted } from '../../utils/config.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import { getInitialSettings } from '../../utils/settings/settings.js'
 import type { ChildSession, ChildSessions } from './childSessions.js'
@@ -78,6 +79,14 @@ export async function bootstrapAssistantSession(
 
   const workspace = assistantWorkspaceDir()
   await mkdir(workspace, { recursive: true, mode: 0o700 })
+  // A headless child has no UI to accept the trust dialog, and the child's
+  // main.tsx gates assistant-mode activation on checkHasTrustDialogAccepted()
+  // — without a persisted trust record here it silently runs with the persona,
+  // attachments, and transcript flushes disabled. The user opted in via
+  // assistant.enabled, so bootstrap force-persists trust for the workspace on
+  // every boot; the write goes through the config module's locked state.json
+  // path and is a no-op once the record exists.
+  ensureWorkspaceTrustPersisted(workspace)
   const extraArgs = ['--assistant']
   // The assistant is a coordinator by default — it orchestrates its own
   // workers and messages spawned sessions (one coordinator system, this is
