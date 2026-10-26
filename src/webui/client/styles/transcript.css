@@ -368,6 +368,13 @@
   color: var(--text-dim);
 }
 
+/* Chips for images a tool returned, same affordance as a user image chip. */
+.tool__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+}
+
 /* ── diff ──────────────────────────────────────────────────────── */
 
 .diff {

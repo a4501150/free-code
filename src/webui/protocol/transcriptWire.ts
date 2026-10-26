@@ -80,6 +80,12 @@ export type WebTranscriptItem = {
    * and travel over `get_image` when the reader asks for them.
    */
   image?: { mediaType: string; bytes: number }
+  /**
+   * Set on a tool_result whose content array carries image parts. Metadata
+   * only, like `image`, but a list: each entry's `id` addresses one part
+   * within the block, `${message.uuid}:${blockIndex}:${partIndex}`.
+   */
+  images?: Array<{ id: string; mediaType: string; bytes: number }>
   /** assistant */
   model?: string
   /** Provider message ID, shared by sibling tool calls from one response. */
@@ -348,6 +354,23 @@ function userBlockItems(
                   )
                   .join('\n')
               : ''
+        // Image parts stay out of the text like they do for user blocks: the
+        // reader fetches the bytes by id when it opens one. The part index
+        // rides on the id because a block can hold several images.
+        const images: NonNullable<WebTranscriptItem['images']> = []
+        if (Array.isArray(raw)) {
+          raw.forEach((part, partIndex) => {
+            if (part.type !== 'image') return
+            const source = (part as { source?: Record<string, unknown> }).source
+            if (source?.type !== 'base64') return
+            images.push({
+              id: `${id}:${partIndex}`,
+              mediaType:
+                typeof source.media_type === 'string' ? source.media_type : '',
+              bytes: typeof source.data === 'string' ? source.data.length : 0,
+            })
+          })
+        }
         items.push(
           finish({
             ...base,
@@ -356,6 +379,7 @@ function userBlockItems(
             text: clip(text),
             toolUseId: block.tool_use_id,
             isError: block.is_error === true ? true : undefined,
+            ...(images.length ? { images } : {}),
           }),
         )
         break

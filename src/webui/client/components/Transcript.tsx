@@ -12,14 +12,9 @@ import type {
   WebTaskSummary,
 } from '../../protocol/attachSchemas.js'
 import { renderMarkdown } from '../markdown.js'
+import { sizeLabel, type WebImageRef } from '../images.js'
 import { NotificationCard } from './NotificationCard.js'
 import { ToolCard } from './ToolCard.js'
-
-function sizeLabel(bytes: number): string {
-  // Base64 characters, so the transferred size is about three quarters of it.
-  const kb = Math.round((bytes * 0.75) / 1024)
-  return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`
-}
 
 type ToolGroup = {
   kind: 'tool_group'
@@ -43,7 +38,7 @@ const Row = memo(function Row({
   item: WebTranscriptItem
   result?: WebTranscriptItem
   inProgressToolUseIds?: string[]
-  onOpenImage(item: WebTranscriptItem): void
+  onOpenImage(image: WebImageRef): void
   /** The session's live task list, for a notification card's status join. */
   tasks?: WebTaskSummary[]
   /** Opens the subagent transcript viewer, from an agent's card. */
@@ -59,7 +54,9 @@ const Row = memo(function Row({
               <button
                 type="button"
                 className="row__image"
-                onClick={() => onOpenImage(item)}
+                onClick={() =>
+                  onOpenImage({ id: item.id, label: item.text ?? 'image' })
+                }
               >
                 {item.text} · {sizeLabel(item.image.bytes)}
               </button>
@@ -98,6 +95,7 @@ const Row = memo(function Row({
           item={item}
           result={result}
           inProgressToolUseIds={inProgressToolUseIds}
+          onOpenImage={onOpenImage}
         />
       )
 
@@ -124,9 +122,11 @@ const Row = memo(function Row({
 const AgentGroup = memo(function AgentGroup({
   group,
   inProgressToolUseIds,
+  onOpenImage,
 }: {
   group: ToolGroup
   inProgressToolUseIds?: string[]
+  onOpenImage(image: WebImageRef): void
 }): React.ReactElement {
   const running = group.items.filter(
     ({ item }) =>
@@ -161,6 +161,7 @@ const AgentGroup = memo(function AgentGroup({
           item={item}
           result={result}
           inProgressToolUseIds={inProgressToolUseIds}
+          onOpenImage={onOpenImage}
           compact
         />
       ))}
@@ -172,7 +173,7 @@ const AgentGroup = memo(function AgentGroup({
 const FOLLOW_SLACK_PX = 80
 
 type OpenImage = {
-  item: WebTranscriptItem
+  label: string
   state: 'loading' | 'ready' | 'failed'
   /**
    * A data URL, which the page's CSP allows through `img-src 'self' data:`.
@@ -326,18 +327,18 @@ export function Transcript({
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
 
-  async function openImage(item: WebTranscriptItem): Promise<void> {
-    setOpen({ item, state: 'loading' })
+  async function openImage(ref: WebImageRef): Promise<void> {
+    setOpen({ label: ref.label, state: 'loading' })
     try {
-      const image = await onFetchImage(item.id)
+      const image = await onFetchImage(ref.id)
       setOpen({
-        item,
+        label: ref.label,
         state: 'ready',
         url: `data:${image.mediaType};base64,${image.data}`,
       })
     } catch (err) {
       setOpen({
-        item,
+        label: ref.label,
         state: 'failed',
         error: err instanceof Error ? err.message : String(err),
       })
@@ -365,6 +366,7 @@ export function Transcript({
                   key={`group:${entry.messageId}`}
                   group={entry}
                   inProgressToolUseIds={inProgressToolUseIds}
+                  onOpenImage={target => void openImage(target)}
                 />
               ) : (
                 <Row
@@ -399,17 +401,21 @@ export function Transcript({
         <div
           className="lightbox"
           role="dialog"
-          aria-label={open.item.text ?? 'image'}
+          aria-label={open.label}
           onClick={() => setOpen(null)}
         >
           {open.state === 'ready' && open.url ? (
-            <img src={open.url} alt={open.item.text ?? 'image'} />
+            <img src={open.url} alt={open.label} />
           ) : (
             <p className="lightbox__note">
               {open.state === 'loading' ? 'loading…' : open.error}
             </p>
           )}
-          <button type="button" className="lightbox__close">
+          <button
+            type="button"
+            className="lightbox__close"
+            onClick={() => setOpen(null)}
+          >
             close
           </button>
         </div>

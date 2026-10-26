@@ -330,7 +330,9 @@ describe('attach handshake', () => {
 
 describe('image prompts', () => {
   const IMAGE_UUID = '44444444-4444-4444-4444-444444444444'
+  const TOOL_RESULT_UUID = '66666666-6666-6666-6666-666666666666'
   const PIXEL = 'iVBORw0KGgo='
+  const SECOND_PIXEL = '/9j/4AAQ'
 
   /** A session holding one user message: an image block, then text. */
   function messages(): Message[] {
@@ -351,6 +353,39 @@ describe('image prompts', () => {
               },
             },
             { type: 'text', text: 'what is this' },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        uuid: TOOL_RESULT_UUID as UUID,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tool-1',
+              content: [
+                { type: 'text', text: 'screenshot attached' },
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/png',
+                    data: PIXEL,
+                  },
+                },
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/jpeg',
+                    data: SECOND_PIXEL,
+                  },
+                },
+              ],
+            },
           ],
         },
       },
@@ -499,6 +534,44 @@ describe('image prompts', () => {
         mediaType: 'image/png',
         data: PIXEL,
       })
+    } finally {
+      session.close()
+    }
+  })
+
+  test('answers get_image for an image nested in a tool_result', async () => {
+    const session = await connect()
+    try {
+      const first = await session.ask({
+        kind: 'get_image',
+        itemId: `${TOOL_RESULT_UUID}:0:1`,
+      })
+      expect(first.ok).toBe(true)
+      expect(first.result).toEqual({ mediaType: 'image/png', data: PIXEL })
+
+      const second = await session.ask({
+        kind: 'get_image',
+        itemId: `${TOOL_RESULT_UUID}:0:2`,
+      })
+      expect(second.ok).toBe(true)
+      expect(second.result).toEqual({
+        mediaType: 'image/jpeg',
+        data: SECOND_PIXEL,
+      })
+
+      // Part 0 of that tool_result is the text part.
+      const text = await session.ask({
+        kind: 'get_image',
+        itemId: `${TOOL_RESULT_UUID}:0:0`,
+      })
+      expect(text.error?.code).toBe('no_such_image')
+
+      // The sub-index only descends into tool_result blocks.
+      const notToolResult = await session.ask({
+        kind: 'get_image',
+        itemId: `${IMAGE_UUID}:0:0`,
+      })
+      expect(notToolResult.error?.code).toBe('no_such_image')
     } finally {
       session.close()
     }

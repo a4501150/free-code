@@ -104,7 +104,10 @@ export const AttachRequestBodySchema = z.discriminatedUnion('kind', [
   }),
   z.object({
     kind: z.literal('get_image'),
-    /** A transcript item id, which is `${message.uuid}:${blockIndex}`. */
+    /**
+     * A transcript item id, `${message.uuid}:${blockIndex}`, with a trailing
+     * `:${partIndex}` for an image nested inside a tool_result.
+     */
     itemId: z.string().min(1).max(200),
   }),
   z.object({

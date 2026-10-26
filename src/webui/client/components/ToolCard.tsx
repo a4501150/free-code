@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { WebTranscriptItem } from '../../protocol/transcriptWire.js'
+import { sizeLabel, type WebImageRef } from '../images.js'
 import { DiffView } from './DiffView.js'
 
 /** Tools whose input is better shown as a diff or a command than as JSON. */
@@ -62,11 +63,14 @@ export function ToolCard({
   result,
   inProgressToolUseIds,
   compact,
+  onOpenImage,
 }: {
   item: WebTranscriptItem
   result?: WebTranscriptItem
   inProgressToolUseIds?: string[]
   compact?: boolean
+  /** Opens the lightbox for an image the result carried. */
+  onOpenImage(image: WebImageRef): void
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
   const input = (item.toolInput ?? {}) as Record<string, unknown>
@@ -108,6 +112,22 @@ export function ToolCard({
             <pre className="tool__pre">{JSON.stringify(input, null, 2)}</pre>
           )}
           {result?.text ? <pre className="tool__pre">{result.text}</pre> : null}
+          {result?.images?.length ? (
+            <div className="tool__images">
+              {result.images.map(image => (
+                <button
+                  key={image.id}
+                  type="button"
+                  className="row__image"
+                  onClick={() =>
+                    onOpenImage({ id: image.id, label: '[image]' })
+                  }
+                >
+                  [image] · {sizeLabel(image.bytes)}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

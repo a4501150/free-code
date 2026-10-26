@@ -15,6 +15,7 @@ import {
   type WebModelOption,
   type WebSessionContext,
 } from '../webui/protocol/attachSchemas.js'
+import type { DomainUserContentBlock } from '../types/domain.js'
 import { isTerminalTaskStatus } from '../Task.js'
 import { StopTaskError } from '../tasks/stopTask.js'
 import { getModelOptions } from '../utils/model/modelOptions.js'
@@ -87,17 +88,24 @@ export type StartAttachHostOptions = {
  *
  * Reading from the live message list rather than a cache is what stops a stale
  * copy existing at all. The id format is `${message.uuid}:${blockIndex}`, set by
- * `toWireSnapshot`.
+ * `toWireSnapshot`, with a third `${partIndex}` segment for an image nested
+ * inside a tool_result's content array.
  */
 function findImage(
   runtime: AttachRuntime,
   itemId: string,
 ): WebImagePayload | undefined {
-  const split = itemId.lastIndexOf(':')
-  if (split <= 0) return undefined
-  const uuid = itemId.slice(0, split)
-  const index = Number(itemId.slice(split + 1))
+  const [uuid, indexText, partText, ...rest] = itemId.split(':')
+  if (!uuid || !indexText || rest.length > 0) return undefined
+  const index = Number(indexText)
   if (!Number.isInteger(index) || index < 0) return undefined
+  const partIndex = partText === undefined ? undefined : Number(partText)
+  if (
+    partIndex !== undefined &&
+    (!Number.isInteger(partIndex) || partIndex < 0)
+  ) {
+    return undefined
+  }
 
   const message = runtime
     .getMessages()
@@ -106,7 +114,13 @@ function findImage(
 
   const content = message.message.content
   if (typeof content === 'string') return undefined
-  const block = content[index]
+  let block = content[index] as DomainUserContentBlock | undefined
+  if (partIndex !== undefined) {
+    if (block?.type !== 'tool_result' || !Array.isArray(block.content)) {
+      return undefined
+    }
+    block = block.content[partIndex] as DomainUserContentBlock | undefined
+  }
   if (block?.type !== 'image' || block.source.type !== 'base64') {
     return undefined
   }

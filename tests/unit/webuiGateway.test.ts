@@ -241,6 +241,58 @@ describe('transcript wire', () => {
     expect(snapshot.order).toEqual([snapshot.items[0]!.id])
   })
 
+  test('annotates image parts inside a tool_result', () => {
+    const snapshot = toWireSnapshot([
+      {
+        type: 'user',
+        uuid: '55555555-5555-5555-5555-555555555555' as UUID,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tool-1',
+              content: [
+                { type: 'text', text: 'screenshot attached' },
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/png',
+                    data: 'iVBORw0KGgo=',
+                  },
+                },
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/jpeg',
+                    data: '/9j/4AAQ',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      } as unknown as Message,
+    ])
+    const item = snapshot.items.find(each => each.kind === 'tool_result')
+    expect(item?.text).toContain('[image]')
+    expect(item?.images).toEqual([
+      {
+        id: '55555555-5555-5555-5555-555555555555:0:1',
+        mediaType: 'image/png',
+        bytes: 12,
+      },
+      {
+        id: '55555555-5555-5555-5555-555555555555:0:2',
+        mediaType: 'image/jpeg',
+        bytes: 8,
+      },
+    ])
+  })
+
   test('reports no patch when nothing changed', () => {
     const messages = [userMessage('11111111-1111-1111-1111-111111111111', 'a')]
     const first = toWireSnapshot(messages)
