@@ -87,7 +87,7 @@ import {
   runAsyncAgentLifecycle,
 } from './agentToolUtils.js'
 import { withAgentStoppedStatus } from './agentToolResult.js'
-import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
+import { resolveOmittedSubagentType } from './resolveOmittedSubagentType.js'
 import {
   buildForkDirective,
   buildForkWorktreeNotice,
@@ -336,8 +336,6 @@ export const AgentTool = buildTool({
     const rootSetAppState =
       toolUseContext.setAppStateForTasks ?? toolUseContext.setAppState
 
-    const effectiveType = subagent_type ?? GENERAL_PURPOSE_AGENT.agentType
-
     // Filter agents to exclude those denied via Agent(AgentName) syntax
     const allAgents = toolUseContext.options.agentDefinitions.activeAgents
     const { allowedAgentTypes } = toolUseContext.options.agentDefinitions
@@ -349,6 +347,12 @@ export const AgentTool = buildTool({
       appState.toolPermissionContext,
       AGENT_TOOL_NAME,
     )
+
+    // When subagent_type is omitted, fall back to general-purpose if it is
+    // available, else to the single registered agent (coordinator mode
+    // registers only `worker`); with several agents and no general-purpose
+    // the lookup below fails with the available-agents error.
+    const effectiveType = subagent_type ?? resolveOmittedSubagentType(agents)
 
     const found = agents.find(agent => agent.agentType === effectiveType)
     if (!found) {

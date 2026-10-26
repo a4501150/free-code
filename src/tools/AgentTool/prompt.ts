@@ -101,12 +101,19 @@ export async function getPrompt(
     : `Available agent types and the tools they have access to:
 ${effectiveAgents.map(agent => formatAgentLine(agent)).join('\n')}`
 
+  // Coordinator mode registers only `worker`, so it must not advertise
+  // general-purpose as the default; the call path falls back to the single
+  // registered agent when subagent_type is omitted.
+  const pickTypeSentence = isCoordinator
+    ? `Set the ${AGENT_TOOL_NAME} tool's subagent_type parameter to pick a type; 'worker' is the available type in coordinator mode and is used when it is omitted.`
+    : `Set the ${AGENT_TOOL_NAME} tool's subagent_type parameter to pick a type; when omitted, the general-purpose agent is used.`
+
   // Shared core prompt used by both coordinator and non-coordinator modes
   const shared = `Launches a subagent to handle complex, multi-step tasks autonomously.
 
 ${agentListSection}
 
-Set the ${AGENT_TOOL_NAME} tool's subagent_type parameter to pick a type; when omitted, the general-purpose agent is used.
+${pickTypeSentence}
 
 The agent you launch sees only its own prompt — none of your conversation. Send self-contained prompts: the full goal and constraints, the relevant file paths, and the expected deliverable. References like "the bug above" or "that file we discussed" reach the agent as noise.
 
