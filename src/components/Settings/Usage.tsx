@@ -374,7 +374,10 @@ export function Usage({ messages }: { messages: Message[] }): React.ReactNode {
     subscriptionContent = (
       <Box flexDirection="column" gap={1}>
         {limits.some(({ limit }) => limit) || (
-          <Text dimColor>/usage is only available for subscription plans.</Text>
+          <Text dimColor>
+            Subscription usage is only shown when logged in to a supported
+            provider.
+          </Text>
         )}
 
         {limits.map(
