@@ -14,6 +14,7 @@ import { join } from 'path'
 import { getSessionId } from '../../bootstrap/state.js'
 import { getAssistantActive } from '../../bootstrap/state.js'
 import { logError } from '../../utils/log.js'
+import { getContentText } from '../../utils/messages.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 
 function getTranscriptDir(): string {
@@ -45,24 +46,35 @@ function dateFromMessage(msg: unknown): string | null {
   return null
 }
 
-function extractTranscriptEntry(msg: unknown): Record<string, unknown> | null {
+/**
+ * Map a message to a transcript line. Handles domain messages
+ * (UserMessage/AssistantMessage), which nest role at `message.role` and
+ * content at `message.content` (see src/utils/messages.ts create* helpers),
+ * plus flat {role, content} shapes. Tool-only messages (no text blocks)
+ * produce no entry. Exported for tests.
+ */
+export function extractTranscriptEntry(
+  msg: unknown,
+): Record<string, unknown> | null {
   if (!msg || typeof msg !== 'object') return null
   const m = msg as Record<string, unknown>
 
-  // Extract role and text content from message
-  const role = m.role as string | undefined
+  // Domain messages carry the API payload under `message`; the top-level
+  // `type` field is the message kind, not the role.
+  const inner =
+    m.message && typeof m.message === 'object'
+      ? (m.message as Record<string, unknown>)
+      : undefined
+  const role =
+    typeof inner?.role === 'string'
+      ? (inner.role as string)
+      : typeof m.role === 'string'
+        ? m.role
+        : undefined
   if (!role) return null
 
-  let text = ''
-  if (typeof m.content === 'string') {
-    text = m.content
-  } else if (Array.isArray(m.content)) {
-    // Content blocks: extract text blocks
-    text = (m.content as Array<Record<string, unknown>>)
-      .filter(b => b.type === 'text' && typeof b.text === 'string')
-      .map(b => b.text as string)
-      .join('\n')
-  }
+  const content = inner ? inner.content : m.content
+  const text = getContentText(content as string) ?? ''
 
   if (!text) return null
 

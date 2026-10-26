@@ -4,10 +4,12 @@ import {
   flushSessionStorage,
   getTranscriptPath,
   recordQueueOperation,
+  recordTranscript,
   resetSessionFilePointer,
   truncateSessionTranscriptInPlace,
 } from '../../src/utils/sessionStorage.js'
 import { regenerateSessionId } from '../../src/bootstrap/state.js'
+import { createUserMessage } from '../../src/utils/messages.js'
 
 /**
  * Assistant-mode /clear: the transcript is emptied IN PLACE — same session id,
@@ -58,6 +60,31 @@ describe('truncateSessionTranscriptInPlace', () => {
     const content = readFileSync(path, 'utf8')
     expect(content).toContain('post-clear entry')
     expect(content).not.toContain('pre-clear entry')
+  })
+
+  test('an append in flight at truncation time does not leak past it', async () => {
+    await resetSessionFilePointer()
+    regenerateSessionId()
+    const path = getTranscriptPath()
+    created.push(path)
+
+    // Start a message append and DON'T await it: recordTranscript parks on
+    // its dedup-set load (await getSessionMessages) before queueing the
+    // write. Truncating immediately must settle that in-flight write and
+    // drain it BEFORE emptying the file — pre-fix, flush() saw an empty
+    // queue and idle counters, returned, and the parked append landed its
+    // pre-clear entry into the freshly-truncated file.
+    const recording = recordTranscript([
+      createUserMessage({ content: 'in-flight pre-clear message' }),
+    ])
+    await truncateSessionTranscriptInPlace()
+    await recording
+
+    expect(readFileSync(path, 'utf8')).toBe('')
+
+    // And the post-truncate path still works normally.
+    await recordOneOperation('post-race entry')
+    expect(readFileSync(path, 'utf8')).toContain('post-race entry')
   })
 
   test('a session with no file yet truncates to nothing, then materializes', async () => {

@@ -453,7 +453,15 @@ class Project {
     }
   }
 
-  private async trackWrite<T>(fn: () => Promise<T>): Promise<T> {
+  /**
+   * Counts an async write operation as in-flight for flush() purposes from
+   * BEFORE its first await. Public so module-level helpers (recordTranscript)
+   * can register themselves while still parked on the dedup-set load — an
+   * untracked append parked on `await getSessionMessages()` during a flush
+   * would queue its write only after the flush returned, slipping past a
+   * truncateSessionTranscriptInPlace running right behind it.
+   */
+  async trackWrite<T>(fn: () => Promise<T>): Promise<T> {
     this.incrementPendingWrites()
     try {
       return await fn()
@@ -708,21 +716,31 @@ class Project {
   }
 
   async flush(): Promise<void> {
-    // Wait for any scheduled drain to finish, then drain whatever remains
-    // directly. Enqueues can arrive while we wait, so loop until the chain
-    // is idle and the queues are empty.
-    while (this.drainScheduled || this.writeQueues.size > 0) {
-      await this.drainChain
-      await this.drainWriteQueue()
-    }
-
-    // Wait for non-queue tracked operations (e.g. removeMessageByUuid)
-    if (this.pendingWriteCount === 0) {
+    // Settle tracked in-flight writes and the write queues together, in
+    // both orders:
+    // - A tracked write (recordTranscript, insertMessageChain, ...) may
+    //   still be parked BEFORE its enqueueWrite, so draining queues alone
+    //   can miss it — wait for the tracked count to settle too.
+    // - Conversely, a tracked write that settles mid-flush has just QUEUED
+    //   an entry that must still be drained before we report settled —
+    //   otherwise it lands after a truncateSessionTranscriptInPlace running
+    //   right behind this flush.
+    // Loop until one pass finds both the tracked count and the queues idle.
+    for (;;) {
+      if (this.pendingWriteCount > 0) {
+        // Resolved by decrementPendingWrites when the count reaches zero.
+        await new Promise<void>(resolve => {
+          this.flushResolvers.push(resolve)
+        })
+        continue
+      }
+      if (this.drainScheduled || this.writeQueues.size > 0) {
+        await this.drainChain
+        await this.drainWriteQueue()
+        continue
+      }
       return
     }
-    return new Promise<void>(resolve => {
-      this.flushResolvers.push(resolve)
-    })
   }
 
   /**
@@ -1175,44 +1193,52 @@ class Project {
 //  - Compaction (useLogMessages): new CB/summary appear FIRST, then recorded
 //    messagesToKeep → not a prefix → not tracked → CB gets parentUuid=null
 //    (correct: truncates --continue chain at compact boundary).
-export async function recordTranscript(
+export function recordTranscript(
   messages: Message[],
   startingParentUuidHint?: UUID,
 ): Promise<UUID | null> {
-  const cleanedMessages = cleanMessagesForLogging(messages)
-  const sessionId = getSessionId() as UUID
-  const messageSet = await getSessionMessages(sessionId)
-  const newMessages: typeof cleanedMessages = []
-  let startingParentUuid: UUID | undefined = startingParentUuidHint
-  let seenNewMessage = false
-  for (const m of cleanedMessages) {
-    if (messageSet.has(m.uuid as UUID)) {
-      // Only track skipped messages that form a prefix. After compaction,
-      // messagesToKeep appear AFTER new CB/summary, so this skips them.
-      if (!seenNewMessage && isChainParticipant(m)) {
-        startingParentUuid = m.uuid as UUID
+  // Tracked BEFORE the getSessionMessages await so a flush()/truncate that
+  // runs while this is parked waits for it — otherwise the dedup check and
+  // the enqueue straddle the truncation and this pre-truncate entry lands
+  // in the freshly-emptied file (see Project.trackWrite).
+  return getProject().trackWrite(async () => {
+    const cleanedMessages = cleanMessagesForLogging(messages)
+    const sessionId = getSessionId() as UUID
+    const messageSet = await getSessionMessages(sessionId)
+    const newMessages: typeof cleanedMessages = []
+    let startingParentUuid: UUID | undefined = startingParentUuidHint
+    let seenNewMessage = false
+    for (const m of cleanedMessages) {
+      if (messageSet.has(m.uuid as UUID)) {
+        // Only track skipped messages that form a prefix. After compaction,
+        // messagesToKeep appear AFTER new CB/summary, so this skips them.
+        if (!seenNewMessage && isChainParticipant(m)) {
+          startingParentUuid = m.uuid as UUID
+        }
+      } else {
+        newMessages.push(m)
+        seenNewMessage = true
       }
-    } else {
-      newMessages.push(m)
-      seenNewMessage = true
     }
-  }
-  if (newMessages.length > 0) {
-    await getProject().insertMessageChain(
-      newMessages,
-      false,
-      undefined,
-      startingParentUuid,
+    if (newMessages.length > 0) {
+      await getProject().insertMessageChain(
+        newMessages,
+        false,
+        undefined,
+        startingParentUuid,
+      )
+    }
+    // Return the last ACTUALLY recorded chain-participant's UUID, OR the
+    // prefix-tracked UUID if no new chain participants were recorded. This
+    // lets callers (useLogMessages) maintain the correct parent chain even
+    // when the slice is all-recorded (rewind, /resume scenarios where every
+    // message is already in messageSet). Progress is skipped — it's written
+    // to the JSONL but nothing chains TO it (see isChainParticipant).
+    const lastRecorded = newMessages.findLast(isChainParticipant)
+    return (
+      (lastRecorded?.uuid as UUID | undefined) ?? startingParentUuid ?? null
     )
-  }
-  // Return the last ACTUALLY recorded chain-participant's UUID, OR the
-  // prefix-tracked UUID if no new chain participants were recorded. This lets
-  // callers (useLogMessages) maintain the correct parent chain even when the
-  // slice is all-recorded (rewind, /resume scenarios where every message is
-  // already in messageSet). Progress is skipped — it's written to the JSONL
-  // but nothing chains TO it (see isChainParticipant).
-  const lastRecorded = newMessages.findLast(isChainParticipant)
-  return (lastRecorded?.uuid as UUID | undefined) ?? startingParentUuid ?? null
+  })
 }
 
 export async function recordSidechainTranscript(
@@ -1297,9 +1323,12 @@ export async function resetSessionFilePointer() {
  * metadata re-stamp (reAppendSessionMetadata) and the SessionStart hook
  * messages rewrite the file's head.
  *
- * Bookkeeping kept consistent: pending queued appends are flushed BEFORE the
- * truncation so no pre-clear entry lands after it, and the memoized dedup
- * message-set is dropped so later writes dedup against the truncated file.
+ * Bookkeeping kept consistent: project.flush() settles queued appends AND
+ * in-flight tracked writes (recordTranscript registers itself before its
+ * dedup-set await, and flush re-drains anything they queue while settling)
+ * BEFORE the truncation, so no pre-clear entry lands after it; the memoized
+ * dedup message-set is dropped so later writes dedup against the truncated
+ * file.
  * The positive existingSessionFiles cache still points at the same path —
  * truncation doesn't move or delete the file, so it stays valid.
  */

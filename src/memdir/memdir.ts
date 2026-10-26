@@ -1,4 +1,5 @@
 import { join } from 'path'
+import { getLocalISODate } from '../constants/common.js'
 import { getFsImplementation } from '../utils/fsOperations.js'
 import { getAutoMemPath, isAutoMemoryEnabled } from './paths.js'
 
@@ -335,15 +336,27 @@ export function buildMemoryPrompt(params: {
  * Concrete (not a placeholder pattern) so the assistant can Write to it
  * directly and the attachment can surface it as a path-addressable file.
  */
-export function getAssistantDailyLogPath(now: Date = new Date()): string {
-  const iso = now.toISOString()
+export function getAssistantDailyLogPath(now?: Date): string {
+  // Local date, not UTC: the system prompt's `currentDate` context is built
+  // with getLocalISODate (src/constants/common.ts), so an explicit `now` is
+  // formatted in local time and the default path honors the same helper
+  // (including its date override). toISOString() would name yesterday's
+  // file during local evening hours.
+  const iso = now ? localISODateOf(now) : getLocalISODate()
   return join(
     getAutoMemPath(),
     'logs',
     iso.slice(0, 4),
     iso.slice(5, 7),
-    `${iso.slice(0, 10)}.md`,
+    `${iso}.md`,
   )
+}
+
+function localISODateOf(d: Date): string {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export function buildAssistantDailyLogBlock(): string {
