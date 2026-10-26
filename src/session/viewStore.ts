@@ -130,8 +130,9 @@ export function applyEvent(
       return next
 
     case 'task_transcript':
-      // Task patches belong to the per-task viewer store, which the shell
-      // feeds directly. Here they only advance the sequence watermark.
+    case 'task_output':
+      // Task deltas belong to the per-task viewer, which the shell feeds
+      // directly. Here they only advance the sequence watermark.
       return next
 
     case 'session_changed':

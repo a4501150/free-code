@@ -428,3 +428,118 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── shell/monitor output viewer (rendered in the main column) ──── */
+
+.shellout {
+  grid-area: transcript;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg);
+}
+
+.shellout__head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-raised);
+}
+
+.shellout__command {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--signal);
+  /* The command is the thing you came to confirm: wrap it, never clip it. */
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.shellout__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 11px;
+}
+
+.shellout__exit {
+  color: var(--del);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.shellout__exit.is-clean {
+  color: var(--add);
+}
+
+.shellout__follow {
+  margin-left: auto;
+  padding: 0.1rem 0.5rem;
+  background: none;
+  border: 1px solid var(--rule-bright);
+  color: var(--text-dim);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.shellout__follow:hover {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.shellout__gone {
+  flex: none;
+  margin: 0.5rem 0.75rem 0;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* Long lines scroll sideways rather than wrapping — the same discipline as
+   `.md-table`: a stack trace keeps its shape and the reader swipes. */
+.shellout__body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  padding-bottom: max(0.6rem, env(safe-area-inset-bottom));
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-bright) transparent;
+  background: var(--bg-sunk);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre;
+  tab-size: 4;
+}
+
+/* A Bash card whose command went to the background: the chip is the bridge
+   from the tool row to the task's live output pane. */
+.tool__bgchip {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.4rem;
+  padding: 0.2rem 0.5rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule-bright);
+  color: var(--signal);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool__bgchip:hover {
+  border-color: var(--signal);
+}

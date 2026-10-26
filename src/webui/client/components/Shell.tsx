@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionListEntry } from '../../../sessiond/sessionList.js'
-import type {
-  WebPermissionDecision,
-  WebPermissionRequest,
-  WebTaskTranscript,
+import {
+  DEFAULT_TASK_OUTPUT_TAIL_BYTES,
+  type WebPermissionDecision,
+  type WebPermissionRequest,
+  type WebTaskOutput,
+  type WebTaskTranscript,
 } from '../../protocol/attachSchemas.js'
 import { useGateway } from '../hooks/useGateway.js'
 import { useSessions } from '../hooks/useSessions.js'
@@ -16,6 +18,7 @@ import { approvalInput, PlanTray } from './PlanTray.js'
 import { QuestionTray } from './QuestionTray.js'
 import { MenuDrawer } from './MenuDrawer.js'
 import { TopBar } from './TopBar.js'
+import { TaskOutputView, type ShellOutputState } from './TaskOutputView.js'
 import { Transcript } from './Transcript.js'
 
 /**
@@ -132,6 +135,15 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   const [viewedTaskId, setViewedTaskId] = useState<string | null>(null)
   const viewedTaskIdRef = useRef<string | null>(null)
   viewedTaskIdRef.current = viewedTaskId
+  // Which viewer is open: an agent's transcript or a shell/monitor's output.
+  const [viewedTaskKind, setViewedTaskKind] = useState<
+    'agent' | 'output' | null
+  >(null)
+  const [shellView, setShellView] = useState<ShellOutputState | null>(null)
+  // The task list as of the last render, so `openTask` can classify the task
+  // without re-subscribing to the store on every callback rebuild.
+  const tasksRef = useRef<{ id: string; taskType: string }[]>([])
+  tasksRef.current = view.tasks
   // Highest event seq seen, so a seeded viewer compares against the same
   // watermark as the store it mirrors.
   const seqRef = useRef(0)
@@ -154,6 +166,23 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
       if (event.kind === 'task_transcript') {
         if (event.taskId === viewedTaskIdRef.current) {
           viewerStore.apply(seq, { kind: 'transcript', patch: event.patch })
+        }
+        return
+      }
+      if (event.kind === 'task_output') {
+        // Output appends go to the shell viewer's own state; the main store
+        // only needs the watermark, which `seqRef` already carries.
+        if (event.taskId === viewedTaskIdRef.current) {
+          setShellView(prev =>
+            prev
+              ? {
+                  text: prev.text + event.append,
+                  done: prev.done || event.done,
+                  gone: prev.gone,
+                  loading: false,
+                }
+              : prev,
+          )
         }
         return
       }
@@ -191,10 +220,11 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   })
 
   /**
-   * Open a subagent's transcript in the main pane: seed a snapshot with a
-   * request, then keep the viewer store current with `subscribe_task` deltas.
-   * The request is answered before the subscribe is even sent, so no delta can
-   * arrive against an unseeded store.
+   * Open a task in the main pane. Agents seed a transcript snapshot; shells
+   * and monitors seed the tail of their output file. Either way the seed is
+   * a request answered before the `subscribe_task` goes out, so no delta can
+   * arrive against an unseeded view, and the subscribe carries the seed's
+   * end offset so live appends continue exactly where the seed left off.
    */
   const openTask = useCallback(
     async (taskId: string) => {
@@ -206,7 +236,46 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         })
       }
       viewerStore.reset()
+      const summary = tasksRef.current.find(task => task.id === taskId)
+      const kind: 'agent' | 'output' =
+        summary?.taskType === 'local_bash' ||
+        summary?.taskType === 'monitor_mcp'
+          ? 'output'
+          : 'agent'
       setViewedTaskId(taskId)
+      setViewedTaskKind(kind)
+      if (kind === 'output') {
+        setShellView({ text: '', done: false, gone: false, loading: true })
+        const answer = await gateway.request({
+          kind: 'get_task_output',
+          taskId,
+          tailBytes: DEFAULT_TASK_OUTPUT_TAIL_BYTES,
+        })
+        // The user may have left (or switched) while the read was in flight.
+        if (viewedTaskIdRef.current !== taskId) return
+        if (answer.ok) {
+          const seed = answer.result as WebTaskOutput
+          setShellView({
+            text: seed.content,
+            done: seed.done,
+            gone: false,
+            loading: false,
+          })
+          // A terminal task's file is complete: no stream to open. Resume
+          // from the end of the seed, so appends carry only new bytes.
+          if (!seed.done)
+            gateway.send({
+              kind: 'subscribe_task',
+              taskId,
+              fromOffset: seed.bytesTotal,
+            })
+        } else {
+          // Gone from the session between list and read — say so plainly.
+          setShellView({ text: '', done: true, gone: true, loading: false })
+        }
+        return
+      }
+      setShellView(null)
       const answer = await gateway.request({
         kind: 'get_task_transcript',
         taskId,
@@ -232,6 +301,8 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     const taskId = viewedTaskIdRef.current
     if (taskId) gateway.send({ kind: 'unsubscribe_task', taskId })
     setViewedTaskId(null)
+    setViewedTaskKind(null)
+    setShellView(null)
     viewerStore.reset()
   }, [gateway, viewerStore])
 
@@ -555,20 +626,41 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
             <button type="button" className="viewer__back" onClick={closeTask}>
               ← session
             </button>
-            <span className="viewer__label">subagent: {viewedTaskLabel}</span>
+            <span className="viewer__label">
+              {viewedTaskKind === 'output' ? 'task' : 'subagent'}:{' '}
+              {viewedTaskLabel}
+            </span>
           </div>
         ) : null}
         {activeKey ? (
           viewedTaskId ? (
-            <Transcript
-              items={viewerView.items}
-              order={viewerView.order}
-              pendingCommands={[]}
-              followSignal={followSignal}
-              onFetchImage={fetchImage}
-              tasks={view.tasks}
-              onOpenTask={taskId => void openTask(taskId)}
-            />
+            viewedTaskKind === 'output' ? (
+              <TaskOutputView
+                taskId={viewedTaskId}
+                task={viewedTask}
+                state={
+                  shellView ?? {
+                    text: '',
+                    done: false,
+                    gone: false,
+                    loading: false,
+                  }
+                }
+                onKillTask={taskId =>
+                  gateway.send({ kind: 'kill_task', taskId })
+                }
+              />
+            ) : (
+              <Transcript
+                items={viewerView.items}
+                order={viewerView.order}
+                pendingCommands={[]}
+                followSignal={followSignal}
+                onFetchImage={fetchImage}
+                tasks={view.tasks}
+                onOpenTask={taskId => void openTask(taskId)}
+              />
+            )
           ) : (
             <Transcript
               items={view.items}

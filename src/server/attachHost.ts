@@ -4,7 +4,9 @@ import { createServer, type Server, type Socket } from 'net'
 import {
   ATTACH_PROTOCOL_VERSION,
   AttachRequestSchema,
+  DEFAULT_TASK_OUTPUT_TAIL_BYTES,
   MAX_ATTACH_REPLAY_EVENTS,
+  MAX_TASK_OUTPUT_TAIL_BYTES,
   type AttachEventBody,
   type AttachEventEnvelope,
   type AttachOutbound,
@@ -13,11 +15,16 @@ import {
   type WebPermissionRequest,
   type WebSessionMeta,
   type WebModelOption,
+  type WebTaskOutput,
   type WebSessionContext,
 } from '../webui/protocol/attachSchemas.js'
 import type { DomainUserContentBlock } from '../types/domain.js'
 import { isTerminalTaskStatus } from '../Task.js'
 import { StopTaskError } from '../tasks/stopTask.js'
+import {
+  getTaskOutputDelta,
+  getTaskOutputTail,
+} from '../utils/task/diskOutput.js'
 import { getModelOptions } from '../utils/model/modelOptions.js'
 import { buildContextMeter } from './contextMeter.ts'
 import {
@@ -301,11 +308,23 @@ export function startAttachHost(
    * stream, and an evicted agent means a disk read per tick.
    */
   const TASK_TRANSCRIPT_POLL_MS = 700
+  /** The TUI detail dialog tails on the same cadence. */
+  const TASK_OUTPUT_POLL_MS = 1000
+  /**
+   * One poll's worth of new bytes. Half the wire line limit before
+   * JSON-escaping, so a pathological tick of pure newlines still fits one
+   * frame under `MAX_ATTACH_LINE_BYTES`.
+   */
+  const TASK_OUTPUT_POLL_MAX_BYTES = 2 * 1024 * 1024
   type TaskSubscription = {
     subscribers: Set<Connection>
     last: WebTranscriptSnapshot
     timer?: ReturnType<typeof setInterval>
     inFlight?: boolean
+    /** Agent chains stream as transcript patches; shells as output appends. */
+    mode: 'transcript' | 'output'
+    /** Output mode: file offset the next poll reads from. */
+    outputOffset: number
   }
   const taskSubs = new Map<string, TaskSubscription>()
 
@@ -350,38 +369,114 @@ export function startAttachHost(
     }
   }
 
+  /**
+   * Output streaming for a subscribed shell/monitor: read the file delta
+   * since the last tick and emit it, the same tail-and-poll shape the TUI's
+   * ShellDetailDialog uses. Stops on the tick that finds the task terminal
+   * or gone, after carrying whatever final bytes the file holds.
+   */
+  async function pollTaskOutput(taskId: string): Promise<void> {
+    const sub = taskSubs.get(taskId)
+    if (!sub || !runtime || sub.subscribers.size === 0) return
+    if (sub.inFlight) return
+    sub.inFlight = true
+    try {
+      const fromOffset = sub.outputOffset
+      const delta = await getTaskOutputDelta(
+        taskId,
+        fromOffset,
+        TASK_OUTPUT_POLL_MAX_BYTES,
+      )
+      sub.outputOffset = delta.newOffset
+      const summary = runtime.getTasks().find(task => task.id === taskId)
+      const done = !summary || isTerminalTaskStatus(summary.status)
+      if (delta.content || done) {
+        emit({
+          kind: 'task_output',
+          taskId,
+          append: delta.content,
+          fromOffset,
+          toOffset: delta.newOffset,
+          done,
+        })
+      }
+      if (done) stopTaskPoll(taskId)
+    } catch {
+      // Retryable like the transcript poll; the next tick reads from the
+      // same offset, so a failed read loses nothing.
+    } finally {
+      sub.inFlight = false
+    }
+  }
+
   async function subscribeTask(
     connection: Connection,
     taskId: string,
+    fromOffset?: number,
   ): Promise<void> {
     let sub = taskSubs.get(taskId)
     const fresh = !sub
+    const summary = runtime?.getTasks().find(task => task.id === taskId)
+    const mode: TaskSubscription['mode'] =
+      summary &&
+      (summary.taskType === 'local_bash' || summary.taskType === 'monitor_mcp')
+        ? 'output'
+        : 'transcript'
     if (!sub) {
-      sub = { subscribers: new Set(), last: { items: [], order: [] } }
+      sub = {
+        subscribers: new Set(),
+        last: { items: [], order: [] },
+        mode,
+        outputOffset: 0,
+      }
       taskSubs.set(taskId, sub)
     }
     sub.subscribers.add(connection)
-    if (fresh && runtime) {
+    if (fresh && runtime && mode === 'output') {
+      // Shell output streams from the client's seed offset when it sent one;
+      // with no seed, start at the end of the file so a reconnect does not
+      // re-send a multi-megabyte history as one append.
+      const baseline = await getTaskOutputTail(taskId, 1)
+      sub.outputOffset = fromOffset ?? baseline.bytesTotal
+      const done = !summary || isTerminalTaskStatus(summary.status)
+      if (done) {
+        // Terminal already: one closing frame, no timer to run.
+        emit({
+          kind: 'task_output',
+          taskId,
+          append: '',
+          fromOffset: sub.outputOffset,
+          toOffset: sub.outputOffset,
+          done: true,
+        })
+        return
+      }
+    } else if (fresh && runtime) {
       // Baseline the diff on the current chain, not on empty: a client that
       // seeded from `get_task_transcript` before subscribing would otherwise
       // get every id back in the first poll's `orderAppend` and render each
       // row twice. The poll has not started yet, so nothing races this read.
       const got = await runtime.getTaskTranscript(taskId)
       sub.last = got ? toWireSnapshot(got.messages) : { items: [], order: [] }
+      // The first frame for a new subscriber is always a full replace: it
+      // reconciles anything the seed read and this baseline read disagree on,
+      // in either arrival order, and it composes with the client's idempotent
+      // replace handling instead of relying on delta bookkeeping.
+      emit({
+        kind: 'task_transcript',
+        taskId,
+        patch: { type: 'replace', snapshot: sub.last },
+      })
     }
-    // The first frame for a new subscriber is always a full replace: it
-    // reconciles anything the seed read and this baseline read disagree on,
-    // in either arrival order, and it composes with the client's idempotent
-    // replace handling instead of relying on delta bookkeeping.
-    emit({
-      kind: 'task_transcript',
-      taskId,
-      patch: { type: 'replace', snapshot: sub.last },
-    })
     if (!sub.timer) {
-      sub.timer = setInterval(() => {
-        void pollTaskTranscript(taskId)
-      }, TASK_TRANSCRIPT_POLL_MS)
+      const subscription = sub
+      sub.timer = setInterval(
+        () => {
+          if (subscription.mode === 'output') void pollTaskOutput(taskId)
+          else void pollTaskTranscript(taskId)
+        },
+        mode === 'output' ? TASK_OUTPUT_POLL_MS : TASK_TRANSCRIPT_POLL_MS,
+      )
       sub.timer.unref?.()
     }
   }
@@ -665,8 +760,46 @@ export function startAttachHost(
             return
           }
 
+          case 'get_task_output': {
+            if (!runtime) {
+              respond(socket, requestId, false, {
+                error: {
+                  code: 'runtime_not_ready',
+                  message: 'the session is still starting',
+                },
+              })
+              return
+            }
+            const summary = runtime
+              .getTasks()
+              .find(task => task.id === body.taskId)
+            if (!summary) {
+              respond(socket, requestId, false, {
+                error: {
+                  code: 'no_such_task',
+                  message: 'no task with that id',
+                },
+              })
+              return
+            }
+            const tailBytes = Math.min(
+              body.tailBytes ?? DEFAULT_TASK_OUTPUT_TAIL_BYTES,
+              MAX_TASK_OUTPUT_TAIL_BYTES,
+            )
+            const tail = await getTaskOutputTail(body.taskId, tailBytes)
+            respond(socket, requestId, true, {
+              result: {
+                content: tail.content,
+                offset: tail.offset,
+                bytesTotal: tail.bytesTotal,
+                done: isTerminalTaskStatus(summary.status),
+              } satisfies WebTaskOutput,
+            })
+            return
+          }
+
           case 'subscribe_task': {
-            await subscribeTask(connection, body.taskId)
+            await subscribeTask(connection, body.taskId, body.fromOffset)
             respond(socket, requestId, true)
             return
           }

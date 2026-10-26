@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { WebTaskSummary } from '../../protocol/attachSchemas.js'
 import type { WebTranscriptItem } from '../../protocol/transcriptWire.js'
 import { sizeLabel, type WebImageRef } from '../images.js'
 import { DiffView } from './DiffView.js'
@@ -64,6 +65,8 @@ export function ToolCard({
   inProgressToolUseIds,
   compact,
   onOpenImage,
+  tasks,
+  onOpenTask,
 }: {
   item: WebTranscriptItem
   result?: WebTranscriptItem
@@ -71,9 +74,23 @@ export function ToolCard({
   compact?: boolean
   /** Opens the lightbox for an image the result carried. */
   onOpenImage(image: WebImageRef): void
+  /** The session's background tasks, to spot a backgrounded shell. */
+  tasks?: WebTaskSummary[]
+  /** Opens a task's viewer; the chip only shows when this exists. */
+  onOpenTask?(taskId: string): void
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
   const input = (item.toolInput ?? {}) as Record<string, unknown>
+  // The Bash call that backgrounded itself becomes a shell task carrying this
+  // tool's id; that link is what makes the output reachable from here.
+  const backgrounded =
+    onOpenTask && item.toolUseId
+      ? tasks?.find(
+          task =>
+            task.toolUseId === item.toolUseId &&
+            (task.taskType === 'local_bash' || task.taskType === 'monitor_mcp'),
+        )
+      : undefined
   const isEdit =
     item.toolName === 'Edit' &&
     typeof input.old_string === 'string' &&
@@ -103,6 +120,16 @@ export function ToolCard({
 
       {open ? (
         <div className="tool__body">
+          {backgrounded ? (
+            <button
+              type="button"
+              className="tool__bgchip"
+              title="This command is running as a background task"
+              onClick={() => onOpenTask?.(backgrounded.id)}
+            >
+              ▸ background task: {backgrounded.description}
+            </button>
+          ) : null}
           {isEdit ? (
             <DiffView
               before={String(input.old_string)}

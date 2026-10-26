@@ -17,6 +17,16 @@ export const MAX_ATTACH_LINE_BYTES = 8 * 1024 * 1024
 /** Events retained for a reconnecting client before it must re-snapshot. */
 export const MAX_ATTACH_REPLAY_EVENTS = 2048
 
+/**
+ * Largest `get_task_output` tail the browser may ask for. JSON-escaping a
+ * tail of mostly newlines at most doubles it, which still clears
+ * `MAX_ATTACH_LINE_BYTES` with room for the rest of the response frame.
+ */
+export const MAX_TASK_OUTPUT_TAIL_BYTES = 3 * 1024 * 1024
+
+/** Default tail when a viewer asks without a size: what the TUI dialog shows. */
+export const DEFAULT_TASK_OUTPUT_TAIL_BYTES = 1024 * 1024
+
 /** Images one submit may carry. */
 export const MAX_SUBMIT_IMAGES = 4
 
@@ -118,8 +128,27 @@ export const AttachRequestBodySchema = z.discriminatedUnion('kind', [
     taskId: z.string().min(1).max(200),
   }),
   z.object({
+    kind: z.literal('get_task_output'),
+    taskId: z.string().min(1).max(200),
+    /** Tail size to read; the host clamps it under the wire line limit. */
+    tailBytes: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_TASK_OUTPUT_TAIL_BYTES)
+      .optional(),
+  }),
+  z.object({
     kind: z.literal('subscribe_task'),
     taskId: z.string().min(1).max(200),
+    /**
+     * Byte offset the client's seed ended at, for shell/monitor output
+     * streaming: appends start here, so the seed read and the live stream
+     * can neither overlap nor leave a gap. Ignored for agent transcripts,
+     * and treated as the current end of file when a shell viewer seeded
+     * nothing.
+     */
+    fromOffset: z.number().int().nonnegative().optional(),
   }),
   z.object({
     kind: z.literal('unsubscribe_task'),
@@ -254,6 +283,10 @@ export type WebTaskSummary = {
   /** Epoch ms. */
   startTime: number
   endTime?: number
+  /** local_bash: the shell command line, so the browser can echo it back. */
+  command?: string
+  /** The tool use that spawned the task, so a ToolCard can point at it. */
+  toolUseId?: string
   /** local_bash: the shell's exit code once it has one. */
   exitCode?: number
   /** local_agent progress, absent until the agent records any. */
@@ -266,6 +299,21 @@ export type WebTaskSummary = {
 /** The `get_task_transcript` answer. `done` means the task is terminal. */
 export type WebTaskTranscript = {
   items: import('./transcriptWire.js').WebTranscriptItem[]
+  done: boolean
+}
+
+/**
+ * The `get_task_output` answer: the tail of a shell/monitor's output file,
+ * with the same "[NKB of earlier output omitted]" prefix convention the TUI
+ * dialog and `getTaskOutput` use. `offset` is where the (un-prefixed) content
+ * starts in the file; `bytesTotal` is where it ends — subscribe with that as
+ * `fromOffset` so the live stream carries only bytes the seed did not show.
+ */
+export type WebTaskOutput = {
+  content: string
+  offset: number
+  bytesTotal: number
+  /** True once the task is terminal: no further appends will arrive. */
   done: boolean
 }
 
@@ -291,6 +339,20 @@ export type AttachEventBody =
    * main transcript never sees them.
    */
   | { kind: 'task_transcript'; taskId: string; patch: TranscriptPatch }
+  /**
+   * Output-file appends for one shell/monitor task, for connections that
+   * sent `subscribe_task` with a `fromOffset`. `done` means the task is
+   * terminal (or has vanished from the session) and no further frames for
+   * it will follow.
+   */
+  | {
+      kind: 'task_output'
+      taskId: string
+      append: string
+      fromOffset: number
+      toOffset: number
+      done: boolean
+    }
   | { kind: 'permission_opened'; request: WebPermissionRequest }
   | { kind: 'permission_closed'; requestId: string; outcome: string }
   | { kind: 'todos'; todos: WebTodo[] }

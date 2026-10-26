@@ -41,13 +41,22 @@ function elapsed(task: WebTaskSummary, now: number): string {
   return isTerminal(task.status) ? `${ran} ago` : ran
 }
 
+/** Agent rows show a transcript; shells and monitors an output pane. */
+function viewableTitle(task: WebTaskSummary): string | undefined {
+  if (task.taskType === 'local_agent' || task.taskType === 'remote_agent')
+    return 'View transcript'
+  if (task.taskType === 'local_bash' || task.taskType === 'monitor_mcp')
+    return 'View output'
+  return undefined
+}
+
 /**
  * Background tasks and subagents of the attached session.
  *
  * Rows carry the same facts the terminal's coordinator panel does — name,
  * description, run time, tool/token counts — and stop controls for anything
- * still running. Agent rows open the transcript viewer; shells and monitors
- * have no transcript to show, so they are not clickable.
+ * still running. Agent rows open the transcript viewer; shell and monitor
+ * rows open the live output pane.
  */
 export function TaskList({
   tasks,
@@ -83,7 +92,7 @@ export function TaskList({
       ) : (
         <ul className="tasks">
           {tasks.map(task => {
-            const viewable = task.taskType === 'local_agent'
+            const title = viewableTitle(task)
             const stoppable =
               task.status === 'running' || task.status === 'pending'
             return (
@@ -96,9 +105,9 @@ export function TaskList({
                 <button
                   type="button"
                   className="task__main"
-                  disabled={!viewable}
-                  onClick={() => viewable && onViewTask(task.id)}
-                  title={viewable ? 'View transcript' : undefined}
+                  disabled={title === undefined}
+                  onClick={() => title && onViewTask(task.id)}
+                  title={title}
                 >
                   <span className="task__icon" aria-hidden>
                     {TYPE_ICON[task.taskType]}

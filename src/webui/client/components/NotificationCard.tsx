@@ -72,7 +72,12 @@ export function NotificationCard({
         : 'task'
 
   const openable =
-    task && task.taskType === 'local_agent' && onOpenTask
+    task &&
+    (task.taskType === 'local_agent' ||
+      task.taskType === 'remote_agent' ||
+      task.taskType === 'local_bash' ||
+      task.taskType === 'monitor_mcp') &&
+    onOpenTask
       ? notice.taskId
       : undefined
 
@@ -89,7 +94,7 @@ export function NotificationCard({
       className={`notif ${openable ? 'is-openable' : ''}`}
       role={openable ? 'button' : undefined}
       onClick={openable && onOpenTask ? () => onOpenTask(openable) : undefined}
-      title={openable ? 'View transcript' : undefined}
+      title={openable ? 'Open task' : undefined}
     >
       <span className={`notif__dot ${dot}`} aria-hidden />
       <div className="notif__body">

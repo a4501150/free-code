@@ -279,6 +279,39 @@ export async function getTaskOutputDelta(
 }
 
 /**
+ * Like `getTaskOutput`, but also reports where the returned content sits in
+ * the file. The web attach host hands this to browsers so they can subscribe
+ * for appends from `offset` without a gap or a duplicate.
+ */
+export async function getTaskOutputTail(
+  taskId: string,
+  maxBytes: number = DEFAULT_MAX_READ_BYTES,
+): Promise<{ content: string; offset: number; bytesTotal: number }> {
+  try {
+    const { content, bytesTotal, bytesRead } = await tailFile(
+      getTaskOutputPath(taskId),
+      maxBytes,
+    )
+    const offset = bytesTotal - bytesRead
+    if (bytesTotal > bytesRead) {
+      return {
+        content: `[${Math.round((bytesTotal - bytesRead) / 1024)}KB of earlier output omitted]\n${content}`,
+        offset,
+        bytesTotal,
+      }
+    }
+    return { content, offset, bytesTotal }
+  } catch (e) {
+    const code = getErrnoCode(e)
+    if (code === 'ENOENT') {
+      return { content: '', offset: 0, bytesTotal: 0 }
+    }
+    logError(e)
+    return { content: '', offset: 0, bytesTotal: 0 }
+  }
+}
+
+/**
  * Get output for a task, reading the tail of the file.
  * Caps at maxBytes to avoid loading multi-GB files into memory.
  */

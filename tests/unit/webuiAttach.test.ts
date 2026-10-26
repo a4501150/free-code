@@ -1,9 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'crypto'
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import {
+  appendFileSync,
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'fs'
 import { createConnection, type Socket } from 'net'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
+import { getTaskOutputPath } from '../../src/utils/task/diskOutput.js'
 import { PassThrough } from 'stream'
 import { readAttachDescriptor } from '../../src/server/descriptor.js'
 import { startAttachHost } from '../../src/server/attachHost.js'
@@ -944,6 +953,176 @@ describe('background task panel', () => {
       },
     })
     expect(view.order).toEqual([item.id])
+  })
+
+  function bashTask(overrides: Partial<WebTaskSummary> = {}): WebTaskSummary {
+    return {
+      id: 'bshell01',
+      taskType: 'local_bash',
+      status: 'running',
+      description: 'tail the build log',
+      command: 'tail -f build.log',
+      toolUseId: 'toolu_bg_1',
+      startTime: Date.now() - 1000,
+      ...overrides,
+    }
+  }
+
+  /** The host reads the same on-disk path the real shell writers use. */
+  function seedOutput(taskId: string, content: string): string {
+    const path = getTaskOutputPath(taskId)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, content)
+    return path
+  }
+
+  test('get_task_output answers with the file tail, offset and terminal flag', async () => {
+    const path = seedOutput('bshell01', 'hello world\n')
+    const session = await taskSession({ tasks: [bashTask()] })
+    try {
+      const response = await session.ask({
+        kind: 'get_task_output',
+        taskId: 'bshell01',
+      })
+      expect(response.ok).toBe(true)
+      const body = response.result as {
+        content: string
+        offset: number
+        bytesTotal: number
+        done: boolean
+      }
+      expect(body.content).toBe('hello world\n')
+      // The whole file fit in the tail, so the content starts at byte 0 and
+      // a subscriber must resume at `bytesTotal` to see only new bytes.
+      expect(body.offset).toBe(0)
+      expect(body.bytesTotal).toBe(12)
+      expect(body.done).toBe(false)
+
+      // A task gone from the session (a restart, or an eviction) is a clean
+      // error, not an empty answer: the browser shows a state, not a guess.
+      const missing = await session.ask({
+        kind: 'get_task_output',
+        taskId: 'nope',
+      })
+      expect(missing.ok).toBe(false)
+      expect(missing.error?.code).toBe('no_such_task')
+    } finally {
+      session.close()
+      rmSync(path, { force: true })
+    }
+  })
+
+  test('output subscriptions stream appends and close on terminal', async () => {
+    const tasks: WebTaskSummary[] = [bashTask()]
+    const session = await taskSession({ tasks })
+    const path = seedOutput('bshell01', 'first\n')
+    try {
+      const seed = await session.ask({
+        kind: 'get_task_output',
+        taskId: 'bshell01',
+      })
+      const resumeAt = (seed.result as { bytesTotal: number }).bytesTotal
+      expect(resumeAt).toBe(6)
+
+      await session.ask({
+        kind: 'subscribe_task',
+        taskId: 'bshell01',
+        fromOffset: resumeAt,
+      })
+      appendFileSync(path, 'second\n')
+      await Bun.sleep(1300)
+      const appends = session.events.filter(
+        frame => frame.event.kind === 'task_output',
+      )
+      expect(appends).toHaveLength(1)
+      const first = appends[0]!.event as {
+        kind: 'task_output'
+        taskId: string
+        append: string
+        fromOffset: number
+        toOffset: number
+        done: boolean
+      }
+      expect(first.taskId).toBe('bshell01')
+      expect(first.append).toBe('second\n')
+      expect(first.fromOffset).toBe(6)
+      expect(first.toOffset).toBe(13)
+      expect(first.done).toBe(false)
+
+      // The tick that finds the task terminal carries the file's final bytes
+      // and closes the stream.
+      tasks[0]!.status = 'completed'
+      tasks[0]!.endTime = Date.now()
+      appendFileSync(path, 'last\n')
+      await Bun.sleep(1300)
+      const frames = session.events.filter(
+        frame => frame.event.kind === 'task_output',
+      )
+      expect(frames.length).toBeGreaterThan(appends.length)
+      const closing = frames[frames.length - 1]!.event as {
+        kind: 'task_output'
+        append: string
+        done: boolean
+      }
+      expect(closing.append).toBe('last\n')
+      expect(closing.done).toBe(true)
+
+      // The poll must be gone, not merely quiet.
+      const mark = session.events.length
+      await Bun.sleep(1300)
+      expect(
+        session.events
+          .slice(mark)
+          .filter(frame => frame.event.kind === 'task_output'),
+      ).toHaveLength(0)
+    } finally {
+      session.close()
+      rmSync(path, { force: true })
+    }
+  })
+
+  test('a vanished task closes the output stream with a done frame', async () => {
+    const tasks: WebTaskSummary[] = [bashTask()]
+    const session = await taskSession({ tasks })
+    seedOutput('bshell01', '')
+    try {
+      await session.ask({ kind: 'subscribe_task', taskId: 'bshell01' })
+      // The task leaves AppState mid-stream (an eviction, a restart): the
+      // next tick must close the view rather than poll a ghost forever.
+      tasks.length = 0
+      await Bun.sleep(1300)
+      const frames = session.events.filter(
+        frame => frame.event.kind === 'task_output',
+      )
+      expect(frames.length).toBeGreaterThanOrEqual(1)
+      const last = frames[frames.length - 1]!.event as {
+        kind: 'task_output'
+        done: boolean
+      }
+      expect(last.done).toBe(true)
+    } finally {
+      session.close()
+    }
+  })
+
+  test('subscribing to a finished task answers with one closing frame', async () => {
+    const session = await taskSession({
+      tasks: [bashTask({ status: 'completed', exitCode: 0 })],
+    })
+    const path = seedOutput('bshell01', 'done already\n')
+    try {
+      await session.ask({ kind: 'subscribe_task', taskId: 'bshell01' })
+      await Bun.sleep(1100)
+      const frames = session.events.filter(
+        frame => frame.event.kind === 'task_output',
+      )
+      expect(frames).toHaveLength(1)
+      const event = frames[0]!.event as { kind: 'task_output'; done: boolean }
+      expect(event.done).toBe(true)
+    } finally {
+      session.close()
+      rmSync(path, { force: true })
+    }
   })
 })
 

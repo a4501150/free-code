@@ -95,6 +95,8 @@ const Row = memo(function Row({
           result={result}
           inProgressToolUseIds={inProgressToolUseIds}
           onOpenImage={onOpenImage}
+          tasks={tasks}
+          onOpenTask={onOpenTask}
         />
       )
 
