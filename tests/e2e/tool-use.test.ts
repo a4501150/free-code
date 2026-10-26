@@ -525,18 +525,12 @@ describe('Tool Use E2E', () => {
         {
           selector: (b: { messages?: unknown }) =>
             JSON.stringify(b.messages ?? '').includes('Return the word hello'),
-          response: toolUseResponse(
-            [{ name: 'EndTurn', input: {} }],
-            'hello',
-          ),
+          response: toolUseResponse([{ name: 'EndTurn', input: {} }], 'hello'),
         },
         {
           selector: (b: { messages?: unknown }) =>
             JSON.stringify(b.messages ?? '').includes('Return the word world'),
-          response: toolUseResponse(
-            [{ name: 'EndTurn', input: {} }],
-            'world',
-          ),
+          response: toolUseResponse([{ name: 'EndTurn', input: {} }], 'world'),
         },
         textResponse('Both agents finished successfully'),
       ])
