@@ -207,14 +207,17 @@ describe('Injected context visibility', () => {
       expect(line.startsWith('  ')).toBe(true)
     }
 
-    // A session opens with several reminders. They read as one block: one
-    // blank line above the run, none inside it.
+    // A session opens with several reminders. They read as one block: no
+    // blank lines inside the run. Above the run sits the Session context
+    // row — the context group renders directly after it, ahead of the user
+    // message — or a blank line when no context row is present.
     const reminderIdxs = lines
       .map((l, i) => (l.includes('\u25b8 System reminder') ? i : -1))
       .filter(i => i !== -1)
     expect(reminderIdxs.length).toBeGreaterThanOrEqual(2)
     expect(reminderIdxs[1]).toBe(reminderIdxs[0]! + 1)
-    expect(lines[reminderIdxs[0]! - 1]!.trim()).toBe('')
+    const above = lines[reminderIdxs[0]! - 1]!.trim()
+    expect(above === '' || above.includes('Session context')).toBe(true)
   })
 
   test('toggling the setting does not change the request body', async () => {
