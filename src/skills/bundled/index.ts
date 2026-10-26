@@ -1,6 +1,7 @@
 import { feature } from 'bun:bundle'
 import { registerBatchSkill } from './batch.js'
 import { registerDebugSkill } from './debug.js'
+import { registerInitSkill } from './init.js'
 import { registerKeybindingsSkill } from './keybindings.js'
 import { registerLoremIpsumSkill } from './loremIpsum.js'
 import { registerRememberSkill } from './remember.js'
@@ -21,6 +22,7 @@ import * as loopNs from './loop.js'
  */
 export function initBundledSkills(): void {
   registerKeybindingsSkill()
+  registerInitSkill()
   if (feature('VERIFY_PLAN')) {
     verifyNs.registerVerifySkill()
   }

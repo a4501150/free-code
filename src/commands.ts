@@ -15,7 +15,6 @@ import doctor from './commands/doctor/index.js'
 import memory from './commands/memory/index.js'
 import help from './commands/help/index.js'
 import ide from './commands/ide/index.js'
-import init from './commands/init.js'
 import keybindings from './commands/keybindings/index.js'
 import login from './commands/login/index.js'
 import logout from './commands/logout/index.js'
@@ -158,7 +157,6 @@ const COMMANDS = memoize((): Command[] => [
   heapDump,
   help,
   ide,
-  init,
   ...(initVerifiers ? [initVerifiers] : []),
   keybindings,
   installGitHubApp,

@@ -1,5 +1,5 @@
-import type { Command } from '../commands.js'
-import { maybeMarkProjectOnboardingComplete } from '../projectOnboardingState.js'
+import { maybeMarkProjectOnboardingComplete } from '../../projectOnboardingState.js'
+import { registerBundledSkill } from '../bundledSkills.js'
 
 const INIT_PROMPT = `Analyze this codebase and write an AGENTS.md file that future instances of Claude Code (and any other coding agent reading the repo) working in this repository will read.
 
@@ -43,25 +43,23 @@ Usage notes:
 This file provides guidance to AI coding agents (including Claude Code) when working with code in this repository.
 \`\`\``
 
-const command = {
-  type: 'prompt',
-  name: 'init',
-  get description() {
-    return 'Initialize a new AGENTS.md file with codebase documentation (CLAUDE.md becomes a symlink to it)'
-  },
-  contentLength: 0, // Dynamic content
-  progressMessage: 'analyzing your codebase',
-  source: 'builtin',
-  async getPromptForCommand() {
-    maybeMarkProjectOnboardingComplete()
+export function registerInitSkill(): void {
+  registerBundledSkill({
+    name: 'init',
+    description:
+      'Initialize a new AGENTS.md file with codebase documentation (CLAUDE.md becomes a symlink to it)',
+    whenToUse:
+      'When the user asks to onboard the repository, create or refresh the agent instruction file (AGENTS.md/CLAUDE.md), or audit it for stale or bloated content.',
+    userInvocable: true,
+    async getPromptForCommand() {
+      maybeMarkProjectOnboardingComplete()
 
-    return [
-      {
-        type: 'text',
-        text: INIT_PROMPT,
-      },
-    ]
-  },
-} satisfies Command
-
-export default command
+      return [
+        {
+          type: 'text',
+          text: INIT_PROMPT,
+        },
+      ]
+    },
+  })
+}
