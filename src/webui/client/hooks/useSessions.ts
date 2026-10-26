@@ -13,6 +13,8 @@ const POLL_MS = 5000
 
 export type Sessions = {
   entries: SessionListEntry[]
+  /** The gateway host's home directory; '' until the first poll answers. */
+  home: string
   refresh(): Promise<void>
   create(cwd: string): Promise<StartResult>
   resume(sessionId: string): Promise<StartResult>
@@ -27,6 +29,7 @@ export type Sessions = {
  */
 export function useSessions(csrf: string | null): Sessions {
   const [entries, setEntries] = useState<SessionListEntry[]>([])
+  const [home, setHome] = useState('')
 
   // The poll can outlive its own interval tick. Without a generation counter a
   // slow response overwrites a newer one.
@@ -35,7 +38,10 @@ export function useSessions(csrf: string | null): Sessions {
   const refresh = useCallback(async () => {
     const mine = ++generation.current
     const next = await fetchSessions()
-    if (mine === generation.current) setEntries(next)
+    if (mine === generation.current) {
+      setEntries(next.sessions)
+      setHome(next.home)
+    }
   }, [])
 
   useEffect(() => {
@@ -76,5 +82,5 @@ export function useSessions(csrf: string | null): Sessions {
     [csrf, refresh],
   )
 
-  return { entries, refresh, create, resume, stop }
+  return { entries, home, refresh, create, resume, stop }
 }

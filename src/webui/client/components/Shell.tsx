@@ -74,11 +74,46 @@ export function chooseFollowTarget(
     : { kind: 'wait' }
 }
 
+/**
+ * The session the browser was last looking at, kept across a refresh so the
+ * page lands back where the user left it. Only the session id is remembered:
+ * a process key goes stale the moment that process ends, while the follow
+ * machinery below can find whoever serves the session now.
+ */
+const ACTIVE_SESSION_KEY = 'webui.activeSessionId'
+
+function readActiveSessionId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_SESSION_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeActiveSessionId(sessionId: string | null): void {
+  try {
+    if (sessionId) localStorage.setItem(ACTIVE_SESSION_KEY, sessionId)
+    else localStorage.removeItem(ACTIVE_SESSION_KEY)
+  } catch {
+    // A browser with storage disabled simply loses the memory.
+  }
+}
+
 export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   const [activeKey, setActiveKey] = useState<string | null>(null)
+  // Read once, before any poll can move the list under it, so the mount and
+  // every later render start from the same memory.
+  const [rememberedSessionId] = useState(() => readActiveSessionId())
   // Held beside the process key, because the browser follows the session and a
-  // session outlives the process that happens to serve it.
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  // session outlives the process that happens to serve it. Seeding it with the
+  // remembered id puts the follow effect to work on the first render.
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(
+    rememberedSessionId,
+  )
+  // True while the only claim on the selection is the remembered id. The
+  // assistant auto-select stands down until it either materialises or gives
+  // up, and the follow effect stops waiting once a loaded list rules it out.
+  const resumePending = useRef(rememberedSessionId !== null)
   const [railOpen, setRailOpen] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [followSignal, setFollowSignal] = useState(0)
@@ -200,16 +235,42 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     viewerStore.reset()
   }, [gateway, viewerStore])
 
+  // The gateway's assistant chat is the main chat: open it on first load,
+  // before the user has picked anything. The ref makes it a one-shot — after
+  // the user navigates anywhere, later polls must not steal the view back. A
+  // remembered session outranks it, so the ref starts armed when there is one;
+  // it is also declared early because clearing a gone session may re-arm it.
+  const autoSelected = useRef(rememberedSessionId !== null)
+
   const attachTo = useCallback(
     (processKey: string, sessionId: string) => {
       store.reset()
       closeTask()
       setActiveKey(processKey)
       setActiveSessionId(sessionId)
+      // Whatever produced the key — a click, a create, a resumed selection —
+      // this is now the session the browser is looking at.
+      writeActiveSessionId(sessionId)
+      resumePending.current = false
       gateway.attach(processKey)
     },
     [gateway, store, closeTask],
   )
+
+  /**
+   * Drop the selection and forget it, so a refresh does not retry a session
+   * that has gone. If the thing being dropped was the remembered one, the
+   * assistant auto-select is unblocked and gets the view as if no memory had
+   * existed.
+   */
+  const clearActiveSession = useCallback(() => {
+    writeActiveSessionId(null)
+    if (resumePending.current) {
+      resumePending.current = false
+      autoSelected.current = false
+    }
+    setActiveSessionId(null)
+  }, [])
 
   /** Attaching is always the same steps, whatever produced the key. */
   const adopt = useCallback(
@@ -229,10 +290,6 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     [adopt],
   )
 
-  // The gateway's assistant chat is the main chat: open it on first load,
-  // before the user has picked anything. The ref makes it a one-shot — after
-  // the user navigates anywhere, later polls must not steal the view back.
-  const autoSelected = useRef(false)
   useEffect(() => {
     if (autoSelected.current) return
     if (activeKey !== null || activeSessionId !== null) return
@@ -288,8 +345,20 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
       goneKeys.current,
     )
     if (choice.kind === 'attach') attachTo(choice.processKey, choice.sessionId)
-    else if (choice.kind === 'give-up') setActiveSessionId(null)
-  }, [following, sessions.entries, activeSessionId, attachTo])
+    else if (choice.kind === 'give-up') clearActiveSession()
+    else if (resumePending.current && sessions.entries.length > 0) {
+      // Woken from memory, but a loaded list has no row for it at all: the
+      // session is gone, not merely between processes. Stop waiting and hand
+      // the view to the assistant auto-select.
+      clearActiveSession()
+    }
+  }, [
+    following,
+    sessions.entries,
+    activeSessionId,
+    attachTo,
+    clearActiveSession,
+  ])
 
   // Escape closes the drawer, which is the only way out on a phone that has no
   // keyboard showing and no room for a backdrop tap.
@@ -348,16 +417,22 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     : (viewedTaskId ?? '')
   const busy = meta?.state === 'running'
   const pending = view.permissions[0]
-  // The browser cannot browse the filesystem, so the only sensible default is a
-  // directory some session already runs in.
+  // The gateway names its host's home for exactly this: the browser cannot
+  // browse the filesystem, and home is where a new session should start. The
+  // old fallbacks remain for a gateway that does not report it.
   const defaultCwd =
-    meta?.cwd ?? sessions.entries.find(s => s.live && s.cwd)?.cwd ?? ''
+    sessions.home ||
+    (meta?.cwd ?? sessions.entries.find(s => s.live && s.cwd)?.cwd ?? '')
 
   // An attached process can switch session on its own, through `/resume` or
   // `/clear`. Follow the session it serves now, not the one that was clicked.
   const metaSessionId = meta?.sessionId
   useEffect(() => {
-    if (metaSessionId) setActiveSessionId(metaSessionId)
+    if (!metaSessionId) return
+    setActiveSessionId(metaSessionId)
+    // The memory tracks the session actually being served, not the one that
+    // was clicked, so a `/clear` followed by a refresh lands on the new id.
+    writeActiveSessionId(metaSessionId)
   }, [metaSessionId])
 
   // A permission request is the one thing that must not be missed on a phone,

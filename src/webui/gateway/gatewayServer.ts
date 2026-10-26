@@ -1,5 +1,7 @@
 import type { ServerWebSocket } from 'bun'
 import { randomUUID } from 'crypto'
+import { homedir } from 'os'
+import { resolve } from 'path'
 import { z } from 'zod'
 import { validateUuid } from '../../utils/uuid.js'
 import {
@@ -419,7 +421,9 @@ export function startGatewayServer(
           if (!match.cwd) return json({ error: 'session_has_no_cwd' }, 422)
           cwd = match.cwd
         } else if (!cwd) {
-          return json({ error: 'cwd_required' }, 400)
+          // With no directory the session opens in the gateway host's home,
+          // which is what the browser's picker starts from anyway.
+          cwd = resolve(homedir())
         }
 
         try {
@@ -484,6 +488,10 @@ export function startGatewayServer(
                   : entry,
               )
             : entries,
+          // The browser cannot browse the filesystem, so it needs the host's
+          // home named here: it is the default for a new session and the root
+          // the directory picker walks from.
+          home: resolve(homedir()),
         })
       }
 

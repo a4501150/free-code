@@ -7,7 +7,15 @@ import {
   setDefaultTimeout,
   test as bunTest,
 } from 'bun:test'
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import {
@@ -132,6 +140,7 @@ class GatewayClient {
       pid?: number
       stoppablePid?: number
       holders: number
+      cwd?: string
     }>
   }> {
     const response = await fetch(`${this.baseUrl}/api/sessions`, {
@@ -660,6 +669,44 @@ describe('WebUI gateway', () => {
     } finally {
       second.socket.close()
     }
+
+    // A create with no cwd lands in the gateway host's home — what the
+    // browser form prefills — instead of being refused.
+    const defaulted = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: client.cookie,
+        'x-freecode-csrf': client.csrf,
+      },
+      body: JSON.stringify({}),
+    })
+    expect(defaulted.status).toBe(200)
+    const { session: homeChild } = (await defaulted.json()) as {
+      session: { pid: number; sessionId: string }
+    }
+    const homeRow = await waitFor(
+      async () =>
+        (await client.sessions()).sessions.find(
+          s => s.sessionId === homeChild.sessionId,
+        ),
+      row => row !== undefined,
+      { description: 'the no-cwd session row to appear' },
+    )
+    // On macOS the temp home is a symlink under /var, and the gateway reports
+    // the resolved home, so compare resolved against resolved.
+    expect(homeRow!.cwd).toBe(await realpath(dirs.home))
+    const stoppedHome = await fetch(
+      `${baseUrl}/api/sessions/${homeChild.pid}`,
+      {
+        method: 'DELETE',
+        headers: {
+          cookie: client.cookie,
+          'x-freecode-csrf': client.csrf,
+        },
+      },
+    )
+    expect(stoppedHome.status).toBe(200)
 
     // Stopping the web service stops sessions it owns.
     await runCli(dirs, ['web', 'stop'])
@@ -1251,24 +1298,32 @@ describe('WebUI gateway', () => {
     const client = new GatewayClient(baseUrl)
     expect(await client.login(PASSWORD)).toBe(200)
 
-    const assistantRow = await waitFor(
+    const { home, row: assistantRow } = await waitFor(
       async () => {
         const res = await fetch(`${baseUrl}/api/sessions`, {
           headers: { cookie: client.cookie },
         })
         const body = (await res.json()) as {
           sessions: { role?: string; live?: boolean; cwd?: string }[]
+          home?: string
         }
-        return body.sessions.find(s => s.role === 'assistant')
+        return {
+          home: body.home ?? '',
+          row: body.sessions.find(s => s.role === 'assistant'),
+        }
       },
-      row => row?.live === true,
+      seen => seen.row?.live === true,
       {
         description: 'the assistant row to go live',
         timeoutMs: 60_000,
       },
     )
     // The chat runs in the gateway's own workspace, not a terminal directory.
-    expect(assistantRow.cwd).toEndWith(join('webui', 'assistant'))
+    expect(assistantRow!.cwd).toEndWith(join('webui', 'assistant'))
+    // The list also names the host's home, which is where a new session from
+    // the browser starts unless the user picks somewhere else. The gateway
+    // reports its $HOME as given, without resolving symlinked temp roots.
+    expect(home).toBe(dirs.home)
 
     // External events arrive as prompt turns through the control socket —
     // the assistant has no tick loop, so this is what wakes it. The queued

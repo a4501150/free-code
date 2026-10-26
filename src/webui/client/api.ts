@@ -48,11 +48,20 @@ export async function whoAmI(): Promise<{ csrf: string } | null> {
   return (await response.json()) as { csrf: string }
 }
 
-export async function fetchSessions(): Promise<SessionListEntry[]> {
+export type SessionListResult = {
+  /** The gateway host's home directory; '' on an older gateway. */
+  home: string
+  sessions: SessionListEntry[]
+}
+
+export async function fetchSessions(): Promise<SessionListResult> {
   const response = await fetch('/api/sessions')
-  if (!response.ok) return []
-  const body = (await response.json()) as { sessions: SessionListEntry[] }
-  return body.sessions
+  if (!response.ok) return { home: '', sessions: [] }
+  const body = (await response.json()) as {
+    sessions: SessionListEntry[]
+    home?: string
+  }
+  return { home: body.home ?? '', sessions: body.sessions }
 }
 
 export type DirectoryResult =
