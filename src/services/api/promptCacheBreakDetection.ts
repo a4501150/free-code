@@ -8,6 +8,7 @@ import type { AgentId } from 'src/types/ids.js'
 import type { Message } from 'src/types/message.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { djb2Hash } from 'src/utils/hash.js'
+import { recordMainCacheBreak } from './promptCacheStats.js'
 import { logError } from 'src/utils/log.js'
 import { getProviderRegistry } from 'src/utils/model/providerRegistry.js'
 import { getClaudeTempDir } from 'src/utils/permissions/filesystem.js'
@@ -552,6 +553,16 @@ export async function checkResponseForCacheBreak(
     const summary = `[PROMPT CACHE BREAK] ${reason} [source=${querySource}, call #${state.callCount}, cache read: ${prevCacheRead} → ${cacheReadTokens}, creation: ${cacheCreationTokens}${diffSuffix}]`
 
     logForDebugging(summary, { level: 'warn' })
+
+    // Feed the usage-tab cache row's cause attribution. Main conversation
+    // only — subagent breaks have no consumer and would misattribute against
+    // the main-thread miss timestamps.
+    if (
+      !agentId &&
+      (key.startsWith('repl_main_thread') || key.startsWith('sdk'))
+    ) {
+      recordMainCacheBreak(Date.now(), reason)
+    }
 
     state.pendingChanges = null
   } catch (e: unknown) {

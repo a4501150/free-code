@@ -99,7 +99,7 @@ export function Settings({
       </Suspense>
     </Tab>,
     <Tab key="usage" title="Usage">
-      <Usage />
+      <Usage messages={context.messages} />
     </Tab>,
     <Tab key="stats" title="Stats">
       <Stats />

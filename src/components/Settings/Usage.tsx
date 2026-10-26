@@ -4,18 +4,21 @@ import { extraUsage as extraUsageCommand } from 'src/commands/extra-usage/index.
 import {
   formatCost,
   formatAverageOutputSpeed,
+  formatModelUsageLine,
   getModelThroughputs,
+  getModelUsageRows,
   getTotalAPIDuration,
-  getTotalCacheCreationInputTokens,
-  getTotalCacheReadInputTokens,
   getTotalCost,
   getTotalDuration,
-  getTotalInputTokens,
   getTotalLinesAdded,
   getTotalLinesRemoved,
-  getTotalOutputTokens,
   hasUnknownModelCost,
 } from 'src/cost-tracker.js'
+import type { Message } from 'src/types/message.js'
+import {
+  computePromptCacheSummary,
+  formatPromptCacheLine,
+} from 'src/services/api/promptCacheStats.js'
 import { getSubscriptionType } from 'src/utils/auth.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { Box, Text } from '../../ink.js'
@@ -133,11 +136,18 @@ function SessionRow({
   )
 }
 
-function SessionSection(): React.ReactNode {
+function SessionSection({
+  messages,
+}: {
+  messages: Message[]
+}): React.ReactNode {
   const linesAdded = getTotalLinesAdded()
   const linesRemoved = getTotalLinesRemoved()
   const avgSpeed = formatAverageOutputSpeed()
   const throughputs = getModelThroughputs()
+  const usageRows = getModelUsageRows()
+  const cacheSummary = computePromptCacheSummary(messages)
+  const cacheLine = cacheSummary ? formatPromptCacheLine(cacheSummary) : null
   const costDisplay = (
     <>
       {formatCost(getTotalCost())}
@@ -166,16 +176,22 @@ function SessionSection(): React.ReactNode {
         label="Total code changes"
         value={`${linesAdded} ${linesAdded === 1 ? 'line' : 'lines'} added, ${linesRemoved} ${linesRemoved === 1 ? 'line' : 'lines'} removed`}
       />
-      <SessionRow
-        label="Usage"
-        value={`${formatNumber(getTotalInputTokens())} input, ${formatNumber(
-          getTotalOutputTokens(),
-        )} output, ${formatNumber(
-          getTotalCacheReadInputTokens(),
-        )} cache read, ${formatNumber(
-          getTotalCacheCreationInputTokens(),
-        )} cache write`}
-      />
+      <Text>Usage by model:</Text>
+      {usageRows.length === 0 ? (
+        <SessionRow
+          label="Usage"
+          value="0 input, 0 output, 0 cache read, 0 cache write"
+        />
+      ) : (
+        usageRows.map(row => (
+          <SessionRow
+            key={row.displayName}
+            label={row.displayName}
+            value={formatModelUsageLine(row).trimStart()}
+          />
+        ))
+      )}
+      {cacheLine && <Text dimColor>{cacheLine}</Text>}
       {avgSpeed !== undefined && (
         <SessionRow label="Output speed" value={avgSpeed} />
       )}
@@ -195,7 +211,7 @@ function SessionSection(): React.ReactNode {
     </Box>
   )
 }
-export function Usage(): React.ReactNode {
+export function Usage({ messages }: { messages: Message[] }): React.ReactNode {
   const [utilization, setUtilization] = useState<Utilization | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -321,7 +337,7 @@ export function Usage(): React.ReactNode {
 
   return (
     <Box flexDirection="column" gap={1} width="100%">
-      <SessionSection />
+      <SessionSection messages={messages} />
       {subscriptionContent}
       <Text dimColor>
         <ConfigurableShortcutHint

@@ -242,13 +242,24 @@ export function formatAverageOutputSpeed(): string | undefined {
     : formatTokensPerSecond(avg) + AVG_SPEED_SUFFIX
 }
 
-function formatModelUsage(): string {
-  const modelUsageMap = getModelUsage()
-  if (Object.keys(modelUsageMap).length === 0) {
-    return 'Usage:                 0 input, 0 output, 0 cache read, 0 cache write'
-  }
+export type ModelUsageRow = {
+  displayName: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number
+  cacheCreationInputTokens: number
+  webSearchRequests: number
+  costUSD: number
+  /** Decode speed when enough streaming samples exist for this model. */
+  tokensPerSecond: number | undefined
+}
 
-  // Accumulate usage by short name
+/**
+ * Session usage grouped by public model display name — the same grouping the
+ * /cost text block renders, exposed so the /usage tab can draw rows with it.
+ */
+export function getModelUsageRows(): ModelUsageRow[] {
+  const modelUsageMap = getModelUsage()
   const usageByShortName: { [shortName: string]: ModelUsage } = {}
   const decodeStatsByShortName: {
     [shortName: string]: { decodeMs: number; outputTokens: number }
@@ -288,24 +299,49 @@ function formatModelUsage(): string {
     accumulated.costUSD += usage.costUSD
   }
 
-  let result = 'Usage by model:'
-  for (const [shortName, usage] of Object.entries(usageByShortName)) {
-    // Use human-readable display name when available
-    const displayName = renderModelName(shortName)
+  return Object.entries(usageByShortName).map(([shortName, usage]) => {
     const decode = decodeStatsByShortName[shortName]
-    const usageString =
-      `  ${formatNumber(usage.inputTokens)} input, ` +
-      `${formatNumber(usage.outputTokens)} output, ` +
-      `${formatNumber(usage.cacheReadInputTokens)} cache read, ` +
-      `${formatNumber(usage.cacheCreationInputTokens)} cache write` +
-      (usage.webSearchRequests > 0
-        ? `, ${formatNumber(usage.webSearchRequests)} web search`
-        : '') +
-      (decode && decode.decodeMs > 0 && decode.outputTokens > 0
-        ? `, ${formatTokensPerSecond((decode.outputTokens * 1000) / decode.decodeMs)}`
-        : '') +
-      ` (${formatCost(usage.costUSD)})`
-    result += `\n` + `${displayName}:`.padStart(21) + usageString
+    return {
+      displayName: renderModelName(shortName),
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheReadInputTokens: usage.cacheReadInputTokens,
+      cacheCreationInputTokens: usage.cacheCreationInputTokens,
+      webSearchRequests: usage.webSearchRequests,
+      costUSD: usage.costUSD,
+      tokensPerSecond:
+        decode && decode.decodeMs > 0 && decode.outputTokens > 0
+          ? (decode.outputTokens * 1000) / decode.decodeMs
+          : undefined,
+    }
+  })
+}
+
+export function formatModelUsageLine(row: ModelUsageRow): string {
+  return (
+    `  ${formatNumber(row.inputTokens)} input, ` +
+    `${formatNumber(row.outputTokens)} output, ` +
+    `${formatNumber(row.cacheReadInputTokens)} cache read, ` +
+    `${formatNumber(row.cacheCreationInputTokens)} cache write` +
+    (row.webSearchRequests > 0
+      ? `, ${formatNumber(row.webSearchRequests)} web search`
+      : '') +
+    (row.tokensPerSecond !== undefined
+      ? `, ${formatTokensPerSecond(row.tokensPerSecond)}`
+      : '') +
+    ` (${formatCost(row.costUSD)})`
+  )
+}
+
+function formatModelUsage(): string {
+  const rows = getModelUsageRows()
+  if (rows.length === 0) {
+    return 'Usage:                 0 input, 0 output, 0 cache read, 0 cache write'
+  }
+  let result = 'Usage by model:'
+  for (const row of rows) {
+    result += `\n` + `${row.displayName}:`.padStart(21)
+    result += formatModelUsageLine(row)
   }
   return result
 }
