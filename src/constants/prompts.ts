@@ -74,6 +74,7 @@ When an obstacle appears, fix the cause instead of bypassing a safety check. Rep
 - If you cannot verify, say so. If a check failed, show it. 
 - If you skipped a step, name it. 
 - When something is done and verified, state it plainly.
+- If you are short on knowledge, use web search and web fetch, don't make up anything.
 
 # Project instruction files
 
