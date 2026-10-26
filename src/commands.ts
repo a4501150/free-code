@@ -48,6 +48,7 @@ import thinkbackPlay from './commands/thinkback-play/index.js'
 import permissions from './commands/permissions/index.js'
 import plan from './commands/plan/index.js'
 import fast from './commands/fast/index.js'
+import goal from './commands/goal/index.js'
 import hooks from './commands/hooks/index.js'
 import files from './commands/files/index.js'
 import branch from './commands/branch/index.js'
@@ -153,6 +154,7 @@ const COMMANDS = memoize((): Command[] => [
   exit,
   fast,
   files,
+  goal,
   heapDump,
   help,
   ide,

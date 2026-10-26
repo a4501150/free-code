@@ -174,6 +174,12 @@ export type AppState = DeepImmutable<{
   thinkingEnabled: boolean | undefined
   promptSuggestionEnabled: boolean
   sessionHooks: SessionHooksState
+  // /goal: condition behind the session's prompt-type Stop hook. Lives and
+  // dies with the session hook (in-memory; dropped on resume and /clear).
+  activeGoal?: {
+    condition: string
+    setAt: number
+  }
   // WebBrowser tool (codename bagel): pill visible in footer
   bagelActive?: boolean
   // WebBrowser tool: current page URL shown in pill label

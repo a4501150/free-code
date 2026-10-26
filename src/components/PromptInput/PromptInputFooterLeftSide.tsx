@@ -136,6 +136,7 @@ function ModeIndicator({
   const modeCycleShortcut = useShortcutDisplay('chat:cycleMode', 'Chat')
   const tasks = useAppState(s => s.tasks)
   const expandedView = useAppState(s => s.expandedView)
+  const activeGoal = useAppState(s => s.activeGoal)
   const prStatus = usePrStatus(isLoading, isPrStatusEnabled())
 
   const voiceEnabled = useVoiceEnabled()
@@ -173,9 +174,12 @@ function ModeIndicator({
   const hasActiveMode = !isDefaultMode(currentMode)
   const hasBackgroundTasks = runningTaskCount > 0
 
-  // Count primary items (permission mode or coordinator mode, background tasks)
+  // Count primary items (permission mode or coordinator mode, background
+  // tasks, active /goal) — a goal chip displaces the shortcut hint.
   const primaryItemCount =
-    (isCoordinator || hasActiveMode ? 1 : 0) + (hasBackgroundTasks ? 1 : 0)
+    (isCoordinator || hasActiveMode ? 1 : 0) +
+    (hasBackgroundTasks ? 1 : 0) +
+    (activeGoal ? 1 : 0)
 
   // PR indicator is short (~10 chars) — unlike the old diff indicator the
   // >=100 threshold was tuned for. Now that auto mode is effectively the
@@ -221,6 +225,16 @@ function ModeIndicator({
     // BackgroundTaskStatus is NOT in parts — it renders as a Box sibling so
     // its click-target Box isn't nested inside the <Text wrap="truncate">
     // wrapper (reconciler throws on Box-in-Text).
+    ...(activeGoal
+      ? [
+          <Text key="goal" dimColor>
+            goal:{' '}
+            {activeGoal.condition.length > 40
+              ? `${activeGoal.condition.slice(0, 37)}…`
+              : activeGoal.condition}
+          </Text>,
+        ]
+      : []),
     ...(shouldShowPrStatus
       ? [
           <PrBadge
