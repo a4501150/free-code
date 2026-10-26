@@ -53,6 +53,17 @@ const filter = new FilterXSS({
 
 marked.setOptions({ gfm: true, breaks: true })
 
+/**
+ * Tables need a scroll container of their own: a bare table in a narrow
+ * transcript row gets squeezed to the point of one-character-per-line cells.
+ * The wrapper is applied after sanitizing — it is our own markup, so the div
+ * does not need a whitelist entry and nothing the model wrote can sneak a
+ * class through this way.
+ */
+const TABLE_RE = /<table(?:\s[^>]*)?>[\s\S]*?<\/table>/g
+
 export function renderMarkdown(source: string): string {
-  return filter.process(marked.parse(source, { async: false }))
+  return filter
+    .process(marked.parse(source, { async: false }))
+    .replace(TABLE_RE, table => `<div class="md-table">${table}</div>`)
 }

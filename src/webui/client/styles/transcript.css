@@ -182,6 +182,51 @@
   color: var(--signal);
 }
 
+/* ── tables ────────────────────────────────────────────────────── */
+
+/* renderMarkdown wraps every table in .md-table. The table keeps its natural
+   (max-content) width and the wrapper scrolls, so on a phone the cells stop
+   collapsing to one character per line — the reader swipes instead. */
+.md-table {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-bright) transparent;
+  /* Edge fades that appear only while there is more table off-screen in that
+     direction: the bg-coloured layers are `local` (they travel with the
+     content and cover the shadow once an edge is reached), the dark ones are
+     `scroll` (pinned to the wrapper). */
+  background:
+    linear-gradient(90deg, var(--bg) 30%, transparent) left/2rem 100% no-repeat
+      local,
+    linear-gradient(-90deg, var(--bg) 30%, transparent) right/2rem 100%
+      no-repeat local,
+    linear-gradient(90deg, rgba(0, 0, 0, 0.5), transparent) left/1.25rem 100%
+      no-repeat scroll,
+    linear-gradient(-90deg, rgba(0, 0, 0, 0.5), transparent) right/1.25rem 100%
+      no-repeat scroll;
+}
+
+.md-table table {
+  /* max-content, not 100%: the columns must widen to their content. */
+  width: max-content;
+  border-collapse: collapse;
+}
+
+.md-table th,
+.md-table td {
+  white-space: nowrap;
+  text-align: left;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--rule);
+}
+
+.md-table th {
+  color: var(--text-dim);
+  border-color: var(--rule-bright);
+}
+
 /* ── tool cards ────────────────────────────────────────────────── */
 
 .tool {
