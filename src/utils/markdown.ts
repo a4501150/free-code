@@ -70,6 +70,13 @@ export function formatToken(
         .join(EOL)
     }
     case 'code': {
+      // Mermaid blocks get a dim hint instead of highlighting — the TUI has no
+      // layout engine, the WebUI renders the real diagram. Only once the
+      // closing fence has been seen; while streaming an unclosed fence falls
+      // through to the normal code path.
+      if (token.lang?.toLowerCase() === 'mermaid' && isClosedCodeFence(token)) {
+        return formatMermaidDiagram(token.text)
+      }
       if (!highlight) {
         return token.text + EOL
       }
@@ -277,6 +284,31 @@ export function formatToken(
       return ''
   }
   return ''
+}
+
+const MERMAID_DIAGRAM_HINT = 'mermaid diagram (renders in the WebUI)'
+
+/**
+ * marked emits a single `code` token for an unclosed fence mid-stream (raw
+ * runs to end of input), so "closed" is decided by raw's last line being a
+ * closing fence marker rather than the token's mere presence.
+ */
+function isClosedCodeFence(token: Token): boolean {
+  const lines = token.raw.trimEnd().split(EOL)
+  return lines.length >= 2 && /^(`{3,}|~{3,})$/.test(lines[lines.length - 1]!)
+}
+
+/**
+ * Dim box treatment for a closed mermaid fence: hint line above the raw body,
+ * both behind a dim vertical bar (blockquote-style, no highlight).
+ */
+function formatMermaidDiagram(body: string): string {
+  const bar = chalk.dim('\u2502') // │
+  const header = `${bar} ${chalk.dim.bold(MERMAID_DIAGRAM_HINT)}`
+  const lines = body
+    .split(EOL)
+    .map(line => (stripAnsi(line).trim() ? `${bar} ${chalk.dim(line)}` : line))
+  return [header, ...lines].join(EOL) + EOL
 }
 
 // Matches owner/repo#NNN style GitHub issue/PR references. The qualified form
