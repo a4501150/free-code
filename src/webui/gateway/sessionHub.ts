@@ -48,7 +48,16 @@ type Attachment = {
  * The registry is read-only and fails open by design, so this keeps its own
  * table of what it actually holds open.
  */
-export function createSessionHub() {
+export function createSessionHub(
+  handlers: {
+    /**
+     * Notified whenever a watched process switches the session it serves
+     * (/resume, /clear). The gateway uses this to keep the assistant's resume
+     * pointer tracking the live ID instead of the spawn-time one.
+     */
+    onSessionChanged?: (info: { pid: number; sessionId: string }) => void
+  } = {},
+) {
   const attachments = new Map<string, Attachment>()
   let nextSubscriberId = 1
 
@@ -125,6 +134,10 @@ export function createSessionHub() {
           // it serves now.
           if (event.kind === 'session_changed') {
             current.sessionId = event.sessionId
+            handlers.onSessionChanged?.({
+              pid: Number(processKey.split(':')[0]),
+              sessionId: event.sessionId,
+            })
           } else if (event.kind === 'snapshot') {
             current.sessionId = event.meta.sessionId
           }

@@ -30,10 +30,14 @@ import { processSessionStartHooks } from '../../utils/sessionStart.js'
 import {
   clearSessionMetadata,
   getAgentTranscriptPath,
+  reAppendSessionMetadata,
   resetSessionFilePointer,
   saveMode,
   saveWorktreeState,
+  truncateSessionTranscriptInPlace,
 } from '../../utils/sessionStorage.js'
+import { writeSessionTranscriptSegment } from '../../services/sessionTranscript/sessionTranscript.js'
+import { isAssistantMode } from '../../assistant/index.js'
 import {
   evictTaskOutput,
   initTaskOutputAsSymlink,
@@ -49,6 +53,7 @@ export async function clearConversation({
   setAppState,
   setConversationId,
   scrollToBottom,
+  getMessages,
 }: {
   setMessages: (updater: (prev: Message[]) => Message[]) => void
   readFileState: FileStateCache
@@ -57,6 +62,11 @@ export async function clearConversation({
   setAppState?: (f: (prev: AppState) => AppState) => void
   setConversationId?: (id: UUID) => void
   scrollToBottom?: () => void
+  /**
+   * Snapshot of the conversation being cleared. Used by the assistant path
+   * to flush the outgoing transcript segment before in-place truncation.
+   */
+  getMessages?: () => Message[]
 }): Promise<void> {
   // Execute SessionEnd hooks before clearing (bounded by
   // sessionEndHooksTimeoutMs, default 1.5s)
@@ -90,6 +100,11 @@ export async function clearConversation({
       }
     }
   }
+
+  // Snapshot the outgoing conversation before the wipe: the assistant path
+  // flushes it to the /dream transcript segment before truncating the
+  // session file in place.
+  const outgoingMessages = getMessages?.() ?? []
 
   setMessages(() => [])
 
@@ -180,11 +195,23 @@ export async function clearConversation({
   // so the new session doesn't inherit the previous session's identity
   clearSessionMetadata()
 
-  // Generate new session ID to provide fresh state
-  // Set the old session as parent for analytics lineage tracking
-  regenerateSessionId({ setCurrentAsParent: true })
-  // Update the environment variable so subprocesses use the new session ID
-  await resetSessionFilePointer()
+  if (isAssistantMode()) {
+    // The gateway's resume pointer is written at shutdown from the assistant
+    // child's spawn-time session ID, so regenerating the ID here would strand
+    // it and resurrect the pre-clear conversation on the next boot. Keep the
+    // ID and empty the transcript file in place instead; the resume pointer
+    // keeps pointing at a file that now holds only the post-clear session.
+    // Flush the outgoing conversation to the /dream transcript segment first
+    // so those bytes aren't lost with the file.
+    writeSessionTranscriptSegment(outgoingMessages)
+    await truncateSessionTranscriptInPlace()
+  } else {
+    // Generate new session ID to provide fresh state
+    // Set the old session as parent for analytics lineage tracking
+    regenerateSessionId({ setCurrentAsParent: true })
+    // Update the environment variable so subprocesses use the new session ID
+    await resetSessionFilePointer()
+  }
 
   // Preserved local_agent tasks had their TaskOutput symlink baked against the
   // old session ID at spawn time, but post-clear transcript writes land under
@@ -210,6 +237,13 @@ export async function clearConversation({
   const worktreeSession = getCurrentWorktreeSession()
   if (worktreeSession) {
     saveWorktreeState(worktreeSession)
+  }
+  if (isAssistantMode()) {
+    // The truncated-in-place file keeps its materialized pointer, so the
+    // lazy materialize-on-first-message write won't run again. Stamp the
+    // just-cached mode/worktree entries straight to the (now empty) file so
+    // a load of the truncated transcript sees a valid session header.
+    reAppendSessionMetadata()
   }
 
   // Execute SessionStart hooks after clearing

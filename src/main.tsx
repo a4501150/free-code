@@ -1290,6 +1290,9 @@ async function run(): Promise<CommanderCommand> {
           const opts = options as { brief?: boolean }
           opts.brief = true
           setAssistantActive(true)
+          // One-time: give the assistant a persona file it can grow into
+          // its identity (never overwrites an existing one).
+          assistantModule.seedAssistantPersonaFile()
         }
       }
 

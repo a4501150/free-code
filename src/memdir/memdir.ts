@@ -330,30 +330,37 @@ export function buildMemoryPrompt(params: {
  * rides in the `assistant_mode` attachment (the standard typed-memory system
  * prompt section stays mode-identical).
  */
-export function buildAssistantDailyLogBlock(): string {
-  // Describe the path as a pattern rather than inlining today's literal path:
-  // the attachment text must not vary on date change. The model derives the
-  // current date from the `currentDate` context entry and the date_change
-  // attachment (appended at the tail on midnight rollover) rather than the
-  // user-context message — the latter is intentionally left stale to preserve
-  // the prompt cache prefix across midnight. The directory itself is named
-  // rather than interpolated, for the same reason.
-  const logPathPattern = join(
-    `<${MEMORY_DIR_ENV_LABEL}>`,
+/**
+ * Today's daily-log file: <auto-mem-dir>/logs/YYYY/MM/YYYY-MM-DD.md.
+ * Concrete (not a placeholder pattern) so the assistant can Write to it
+ * directly and the attachment can surface it as a path-addressable file.
+ */
+export function getAssistantDailyLogPath(now: Date = new Date()): string {
+  const iso = now.toISOString()
+  return join(
+    getAutoMemPath(),
     'logs',
-    'YYYY',
-    'MM',
-    'YYYY-MM-DD.md',
+    iso.slice(0, 4),
+    iso.slice(5, 7),
+    `${iso.slice(0, 10)}.md`,
   )
+}
+
+export function buildAssistantDailyLogBlock(): string {
+  // The concrete path (not a placeholder pattern) so the assistant needs no
+  // date arithmetic to append. It varies on date change, which re-announces
+  // the whole assistant_mode block once a day — a fair price for an
+  // actionable path, and the block already re-announces on persona edits.
+  const dailyLogPath = getAssistantDailyLogPath()
 
   return [
     '## Memory',
     '',
     "This session is long-lived. Record anything worth remembering by **appending** to today's daily log file (this replaces the per-type memory files and index steps above):",
     '',
-    `\`${logPathPattern}\``,
+    `\`${dailyLogPath}\``,
     '',
-    "Substitute today's date (from `currentDate` in your context) for `YYYY-MM-DD`, and the environment context's path for the directory. When the date rolls over mid-session, start appending to the new day's file.",
+    "When the date rolls over mid-session, start appending to the new day's file (same directory layout, new date).",
     '',
     'Write each entry as a short timestamped bullet. Create the file (and parent directories) on first write if it does not exist. Do not rewrite or reorganize the log — it is append-only. A separate nightly process distills these logs into `MEMORY.md` and topic files.',
     '',

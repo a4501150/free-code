@@ -11,6 +11,7 @@ import {
   readdir,
   readFile,
   stat,
+  truncate as fsTruncate,
   writeFile,
 } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
@@ -1284,6 +1285,35 @@ export async function recordContentReplacement(
  */
 export async function resetSessionFilePointer() {
   getProject().resetSessionFile()
+}
+
+/**
+ * Empty the current session's transcript file IN PLACE (assistant-mode
+ * /clear). The assistant's session id is pinned by the gateway's resume
+ * pointer (written at shutdown from the spawn-time id), so /clear cannot
+ * regenerate it the way the TUI path does — a new id would strand the
+ * pointer and resurrect the pre-clear conversation on restart. The file
+ * path and the Project's sessionFile pointer stay the same; the post-clear
+ * metadata re-stamp (reAppendSessionMetadata) and the SessionStart hook
+ * messages rewrite the file's head.
+ *
+ * Bookkeeping kept consistent: pending queued appends are flushed BEFORE the
+ * truncation so no pre-clear entry lands after it, and the memoized dedup
+ * message-set is dropped so later writes dedup against the truncated file.
+ * The positive existingSessionFiles cache still points at the same path —
+ * truncation doesn't move or delete the file, so it stays valid.
+ */
+export async function truncateSessionTranscriptInPlace(): Promise<void> {
+  const project = getProject()
+  await project.flush()
+  try {
+    await fsTruncate(project.sessionFile ?? getTranscriptPath(), 0)
+  } catch (e) {
+    // No file yet (write-through hasn't materialized it) — nothing to
+    // truncate; the first later write creates it fresh.
+    if (!isFsInaccessible(e)) throw e
+  }
+  clearSessionMessagesCache()
 }
 
 /**

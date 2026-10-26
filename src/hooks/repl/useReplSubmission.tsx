@@ -159,6 +159,7 @@ export function useReplSubmission(deps: {
           setAppState,
           setConversationId,
           scrollToBottom: () => scrollRef.current?.scrollToBottom(),
+          getMessages: () => d.messagesRef.current,
         })
         autoTitleAttemptedRef.current = false
         setAutoTitle(undefined)

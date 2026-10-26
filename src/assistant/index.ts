@@ -10,7 +10,14 @@
  * viewer) and cannot initialize it.
  */
 
-import { existsSync, readFileSync, statSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'fs'
+import { dirname } from 'path'
 import { getProjectRoot } from '../bootstrap/state.js'
 import { AGENT_REPORT_CONTRACT } from '../coordinator/agentReportContract.js'
 import { isCoordinatorMode } from '../coordinator/coordinatorModeGate.js'
@@ -31,6 +38,35 @@ function getAssistantMdPath(): string {
     'agents',
     ASSISTANT_MD,
   )
+}
+
+const STARTER_PERSONA = `# Assistant
+
+No persona file yet — this placeholder was seeded on first boot.
+
+Describe who this assistant is: its name, tone, standing duties, and
+preferences. Edit this file any time; it is re-read when it changes.
+`
+
+/**
+ * Seed a starter persona file on first assistant-mode boot so the assistant
+ * has a concrete, path-addressable file to grow into its own identity.
+ * Never overwrites an existing file (wx flag). Best-effort: an unwritable
+ * workspace just leaves the persona read on its identity-line fallback.
+ */
+export function seedAssistantPersonaFile(): void {
+  const mdPath = getAssistantMdPath()
+  try {
+    mkdirSync(dirname(mdPath), { recursive: true, mode: 0o700 })
+    writeFileSync(mdPath, STARTER_PERSONA, {
+      encoding: 'utf-8',
+      flag: 'wx',
+      mode: 0o600,
+    })
+  } catch {
+    // EEXIST (persona already there) or an unwritable workspace — either way
+    // readAssistantPersona's missing-file path already covers it.
+  }
 }
 
 /**
@@ -109,8 +145,20 @@ export function buildAssistantModeBlock(
       ? `You are running in assistant mode as ${name}.`
       : 'You are running in assistant mode.'
     const persona = readAssistantPersona() ?? identity
+    // Name the concrete persona path so the assistant can Read/Edit itself
+    // (it arrives as a file attachment too, but the path must be stated for
+    // it to know where to write). Absent only if seeding failed.
+    const personaPath = getAssistantActivationPath()
+    const head = [
+      persona,
+      personaPath
+        ? `Your persona file is \`${personaPath}\` — edit it to change how you behave; changes are picked up automatically.`
+        : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
     sections.push(
-      `# Assistant Mode\n\n${persona}\n\n` +
+      `# Assistant Mode\n\n${head}\n\n` +
         `## Working autonomously\n\n` +
         `You are one long-lived session that wakes on events: a message from the ` +
         `user (web UI or attached terminal), a scheduled task coming due, or an ` +

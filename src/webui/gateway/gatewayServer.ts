@@ -189,7 +189,6 @@ function json(value: unknown, status = 200, extra?: Record<string, string>) {
 export function startGatewayServer(
   options: StartGatewayOptions = {},
 ): GatewayServer {
-  const hub: SessionHub = createSessionHub()
   const children = createChildSessions(options.sessionDefaults)
   // The assistant main chat (the machine's one assistant). Bootstrapping is
   // fire-and-forget: a slow or failed assistant spawn must not delay the
@@ -198,11 +197,31 @@ export function startGatewayServer(
   // Distinguishes "will never come" from "still coming" for web.status
   // pollers once the session list already refuses to show an assistant row.
   let assistantSettled = options.skipAssistant === true
+  // The resume-pointer ID last persisted to assistant-session.json. The
+  // spawn-time ID in assistantChild goes stale when the child /clears or
+  // /resumes itself; the pointer must follow the live ID promptly (not only
+  // at shutdown), and this field is what de-duplicates the writes.
+  let assistantResumeIdWritten: string | null = null
+
+  function noteAssistantSessionId(sessionId: string): void {
+    if (!assistantChild) return
+    assistantChild.sessionId = sessionId
+    if (sessionId === assistantResumeIdWritten) return
+    assistantResumeIdWritten = sessionId
+    void writeAssistantResumeId(sessionId)
+  }
+
+  const hub: SessionHub = createSessionHub({
+    onSessionChanged({ pid, sessionId }) {
+      if (assistantChild?.pid === pid) noteAssistantSessionId(sessionId)
+    },
+  })
   if (!options.skipAssistant) {
     void bootstrapAssistantSession(children).then(
       session => {
         assistantChild = session
         assistantSettled = true
+        if (session) assistantResumeIdWritten = session.sessionId
       },
       () => {
         assistantSettled = true
@@ -448,6 +467,14 @@ export function startGatewayServer(
       if (url.pathname === '/api/sessions') {
         const session = authenticate(request)
         if (!session) return json({ error: 'unauthorized' }, 401)
+        // The descriptor carries the child's CURRENT id; a child that
+        // /clear'd or /resume'd with no browser attached to watch the socket
+        // changed its id without any session_changed event reaching us.
+        if (assistantChild) {
+          const descriptor = readAttachDescriptor(assistantChild.pid)
+          if (descriptor.ok)
+            noteAssistantSessionId(descriptor.descriptor.sessionId)
+        }
         const entries = await hub.list({ owns: children.owns })
         return json({
           sessions: assistantChild
@@ -641,15 +668,17 @@ export function startGatewayServer(
       }
       if (!children.owns(assistantChild.pid)) return { state: 'gone' as const }
       // The descriptor carries the current ID; a child that /resume'd or
-      // /clear'd itself has drifted from the ID spawn recorded.
+      // /clear'd itself has drifted from the ID spawn recorded. Observing
+      // the drift here also keeps the resume pointer fresh while the
+      // assistant runs, not just at shutdown.
       const descriptor = readAttachDescriptor(assistantChild.pid)
-      return descriptor.ok
-        ? {
-            state: 'live' as const,
-            pid: assistantChild.pid,
-            sessionId: descriptor.descriptor.sessionId,
-          }
-        : { state: 'starting' as const }
+      if (!descriptor.ok) return { state: 'starting' as const }
+      noteAssistantSessionId(descriptor.descriptor.sessionId)
+      return {
+        state: 'live' as const,
+        pid: assistantChild.pid,
+        sessionId: descriptor.descriptor.sessionId,
+      }
     },
     async assistantNotify(text) {
       if (!assistantChild) {
@@ -693,9 +722,18 @@ export function startGatewayServer(
     },
     async stop() {
       hub.stop()
-      // The assistant chat survives the restart: record where it was before
-      // the child dies, so the next boot resumes the same conversation.
-      if (assistantChild) await writeAssistantResumeId(assistantChild.sessionId)
+      // The assistant chat survives the restart: record where it is NOW
+      // (the descriptor, not the spawn-time field — a child that /clear'd
+      // or /resume'd itself drifted) before the child dies, so the next
+      // boot resumes the same conversation.
+      if (assistantChild) {
+        const descriptor = readAttachDescriptor(assistantChild.pid)
+        await writeAssistantResumeId(
+          descriptor.ok
+            ? descriptor.descriptor.sessionId
+            : assistantChild.sessionId,
+        )
+      }
       // Gateway-owned sessions belong to the gateway. Terminal-owned ones are
       // the user's and are deliberately left running.
       children.stopAll()

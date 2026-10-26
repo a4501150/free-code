@@ -89,7 +89,11 @@ import {
 } from '../services/toolCatalog/exposure.js'
 import { getMcpConfigsByScope } from '../services/mcp/config.js'
 import { prependBullets } from '../constants/prompts.js'
-import { buildAssistantModeBlock } from '../assistant/index.js'
+import {
+  buildAssistantModeBlock,
+  getAssistantActivationPath,
+} from '../assistant/index.js'
+import { getAssistantDailyLogPath } from '../memdir/memdir.js'
 import { isBriefEnabled } from '../tools/BriefTool/BriefTool.js'
 import { getSnippetForTwoFileDiff } from 'src/tools/FileEditTool/utils.js'
 import { maybeResizeAndDownsampleImageBlock } from './imageResizer.js'
@@ -208,7 +212,11 @@ import { getPDFPageCount } from './pdf.js'
 import { PDF_AT_MENTION_INLINE_THRESHOLD } from '../constants/apiLimits.js'
 import { findRelevantMemories } from '../memdir/findRelevantMemories.js'
 import { memoryAge, memoryFreshnessText } from '../memdir/memoryAge.js'
-import { getAutoMemPath, isAutoMemoryEnabled } from '../memdir/paths.js'
+import {
+  getAutoMemPath,
+  getAutoMemEntrypoint,
+  isAutoMemoryEnabled,
+} from '../memdir/paths.js'
 import { getAgentMemoryDir } from '../tools/AgentTool/agentMemory.js'
 import { listTasks, getTaskListId } from './tasks.js'
 import type { Task } from './taskSchemas.js'
@@ -968,6 +976,11 @@ export async function getAttachments(
     // skill_listing below.
     maybe('assistant_mode', () =>
       Promise.resolve(getAssistantModeAttachment(toolUseContext, messages)),
+    ),
+    // Persona/memory files surfaced next to the assistant_mode carrier so the
+    // assistant can Read/Edit them by path (same main-thread gate).
+    maybe('assistant_context_files', () =>
+      getAssistantContextFileAttachments(toolUseContext, messages),
     ),
     maybe('session_guidance', () =>
       Promise.resolve(getSessionGuidanceAttachment(toolUseContext, messages)),
@@ -1912,6 +1925,81 @@ export function getAssistantModeAttachment(
 
   if (lastAnnouncementText(messages, 'assistant_mode') === text) return []
   return [{ type: 'assistant_mode', text }]
+}
+
+/**
+ * Stat keys of the assistant context files already surfaced. Mirrors the
+ * persona cache in assistant/index.ts: steady state costs one stat per file
+ * and no read; a changed file (mtime/size) re-reads and re-announces.
+ */
+const assistantContextFileStats = new Map<string, string>()
+
+/**
+ * The assistant's own surface files — persona (assistant.md), the distilled
+ * memory index (MEMORY.md), and today's daily log — surfaced as ordinary
+ * file attachments so they are path-addressable in context like @-mentioned
+ * files. Main-thread + assistant-only, same gate as the assistant_mode
+ * carrier; missing files are skipped (the daily log appears on first write).
+ *
+ * Re-send rule per file: stat changed, OR the prior announcement is gone
+ * from the transcript (compaction, /clear) — the latter mirrors
+ * lastAnnouncementText, the former the stat-keyed caches.
+ */
+export async function getAssistantContextFileAttachments(
+  toolUseContext: ToolUseContext,
+  messages: Message[] | undefined,
+): Promise<Attachment[]> {
+  if (toolUseContext.agentId) return []
+  if (!getAssistantActive()) return []
+
+  const paths: string[] = []
+  const personaPath = getAssistantActivationPath()
+  if (personaPath) paths.push(personaPath)
+  if (isAutoMemoryEnabled()) {
+    paths.push(getAutoMemEntrypoint(), getAssistantDailyLogPath())
+  }
+
+  const filenamesInContext = new Set<string>()
+  for (const msg of messages ?? []) {
+    if (
+      msg.type === 'attachment' &&
+      (msg.attachment.type === 'file' ||
+        msg.attachment.type === 'already_read_file')
+    ) {
+      filenamesInContext.add((msg.attachment as FileAttachment).filename)
+    }
+  }
+
+  const out: Attachment[] = []
+  for (const path of paths) {
+    let statKey: string
+    try {
+      const s = await stat(path)
+      statKey = `${s.mtimeMs}:${s.size}`
+    } catch {
+      // Not there (yet) — drop the cache entry so a later creation re-arms.
+      assistantContextFileStats.delete(path)
+      continue
+    }
+    if (
+      assistantContextFileStats.get(path) === statKey &&
+      filenamesInContext.has(path)
+    ) {
+      continue
+    }
+    const attachment = await generateFileAttachment(
+      path,
+      toolUseContext,
+      'tengu_assistant_context_file_read',
+      'tengu_assistant_context_file_error',
+      'at-mention',
+    )
+    if (attachment) {
+      assistantContextFileStats.set(path, statKey)
+      out.push(attachment)
+    }
+  }
+  return out
 }
 
 /**
