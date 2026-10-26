@@ -407,7 +407,37 @@ export class TmuxSession {
 
   async sendLine(text: string): Promise<void> {
     await this.sendText(text)
+    // The slash-command typeahead recomputes asynchronously after typing.
+    // An Enter that lands while the list is populated but no row is
+    // highlighted yet is consumed by neither useTypeahead (which returns on
+    // selectedSuggestion < 0) nor the submit path (early-returns while
+    // suggestions show), leaving the line stuck in the input indefinitely.
+    // Let the popup settle first; the normal path then executes the
+    // highlighted command via its accept-and-run branch.
+    await sleep(150)
     await this.sendSpecialKey('Enter')
+    // Recovery for the stuck state: retype the final character (a keystroke
+    // re-fires the suggestion recompute and its row selection), then Enter.
+    // Two observations of the text in the input line, 150ms apart, gate the
+    // recovery: a submitted turn clears the line within a repaint, so a
+    // stale capture must not trigger extra keys on a turn that started.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let stuck = false
+      for (let probe = 0; probe < 2; probe++) {
+        const pane = await this.capturePane()
+        const promptLines = pane
+          .split('\n')
+          .filter(line => line.includes('\u276f'))
+        const inputLine = promptLines[promptLines.length - 1] ?? ''
+        stuck = inputLine.includes(text.trim().slice(0, 24))
+        if (!stuck) return
+        await sleep(150)
+      }
+      await this.sendSpecialKey('BSpace')
+      await this.sendText(text.trim().slice(-1))
+      await sleep(150)
+      await this.sendSpecialKey('Enter')
+    }
   }
 
   async sendSpecialKey(key: string): Promise<void> {
