@@ -3,9 +3,8 @@ import { useEffect, useState } from 'react'
 import { extraUsage as extraUsageCommand } from 'src/commands/extra-usage/index.js'
 import {
   formatCost,
-  formatAverageOutputSpeed,
   formatModelUsageLine,
-  getModelThroughputs,
+  getModelLatencyStats,
   getModelUsageRows,
   getTotalAPIDuration,
   getTotalCost,
@@ -13,6 +12,8 @@ import {
   getTotalLinesAdded,
   getTotalLinesRemoved,
   hasUnknownModelCost,
+  type ModelLatencyStats,
+  type ModelUsageRow,
 } from 'src/cost-tracker.js'
 import type { Message } from 'src/types/message.js'
 import {
@@ -120,6 +121,9 @@ function LimitBar({
 }
 
 const SESSION_LABEL_WIDTH = 23
+// Indent + label width for rows nested under a "Usage by model" block header.
+const MODEL_BLOCK_INDENT = '  '
+const MODEL_ROW_LABEL_WIDTH = 14
 
 function SessionRow({
   label,
@@ -136,6 +140,87 @@ function SessionRow({
   )
 }
 
+function ModelRow({
+  label,
+  value,
+  dim = false,
+}: {
+  label: string
+  value: React.ReactNode
+  dim?: boolean
+}): React.ReactNode {
+  const row = (
+    <Text>
+      {MODEL_BLOCK_INDENT}
+      {(label + ':').padEnd(MODEL_ROW_LABEL_WIDTH)}
+      {value}
+    </Text>
+  )
+  return dim ? <Text dimColor>{row}</Text> : row
+}
+
+function ModelUsageBlock({
+  row,
+  messages,
+}: {
+  row: ModelUsageRow
+  messages: Message[]
+}): React.ReactNode {
+  const decode = getModelLatencyStats()
+  const stats = row.modelIds
+    .map(id => decode[id])
+    .filter((s): s is ModelLatencyStats => s !== undefined)
+    .reduce(
+      (acc, s) => ({
+        decodeMs: acc.decodeMs + s.decodeMs,
+        outputTokens: acc.outputTokens + s.outputTokens,
+      }),
+      { decodeMs: 0, outputTokens: 0 },
+    )
+  // Cache stats for this block only: main-thread records from this block's
+  // models, so the line under the header describes exactly that block.
+  const blockMessages = messages.filter(
+    m =>
+      m.type === 'assistant' &&
+      row.modelIds.includes(m.message.model ?? '') &&
+      !m.isSidechain,
+  )
+  const cacheSummary = computePromptCacheSummary(blockMessages)
+  const cacheLine = cacheSummary
+    ? formatPromptCacheLine(cacheSummary, Date.now(), 'Prompt cache')
+    : null
+
+  return (
+    <Box flexDirection="column">
+      <Text>
+        {MODEL_BLOCK_INDENT}
+        {row.displayName} ({row.modelIds.join(', ')})
+      </Text>
+      <ModelRow label="Usage" value={formatModelUsageLine(row).trimStart()} />
+      {row.prefillTokensPerSecond !== undefined && (
+        <ModelRow
+          label="Prefill"
+          value={`${formatTokensPerSecond(row.prefillTokensPerSecond)} avg`}
+        />
+      )}
+      {row.tokensPerSecond !== undefined && (
+        <ModelRow
+          label="Decode"
+          value={`${formatTokensPerSecond(row.tokensPerSecond)} avg`}
+        />
+      )}
+      {stats.decodeMs > 0 && (
+        <ModelRow
+          label="Decode detail"
+          dim
+          value={`${formatNumber(stats.outputTokens)} out decoded in ${formatDuration(stats.decodeMs)}`}
+        />
+      )}
+      {cacheLine && <Text dimColor>{MODEL_BLOCK_INDENT + cacheLine}</Text>}
+    </Box>
+  )
+}
+
 function SessionSection({
   messages,
 }: {
@@ -143,11 +228,7 @@ function SessionSection({
 }): React.ReactNode {
   const linesAdded = getTotalLinesAdded()
   const linesRemoved = getTotalLinesRemoved()
-  const avgSpeed = formatAverageOutputSpeed()
-  const throughputs = getModelThroughputs()
   const usageRows = getModelUsageRows()
-  const cacheSummary = computePromptCacheSummary(messages)
-  const cacheLine = cacheSummary ? formatPromptCacheLine(cacheSummary) : null
   const costDisplay = (
     <>
       {formatCost(getTotalCost())}
@@ -184,30 +265,13 @@ function SessionSection({
         />
       ) : (
         usageRows.map(row => (
-          <SessionRow
+          <ModelUsageBlock
             key={row.displayName}
-            label={row.displayName}
-            value={formatModelUsageLine(row).trimStart()}
+            row={row}
+            messages={messages}
           />
         ))
       )}
-      {cacheLine && <Text dimColor>{cacheLine}</Text>}
-      {avgSpeed !== undefined && (
-        <SessionRow label="Output speed" value={avgSpeed} />
-      )}
-      {throughputs.map(throughput => (
-        <SessionRow
-          key={throughput.model}
-          label={throughput.model}
-          value={
-            <Text dimColor>
-              {`${formatTokensPerSecond(throughput.tokensPerSecond)} · ${formatNumber(
-                throughput.outputTokens,
-              )} out decoded in ${formatDuration(throughput.decodeMs)}`}
-            </Text>
-          }
-        />
-      ))}
     </Box>
   )
 }

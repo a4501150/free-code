@@ -174,13 +174,16 @@ function tierLabel(min: number): string {
 
 /**
  * One-line status for the usage tab, styled after the /cost block:
- * "Prompt cache (main):   12 requests · 68% of input tokens from cache · …".
- * Returns null when the row would say nothing (no requests yet, or a
- * provider that declares no caching at all).
+ * "Prompt cache:   12 requests · 68% of input tokens from cache · …".
+ * `label` is the row prefix — the usage tab passes "Prompt cache" inside a
+ * model block; callers summarizing the whole main thread pass
+ * "Prompt cache (main)". Returns null when the row would say nothing (no
+ * requests yet, or a provider that declares no caching at all).
  */
 export function formatPromptCacheLine(
   s: PromptCacheSummary,
   now: number = Date.now(),
+  label = 'Prompt cache',
 ): string | null {
   if (s.cacheType === 'none') return null
   const parts: string[] = [
@@ -228,5 +231,5 @@ export function formatPromptCacheLine(
       `cache lifetime set by provider (last activity ${formatDuration(idleMs)} ago)`,
     )
   }
-  return `Prompt cache (main):   ${parts.join(' · ')}`
+  return `${label}:   ${parts.join(' · ')}`
 }

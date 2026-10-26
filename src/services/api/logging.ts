@@ -1,7 +1,7 @@
 import type { DomainStopReason, DomainUsage } from '../../types/domain.js'
 import { DomainTransportError } from './domain-errors.js'
 import {
-  addModelDecodeSampleState,
+  addModelLatencySampleState,
   addToModelAPIDurationState,
   addToTotalDurationState,
   consumePostCompaction,
@@ -425,11 +425,18 @@ export function logAPISuccessAndDuration({
   addToModelAPIDurationState(preNormalizedModel, durationMs)
   // Decode-only sample: wall time minus time-to-first-token. Non-streaming
   // calls have no separable decode window and stay out of the tok/s stats.
+  // The same call carries the paired prefill sample: the TTFT window and the
+  // prompt-side tokens served in it (cache reads count — they are processed
+  // in that window too).
   if (ttftMs !== null && durationMs > ttftMs && usage.output_tokens > 0) {
-    addModelDecodeSampleState(
+    addModelLatencySampleState(
       preNormalizedModel,
       durationMs - ttftMs,
       usage.output_tokens,
+      ttftMs,
+      usage.input_tokens +
+        (usage.cache_read_input_tokens ?? 0) +
+        (usage.cache_creation_input_tokens ?? 0),
     )
   }
 

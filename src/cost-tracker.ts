@@ -5,8 +5,9 @@ import {
   addToTotalLinesChanged,
   getCostCounter,
   getModelAPIDurationMs,
-  getModelDecodeStats,
+  getModelLatencyStats,
   getModelUsage,
+  type ModelLatencyStats,
   getSdkBetas,
   getSessionId,
   getTokenCounter,
@@ -69,8 +70,10 @@ export {
   resetCostState,
   setHasUnknownModelCost,
   getModelUsage,
+  getModelLatencyStats,
   getUsageForModel,
 }
+export type { ModelLatencyStats }
 
 type StoredCostState = {
   totalCostUSD: number
@@ -82,8 +85,13 @@ type StoredCostState = {
   lastDuration: number | undefined
   modelUsage: { [modelName: string]: ModelUsage } | undefined
   modelAPIDurationMs?: { [modelName: string]: number }
-  modelDecodeStats?: {
-    [modelName: string]: { decodeMs: number; outputTokens: number }
+  modelLatencyStats?: {
+    [modelName: string]: {
+      decodeMs: number
+      outputTokens: number
+      prefillMs?: number
+      prefillTokens?: number
+    }
   }
 }
 
@@ -126,10 +134,10 @@ export function getStoredSessionCosts(
     modelAPIDurationMs: projectConfig.lastModelAPIDurationMs && {
       ...projectConfig.lastModelAPIDurationMs,
     },
-    modelDecodeStats:
-      projectConfig.lastModelDecodeStats &&
+    modelLatencyStats:
+      projectConfig.lastModelLatencyStats &&
       Object.fromEntries(
-        Object.entries(projectConfig.lastModelDecodeStats).map(
+        Object.entries(projectConfig.lastModelLatencyStats).map(
           ([model, stats]) => [model, { ...stats }],
         ),
       ),
@@ -166,8 +174,8 @@ export function saveCurrentSessionCosts(): void {
     lastAPIDuration: getTotalAPIDuration(),
     lastAPIDurationWithoutRetries: getTotalAPIDurationWithoutRetries(),
     lastModelAPIDurationMs: { ...getModelAPIDurationMs() },
-    lastModelDecodeStats: Object.fromEntries(
-      Object.entries(getModelDecodeStats()).map(([model, stats]) => [
+    lastModelLatencyStats: Object.fromEntries(
+      Object.entries(getModelLatencyStats()).map(([model, stats]) => [
         model,
         { ...stats },
       ]),
@@ -197,36 +205,9 @@ function formatCost(cost: number, maxDecimalPlaces: number = 4): string {
   return `$${cost > 0.5 ? round(cost, 100).toFixed(2) : cost.toFixed(maxDecimalPlaces)}`
 }
 
-export type ModelThroughput = {
-  model: string
-  outputTokens: number
-  decodeMs: number
-  tokensPerSecond: number
-}
-
-/**
- * Per-model decode speed: output tokens ÷ time after the first token.
- * Prefill and queue time stay out of the denominator, so cache-hit
- * requests don't inflate the rate and slow cold prefills don't deflate
- * it. Only streaming calls with a recorded first-token time contribute,
- * so a model whose calls were all non-streaming or aborted shows no row.
- */
-export function getModelThroughputs(): ModelThroughput[] {
-  const decodeStats = getModelDecodeStats()
-  return Object.entries(decodeStats)
-    .filter(([, stats]) => stats.decodeMs > 0 && stats.outputTokens > 0)
-    .map(([model, stats]) => ({
-      model,
-      outputTokens: getModelUsage()[model]?.outputTokens ?? stats.outputTokens,
-      decodeMs: stats.decodeMs,
-      tokensPerSecond: (stats.outputTokens * 1000) / stats.decodeMs,
-    }))
-    .sort((a, b) => b.decodeMs - a.decodeMs)
-}
-
 /** Session-average decode speed, or undefined if no streaming call finished yet. */
 export function getAverageOutputTokensPerSecond(): number | undefined {
-  const decodeStats = Object.values(getModelDecodeStats())
+  const decodeStats = Object.values(getModelLatencyStats())
   const tokens = sumBy(decodeStats, 'outputTokens')
   const ms = sumBy(decodeStats, 'decodeMs')
   return ms > 0 ? (tokens * 1000) / ms : undefined
@@ -244,6 +225,8 @@ export function formatAverageOutputSpeed(): string | undefined {
 
 export type ModelUsageRow = {
   displayName: string
+  /** Raw model keys aggregated into this row, for the block header. */
+  modelIds: string[]
   inputTokens: number
   outputTokens: number
   cacheReadInputTokens: number
@@ -252,6 +235,8 @@ export type ModelUsageRow = {
   costUSD: number
   /** Decode speed when enough streaming samples exist for this model. */
   tokensPerSecond: number | undefined
+  /** TTFT-based prefill speed; undefined without prefill samples. */
+  prefillTokensPerSecond: number | undefined
 }
 
 /**
@@ -261,10 +246,16 @@ export type ModelUsageRow = {
 export function getModelUsageRows(): ModelUsageRow[] {
   const modelUsageMap = getModelUsage()
   const usageByShortName: { [shortName: string]: ModelUsage } = {}
+  const modelIdsByShortName: { [shortName: string]: string[] } = {}
   const decodeStatsByShortName: {
-    [shortName: string]: { decodeMs: number; outputTokens: number }
+    [shortName: string]: {
+      decodeMs: number
+      outputTokens: number
+      prefillMs: number
+      prefillTokens: number
+    }
   } = {}
-  const decodeStats = getModelDecodeStats()
+  const decodeStats = getModelLatencyStats()
   for (const [model, usage] of Object.entries(modelUsageMap)) {
     const shortName = getPublicModelDisplayName(model) || model
     const decode = decodeStats[model]
@@ -272,10 +263,14 @@ export function getModelUsageRows(): ModelUsageRow[] {
       const prev = decodeStatsByShortName[shortName] ?? {
         decodeMs: 0,
         outputTokens: 0,
+        prefillMs: 0,
+        prefillTokens: 0,
       }
       decodeStatsByShortName[shortName] = {
         decodeMs: prev.decodeMs + decode.decodeMs,
         outputTokens: prev.outputTokens + decode.outputTokens,
+        prefillMs: prev.prefillMs + decode.prefillMs,
+        prefillTokens: prev.prefillTokens + decode.prefillTokens,
       }
     }
     if (!usageByShortName[shortName]) {
@@ -289,7 +284,9 @@ export function getModelUsageRows(): ModelUsageRow[] {
         contextWindow: 0,
         maxOutputTokens: 0,
       }
+      modelIdsByShortName[shortName] = []
     }
+    modelIdsByShortName[shortName]!.push(model)
     const accumulated = usageByShortName[shortName]
     accumulated.inputTokens += usage.inputTokens
     accumulated.outputTokens += usage.outputTokens
@@ -303,6 +300,7 @@ export function getModelUsageRows(): ModelUsageRow[] {
     const decode = decodeStatsByShortName[shortName]
     return {
       displayName: renderModelName(shortName),
+      modelIds: modelIdsByShortName[shortName]!,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       cacheReadInputTokens: usage.cacheReadInputTokens,
@@ -312,6 +310,10 @@ export function getModelUsageRows(): ModelUsageRow[] {
       tokensPerSecond:
         decode && decode.decodeMs > 0 && decode.outputTokens > 0
           ? (decode.outputTokens * 1000) / decode.decodeMs
+          : undefined,
+      prefillTokensPerSecond:
+        decode && decode.prefillMs > 0 && decode.prefillTokens > 0
+          ? (decode.prefillTokens * 1000) / decode.prefillMs
           : undefined,
     }
   })
@@ -326,9 +328,6 @@ export function formatModelUsageLine(row: ModelUsageRow): string {
     (row.webSearchRequests > 0
       ? `, ${formatNumber(row.webSearchRequests)} web search`
       : '') +
-    (row.tokensPerSecond !== undefined
-      ? `, ${formatTokensPerSecond(row.tokensPerSecond)}`
-      : '') +
     ` (${formatCost(row.costUSD)})`
   )
 }
@@ -340,8 +339,20 @@ function formatModelUsage(): string {
   }
   let result = 'Usage by model:'
   for (const row of rows) {
-    result += `\n` + `${row.displayName}:`.padStart(21)
-    result += formatModelUsageLine(row)
+    result += `\n\n` + `  ${row.displayName} (${row.modelIds.join(', ')})`
+    result += `\n` + `Usage:`.padStart(21) + formatModelUsageLine(row)
+    if (row.prefillTokensPerSecond !== undefined) {
+      result +=
+        `\n` +
+        `Prefill:`.padStart(21) +
+        `  ${formatTokensPerSecond(row.prefillTokensPerSecond)}`
+    }
+    if (row.tokensPerSecond !== undefined) {
+      result +=
+        `\n` +
+        `Decode:`.padStart(21) +
+        `  ${formatTokensPerSecond(row.tokensPerSecond)}`
+    }
   }
   return result
 }

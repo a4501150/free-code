@@ -69,12 +69,19 @@ type State = {
   /** Per-model sum of successful API call durations (ms), for duration stats. */
   modelAPIDurationMs: { [modelName: string]: number }
   /**
-   * Per-model decode-window samples (time after the first token) and the
-   * output tokens generated in them, for tok/s stats. Prefill and queue time
-   * stay out of the denominator, so cache-hit requests don't inflate the rate.
+   * Per-model latency samples for tok/s stats: the decode window (time after
+   * the first token) with the output tokens generated in it — prefill and
+   * queue time stay out of that denominator, so cache-hit requests don't
+   * inflate the rate — and the paired prefill window (time-to-first-token)
+   * with the prompt-side tokens it consumed.
    */
-  modelDecodeStats: {
-    [modelName: string]: { decodeMs: number; outputTokens: number }
+  modelLatencyStats: {
+    [modelName: string]: {
+      decodeMs: number
+      outputTokens: number
+      prefillMs: number
+      prefillTokens: number
+    }
   }
   mainLoopModelOverride: ModelSetting | undefined
   initialMainLoopModel: ModelSetting
@@ -255,7 +262,7 @@ function getInitialState(): State {
     cwd: resolvedCwd,
     modelUsage: {},
     modelAPIDurationMs: {},
-    modelDecodeStats: {},
+    modelLatencyStats: {},
     mainLoopModelOverride: undefined,
     initialMainLoopModel: null,
     isInteractive: false,
@@ -569,25 +576,42 @@ export function getModelAPIDurationMs(): { [modelName: string]: number } {
 
 /**
  * Record one successful streaming call's decode window (duration minus
- * time-to-first-token) and the output tokens it produced. Keyed like
- * modelUsage so per-model tok/s pairs tokens against decode time only.
+ * time-to-first-token), the output tokens it produced, and the prefill
+ * window (time-to-first-token) with the prompt-side tokens it consumed.
+ * Keyed like modelUsage so per-model tok/s pairs tokens against time.
  */
-export function addModelDecodeSampleState(
+export function addModelLatencySampleState(
   model: string,
   decodeMs: number,
   outputTokens: number,
+  prefillMs: number,
+  prefillTokens: number,
 ): void {
-  const prev = STATE.modelDecodeStats[model] ?? { decodeMs: 0, outputTokens: 0 }
-  STATE.modelDecodeStats[model] = {
+  const prev = STATE.modelLatencyStats[model] ?? {
+    decodeMs: 0,
+    outputTokens: 0,
+    prefillMs: 0,
+    prefillTokens: 0,
+  }
+  STATE.modelLatencyStats[model] = {
     decodeMs: prev.decodeMs + decodeMs,
     outputTokens: prev.outputTokens + outputTokens,
+    prefillMs: prev.prefillMs + prefillMs,
+    prefillTokens: prev.prefillTokens + prefillTokens,
   }
 }
 
-export function getModelDecodeStats(): {
-  [modelName: string]: { decodeMs: number; outputTokens: number }
+export type ModelLatencyStats = {
+  decodeMs: number
+  outputTokens: number
+  prefillMs: number
+  prefillTokens: number
+}
+
+export function getModelLatencyStats(): {
+  [modelName: string]: ModelLatencyStats
 } {
-  return STATE.modelDecodeStats
+  return STATE.modelLatencyStats
 }
 
 export function resetTotalDurationStateAndCost_FOR_TESTS_ONLY(): void {
@@ -905,7 +929,7 @@ export function resetCostState(): void {
   S().hasUnknownModelCost = false
   S().modelUsage = {}
   S().modelAPIDurationMs = {}
-  S().modelDecodeStats = {}
+  S().modelLatencyStats = {}
   S().promptId = null
 }
 
@@ -923,7 +947,7 @@ export function setCostStateForRestore({
   lastDuration,
   modelUsage,
   modelAPIDurationMs,
-  modelDecodeStats,
+  modelLatencyStats,
 }: {
   totalCostUSD: number
   totalAPIDuration: number
@@ -934,8 +958,13 @@ export function setCostStateForRestore({
   lastDuration: number | undefined
   modelUsage: { [modelName: string]: ModelUsage } | undefined
   modelAPIDurationMs?: { [modelName: string]: number }
-  modelDecodeStats?: {
-    [modelName: string]: { decodeMs: number; outputTokens: number }
+  modelLatencyStats?: {
+    [modelName: string]: {
+      decodeMs: number
+      outputTokens: number
+      prefillMs?: number
+      prefillTokens?: number
+    }
   }
 }): void {
   S().totalCostUSD = totalCostUSD
@@ -952,8 +981,19 @@ export function setCostStateForRestore({
   if (modelAPIDurationMs) {
     S().modelAPIDurationMs = modelAPIDurationMs
   }
-  if (modelDecodeStats) {
-    STATE.modelDecodeStats = modelDecodeStats
+  if (modelLatencyStats) {
+    // Pre-prefill saves lack the fields; they restore as zero samples.
+    STATE.modelLatencyStats = Object.fromEntries(
+      Object.entries(modelLatencyStats).map(([model, stats]) => [
+        model,
+        {
+          decodeMs: stats.decodeMs,
+          outputTokens: stats.outputTokens,
+          prefillMs: stats.prefillMs ?? 0,
+          prefillTokens: stats.prefillTokens ?? 0,
+        },
+      ]),
+    )
   }
 
   // Adjust startTime to make wall duration accumulate

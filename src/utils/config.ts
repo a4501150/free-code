@@ -68,9 +68,18 @@ export type ProjectConfig = {
   lastLinesRemoved?: number
   lastSessionId?: string
   lastModelAPIDurationMs?: Record<string, number>
-  lastModelDecodeStats?: Record<
+  /**
+   * Was lastModelDecodeStats before the prefill fields were added; the old
+   * key is dropped on save.
+   */
+  lastModelLatencyStats?: Record<
     string,
-    { decodeMs: number; outputTokens: number }
+    {
+      decodeMs: number
+      outputTokens: number
+      prefillMs: number
+      prefillTokens: number
+    }
   >
   lastModelUsage?: Record<
     string,
