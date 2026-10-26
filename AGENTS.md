@@ -52,3 +52,8 @@ Provider keys ONLY in `~/.freecode/modelSettings.json` (full key set: `src/utils
 ## Terminal renderer
 
 `src/ink/` is NOT the npm `ink` package — a local `react-reconciler` tree via `src/ink.ts`. Scroll-follow rules are commented in `src/ink/components/ScrollBox.tsx` and `src/components/FullscreenLayout.tsx`.
+
+## Assistant mode — conversation persistence gotchas
+
+- In assistant mode (gateway-spawned headless child rooted at `~/.freecode/webui/assistant`), `/clear` truncates the session transcript JSONL IN PLACE and keeps the same session id — unlike normal sessions, where `/clear` regenerates the id and starts a new append-only transcript. The gateway resume pointer at `~/.freecode/webui/assistant-session.json` references the session id, so keeping the id keeps the pointer valid across restarts; a stale id pointing at a surviving pre-clear transcript would resurrect the cleared conversation.
+- The resume pointer is rewritten opportunistically (on `session_changed` events, `/api/sessions` and assistantStatus descriptor re-reads, and at gateway shutdown via the attach descriptor's live id), not only at shutdown. Edge case: restarting the gateway strictly between `/clear` and the first persisted post-clear message makes `--resume` find a messages-zero transcript; the bootstrap then falls back to a fresh chat with a NEW id and the truncated file is orphaned — graceful, accepted behavior.
