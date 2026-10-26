@@ -11,7 +11,7 @@ import type {
   WebPendingCommand,
   WebTaskSummary,
 } from '../../protocol/attachSchemas.js'
-import { renderMarkdown } from '../markdown.js'
+import { MarkdownBody } from './Markdown.js'
 import { sizeLabel, type WebImageRef } from '../images.js'
 import { NotificationCard } from './NotificationCard.js'
 import { ToolCard } from './ToolCard.js'
@@ -70,14 +70,13 @@ const Row = memo(function Row({
     case 'assistant':
       return (
         <div className="row row--assistant">
-          <div
-            className="row__body md"
-            // The gateway is the only writer and renderMarkdown sanitizes, but
-            // treat every transcript string as untrusted regardless.
-            dangerouslySetInnerHTML={{
-              __html: renderMarkdown(item.text ?? ''),
-            }}
-          />
+          <div className="row__body md">
+            {/* The gateway is the only writer and renderMarkdown sanitizes, but
+                treat every transcript string as untrusted regardless. Closed
+                mermaid fences are lifted out of the HTML and rendered as
+                diagrams by MarkdownBody. */}
+            <MarkdownBody text={item.text ?? ''} />
+          </div>
         </div>
       )
 

@@ -86,8 +86,13 @@ export type StartGatewayOptions = {
 const SECURITY_HEADERS: Record<string, string> = {
   'content-security-policy': [
     "default-src 'self'",
-    "script-src 'self'",
-    "style-src 'self'",
+    // jsdelivr is the pinned lazy-load origin for mermaid (client/components/
+    // Mermaid.tsx); the version-pinned URL and its sibling chunks ride this origin.
+    "script-src 'self' https://cdn.jsdelivr.net",
+    // Mermaid injects a <style> element inside the SVG it renders, which CSP
+    // counts as inline style. Markdown itself is class-styled and the client
+    // sets no style attributes, so this only serves diagram rendering.
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     "connect-src 'self' ws: wss:",
     "object-src 'none'",

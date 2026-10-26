@@ -1,0 +1,108 @@
+import { describe, expect, test } from 'bun:test'
+import { existsSync, readFileSync } from 'fs'
+import { join } from 'path'
+import { splitMarkdownMermaid } from '../../src/webui/client/mermaidSplits.js'
+
+const ROOT = join(import.meta.dir, '..', '..')
+
+describe('splitMarkdownMermaid', () => {
+  test('a closed mermaid fence splits into text, diagram, text', () => {
+    const chunks = splitMarkdownMermaid(
+      'Intro\n\n```mermaid\ngraph TD; A-->B;\n```\n\nafter',
+    )
+    expect(chunks).toEqual([
+      { kind: 'text', text: 'Intro\n' },
+      { kind: 'mermaid', source: 'graph TD; A-->B;' },
+      { kind: 'text', text: '\nafter' },
+    ])
+  })
+
+  test('an unclosed fence (mid-stream) stays plain text', () => {
+    const chunks = splitMarkdownMermaid('Intro\n\n```mermaid\ngraph TD; A-->')
+    expect(chunks).toEqual([
+      { kind: 'text', text: 'Intro\n\n```mermaid\ngraph TD; A-->' },
+    ])
+  })
+
+  test('non-mermaid fences are untouched, closer included', () => {
+    const src = '```ts\nconst x = 1\n```'
+    expect(splitMarkdownMermaid(src)).toEqual([{ kind: 'text', text: src }])
+  })
+
+  test('a ``` line inside another fence does not open a diagram', () => {
+    const chunks = splitMarkdownMermaid(
+      '```md\nsome text\n```mermaid is literal\n```',
+    )
+    expect(chunks.every(chunk => chunk.kind === 'text')).toBe(true)
+  })
+
+  test('fence language is matched case-insensitively', () => {
+    const chunks = splitMarkdownMermaid('```Mermaid\ngraph TD;\n```')
+    expect(chunks).toEqual([{ kind: 'mermaid', source: 'graph TD;' }])
+  })
+
+  test('two diagrams in one message', () => {
+    const chunks = splitMarkdownMermaid(
+      '```mermaid\nA-->B\n```\nmid\n```mermaid\nC-->D\n```',
+    )
+    expect(chunks.map(chunk => chunk.kind)).toEqual([
+      'mermaid',
+      'text',
+      'mermaid',
+    ])
+  })
+
+  test('empty fence is an empty diagram source', () => {
+    expect(splitMarkdownMermaid('```mermaid\n```')).toEqual([
+      { kind: 'mermaid', source: '' },
+    ])
+  })
+
+  test('tilde fences behave like backtick fences', () => {
+    expect(splitMarkdownMermaid('~~~mermaid\ngraph TD; A-->B;\n~~~')).toEqual([
+      { kind: 'mermaid', source: 'graph TD; A-->B;' },
+    ])
+  })
+
+  test('a tilde run inside a backtick fence is not a closer', () => {
+    const src = '```ts\n~~~\ncode\n```'
+    expect(splitMarkdownMermaid(src)).toEqual([{ kind: 'text', text: src }])
+  })
+
+  test('a bare opener at EOF stays text', () => {
+    expect(splitMarkdownMermaid('Intro\n\n```')).toEqual([
+      { kind: 'text', text: 'Intro\n\n```' },
+    ])
+  })
+})
+
+/**
+ * The bundle and CSP guards. Mermaid must arrive as a runtime fetch of the
+ * pinned CDN URL (a static import would triple the embedded bundle), and the
+ * gateway must let that origin through.
+ */
+describe('mermaid lazy-load wiring', () => {
+  const assetsPath = join(ROOT, 'src/webui/generated/assets.ts')
+
+  test('the built bundle keeps the CDN import as a runtime URL', () => {
+    // A fresh checkout with no WEBUI build has no generated module.
+    if (!existsSync(assetsPath)) return
+    const js = readFileSync(assetsPath, 'utf8')
+    expect(js).toContain(
+      'https://cdn.jsdelivr.net/npm/mermaid@11.13.0/dist/mermaid.esm.min.mjs',
+    )
+    // Mermaid itself must not be inlined: d3 alone would blow the budget.
+    expect(js).not.toContain('selectNull')
+    expect(js.length).toBeLessThan(600_000)
+  })
+
+  test('the gateway CSP allows the pinned CDN for scripts', () => {
+    const gateway = readFileSync(
+      join(ROOT, 'src/webui/gateway/gatewayServer.ts'),
+      'utf8',
+    )
+    expect(gateway).toContain(`"script-src 'self' https://cdn.jsdelivr.net"`)
+    // The SVG from mermaid carries a <style> element, which needs this.
+    expect(gateway).toContain(`"style-src 'self' 'unsafe-inline'"`)
+  })
+})

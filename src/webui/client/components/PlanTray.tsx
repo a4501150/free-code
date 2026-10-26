@@ -3,7 +3,7 @@ import type {
   WebPermissionMode,
   WebPermissionRequest,
 } from '../../protocol/attachSchemas.js'
-import { renderMarkdown } from '../markdown.js'
+import { MarkdownBody } from './Markdown.js'
 
 /**
  * The browser surface for ExitPlanMode.
@@ -62,12 +62,11 @@ export function PlanTray({
       </header>
 
       {plan ? (
-        <div
-          className="tray__plan md"
-          // renderMarkdown sanitizes, and the session is the only writer, but
-          // every transcript string is treated as untrusted regardless.
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(plan) }}
-        />
+        <div className="tray__plan md">
+          {/* renderMarkdown sanitizes, and the session is the only writer, but
+              every transcript string is treated as untrusted regardless. */}
+          <MarkdownBody text={plan} />
+        </div>
       ) : (
         <p className="tray__desc">No plan was recorded. Approve to proceed.</p>
       )}

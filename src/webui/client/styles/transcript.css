@@ -227,6 +227,43 @@
   border-color: var(--rule-bright);
 }
 
+/* ── mermaid diagrams ──────────────────────────────────────────── */
+
+/* Same scroll discipline as .md-table: the SVG keeps its natural width and
+   the wrapper scrolls, so a wide sequence diagram survives a phone screen.
+   The dark theme comes from mermaid's own `theme: 'dark'` config. */
+.md-mermaid {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-bright) transparent;
+  margin: 0.5rem 0;
+}
+
+.md-mermaid svg {
+  display: block;
+  margin: 0 auto;
+}
+
+/* Loading and fallback states reuse the plain code-block chrome. */
+.md-mermaid--fallback {
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  padding: 0.6rem 0.75rem;
+}
+
+.md-mermaid--fallback pre {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.md-mermaid__hint {
+  color: var(--text-dim);
+  margin-bottom: 0.35rem;
+}
+
 /* ── tool cards ────────────────────────────────────────────────── */
 
 .tool {
