@@ -11,6 +11,7 @@ import {
 } from '../../../types/domainConversion.js'
 import { refreshGcpCredentialsIfNeeded } from '../../../utils/auth.js'
 import { isEnvTruthy } from '../../../utils/envUtils.js'
+import { getUserAgent } from '../../../utils/http.js'
 import { logError } from '../../../utils/log.js'
 import { normalizeModelStringForAPI } from '../../../utils/model/modelResolution.js'
 import {
@@ -177,6 +178,9 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          // Real Claude Code reaches Vertex through the Anthropic SDK, which
+          // sends the claude-cli UA; match it on this raw-fetch path.
+          'User-Agent': getUserAgent(),
           Authorization: `Bearer ${authResult.token}`,
           ...(request.clientRequestId && {
             'x-client-request-id': request.clientRequestId,
@@ -230,6 +234,9 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          // Real Claude Code reaches Vertex through the Anthropic SDK, which
+          // sends the claude-cli UA; match it on this raw-fetch path.
+          'User-Agent': getUserAgent(),
           Authorization: `Bearer ${authResult.token}`,
           ...(request.clientRequestId && {
             'x-client-request-id': request.clientRequestId,
@@ -327,6 +334,9 @@ export const vertexAnthropicAdapter: ProviderAdapter = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          // Real Claude Code reaches Vertex through the Anthropic SDK, which
+          // sends the claude-cli UA; match it on this raw-fetch path.
+          'User-Agent': getUserAgent(),
           Authorization: `Bearer ${authResult.token}`,
         },
         body: JSON.stringify(body),

@@ -124,7 +124,7 @@ function computeFeatureBetas(
     afkModeHeaderLatched &&
     afkGate &&
     getProviderRegistry().resolveFirstPartyCapability(
-      undefined,
+      model,
       'supportsAfkMode',
     ) &&
     !betas.includes(AFK_MODE_BETA_HEADER)

@@ -199,6 +199,17 @@ export async function sideQuery(
       metadata: getAPIMetadata(),
     }),
   }
+  // Let the adapter move betas onto the transport it uses (header for the
+  // Anthropic wire, additionalModelRequestFields for Bedrock Converse), so
+  // side queries are not silently stripped of them on body-beta providers.
+  adapter.applyRequestFeatures?.(request, model, {
+    isAgenticQuery: false,
+    afkModeActive: false,
+    fastModeWanted: false,
+    hasOutputFormat: !!output_format,
+    hasTaskBudget: false,
+  })
+
   const requestSignal = signal ?? new AbortController().signal
   const response = await returnValue(
     withRetry(() => adapter.createMessage(provider, request, requestSignal), {

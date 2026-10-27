@@ -11,6 +11,7 @@ import {
   type WireMessage,
 } from '../../../types/domainConversion.js'
 import { isEnvTruthy } from '../../../utils/envUtils.js'
+import { getUserAgent } from '../../../utils/http.js'
 import { logError } from '../../../utils/log.js'
 import { normalizeModelStringForAPI } from '../../../utils/model/modelResolution.js'
 import {
@@ -112,6 +113,9 @@ export const foundryAdapter: ProviderAdapter = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          // Real Claude Code reaches Foundry through the Anthropic SDK, which
+          // sends the claude-cli UA; match it on this raw-fetch path.
+          'User-Agent': getUserAgent(),
           'anthropic-version': '2023-06-01',
           [headerName]: headerValue,
           ...(request.clientRequestId && {
@@ -163,6 +167,9 @@ export const foundryAdapter: ProviderAdapter = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          // Real Claude Code reaches Foundry through the Anthropic SDK, which
+          // sends the claude-cli UA; match it on this raw-fetch path.
+          'User-Agent': getUserAgent(),
           'anthropic-version': '2023-06-01',
           [headerName]: headerValue,
           ...(request.clientRequestId && {
@@ -252,6 +259,9 @@ export const foundryAdapter: ProviderAdapter = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          // Real Claude Code reaches Foundry through the Anthropic SDK, which
+          // sends the claude-cli UA; match it on this raw-fetch path.
+          'User-Agent': getUserAgent(),
           'anthropic-version': '2023-06-01',
           [headerName]: headerValue,
         },

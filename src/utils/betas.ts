@@ -127,7 +127,11 @@ export const getAllModelBetas = memoize((model: string): string[] => {
   if (modelSupportsISP(model)) {
     betaHeaders.push(CLAUDE_CODE_20250219_BETA_HEADER)
   }
-  if (isClaudeAISubscriber()) {
+  // oauth-2025-04-20 is a first-party Anthropic OAuth signal: Vertex and
+  // Bedrock authenticate with GCP/AWS credentials and the reference client
+  // never sends it there (same Anthropic-type gate as metadata and identity
+  // headers).
+  if (isClaudeAISubscriber() && providerType === 'anthropic') {
     betaHeaders.push(OAUTH_BETA_HEADER)
   }
   if (modelSupports1M(model)) {

@@ -7,10 +7,9 @@ import {
 import { z } from 'zod'
 import { getOauthConfig, OAUTH_BETA_HEADER } from '../../constants/oauth.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { withOAuth401Retry } from '../../utils/http.js'
+import { getUserAgent, withOAuth401Retry } from '../../utils/http.js'
 import { logError } from '../../utils/log.js'
 import { getProviderRegistry } from '../../utils/model/providerRegistry.js'
-import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
 
 const bootstrapResponseSchema = z.object({
   client_data: z.record(z.string(), z.unknown()).nullish(),
@@ -79,7 +78,8 @@ async function fetchBootstrapAPI(): Promise<BootstrapResponse | null> {
       const response = await axios.get<unknown>(endpoint, {
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': getClaudeCodeUserAgent(),
+          // claude-cli family UA: log filtering keys on it (see utils/http)
+          'User-Agent': getUserAgent(),
           ...authHeaders,
         },
         timeout: 5000,
