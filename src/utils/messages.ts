@@ -3957,15 +3957,6 @@ You have exited auto mode. The user may now want to interact more directly. You 
           isMeta: true,
         }),
       ]
-    case 'auto_compact_imminent': {
-      return wrapMessagesInSystemReminder([
-        createUserMessage({
-          content:
-            'The context window is nearly full and will be compacted automatically soon. Older messages will be replaced by a summary, so anything still needed \u2014 file paths, findings, remaining steps \u2014 should appear in your recent output rather than only in earlier messages. Keep working; do not mention this to the user.',
-          isMeta: true,
-        }),
-      ])
-    }
     case 'stale_task_list': {
       const inProgressCount = attachment.openTasks.filter(
         task => task.status === 'in_progress',
@@ -4183,6 +4174,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
     'task_reminder',
     'terminal_focus', // proactive-mode focus carrier, removed with the tick loop
     'tool_catalog', // directory pointer carrier; paths now ride the delta carriers
+    'auto_compact_imminent', // pre-compact nudge; the compact prompt already covers what to preserve
   ]
   if (LEGACY_ATTACHMENT_TYPES.includes((attachment as { type: string }).type)) {
     return []

@@ -189,15 +189,8 @@ import { isEnvTruthy } from './envUtils.js'
 import { feature } from 'bun:bundle'
 import { flushOnDateChange } from '../services/sessionTranscript/sessionTranscript.js'
 import { hasUltrathinkKeyword, isUltrathinkEnabled } from './thinking.js'
-import {
-  tokenCountFromLastAPIResponse,
-  tokenCountWithEstimation,
-} from './tokens.js'
-import {
-  calculateTokenWarningState,
-  getConfiguredContextWindowSize,
-  isAutoCompactEnabled,
-} from '../services/compact/autoCompact.js'
+import { tokenCountFromLastAPIResponse } from './tokens.js'
+import { getConfiguredContextWindowSize } from '../services/compact/autoCompact.js'
 import {
   hasInstructionsLoadedHook,
   executeInstructionsLoadedHooks,
@@ -655,9 +648,6 @@ export type Attachment =
       tokenCount: number
     }
   | {
-      type: 'auto_compact_imminent'
-    }
-  | {
       type: 'stale_task_list'
       roundsSinceTaskWrite: number
       openTasks: StaleTaskListItem[]
@@ -1010,14 +1000,6 @@ export async function getAttachments(
     ),
     maybe('critical_system_reminder', () =>
       Promise.resolve(getCriticalSystemReminderAttachment(toolUseContext)),
-    ),
-    maybe('auto_compact_imminent', () =>
-      Promise.resolve(
-        getAutoCompactImminentAttachment(
-          messages ?? [],
-          toolUseContext.options.mainLoopModel,
-        ),
-      ),
     ),
   ]
 
@@ -3809,42 +3791,6 @@ function getTokenUsageAttachment(
       remaining: contextWindow - usedTokens,
     },
   ]
-}
-
-/**
- * Fires once as the context approaches the auto-compact trigger, so the model
- * can surface state it still needs before older messages become a summary.
- *
- * One delivery per compaction window, derived from the transcript rather than
- * session state: compaction replaces the history that holds the attachment, so
- * the next window re-arms on its own.
- */
-export function getAutoCompactImminentAttachment(
-  messages: Message[],
-  model: string,
-): Attachment[] {
-  if (!isAutoCompactEnabled()) {
-    return []
-  }
-
-  const { isAboveWarningThreshold } = calculateTokenWarningState(
-    tokenCountWithEstimation(messages),
-    model,
-  )
-  if (!isAboveWarningThreshold) {
-    return []
-  }
-
-  const alreadyDelivered = messages.some(
-    message =>
-      message.type === 'attachment' &&
-      message.attachment.type === 'auto_compact_imminent',
-  )
-  if (alreadyDelivered) {
-    return []
-  }
-
-  return [{ type: 'auto_compact_imminent' }]
 }
 
 type TaskListActivity = {

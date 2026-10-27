@@ -110,7 +110,6 @@ const VISIBLE_FIXTURES: Array<[Attachment, string]> = [
 const VISIBLE_NOT_FIXTURE_TESTED = [
   'agent_mention',
   'async_hook_response',
-  'auto_compact_imminent',
   'auto_mode',
   'auto_mode_exit',
   'budget_usd',

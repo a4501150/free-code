@@ -57,7 +57,6 @@ const TYPES_WITHOUT_SUMMARY_LINE = [
   'date_change',
   'user_context_snapshot',
   'user_context_delta',
-  'auto_compact_imminent',
   'stale_task_list',
 ] as const satisfies readonly Attachment['type'][]
 
