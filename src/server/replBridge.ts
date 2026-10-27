@@ -4,65 +4,89 @@
  */
 import { useEffect, useRef } from 'react'
 import type { UUID } from 'crypto'
-import type { AppState } from '../state/AppStateStore.ts'
-import type { Message } from '../types/message.ts'
-import type { Task } from '../utils/taskSchemas.ts'
+import type { AppState } from '../state/AppStateStore.js'
+import type { Task as TodoTask } from '../utils/taskSchemas.js'
+import type { CommandBase } from '../types/command.js'
 import {
   enqueue,
   getCommandQueueSnapshot,
-} from '../utils/messageQueueManager.ts'
+} from '../utils/messageQueueManager.js'
 import type {
-  WebPendingCommand,
-  WebPermissionMode,
-  WebSessionActivity,
-  WebSessionState,
-} from '../webui/protocol/attachSchemas.ts'
+  WirePendingCommand,
+  WirePermissionMode,
+  WireSessionActivity,
+  WireSessionState,
+} from '../session/wire.js'
 import {
+  publishAttachCatalog,
   publishAttachMeta,
   publishAttachPendingCommands,
   publishAttachTasks,
   publishAttachTodos,
+  publishAttachTranscript,
   registerAttachRuntime,
-} from './hostSingleton.ts'
-import { buildSubmitValue, type AttachRuntime } from './runtime.ts'
+} from './hostSingleton.js'
+import { buildSubmitValue, type SessionRuntime } from './runtime.js'
+import { buildWireCatalog } from './catalog.js'
 import {
-  buildWebTaskSummaries,
-  getTaskTranscriptMessages,
+  buildWireTaskOutput,
+  buildWireTaskSummaries,
   killAttachTask,
-} from './taskSummaries.ts'
+} from './taskSummaries.js'
+import { loadAgentWireTranscript } from './agentTranscript.js'
+import type { SessionCore } from '../session/SessionCore.js'
+
+const TRANSCRIPT_EVENT_TYPES = new Set<string>([
+  'transcript_appended',
+  'transcript_progress_replaced',
+  'transcript_replaced',
+  'transcript_removed',
+])
 
 export type ReplAttachBridgeParams = {
-  messagesRef: { current: readonly Message[] }
-  getState: () => WebSessionState
-  getActivity: () => WebSessionActivity | undefined
+  /** The session core: transcript reads come from it, publishes ride its events. */
+  core: SessionCore
+  getState: () => WireSessionState
+  getActivity: () => WireSessionActivity | undefined
   getIsCompacting: () => boolean
   getModel: () => string | undefined
-  getPermissionMode: () => string | undefined
+  getPermissionMode: () => WirePermissionMode | undefined
   getInProgressToolUseIds: () => ReadonlySet<string>
-  todos: Task[] | undefined
-  commandNames: string[]
-  /** The live AppState: source for task summaries, transcripts and kills. */
+  todos: TodoTask[] | undefined
+  commands: readonly CommandBase[]
+  /** The live AppState: source for task summaries and kills. */
   getAppState: () => AppState
   setAppState: (f: (prev: AppState) => AppState) => void
   onCancel: () => void
-  onSetPermissionMode: (mode: WebPermissionMode) => void
-  onSetModel: (model: string) => void
+  onSetPermissionMode: (mode: WirePermissionMode) => void
+  /** null returns to the account/config default. */
+  onSetModel: (model: string | null) => void
 }
 
 /**
- * Registers the interactive REPL as the attach runtime.
+ * Registers the interactive REPL as the wire runtime.
  *
  * Callbacks live in a ref so the runtime object stays stable across renders,
- * and registration is offered once. The singleton holds it until the host
+ * and registration is offered once. The singleton holds it until the surface
  * starts, which happens after session registration resolves.
  */
 export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
   const latest = useRef(params)
   latest.current = params
 
+  // Every transcript mutation the core announces (its own loop or a host
+  // write) republishes the wire transcript. The serializer diffs, so this
+  // is cheap when nothing visible changed and correct when it did — no
+  // render-side hook has to remember to publish.
   useEffect(() => {
-    const runtime: AttachRuntime = {
-      getMessages: () => latest.current.messagesRef.current,
+    return params.core.subscribe(event => {
+      if (TRANSCRIPT_EVENT_TYPES.has(event.type)) publishAttachTranscript()
+    })
+  }, [params.core])
+
+  useEffect(() => {
+    const runtime: SessionRuntime = {
+      getMessages: () => params.core.getMessages(),
       getState: () => latest.current.getState(),
       getActivity: () => latest.current.getActivity(),
       getIsCompacting: () => latest.current.getIsCompacting(),
@@ -74,10 +98,11 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
           status: task.status,
           activeForm: task.activeForm,
         })),
-      getCommands: () => latest.current.commandNames,
+      getTasks: () => buildWireTaskSummaries(latest.current.getAppState()),
+      getCatalog: () => buildWireCatalog(latest.current.commands),
       getPendingCommands: () => {
         const snapshot = getCommandQueueSnapshot()
-        const commands: WebPendingCommand[] = []
+        const commands: WirePendingCommand[] = []
         for (const cmd of snapshot) {
           if (cmd.mode !== 'prompt') continue
           const text =
@@ -90,22 +115,24 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
                   )
                   .map(b => b.text)
                   .join('\n')
-          if (text && cmd.uuid) commands.push({ id: cmd.uuid, text })
+          if (text && cmd.uuid) {
+            commands.push({ id: cmd.uuid, text, isMeta: cmd.isMeta })
+          }
         }
         return commands
       },
       getInProgressToolUseIds: () => latest.current.getInProgressToolUseIds(),
-
-      getTasks: () => buildWebTaskSummaries(latest.current.getAppState()),
-
-      getTaskTranscript: taskId =>
-        getTaskTranscriptMessages(latest.current.getAppState(), taskId),
 
       killTask: taskId =>
         killAttachTask(taskId, {
           getAppState: () => latest.current.getAppState(),
           setAppState: prev => latest.current.setAppState(prev),
         }),
+
+      // Sidechain drill-down: the sidechain JSONL of this session's project.
+      getAgentTranscript: agentId => loadAgentWireTranscript(agentId),
+      getTaskOutput: (taskId, tailBytes) =>
+        buildWireTaskOutput(latest.current.getAppState(), taskId, tailBytes),
 
       submit(content, delivery, commandId, images) {
         enqueue({
@@ -117,11 +144,11 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
         })
       },
 
-      interrupt() {
+      cancel() {
         latest.current.onCancel()
       },
 
-      setPermissionMode(mode) {
+      setMode(mode) {
         latest.current.onSetPermissionMode(mode)
       },
 
@@ -133,7 +160,7 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
     registerAttachRuntime(runtime)
   }, [])
 
-  // Metadata is cheap to build and the host drops unchanged payloads, so
+  // Metadata is cheap to build and the surface drops unchanged payloads, so
   // publishing per render keeps state fresh without one subscription per field.
   useEffect(() => {
     publishAttachMeta()
@@ -146,5 +173,11 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
 
   useEffect(() => {
     publishAttachTodos()
-  }, [params.todos])
+    publishAttachTasks()
+  }, [params.todos, params.getAppState])
+
+  // The command set changes when plugins or MCP servers connect or drop.
+  useEffect(() => {
+    publishAttachCatalog()
+  }, [params.commands])
 }

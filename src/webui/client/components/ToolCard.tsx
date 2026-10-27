@@ -1,50 +1,14 @@
 import { useState } from 'react'
-import type { WebTaskSummary } from '../../protocol/attachSchemas.js'
-import type { WebTranscriptItem } from '../../protocol/transcriptWire.js'
+import type { WireItem, WireTask } from '../../../session/wire.js'
 import { sizeLabel, type WebImageRef } from '../images.js'
+import { summarizeToolInput as summarizeInput } from '../itemViews.js'
 import { DiffView } from './DiffView.js'
-
-/** Tools whose input is better shown as a diff or a command than as JSON. */
-function summarizeInput(item: WebTranscriptItem): string {
-  const input = (item.toolInput ?? {}) as Record<string, unknown>
-  const first = (...keys: string[]): string | undefined => {
-    for (const key of keys) {
-      const value = input[key]
-      if (typeof value === 'string' && value) return value
-    }
-    return undefined
-  }
-  switch (item.toolName) {
-    case 'Bash':
-      return first('command') ?? ''
-    case 'Read':
-    case 'Write':
-    case 'Edit':
-      return first('file_path', 'path') ?? ''
-    case 'Glob':
-    case 'Grep':
-      return first('pattern', 'query') ?? ''
-    // Legacy built-in name; MCP agent-browser web_fetch replaced it.
-    case 'WebFetch':
-    case 'mcp__agent-browser__web_fetch':
-      return first('url') ?? ''
-    case 'Task':
-    case 'Agent':
-      return first('description', 'prompt') ?? ''
-    default: {
-      const keys = Object.keys(input)
-      return keys.length
-        ? `${keys.length} argument${keys.length > 1 ? 's' : ''}`
-        : ''
-    }
-  }
-}
 
 type ToolStatus = 'running' | 'completed' | 'error' | 'pending'
 
 function getToolStatus(
-  item: WebTranscriptItem,
-  result?: WebTranscriptItem,
+  item: WireItem,
+  result?: WireItem,
   inProgressToolUseIds?: string[],
 ): ToolStatus {
   if (result?.isError) return 'error'
@@ -67,17 +31,24 @@ export function ToolCard({
   onOpenImage,
   tasks,
   onOpenTask,
+  onOpenAgent,
 }: {
-  item: WebTranscriptItem
-  result?: WebTranscriptItem
+  item: WireItem
+  result?: WireItem
   inProgressToolUseIds?: string[]
   compact?: boolean
   /** Opens the lightbox for an image the result carried. */
   onOpenImage(image: WebImageRef): void
   /** The session's background tasks, to spot a backgrounded shell. */
-  tasks?: WebTaskSummary[]
+  tasks?: WireTask[]
   /** Opens a task's viewer; the chip only shows when this exists. */
   onOpenTask?(taskId: string): void
+  /**
+   * Present when the session can serve sidechain transcripts. An agent
+   * tool whose receipt carries an agent id gets an affordance; the id is
+   * the receipt's, never a guess from the tool input.
+   */
+  onOpenAgent?: (agentId: string) => void
 }): React.ReactElement {
   const [open, setOpen] = useState(false)
   const input = (item.toolInput ?? {}) as Record<string, unknown>
@@ -88,7 +59,7 @@ export function ToolCard({
       ? tasks?.find(
           task =>
             task.toolUseId === item.toolUseId &&
-            (task.taskType === 'local_bash' || task.taskType === 'monitor_mcp'),
+            (task.kind === 'local_bash' || task.kind === 'monitor_mcp'),
         )
       : undefined
   const isEdit =
@@ -116,6 +87,21 @@ export function ToolCard({
           <span className="tool__badge tool__badge--running">running</span>
         ) : null}
         {result?.isError ? <span className="tool__badge">error</span> : null}
+        {onOpenAgent && result?.agentId ? (
+          <button
+            type="button"
+            className="tool__agent"
+            title="Open the agent transcript"
+            onClick={event => {
+              // The card head toggles the body; this button is a different
+              // action and must not also collapse or expand it.
+              event.stopPropagation()
+              onOpenAgent(result.agentId!)
+            }}
+          >
+            transcript
+          </button>
+        ) : null}
       </button>
 
       {open ? (

@@ -252,6 +252,9 @@ type Props = {
    * bumps the conversation ID.
    */
   conversationId: string
+  /** Hosted viewer: the statusline renders read-only off the store — the
+   *  session-side driver owns `statusLineText`. Forwarded to the footer. */
+  statuslinePassive?: boolean
 }
 
 // Bottom slot has maxHeight="50%"; reserve lines for footer, border, status.
@@ -299,6 +302,7 @@ function PromptInput({
   insertTextRef,
   voiceInterimRange,
   conversationId,
+  statuslinePassive,
 }: Props): React.ReactNode {
   const mainLoopModel = useMainLoopModel()
   // A local-jsx command (e.g., /mcp while agent is running) renders a full-
@@ -2407,6 +2411,7 @@ function PromptInput({
         historyFailedMatch={historyFailedMatch}
         onOpenTasksDialog={handleOpenTasksDialog}
         conversationId={conversationId}
+        statuslinePassive={statuslinePassive}
       />
       {
         // position=absolute takes zero layout height so the spinner

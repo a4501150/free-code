@@ -1,4 +1,10 @@
-import { useState, useRef, useCallback, useDeferredValue } from 'react'
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useDeferredValue,
+} from 'react'
 import type {
   Message as MessageType,
   HookResultMessage,
@@ -11,20 +17,40 @@ import {
   type ContentReplacementRecord,
 } from '../../utils/toolResultStorage.js'
 import { useDeferredHookMessages } from '../useDeferredHookMessages.js'
+import type { SessionCore } from '../../session/SessionCore.js'
 
+const TRANSCRIPT_EVENT_TYPES = new Set<string>([
+  'transcript_appended',
+  'transcript_progress_replaced',
+  'transcript_replaced',
+  'transcript_removed',
+])
+
+/**
+ * The React projection of the session core's transcript.
+ *
+ * The core (created by the host hook and owning the transcript array) is
+ * the truth; this hook holds the render state, the synchronous ref readers
+ * kept by half the REPL screen, and the optimistic-prompt bookkeeping that
+ * tells "your message is on screen, the reply has not started" apart from a
+ * finished turn. Every transcript write — the core's own loop or a host
+ * call through the `setMessages` facade — lands on the core first and
+ * arrives back here as an announced event, so no path can render a state
+ * the core does not hold.
+ */
 export function useReplMessages({
+  core,
   initialMessages,
   initialContentReplacements,
   pendingHookMessages,
-  publishTranscript,
 }: {
+  core: SessionCore
   initialMessages?: MessageType[]
   initialContentReplacements?: ContentReplacementRecord[]
   pendingHookMessages?: Promise<HookResultMessage[]>
-  publishTranscript?: () => void
 }) {
   const [messages, rawSetMessages] = useState<MessageType[]>(
-    initialMessages ?? [],
+    () => core.getMessages() as MessageType[],
   )
   const messagesRef = useRef(messages)
 
@@ -33,19 +59,17 @@ export function useReplMessages({
   >(undefined)
   const userInputBaselineRef = useRef(0)
   const userMessagePendingRef = useRef(false)
+  const projectedRef = useRef(messages)
 
-  // Wrap setMessages so messagesRef is always current the instant the
-  // call returns — not when React later processes the batch. Apply the
-  // updater eagerly against the ref, then hand React the computed value
-  // (not the function). rawSetMessages batching becomes last-write-wins,
-  // and the last write is correct because each call composes against the
-  // already-updated ref. This is the Zustand pattern: ref is source of
-  // truth, React state is the render projection.
-  const setMessages = useCallback(
-    (action: React.SetStateAction<MessageType[]>) => {
-      const prev = messagesRef.current
-      const next =
-        typeof action === 'function' ? action(messagesRef.current) : action
+  useEffect(() => {
+    return core.subscribe(event => {
+      if (!TRANSCRIPT_EVENT_TYPES.has(event.type)) return
+      const next = core.getMessages() as MessageType[]
+      const prev = projectedRef.current
+      // One transcript write can announce several events (an append batch,
+      // a replacement plus its removals); the projection updates once, on
+      // the first, and the rest see an unchanged array.
+      if (next === prev) return
       messagesRef.current = next
       if (next.length < userInputBaselineRef.current) {
         userInputBaselineRef.current = 0
@@ -61,11 +85,23 @@ export function useReplMessages({
           userInputBaselineRef.current = next.length
         }
       }
+      projectedRef.current = next
       rawSetMessages(next)
-      publishTranscript?.()
-    },
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+  }, [core])
+
+  // The host-side write facade, unchanged in shape for its many callers:
+  // resolve the updater against the core's live transcript and hand the
+  // whole result back to the core, which announces it (so this hook's own
+  // subscriber performs the render update).
+  const setMessages = useCallback(
+    (action: React.SetStateAction<MessageType[]>) => {
+      const prev = core.getMessages() as MessageType[]
+      const next = typeof action === 'function' ? action(prev) : action
+      core.replaceMessages(next, 'edit')
+    },
+    [core],
   )
 
   const setUserInputOnProcessing = useCallback((input: string | undefined) => {
@@ -108,6 +144,7 @@ export function useReplMessages({
   }
 
   return {
+    core,
     messages,
     messagesRef,
     setMessages,

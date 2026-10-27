@@ -1,15 +1,19 @@
 /**
- * React shim over the framework-free view store; the reducer and the store
- * itself live in src/session/viewStore.ts so non-React hosts can share them.
+ * The web client's view store: the shared framework-free reducer
+ * (`src/session/viewStore.ts`, which the TUI client uses too) wrapped in
+ * React's external-store contract. The reducer and the store live in the
+ * session module; only this hook is React.
  */
 import { useSyncExternalStore } from 'react'
 import type { SessionView, ViewStore } from '../../session/viewStore.js'
 
-export type { SessionView, ViewStore } from '../../session/viewStore.js'
 export {
   applyEvent,
   createViewStore,
   emptyView,
+  type PermissionEntry,
+  type SessionView,
+  type ViewStore,
 } from '../../session/viewStore.js'
 
 export function useViewStore(store: ViewStore): SessionView {

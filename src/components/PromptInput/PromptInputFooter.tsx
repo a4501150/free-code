@@ -48,6 +48,9 @@ type Props = {
    * scroll-repin gotcha in CLAUDE.md for the matching ScrollBox path.
    */
   conversationId: string
+  /** Hosted viewer: render the statusline panel only — the session-side
+   *  driver owns `statusLineText`. Forwarded to `StatusLine`. */
+  statuslinePassive?: boolean
 }
 
 function PromptInputFooter({
@@ -67,6 +70,7 @@ function PromptInputFooter({
   historyFailedMatch,
   onOpenTasksDialog,
   conversationId,
+  statuslinePassive,
 }: Props): ReactNode {
   const settings = useSettings()
   const { columns, rows } = useTerminalSize()
@@ -120,6 +124,7 @@ function PromptInputFooter({
                 messagesRef={messagesRef}
                 lastAssistantMessageId={lastAssistantMessageId}
                 vimMode={vimMode}
+                passive={statuslinePassive}
               />
             )}
           <PromptInputFooterLeftSide

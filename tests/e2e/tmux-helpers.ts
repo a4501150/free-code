@@ -75,6 +75,13 @@ export interface TmuxSessionOptions {
    * installed, so tests need a different idle marker.
    */
   readyText?: string
+  /**
+   * Launch on the hosted path (wire viewer over an in-process sessiond),
+   * the default `claude` startup. Without this the harness injects
+   * `--classic` so REPL-pixel assertions keep exercising the in-process
+   * screen they were written against.
+   */
+  hostedTui?: boolean
 }
 
 export class TmuxSession {
@@ -91,6 +98,7 @@ export class TmuxSession {
   private _height: number
   private _additionalEnv: Record<string, string>
   private _additionalArgs: string[]
+  private _hostedTui: boolean
   private _settings: Record<string, unknown>
   private _reuseConfigDir?: string
   private _reuseHomeDir?: string
@@ -110,7 +118,18 @@ export class TmuxSession {
     this._width = options.width ?? 120
     this._height = options.height ?? 40
     this._additionalEnv = options.additionalEnv ?? {}
-    this._additionalArgs = options.additionalArgs ?? []
+    // The hosted cutover made the wire viewer the default startup; pane
+    // assertions written against the in-process REPL opt into `--classic`
+    // by default here. A leading subcommand (attach, web, doctor…) is left
+    // alone — hosted/classic is a REPL-path fork, not a subcommand flag.
+    // E2E_MODE=hosted flips the default for every file unchanged — the
+    // dual-mode matrix runs the same scenarios against the hosted viewer.
+    this._hostedTui = options.hostedTui ?? process.env.E2E_MODE === 'hosted'
+    const extraArgs = options.additionalArgs ?? []
+    this._additionalArgs =
+      !this._hostedTui && (extraArgs[0]?.startsWith('-') ?? true)
+        ? ['--classic', ...extraArgs]
+        : extraArgs
     // Without an explicit statusLine, the embedded default script runs, which
     // suppresses the `? for shortcuts` hint that readyText matches by default.
     // Default-seeded settings; caller options.settings wins (spread after).
@@ -127,6 +146,8 @@ export class TmuxSession {
     }
     this._reuseConfigDir = options.reuseConfigDir
     this._reuseHomeDir = options.reuseHomeDir
+    // Pane-parity made the hosted viewer's idle footer the classic's
+    // `? for shortcuts`, so both paths can wait on the same marker.
     this._readyText = options.readyText ?? 'for shortcuts'
     this._cliBinary = options.cliBinary ?? CLI_BINARY
   }
@@ -178,9 +199,20 @@ export class TmuxSession {
     this.logFile = join(this.configDir, `tmux-output-${this.sessionName}.log`)
 
     // Pre-seed global config to skip trust dialogs.
+    // The bundled agent-browser sidecar connects asynchronously, so its
+    // mcp_tools/mcp_instructions announces race the first prompt and the
+    // request body differs run to run. No pane scenario exercises the web
+    // tools; a test that needs them clears this from its own project entry.
+    // (disabledMcpServers lives in the per-project config, not freecode.json.)
     const resolvedCwd = await realpath(this._cwd)
-    const trustEntry = { hasTrustDialogAccepted: true }
-    const projects: Record<string, { hasTrustDialogAccepted: boolean }> = {
+    const trustEntry = {
+      hasTrustDialogAccepted: true,
+      disabledMcpServers: ['agent-browser'],
+    }
+    const projects: Record<
+      string,
+      { hasTrustDialogAccepted: boolean; disabledMcpServers: string[] }
+    > = {
       [this._cwd]: trustEntry,
     }
     if (resolvedCwd !== this._cwd) {
@@ -479,6 +511,12 @@ export class TmuxSession {
 
   async capturePane(): Promise<string> {
     return runTmux(['capture-pane', '-t', this.sessionName, '-p'])
+  }
+
+  /** ANSI-sensitive capture (-e keeps SGR escapes): text-only captures
+   *  cannot see color/attribute differences, which are parity bugs too. */
+  async capturePaneAnsi(): Promise<string> {
+    return exec(`tmux capture-pane -t ${this.sessionName} -p -e`)
   }
 
   async capturePaneWithHistory(lines = 1000): Promise<string> {

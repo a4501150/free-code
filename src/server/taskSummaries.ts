@@ -1,31 +1,31 @@
 /**
- * Shared AppState → WebTaskSummary mapping and task control helpers.
+ * Shared AppState → WireTask mapping and task control helpers.
  *
- * Both attach runtimes (the REPL bridge and the headless bridge) own an
- * AppState, so the mapping lives here once rather than twice. Keep this
+ * Every host that serves a task panel (the REPL bridge, the headless bridge,
+ * sessiond) owns an AppState, so the mapping lives here once. Keep this
  * module free of React and of anything that renders.
  */
+import { closeSync, fstatSync, openSync, readSync } from 'fs'
+import { isTerminalTaskStatus } from '../Task.js'
 import type { AppState } from '../state/AppStateStore.js'
 import type { AgentId } from '../types/ids.js'
-import type { Message } from '../types/message.js'
-import { isTerminalTaskStatus } from '../Task.js'
 import type { TaskState } from '../tasks/types.js'
 import { stopTask } from '../tasks/stopTask.js'
-import { getAgentTranscript } from '../utils/sessionStorage.js'
-import type { WebTaskSummary } from '../webui/protocol/attachSchemas.js'
+import { getTaskOutputTail } from '../utils/task/diskOutput.js'
+import type { WireTask, WireTaskOutput } from '../session/wire.js'
 
 /**
  * The main session registers itself as a `local_agent` task so the terminal's
- * panel can treat it uniformly. It is not a subagent, so the browser list
- * drops it — the same exclusion `isPanelAgentTask` makes in the TUI.
+ * panel can treat it uniformly. It is not a subagent, so the wire list drops
+ * it — the same exclusion `isPanelAgentTask` makes in the TUI.
  */
-function isWebVisibleTask(task: TaskState): boolean {
+function isWireVisibleTask(task: TaskState): boolean {
   return !(task.type === 'local_agent' && task.agentType === 'main-session')
 }
 
 function findAgentName(
   appState: AppState,
-  agentId: string,
+  agentId: AgentId,
 ): string | undefined {
   for (const [name, id] of appState.agentNameRegistry ?? []) {
     if (id === agentId) return name
@@ -33,15 +33,51 @@ function findAgentName(
   return undefined
 }
 
-export function buildWebTaskSummary(
+/** The last bytes of a shell's output, read fresh so no stale tail exists. */
+function readOutputTail(path: string | undefined): string | undefined {
+  if (!path) return undefined
+  try {
+    const fd = openSync(path, 'r')
+    try {
+      const size = fstatSync(fd).size
+      if (size === 0) return undefined
+      const len = Math.min(size, 1024)
+      const buffer = Buffer.alloc(len)
+      readSync(fd, buffer, 0, len, size - len)
+      const text = buffer.toString('utf8')
+      // Start at a line boundary; a clipped first line reads as garbage.
+      const firstBreak = text.indexOf('\n')
+      return firstBreak === -1 || firstBreak === text.length - 1
+        ? text
+        : text.slice(firstBreak + 1)
+    } finally {
+      closeSync(fd)
+    }
+  } catch {
+    // A task whose output file is gone has nothing to tail.
+    return undefined
+  }
+}
+
+/**
+ * One background task as the wire sees it: the display fields of `TaskState`
+ * and its variants, with nothing that would drag live objects (messages,
+ * abort controllers) across the socket.
+ *
+ * `outputTail` is read only for shells, and only the last kilobyte: agents'
+ * output files are full JSONL transcripts (tailing one puts a wall of raw
+ * records in a status row), and reading whole files on every publish would
+ * make the panel the most expensive thing on the wire.
+ */
+export function buildWireTaskSummary(
   task: TaskState,
   appState: AppState,
-): WebTaskSummary {
-  const summary: WebTaskSummary = {
+): WireTask {
+  const summary: WireTask = {
     id: task.id,
-    taskType: task.type,
-    status: task.status,
+    kind: task.type,
     description: task.description,
+    status: task.status,
     startTime: task.startTime,
     ...(task.endTime ? { endTime: task.endTime } : {}),
     ...(task.toolUseId ? { toolUseId: task.toolUseId } : {}),
@@ -50,9 +86,10 @@ export function buildWebTaskSummary(
     summary.command = task.command
   }
   if (task.type === 'local_agent') {
+    summary.agentId = task.agentId
     summary.agentType = task.agentType
     if (task.model) summary.model = task.model
-    const name = findAgentName(appState, task.agentId)
+    const name = findAgentName(appState, task.agentId as AgentId)
     if (name) summary.name = name
     if (task.progress) {
       summary.toolUseCount = task.progress.toolUseCount
@@ -61,60 +98,46 @@ export function buildWebTaskSummary(
     const pending = task.pendingMessages?.length
     if (pending) summary.pendingCount = pending
   }
-  if (task.type === 'local_bash' && task.result?.code !== undefined) {
-    summary.exitCode = task.result.code
+  if (task.type === 'local_bash') {
+    summary.command = task.command
+    const tail = readOutputTail(task.outputFile)
+    if (tail !== undefined) summary.outputTail = tail
+    if (task.result?.code !== undefined) summary.exitCode = task.result.code
   }
   return summary
 }
 
-export function buildWebTaskSummaries(appState: AppState): WebTaskSummary[] {
-  const tasks = appState.tasks ?? {}
-  const out: WebTaskSummary[] = []
-  for (const task of Object.values(tasks)) {
-    if (isWebVisibleTask(task)) out.push(buildWebTaskSummary(task, appState))
+/**
+ * One task's output tail for the browser viewer. The id is looked up in the
+ * session's own tasks first, which both answers "gone from the session" and
+ * keeps an attacker-shaped route param from naming any file on the host.
+ */
+export async function buildWireTaskOutput(
+  appState: AppState,
+  taskId: string,
+  tailBytes: number,
+): Promise<WireTaskOutput | null> {
+  const task = appState.tasks?.[taskId]
+  if (!task) return null
+  const tail = await getTaskOutputTail(taskId, tailBytes)
+  return {
+    content: tail.content,
+    offset: tail.offset,
+    bytesTotal: tail.bytesTotal,
+    done: isTerminalTaskStatus(task.status),
+  }
+}
+
+/** The panel list: visible tasks, newest first. */
+export function buildWireTaskSummaries(appState: AppState): WireTask[] {
+  const out: WireTask[] = []
+  for (const task of Object.values(appState.tasks ?? {})) {
+    if (isWireVisibleTask(task)) out.push(buildWireTaskSummary(task, appState))
   }
   // Newest first: the list reads like a timeline, and a long-running old
   // task must not push today's agents off the bottom of the panel.
-  out.sort((a, b) => b.startTime - a.startTime)
+  out.sort((a, b) => (b.startTime ?? 0) - (a.startTime ?? 0))
   return out
-}
-
-export type TaskTranscriptMessages = {
-  messages: readonly Message[]
-}
-
-/**
- * The transcript behind one task.
- *
- * Running agents keep their chain in memory (streaming, no disk lag); once a
- * task is evicted the sidechain JSONL on disk is the only copy, which is why
- * this must work from disk too. Returns null for a task that has no
- * transcript (a shell, a monitor, or an agent that wrote nothing).
- */
-export async function getTaskTranscriptMessages(
-  appState: AppState,
-  taskId: string,
-): Promise<TaskTranscriptMessages | null> {
-  const task = appState.tasks?.[taskId]
-  if (!task) return null
-  // `TaskState` has no remote_agent variant today: a remote agent's chain
-  // lives in another process, and only its host would be able to read it.
-  if (task.type !== 'local_agent') {
-    return null
-  }
-  if (task.messages?.length) {
-    return { messages: task.messages }
-  }
-  const disk = await getAgentTranscript(task.agentId as AgentId, {
-    includePreCompactHistory: true,
-  })
-  return disk ? { messages: disk.messages } : { messages: [] }
-}
-
-/** True once the task will not transition further. */
-export function isTaskDone(appState: AppState, taskId: string): boolean {
-  const task = appState.tasks?.[taskId]
-  return task ? isTerminalTaskStatus(task.status) : true
 }
 
 /**

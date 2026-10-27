@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import type { WebTaskSummary } from '../../protocol/attachSchemas.js'
+import type { WireTask } from '../../../session/wire.js'
 
-/** What the shell/monitor viewer holds while the task streams. */
+/** What the shell/monitor viewer holds while the task output is polled. */
 export type ShellOutputState = {
-  /** Seed tail plus every `task_output` append received since. */
+  /** The newest output tail read; every poll replaces it whole. */
   text: string
-  /** Task terminal: no further frames will arrive. */
+  /** Task terminal: no further appends will arrive. */
   done: boolean
-  /** The seed failed because the task is no longer in the session. */
+  /** The read failed because the task is no longer in the session. */
   gone: boolean
-  /** The seed read is still in flight. */
+  /** The first read is still in flight. */
   loading: boolean
 }
 
-function isRunning(task: WebTaskSummary | undefined): boolean {
+function isRunning(task: WireTask | undefined): boolean {
   return !task || (task.status !== 'completed' && task.status !== 'failed')
 }
 
@@ -34,7 +34,7 @@ export function TaskOutputView({
   onKillTask,
 }: {
   taskId: string
-  task: WebTaskSummary | undefined
+  task: WireTask | undefined
   state: ShellOutputState
   onKillTask(taskId: string): void
 }): React.ReactElement {

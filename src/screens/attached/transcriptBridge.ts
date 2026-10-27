@@ -1,0 +1,607 @@
+/**
+ * Wire items in, renderable transcript units out.
+ *
+ * The viewer renders the same components the classic REPL renders — the
+ * gap is not the look, it's the input: the REPL feeds them internal
+ * Message objects, while the wire flattens each message into one item per
+ * content block. This bridge rebuilds Message-shaped inputs from those
+ * items so `<Message>` can render them unchanged, and encodes the two
+ * policy decisions the viewer makes over the flat stream: assistant blocks
+ * that came from one provider response regroup into one message (so the
+ * tool cards' sibling lookups work), and injected-context rows are flagged
+ * so the transcript can render them the classic way — collapsed by default,
+ * expanded under showInjectedContext.
+ *
+ * Pure: no JSX, no Ink — the unit test runs it like any reducer.
+ */
+import type { UUID } from 'crypto'
+import type { Tools } from '../../Tool.js'
+import type {
+  DomainToolResultBlockParam,
+  DomainToolUseBlock,
+  DomainUserTextBlock,
+} from '../../types/domain.js'
+import type {
+  AssistantMessage,
+  Message,
+  NormalizedAssistantMessage,
+  NormalizedMessage,
+  ProgressMessage,
+  RenderableMessage,
+  UserMessage,
+} from '../../types/message.js'
+import {
+  buildMessageLookups,
+  deriveUUID,
+  formatCommandInputTags,
+  isNotEmptyMessage,
+  normalizeMessages,
+  reorderMessagesInUI,
+  type MessageLookups,
+} from '../../utils/messages.js'
+import { applyGrouping } from '../../utils/groupToolUses.js'
+import { collapseReadSearchGroups } from '../../utils/collapseReadSearch.js'
+import { collapseHookSummaries } from '../../utils/collapseHookSummaries.js'
+import { collapseBackgroundBashNotifications } from '../../utils/collapseBackgroundBashNotifications.js'
+import { renderTaskNotificationBlock } from '../../utils/task/notification.js'
+import { MONITOR_OUTPUT_TAG } from '../../constants/xml.js'
+import type { WireItem, WireTranscriptSnapshot } from '../../session/wire.js'
+
+/**
+ * Attachment types that exist to show the model something the user did not
+ * type. Like the classic REPL, the viewer shows these as collapsed
+ * reminder rows and expands them under showInjectedContext (ctrl+O, the
+ * transcript's own affordance). Kept aligned with TYPES_WITHOUT_SUMMARY_LINE
+ * in components/messages/attachmentVisibility.ts — the same rows that
+ * contribute no summary line of their own.
+ */
+export const INJECTED_CONTEXT_TYPES: ReadonlySet<string> = new Set([
+  'user_context_snapshot',
+  'user_context_delta',
+  'mcp_tools_delta',
+  'mcp_instructions_delta',
+  'session_guidance',
+  'git_instructions',
+  'skill_listing',
+  'agent_listing_delta',
+  'invoked_skills',
+  'assistant_mode',
+  'token_usage',
+  'plan_mode',
+  'plan_mode_exit',
+  'plan_mode_reentry',
+  'auto_mode',
+  'auto_mode_exit',
+  'date_change',
+  'current_session_memory',
+])
+
+export function isInjectedContextItem(item: WireItem): boolean {
+  return (
+    item.kind === 'attachment' &&
+    INJECTED_CONTEXT_TYPES.has(item.attachment?.type ?? '')
+  )
+}
+
+export type TranscriptUnit =
+  /** A synthetic internal message to hand to <Message>. */
+  | {
+      kind: 'message'
+      message: UserMessage | AssistantMessage
+      itemIds: string[]
+      /**
+       * The classic pipeline's output rows this unit renders — the unit's
+       * own message after grouping/collapsing, possibly merged into a
+       * sibling group that starts at this unit. Absent only when the
+       * caller passed no tools (nothing to group against).
+       */
+      rows?: RenderableMessage[]
+    }
+  /**
+   * An attachment row. Injected-context rows render as the classic
+   * collapsed `▸ System reminder · …` disclosure (Expanded under
+   * showInjectedContext); everything else keeps the viewer-native row.
+   */
+  | { kind: 'attachment'; item: WireItem; injected: boolean }
+  /**
+   * A system row. Compact seams render as the viewer's native divider;
+   * local-command output (subtype local_command) renders through the
+   * classic component, mirroring Message.tsx's dispatch for it.
+   */
+  | { kind: 'system'; item: WireItem }
+  /** A live-progress row, hung under the tool it belongs to. */
+  | { kind: 'progress'; item: WireItem; progress: ProgressMessage }
+
+export type BridgedTranscript = {
+  units: TranscriptUnit[]
+  /**
+   * Over every synthetic message, so tool cards can resolve their calls,
+   * resolved/errored states and siblings exactly as in the REPL.
+   */
+  lookups: MessageLookups
+  /** Normalized single-block rows, in stream order — what to render. */
+  rows: NormalizedMessage[]
+  /**
+   * The in-flight tool cards from the stream draft, rendered through the
+   * same grouping/collapsing pipeline the committed rows take — the
+   * classic pane appends streaming tool-use partials to the message list,
+   * so this is that tail, already collapsed where the classic would
+   * collapse it.
+   */
+  draftRows: RenderableMessage[]
+}
+
+/** A streaming tool-use partial from the wire's `stream` draft. */
+export type DraftToolInput = {
+  toolName?: string
+  toolUseId?: string
+  partialJson: string
+}
+
+type AssistantDraft = {
+  message: AssistantMessage
+  itemIds: string[]
+}
+
+export function bridgeTranscript(
+  snapshot: WireTranscriptSnapshot,
+  showInjectedContext: boolean,
+  tools: Tools = [],
+  draftTools: DraftToolInput[] = [],
+  /** The session's `--verbose`: like the classic pipeline, grouping is
+   *  skipped and collapsed-notification rows expand, so every tool_result
+   *  (a classifier deny included) renders inline at its own position. */
+  verbose = false,
+): BridgedTranscript {
+  const units: TranscriptUnit[] = []
+  const messages: (UserMessage | AssistantMessage)[] = []
+  /** Parallel to `messages`: the wire items each synthetic message was built from. */
+  const messageItemIds: string[][] = []
+  // Tool results arrive after their call; hold the block until the unit is
+  // emitted so the row order matches the stream.
+  let openAssistant: AssistantDraft | null = null
+
+  const flushAssistant = (): void => {
+    if (!openAssistant) return
+    units.push({
+      kind: 'message',
+      message: openAssistant.message,
+      itemIds: openAssistant.itemIds,
+    })
+    messages.push(openAssistant.message)
+    messageItemIds.push(openAssistant.itemIds)
+    openAssistant = null
+  }
+
+  const assistantFor = (item: WireItem): AssistantDraft => {
+    // Sibling calls from one provider response share a messageId: they
+    // regroup into one assistant message, which is what the tool cards'
+    // sibling/in-progress lookups key on.
+    if (
+      openAssistant &&
+      item.messageId &&
+      openAssistant.message.message.id === item.messageId
+    ) {
+      return openAssistant
+    }
+    flushAssistant()
+    const draft: AssistantDraft = {
+      message: {
+        type: 'assistant',
+        uuid: item.id as string as UUID,
+        timestamp: item.timestamp,
+        agentId: item.agentId,
+        message: {
+          id: item.messageId ?? (item.id as string),
+          type: 'message',
+          role: 'assistant',
+          content: [],
+          model: item.model ?? '',
+          stop_reason: null,
+          stop_sequence: null,
+          // The wire carries no usage per block; the renderer reads usage
+          // only for rate-limit copy, which a viewer learns from meta.
+          usage: {} as AssistantMessage['message']['usage'],
+        },
+      },
+      itemIds: [],
+    }
+    openAssistant = draft
+    return draft
+  }
+
+  const userMessage = (
+    item: WireItem,
+    content: DomainToolResultBlockParam | DomainUserTextBlock,
+  ): UserMessage => ({
+    type: 'user',
+    uuid: item.id as string as UUID,
+    timestamp: item.timestamp,
+    isMeta: item.isMeta,
+    isSidechain: item.isSidechain,
+    // The structured result must ride to the renderer: the classic result
+    // bodies (Bash output lines, Edit diffs) render from toolUseResult,
+    // and UserToolSuccessMessage renders nothing without it.
+    toolUseResult: item.toolUseResult,
+    message: { role: 'user', content: [content] },
+  })
+
+  for (const id of snapshot.order) {
+    const item = snapshot.items.find(candidate => candidate.id === id)
+    if (!item) continue
+
+    switch (item.kind) {
+      case 'user': {
+        flushAssistant()
+        if (!item.text && !item.image) continue
+        // A slash-command invocation row: rebuild the synthetic tag form
+        // the session stripped for transport, so the classic dispatcher
+        // routes it to UserCommandMessage — the REPL's `❯ /name args` row.
+        const text = item.commandInput
+          ? formatCommandInputTags(
+              item.commandInput.name,
+              item.commandInput.args ?? '',
+            )
+          : (item.text ?? '')
+        const message = userMessage(item, {
+          type: 'text',
+          text,
+        })
+        // The classic display filter (Messages.tsx runs isNotEmptyMessage
+        // over its normalized list): synthetic rows like the
+        // `[Request interrupted by user for tool use]` interrupt marker
+        // render nothing in the REPL — drop them here too, or the viewer
+        // paints an `Interrupted` row the classic pane never shows.
+        if (!isNotEmptyMessage(message)) continue
+        units.push({ kind: 'message', message, itemIds: [item.id] })
+        messages.push(message)
+        messageItemIds.push([item.id])
+        continue
+      }
+      case 'notification': {
+        // The wire ships the parsed <task-notification> block (raw XML
+        // stays server-side for the card renderers); rebuild the block from
+        // the fields so the classic notification components and the
+        // collapse transform receive the same text the REPL feeds them.
+        flushAssistant()
+        const notice = item.notification
+        if (!notice) continue
+        const extraSections =
+          (notice.result ? `\n<result>${notice.result}</result>` : '') +
+          (notice.usage
+            ? `\n<usage><total_tokens>${notice.usage.totalTokens ?? 0}</total_tokens><tool_uses>${notice.usage.toolUses ?? 0}</tool_uses><duration_ms>${notice.usage.durationMs ?? 0}</duration_ms></usage>`
+            : '') +
+          (notice.outputTail
+            ? `\n<${MONITOR_OUTPUT_TAG}>\n${notice.outputTail}\n</${MONITOR_OUTPUT_TAG}>`
+            : '')
+        const text =
+          notice.raw ??
+          renderTaskNotificationBlock({
+            taskId: notice.taskId ?? '',
+            summary: notice.summary,
+            ...(notice.status !== undefined ? { status: notice.status } : {}),
+            ...(notice.toolUseId !== undefined
+              ? { toolUseId: notice.toolUseId }
+              : {}),
+            ...(notice.taskType !== undefined
+              ? { taskType: notice.taskType }
+              : {}),
+            ...(extraSections ? { extraSections } : {}),
+          })
+        const noticeMessage = userMessage(item, { type: 'text', text })
+        units.push({
+          kind: 'message',
+          message: noticeMessage,
+          itemIds: [item.id],
+        })
+        messages.push(noticeMessage)
+        messageItemIds.push([item.id])
+        continue
+      }
+      case 'assistant': {
+        if (!item.text) continue
+        const draft = assistantFor(item)
+        draft.message.message.content.push({ type: 'text', text: item.text })
+        draft.itemIds.push(item.id)
+        continue
+      }
+      case 'reasoning': {
+        if (!item.text) continue
+        const draft = assistantFor(item)
+        draft.message.message.content.push({
+          type: 'reasoning',
+          text: item.text,
+        })
+        // The dispatcher reads durationMs off the message, as in the REPL.
+        if (item.durationMs !== undefined) {
+          ;(draft.message as Record<string, unknown>).thinkingDurationMs =
+            item.durationMs
+        }
+        draft.itemIds.push(item.id)
+        continue
+      }
+      case 'tool_use': {
+        const draft = assistantFor(item)
+        const block: DomainToolUseBlock = {
+          type: 'tool_use',
+          id: item.toolUseId ?? item.id,
+          name: item.toolName ?? 'tool',
+          input: item.toolInput ?? {},
+        }
+        draft.message.message.content.push(block)
+        draft.itemIds.push(item.id)
+        continue
+      }
+      case 'tool_result': {
+        flushAssistant()
+        const block: DomainToolResultBlockParam = {
+          type: 'tool_result',
+          tool_use_id: item.toolUseId ?? '',
+          content: item.text ?? '',
+          is_error: item.isError,
+        }
+        const message = userMessage(item, block)
+        units.push({ kind: 'message', message, itemIds: [item.id] })
+        messages.push(message)
+        messageItemIds.push([item.id])
+        continue
+      }
+      case 'progress': {
+        flushAssistant()
+        units.push({
+          kind: 'progress',
+          item,
+          progress: {
+            type: 'progress',
+            uuid: item.id as string as UUID,
+            timestamp: item.timestamp,
+            toolUseID: item.progress?.toolUseId ?? '',
+            data: (item.progress?.data ?? {}) as ProgressMessage['data'],
+          },
+        })
+        continue
+      }
+      case 'system': {
+        flushAssistant()
+        if (item.isMeta) continue
+        units.push({ kind: 'system', item })
+        continue
+      }
+      case 'attachment': {
+        flushAssistant()
+        // Classic's exact visibility rule, mirrored: a row shows only when
+        // the attachment is wrapped in a system reminder (the host derived
+        // `reminder` from the same function the REPL uses), and injected
+        // rows show only while showInjectedContext is on (the REPL's
+        // prefilter). user_context_snapshot/delta carry no reminder
+        // wrapper — the classic pane shows their content as the rebuilt
+        // `Session context` row instead, so they render nothing here.
+        if (isInjectedContextItem(item)) {
+          if (!showInjectedContext || !item.attachment?.reminder) continue
+          units.push({ kind: 'attachment', item, injected: true })
+          continue
+        }
+        units.push({ kind: 'attachment', item, injected: false })
+        continue
+      }
+      default: {
+        // Kinds this viewer does not place yet: ignore, as every wire
+        // reader is required to.
+        void (item satisfies WireItem)
+      }
+    }
+  }
+  flushAssistant()
+
+  const rows = normalizeMessages(messages as (UserMessage | AssistantMessage)[])
+  const lookups = buildMessageLookups(rows, messages)
+
+  // ── The classic display pipeline ─────────────────────────────────────
+  // Reorder (results ride their calls), group, collapse read/search/bash
+  // runs — the same passes Messages runs, so a tool run the classic pane
+  // folds into one `Ran N bash commands` row folds here too, and a
+  // streaming draft tool block rides the list like the REPL's synthetic
+  // streaming messages. Without this the viewer shows raw per-call rows
+  // the classic pane never paints.
+
+  // Streaming partials become single-block assistant messages, normalized
+  // on their own (fresh chain) — the classic normalizeMessages([msg])
+  // shape for streaming tool uses. The partial JSON is mined for complete
+  // scalar fields; the card header summarizes from what has landed.
+  // A block whose call has COMMITTED to the transcript renders as its
+  // committed card, not the draft card it streamed through: the wire's
+  // draft lists every block the turn streamed, and patches retire only the
+  // committed ones. Retiring here (not by dropping the whole draft at each
+  // patch) is what keeps the tail free of a bottom-edge shrink — and its
+  // viewport clamp — every time a tool call lands.
+  const committedToolUseIds = new Set<string>()
+  for (const item of snapshot.items) {
+    if (item.kind === 'tool_use') {
+      committedToolUseIds.add(item.toolUseId ?? item.id)
+    }
+  }
+  const syntheticRows: NormalizedAssistantMessage[] = draftTools.flatMap(
+    (tool, at) => {
+      if (tool.toolUseId && committedToolUseIds.has(tool.toolUseId)) return []
+      const id = tool.toolUseId ?? `draft-tool-${at}`
+      const block: DomainToolUseBlock = {
+        type: 'tool_use',
+        id,
+        name: tool.toolName ?? 'tool',
+        input: parsePartialToolInput(tool.partialJson),
+      }
+      const msg: AssistantMessage = {
+        type: 'assistant',
+        uuid: id as string as UUID,
+        timestamp: new Date(0).toISOString(),
+        message: {
+          id,
+          type: 'message',
+          role: 'assistant',
+          content: [block],
+          model: '',
+          stop_reason: null,
+          stop_sequence: null,
+          usage: {} as AssistantMessage['message']['usage'],
+        },
+      }
+      return normalizeMessages([msg])
+    },
+  )
+
+  // The bridge builds no progress/attachment rows, so every normalized row
+  // is already groupable. The reorder pairs each result row with its call
+  // (wire order puts them in runs, not pairs), then streaming partials are
+  // appended at the tail like the REPL's synthetic messages.
+  const visible = reorderMessagesInUI(rows, syntheticRows)
+  const { messages: grouped } = applyGrouping(visible, tools, verbose)
+  const uiRows: RenderableMessage[] = collapseBackgroundBashNotifications(
+    collapseHookSummaries(collapseReadSearchGroups(grouped, tools)),
+    verbose,
+  )
+
+  // Map every row uuid back to the wire item it came from. Replicates
+  // normalizeMessages' deterministic uuid derivation: a multi-block
+  // message switches the chain to deriveUUID(parent, blockIndex).
+  const uuidToItem = new Map<string, string>()
+  let isNewChain = false
+  messages.forEach((message, index) => {
+    const itemIds = messageItemIds[index] ?? []
+    if (message.type === 'assistant') {
+      isNewChain = isNewChain || message.message.content.length > 1
+      message.message.content.forEach((_block, blockIndex) => {
+        const uuid = isNewChain
+          ? deriveUUID(message.uuid, blockIndex)
+          : message.uuid
+        uuidToItem.set(String(uuid), itemIds[blockIndex] ?? itemIds[0] ?? '')
+      })
+      return
+    }
+    const content = Array.isArray(message.message.content)
+      ? message.message.content
+      : [{}]
+    isNewChain = isNewChain || content.length > 1
+    content.forEach((_block, blockIndex) => {
+      const uuid = isNewChain
+        ? deriveUUID(message.uuid, blockIndex)
+        : message.uuid
+      uuidToItem.set(String(uuid), itemIds[0] ?? '')
+    })
+  })
+  for (const row of syntheticRows) uuidToItem.set(String(row.uuid), '')
+
+  // Attribute each output row to the unit that starts it: the earliest
+  // wire item the row covers (draft rows have no unit — they render
+  // after the transcript, where the classic appends streaming blocks).
+  const orderPos = new Map<string, number>()
+  snapshot.order.forEach((id, index) => orderPos.set(id, index))
+  const coveredAnchor = (
+    row: RenderableMessage,
+  ): { itemId: string; pos: number } | undefined => {
+    const nested = (row as { messages?: { uuid: string }[] }).messages
+    const uuids = nested ? nested.map(m => String(m.uuid)) : [String(row.uuid)]
+    let best: { itemId: string; pos: number } | undefined
+    for (const uuid of uuids) {
+      const itemId = uuidToItem.get(uuid)
+      if (itemId === undefined || itemId === '') continue
+      const pos = orderPos.get(itemId) ?? Number.MAX_SAFE_INTEGER
+      if (!best || pos < best.pos) best = { itemId, pos }
+    }
+    return best
+  }
+  const unitByItemId = new Map<
+    string,
+    Extract<TranscriptUnit, { kind: 'message' }>
+  >()
+  for (const unit of units) {
+    if (unit.kind === 'message')
+      for (const id of unit.itemIds) unitByItemId.set(id, unit)
+  }
+  const draftRows: RenderableMessage[] = []
+  // Items a row covers, keyed by the item that OWNS the row (its anchor).
+  // The classic pane renders the flat pipeline list, so a message absorbed
+  // into a group simply has no row of its own; here an absorbed unit must
+  // render nothing — not the raw fallback row, which would duplicate the
+  // group's content (the classifier-denied pill riding outside its
+  // `Ran N bash commands` group, visible through the collapsed view).
+  const coveredBy = new Map<string, string>()
+  for (const row of uiRows) {
+    const anchor = coveredAnchor(row)
+    const target = anchor ? unitByItemId.get(anchor.itemId) : undefined
+    if (target) (target.rows ??= []).push(row)
+    else draftRows.push(row)
+    if (!anchor) continue
+    // A grouped row also covers the result messages riding in its
+    // `results` — applyGrouping attaches them there and drops their
+    // standalone rows, so a unit whose only item is such a result owns
+    // no row of its own. Without this it falls back to its raw normalized
+    // message and the result renders twice (the backgrounded-agent row
+    // under its own agent card).
+    const nested = row as {
+      messages?: { uuid: string }[]
+      results?: { uuid: string }[]
+    }
+    const uuids = nested.messages
+      ? [
+          ...nested.messages.map(m => String(m.uuid)),
+          ...(nested.results ?? []).map(m => String(m.uuid)),
+        ]
+      : [String(row.uuid)]
+    for (const uuid of uuids) {
+      const itemId = uuidToItem.get(uuid)
+      if (!itemId || itemId === anchor.itemId) continue
+      if (!coveredBy.has(itemId)) coveredBy.set(itemId, anchor.itemId)
+    }
+  }
+  // An item absorbed into a row owned by another unit marks its whole unit
+  // absorbed only when every item of that unit shares the absorption (or
+  // owns a row of the pipeline): a multi-block unit keeps rendering what
+  // it still owns.
+  const absorbed = new Map<
+    Extract<TranscriptUnit, { kind: 'message' }>,
+    boolean
+  >()
+  for (const [itemId, owner] of coveredBy) {
+    const unit = unitByItemId.get(itemId)
+    if (!unit) continue
+    const selfOwned = unit.itemIds.some(
+      id => !coveredBy.has(id) || coveredBy.get(id) === id,
+    )
+    const prev = absorbed.get(unit)
+    absorbed.set(unit, prev === false ? false : !selfOwned)
+  }
+  for (const [unit, isAbsorbed] of absorbed) {
+    if (isAbsorbed) unit.rows = []
+  }
+
+  return { units, lookups, rows, draftRows }
+}
+
+/**
+ * Mine a still-streaming tool input JSON for complete scalar fields — the
+ * summary a streaming card can honestly show before the block closes.
+ * A complete document parses whole; mid-stream fragments yield every
+ * `"key": "string" | number | true | false | null` pair already closed.
+ */
+function parsePartialToolInput(json: string): Record<string, unknown> {
+  try {
+    const whole = JSON.parse(json) as unknown
+    if (whole && typeof whole === 'object' && !Array.isArray(whole)) {
+      return whole as Record<string, unknown>
+    }
+  } catch {
+    // Fall through to the pair scan below.
+  }
+  const input: Record<string, unknown> = {}
+  const pair =
+    /"([^"\\]*(?:\\.[^"\\]*)*)"\s*:\s*("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)/g
+  let match: RegExpExecArray | null
+  while ((match = pair.exec(json)) !== null) {
+    try {
+      input[match[1]!] = JSON.parse(match[2]!) as unknown
+    } catch {
+      // A malformed scalar pair just isn't shown.
+    }
+  }
+  return input
+}

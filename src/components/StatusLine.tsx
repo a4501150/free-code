@@ -37,12 +37,22 @@ type Props = {
   messagesRef: React.RefObject<Message[]>
   lastAssistantMessageId: string | null
   vimMode?: VimMode
+  /**
+   * Render-only mode: the host owns `statusLineText` (the hosted viewer's
+   * sessiond/hostedStatusLine.ts driver runs the same command session-side),
+   * so every pipeline write path is disabled and this component only paints
+   * the store-driven panel. Without it the footer's empty host messages
+   * would recompute the line from a transcript that isn't there and stomp
+   * the driver's output.
+   */
+  passive?: boolean
 }
 
 function StatusLineInner({
   messagesRef,
   lastAssistantMessageId,
   vimMode,
+  passive,
 }: Props): React.ReactNode {
   const abortControllerRef = useRef<AbortController | undefined>(undefined)
   const permissionMode = useAppState(s => s.toolPermissionContext.mode)
@@ -115,6 +125,10 @@ function StatusLineInner({
 
   // Stable update function — reads latest values from refs
   const doUpdate = useCallback(async () => {
+    // Passive mode: the session-side driver is the only writer of
+    // statusLineText; every trigger path funnels here, so one guard
+    // disables the whole pipeline while the panel keeps rendering.
+    if (passive) return
     // Cancel any in-flight requests
     abortControllerRef.current?.abort()
 
@@ -166,7 +180,7 @@ function StatusLineInner({
     } catch {
       // Silently ignore errors in status line updates
     }
-  }, [messagesRef, setAppState])
+  }, [messagesRef, setAppState, passive])
 
   // Stable debounced schedule function — no deps, uses refs
   const scheduleUpdate = useCallback(() => {

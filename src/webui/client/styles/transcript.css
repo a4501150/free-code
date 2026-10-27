@@ -107,15 +107,8 @@
   color: var(--signal);
 }
 
-/* ── pending queued messages ──────────────────────────────────── */
-
-.row--user.is-pending {
-  opacity: 0.45;
-}
-
-.row--user.is-pending .row__gutter {
-  color: var(--text-faint);
-}
+/* Queued prompts left the transcript: they live in the composer's
+   addressable queued list now. */
 
 /* ── rendered markdown ─────────────────────────────────────────── */
 
@@ -598,4 +591,167 @@
   overflow-wrap: break-word;
   max-height: 18rem;
   overflow-y: auto;
+}
+
+/* ── side channels: tool progress, attachments, the compact seam ──
+   Quiet rows: same gutter rhythm as the conversation, two steps down
+   in voice, so they annotate the exchange without interrupting it. */
+
+.row--progress {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.row--progress .row__gutter {
+  color: var(--text-faint);
+  letter-spacing: 1px;
+}
+
+.row--attachment {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.row--attachment .row__label {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.row--attachment.is-edited_text_file .row__gutter {
+  color: var(--add);
+}
+
+.row--attachment.is-hook_system_message .row__gutter {
+  color: var(--signal);
+}
+
+.row--attachment.is-diagnostics .row__gutter {
+  color: var(--del);
+}
+
+.row--attachment.is-task-completed .row__label {
+  color: var(--add);
+}
+
+.row--attachment.is-task-failed .row__label,
+.row--attachment.is-task-killed .row__label {
+  color: var(--del);
+}
+
+.row--attachment.is-task-running .row__label {
+  color: var(--signal);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.row__detail {
+  margin: 0.15rem 0 0;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--rule);
+  max-height: 6.5rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.row__detail.is-mono {
+  font-family: var(--mono);
+}
+
+/* The compact seam: the transcript's horizon line. */
+.row--compact-seam {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.1rem 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.row--compact-seam .row__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+.row--compact-seam .row__seam-label {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Sidechain drill-down: the affordance on an agent card, and the panel. */
+.tool__agent {
+  margin-left: auto;
+  border: 1px solid var(--rule);
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  padding: 0 0.4rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.tool__agent:hover {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+
+.agent-panel {
+  position: fixed;
+  top: var(--topbar-block);
+  right: 0;
+  bottom: 0;
+  width: min(42rem, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border-left: 1px solid var(--rule-bright);
+  box-shadow: -1.5rem 0 3rem rgb(0 0 0 / 45%);
+  z-index: 30;
+  animation: agent-panel-in 160ms ease-out;
+}
+@keyframes agent-panel-in {
+  from {
+    transform: translateX(6%);
+    opacity: 0.4;
+  }
+}
+.agent-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.agent-panel__title code {
+  font-family: var(--mono);
+  color: var(--signal);
+}
+.agent-panel__close {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+}
+.agent-panel__close:hover {
+  color: var(--text);
+}
+.agent-panel__note {
+  padding: 1rem 0.75rem;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.agent-panel__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.agent-panel__body .transcript {
+  flex: 1;
 }

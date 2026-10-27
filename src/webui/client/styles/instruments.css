@@ -261,21 +261,59 @@
   }
 }
 
-/* ── tasks (background tasks and subagents) ────────────────────── */
-
+/* Background tasks: agents and shells the session spawned. */
 .tasks {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 12px;
+  border-top: 1px solid var(--rule);
+  padding: 0.4rem 0 0;
+  margin-top: 0.4rem;
 }
-
+.tasks__head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+.tasks__count {
+  margin-left: auto;
+  color: var(--text-faint);
+}
+.tasks__list {
+  list-style: none;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
 .task {
   display: flex;
-  align-items: baseline;
-  gap: 0.25rem;
+  gap: 0.5rem;
+  font-size: 12px;
+  color: var(--text-dim);
 }
-
+.task__marker {
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+.task.is-running .task__marker {
+  color: var(--signal);
+}
+.task__body {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+}
 .task__main {
   flex: 1;
   display: flex;
@@ -290,93 +328,81 @@
   font: inherit;
   text-align: left;
 }
-
 .task__main:not(:disabled) {
   cursor: pointer;
 }
-
 .task__main:not(:disabled):hover {
   background: var(--bg-raised);
 }
-
 .task__main:disabled {
   cursor: default;
 }
-
 .task.is-viewed .task__main {
   background: var(--bg-raised);
   box-shadow: inset 2px 0 0 var(--signal);
 }
-
-.task__icon {
-  flex: none;
-  color: var(--text-faint);
+.task__status {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
-
-.task.is-running .task__icon {
+.task__status.is-running {
   color: var(--signal);
+  animation: pulse 1.2s ease-in-out infinite;
 }
-
-.task__body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+.task__status.is-pending {
+  color: var(--text-dim);
 }
-
-.task__desc {
+.task__status.is-completed {
+  color: var(--add);
+}
+.task__status.is-failed,
+.task__status.is-killed,
+.task__status.is-error {
+  color: var(--del);
+}
+.task__label {
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
-
 .task__name {
   color: var(--signal);
   margin-right: 0.4em;
 }
-
+.task.is-completed .task__label,
+.task.is-killed .task__label {
+  color: var(--text-dim);
+}
+.task.is-failed .task__label {
+  color: var(--del);
+}
 .task__meta {
   color: var(--text-faint);
   font-size: 10px;
 }
-
-.task__status {
-  flex: none;
-  font-size: 10px;
-  letter-spacing: 0.08em;
+.task__duration {
   color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
 }
-
-.task__status.is-running {
-  color: var(--signal);
-}
-
-.task__status.is-pending {
+.task__detail {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0.3rem 0.4rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
   color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 7rem;
+  overflow: auto;
 }
-
-.task__status.is-completed {
-  color: var(--text-faint);
-}
-
-.task__status.is-failed {
-  color: var(--del);
-}
-
-.task__status.is-killed {
-  color: var(--text-dim);
-}
-
-.task.is-completed .task__desc,
-.task.is-killed .task__desc {
-  color: var(--text-dim);
-}
-
-.task.is-failed .task__desc {
-  color: var(--del);
-}
-
 .task__kill {
   flex: none;
   padding: 0 0.35rem;
@@ -387,7 +413,6 @@
   line-height: 1.4;
   cursor: pointer;
 }
-
 .task__kill:hover {
   border-color: var(--del);
   color: var(--del);

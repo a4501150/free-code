@@ -10,6 +10,7 @@
 
 import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
+import { waitForRequest } from '../helpers/mock-server-wait'
 import {
   TmuxSession,
   sleep,
@@ -97,6 +98,21 @@ describe('Scroll follow resume', () => {
     }
 
     await session.sendLine('run the bash command')
+    // Assert the submit reached the session via the mock log: a
+    // composer-side swallowed submit would surface here as a fake scroll
+    // failure with a desynced FIFO, and a pane-text check false-passes on
+    // text still sitting in the input box.
+    await waitForRequest(
+      server,
+      request => JSON.stringify(request).includes('run the bash command'),
+      {
+        timeoutMs: 4_000,
+        description: 'submit reaching the session (mock request log)',
+        onTimeout: async () =>
+          'submit lost before scroll scenario:\n' +
+          (await session.capturePane()),
+      },
+    )
     await sleep(1500)
     await session.sendSpecialKey('PageUp')
     // Wait out the whole turn so the transcript is finished growing — the

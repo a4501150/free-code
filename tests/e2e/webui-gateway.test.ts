@@ -27,6 +27,7 @@ import { MockAnthropicServer } from '../helpers/mock-server'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
 import { waitFor } from '../helpers/wait-helpers'
 import { createLoggingTest, sleep, TmuxSession } from './tmux-helpers'
+import type { WireEvent, WireEventEnvelope } from '../../src/session/wire'
 
 setDefaultTimeout(180_000)
 const test = createLoggingTest(bunTest)
@@ -110,7 +111,15 @@ async function captureDaemonPid(dirs: Dirs): Promise<number | undefined> {
   }
 }
 
-/** A logged-in HTTP + WebSocket client, the way a browser would arrive. */
+/** One opened session-event stream, as a browser's EventSource would be. */
+type EventStream = {
+  envelopes: WireEventEnvelope[]
+  /** True once the stream has ended — process gone or stream cancelled. */
+  readonly done: boolean
+  close(): void
+}
+
+/** A logged-in HTTP client, the way a browser would arrive. */
 class GatewayClient {
   cookie = ''
   csrf = ''
@@ -140,6 +149,7 @@ class GatewayClient {
       pid?: number
       stoppablePid?: number
       holders: number
+      role?: string
       cwd?: string
     }>
   }> {
@@ -179,6 +189,73 @@ class GatewayClient {
     return response.status
   }
 
+  /** Opens the proxied session event stream (an EventSource in the browser). */
+  async openStream(processKey: string): Promise<EventStream> {
+    const response = await fetch(
+      `${this.baseUrl}/api/sessions/${processKey}/events`,
+      { headers: { cookie: this.cookie } },
+    )
+    if (!response.ok || !response.body) {
+      throw new Error(`events route answered ${response.status}`)
+    }
+    const envelopes: WireEventEnvelope[] = []
+    const reader = response.body
+      .pipeThrough(new TextDecoderStream())
+      .getReader()
+    let done = false
+    void (async () => {
+      let buffer = ''
+      for (;;) {
+        const result = await reader.read()
+        if (result.done) break
+        buffer += result.value
+        let boundary = buffer.indexOf('\n\n')
+        while (boundary >= 0) {
+          const frame = buffer.slice(0, boundary)
+          buffer = buffer.slice(boundary + 2)
+          const dataLine = frame
+            .split('\n')
+            .find(line => line.startsWith('data: '))
+          if (dataLine) {
+            envelopes.push(JSON.parse(dataLine.slice(6)) as WireEventEnvelope)
+          }
+          boundary = buffer.indexOf('\n\n')
+        }
+      }
+      done = true
+    })()
+    return {
+      envelopes,
+      get done() {
+        return done
+      },
+      close() {
+        if (!done) reader.cancel().catch(() => {})
+      },
+    }
+  }
+
+  /** POSTs a wire command to a session, as the browser's api.ts does. */
+  command(
+    processKey: string,
+    route: string,
+    body: unknown,
+    options: { csrf?: string | null } = {},
+  ): Promise<Response> {
+    const csrf = options.csrf === undefined ? this.csrf : options.csrf
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      cookie: this.cookie,
+      origin: this.baseUrl,
+    }
+    if (csrf !== null) headers['x-freecode-csrf'] = csrf
+    return fetch(`${this.baseUrl}/api/sessions/${processKey}/${route}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+  }
+
   openSocket(): Promise<{
     socket: WebSocket
     frames: Record<string, unknown>[]
@@ -198,27 +275,27 @@ class GatewayClient {
 }
 
 /**
- * Wait until a freshly spawned child has registered its REPL runtime. The
- * attach snapshot arrives as soon as the host publishes a session, which is
- * before the child's REPL mounts, and a submit landing before registration
- * is refused once with runtime_not_ready. Only a registered runtime can put
- * permissionMode in a meta event (registerRuntime fires publishMeta), so
- * that field is the readiness signal — without it these tests win the race
- * against the child's boot every time.
+ * Wait until the session can answer commands. For a spawned child, the
+ * surface snapshot arrives before the REPL mounts and a submit before
+ * registration is refused with runtime_not_ready; only a registered runtime
+ * can put permissionMode in the wire meta, so that field is the readiness
+ * signal. A hosted session registers before the browser even connects, in
+ * which case the field is already in the snapshot frame.
  */
 async function waitForRuntimeReady(
-  frames: Record<string, unknown>[],
+  envelopes: WireEventEnvelope[],
   description: string,
 ): Promise<void> {
   await waitFor(
-    () => frames,
+    () => envelopes,
     list =>
-      list.some(f => {
-        const event = f.event as
+      list.some(e => {
+        const event = e.event as
           | { kind?: string; meta?: { permissionMode?: string } }
           | undefined
         return (
-          event?.kind === 'meta' && event.meta?.permissionMode !== undefined
+          (event?.kind === 'meta' || event?.kind === 'snapshot') &&
+          event.meta?.permissionMode !== undefined
         )
       }),
     {
@@ -226,6 +303,17 @@ async function waitForRuntimeReady(
       timeoutMs: 30_000,
     },
   )
+}
+
+function findEvent<E extends WireEvent['kind']>(
+  envelopes: WireEventEnvelope[],
+  kind: E,
+): Extract<WireEvent, { kind: E }> | undefined {
+  return envelopes
+    .map(e => e.event)
+    .find(
+      (event): event is Extract<WireEvent, { kind: E }> => event.kind === kind,
+    )
 }
 
 async function waitForAttachablePid(configDir: string): Promise<number> {
@@ -410,7 +498,7 @@ describe('WebUI gateway', () => {
     )
   })
 
-  test('lists a live terminal session and drives it over the websocket', async () => {
+  test('lists a live terminal session and drives it over the proxy routes', async () => {
     await startGateway()
 
     server.reset([textResponse('Reply for the browser.')])
@@ -429,65 +517,43 @@ describe('WebUI gateway', () => {
 
     const listed = await waitFor(
       () => client.sessions(),
-      value => value.sessions.some(s => s.live && s.attachable),
+      value =>
+        value.sessions.some(
+          s => s.live && s.attachable && s.role !== 'assistant',
+        ),
       { description: 'the live session to appear in the list' },
     )
-    const live = listed.sessions.find(s => s.live && s.attachable)!
+    // The serve also hosts the assistant row; this test is about the
+    // external terminal, so skip the assistant explicitly.
+    const live = listed.sessions.find(
+      s => s.live && s.attachable && s.role !== 'assistant',
+    )!
     expect(live.processKey).toMatch(/^\d+:/)
     expect(live.holders).toBe(1)
 
-    const { socket, frames } = await client.openSocket()
+    const stream = await client.openStream(live.processKey!)
     try {
-      socket.send(
-        JSON.stringify({
-          type: 'attach',
-          processKey: live.processKey,
-          csrf: client.csrf,
-        }),
-      )
-
-      await waitFor(
-        () => frames,
-        list => list.some(f => f.type === 'attached'),
-        { description: 'the attach acknowledgement' },
-      )
-      await waitFor(
-        () => frames,
-        list =>
-          list.some(
-            f =>
-              f.type === 'event' &&
-              (f.event as { kind: string }).kind === 'snapshot',
-          ),
+      const snapshot = await waitFor(
+        () => findEvent(stream.envelopes, 'snapshot'),
+        event => event !== undefined,
         { description: 'the session snapshot' },
       )
-
-      const snapshot = frames.find(
-        f =>
-          f.type === 'event' &&
-          (f.event as { kind: string }).kind === 'snapshot',
-      )!
-      const meta = (snapshot.event as { meta: { sessionEpoch: number } }).meta
+      const meta = snapshot!.meta
 
       // The snapshot arrives before the child's REPL registers its
       // runtime, and a submit landing in that window is refused once
       // with runtime_not_ready (see waitForRuntimeReady) — the other
       // driving tests wait for the permissionMode meta event first.
-      await waitForRuntimeReady(frames, 'the live session')
+      await waitForRuntimeReady(stream.envelopes, 'the live session')
 
-      socket.send(
-        JSON.stringify({
-          type: 'command',
-          id: 'c1',
-          body: {
-            kind: 'submit',
-            commandId: crypto.randomUUID(),
-            content: 'a prompt sent through the gateway',
-            delivery: 'next',
-            sessionEpoch: meta.sessionEpoch,
-          },
-        }),
-      )
+      const submitted = await client.command(live.processKey!, 'prompt', {
+        kind: 'prompt',
+        commandId: crypto.randomUUID(),
+        content: 'a prompt sent through the gateway',
+        delivery: 'next',
+        sessionEpoch: meta.sessionEpoch,
+      })
+      expect(submitted.status).toBe(200)
 
       const log = await waitForRequestCount(server, 1, {
         description: 'the gateway-submitted prompt reaching the API',
@@ -496,11 +562,11 @@ describe('WebUI gateway', () => {
         'a prompt sent through the gateway',
       )
     } finally {
-      socket.close()
+      stream.close()
     }
   })
 
-  test('refuses a websocket attach with a bad csrf token', async () => {
+  test('refuses a session command without a CSRF token', async () => {
     await startGateway()
 
     server.reset([textResponse('unused')])
@@ -516,35 +582,55 @@ describe('WebUI gateway', () => {
     await client.login(PASSWORD)
     const listed = await waitFor(
       () => client.sessions(),
-      value => value.sessions.some(s => s.attachable),
+      value => value.sessions.some(s => s.attachable && s.role !== 'assistant'),
       { description: 'the live session to appear' },
     )
-    const live = listed.sessions.find(s => s.attachable)!
+    const live = listed.sessions.find(
+      s => s.attachable && s.role !== 'assistant',
+    )!
 
-    const { socket, frames } = await client.openSocket()
-    try {
-      socket.send(
-        JSON.stringify({
-          type: 'attach',
-          processKey: live.processKey,
-          csrf: 'forged',
-        }),
-      )
-      await sleep(500)
-      expect(frames.some(f => f.code === 'bad_csrf')).toBe(true)
-      expect(frames.some(f => f.type === 'attached')).toBe(false)
-    } finally {
-      socket.close()
-    }
+    const refused = await client.command(
+      live.processKey!,
+      'prompt',
+      {
+        kind: 'prompt',
+        commandId: crypto.randomUUID(),
+        content: 'unforged',
+        delivery: 'next',
+        sessionEpoch: 0,
+      },
+      { csrf: null },
+    )
+    expect(refused.status).toBe(403)
+    expect(((await refused.json()) as { error: string }).error).toBe('bad_csrf')
+
+    // The wrong token answers the same way.
+    const forged = await client.command(
+      live.processKey!,
+      'prompt',
+      {
+        kind: 'prompt',
+        commandId: crypto.randomUUID(),
+        content: 'unforged',
+        delivery: 'next',
+        sessionEpoch: 0,
+      },
+      { csrf: 'forged' },
+    )
+    expect(forged.status).toBe(403)
+
+    // Neither refusal ran the command.
+    await sleep(500)
+    expect(server.getRequestCount()).toBe(0)
   })
 
-  test('starts, drives and stops a gateway-owned session', async () => {
+  test('starts, drives and stops a serve-owned session', async () => {
     dirs = await makeDirs()
-    server.reset([textResponse('Reply from a gateway-owned session.')])
+    server.reset([textResponse('Reply from a serve-owned session.')])
 
     // Seed the config home the way a real install is: the tmux harness writes
-    // provider settings, trust and API-key approval. A spawned child needs all
-    // three, and `web start` alone writes none of them.
+    // provider settings, trust and API-key approval. The hosted session runs
+    // in the daemon, which reads that same home.
     session = new TmuxSession({
       serverUrl: server.url,
       reuseConfigDir: dirs.config,
@@ -559,7 +645,7 @@ describe('WebUI gateway', () => {
       PASSWORD,
     )
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
-    if (!match) throw new Error(`no gateway URL:\n${started}`)
+    if (!match) throw new Error(`no serve URL:\n${started}`)
     baseUrl = match[0]
     {
       const p = await captureDaemonPid(dirs)
@@ -569,8 +655,8 @@ describe('WebUI gateway', () => {
     const client = new GatewayClient(baseUrl)
     expect(await client.login(PASSWORD)).toBe(200)
 
-    // The child inherits the gateway's env, so it points at the mock server
-    // and the same isolated config home.
+    // The hosted session runs in the daemon process, which inherited this
+    // environment — it points at the mock server and the isolated config home.
     const created = await fetch(`${baseUrl}/api/sessions`, {
       method: 'POST',
       headers: {
@@ -585,53 +671,28 @@ describe('WebUI gateway', () => {
         `create failed: ${created.status} ${await created.text()}`,
       )
     }
-    expect(created.status).toBe(200)
     const { session: child } = (await created.json()) as {
-      session: { pid: number; processKey: string }
+      session: { processKey: string; sessionId: string }
     }
     expect(child.processKey).toMatch(/^\d+:/)
 
-    const { socket, frames } = await client.openSocket()
+    const stream = await client.openStream(child.processKey)
     try {
-      socket.send(
-        JSON.stringify({
-          type: 'attach',
-          processKey: child.processKey,
-          csrf: client.csrf,
-        }),
-      )
       const snapshot = await waitFor(
-        () => frames,
-        list =>
-          list.some(
-            f =>
-              f.type === 'event' &&
-              (f.event as { kind: string }).kind === 'snapshot',
-          ),
-        { description: 'the child session snapshot' },
+        () => findEvent(stream.envelopes, 'snapshot'),
+        event => event !== undefined,
+        { description: 'the hosted session snapshot' },
       )
-      const meta = (
-        snapshot.find(
-          f =>
-            f.type === 'event' &&
-            (f.event as { kind: string }).kind === 'snapshot',
-        )!.event as { meta: { sessionEpoch: number } }
-      ).meta
+      await waitForRuntimeReady(stream.envelopes, 'the owned session')
 
-      await waitForRuntimeReady(frames, 'the owned session')
-      socket.send(
-        JSON.stringify({
-          type: 'command',
-          id: 'c1',
-          body: {
-            kind: 'submit',
-            commandId: crypto.randomUUID(),
-            content: 'a prompt for the owned session',
-            delivery: 'next',
-            sessionEpoch: meta.sessionEpoch,
-          },
-        }),
-      )
+      const submitted = await client.command(child.processKey, 'prompt', {
+        kind: 'prompt',
+        commandId: crypto.randomUUID(),
+        content: 'a prompt for the owned session',
+        delivery: 'next',
+        sessionEpoch: snapshot!.meta.sessionEpoch,
+      })
+      expect(submitted.status).toBe(200)
 
       const log = await waitForRequestCount(server, 1, {
         description: 'the owned session reaching the API',
@@ -640,37 +701,24 @@ describe('WebUI gateway', () => {
         'a prompt for the owned session',
       )
     } finally {
-      socket.close()
+      stream.close()
     }
 
-    // Re-attach after a full detach, which a browser does on every reload.
-    // Note this does not deterministically catch the temporal-dead-zone fault
-    // that once broke it, because that depended on startup timing.
+    // Re-subscribe after a full disconnect, which a browser does on every
+    // reload: a fresh stream must snapshot, not fail on the used-up channel.
     await sleep(1000)
-    const second = await client.openSocket()
+    const second = await client.openStream(child.processKey)
     try {
-      second.socket.send(
-        JSON.stringify({
-          type: 'attach',
-          processKey: child.processKey,
-          csrf: client.csrf,
-        }),
-      )
       await waitFor(
-        () => second.frames,
-        list =>
-          list.some(
-            f =>
-              f.type === 'event' &&
-              (f.event as { kind: string }).kind === 'snapshot',
-          ),
-        { description: 'a snapshot on the second attach', timeoutMs: 20_000 },
+        () => findEvent(second.envelopes, 'snapshot'),
+        event => event !== undefined,
+        { description: 'a snapshot on the second stream', timeoutMs: 20_000 },
       )
     } finally {
-      second.socket.close()
+      second.close()
     }
 
-    // A create with no cwd lands in the gateway host's home — what the
+    // A create with no cwd lands in the daemon host's home — what the
     // browser form prefills — instead of being refused.
     const defaulted = await fetch(`${baseUrl}/api/sessions`, {
       method: 'POST',
@@ -683,7 +731,7 @@ describe('WebUI gateway', () => {
     })
     expect(defaulted.status).toBe(200)
     const { session: homeChild } = (await defaulted.json()) as {
-      session: { pid: number; sessionId: string }
+      session: { processKey: string; sessionId: string }
     }
     const homeRow = await waitFor(
       async () =>
@@ -693,11 +741,11 @@ describe('WebUI gateway', () => {
       row => row !== undefined,
       { description: 'the no-cwd session row to appear' },
     )
-    // On macOS the temp home is a symlink under /var, and the gateway reports
-    // the resolved home, so compare resolved against resolved.
+    // The registry canonicalizes a hosted cwd the way a spawned child's
+    // process.cwd() would have, so compare against the resolved temp home.
     expect(homeRow!.cwd).toBe(await realpath(dirs.home))
     const stoppedHome = await fetch(
-      `${baseUrl}/api/sessions/${homeChild.pid}`,
+      `${baseUrl}/api/sessions/${homeChild.processKey}`,
       {
         method: 'DELETE',
         headers: {
@@ -708,19 +756,27 @@ describe('WebUI gateway', () => {
     )
     expect(stoppedHome.status).toBe(200)
 
-    // Stopping the web service stops sessions it owns.
+    // Stopping the web service stops sessions it hosts: the row leaves the
+    // live set (there is no separate process to watch exit anymore).
     await runCli(dirs, ['web', 'stop'])
     await waitFor(
-      () => {
-        try {
-          process.kill(child.pid, 0)
-          return true
-        } catch {
-          return false
-        }
+      async () => {
+        const { sessions } = await fetch(`${baseUrl}/api/sessions`, {
+          headers: { cookie: client.cookie },
+        })
+          .then(
+            r =>
+              r.json() as Promise<{
+                sessions: { sessionId: string; live: boolean }[]
+              }>,
+          )
+          .catch(() => ({
+            sessions: [] as { sessionId: string; live: boolean }[],
+          }))
+        return !sessions.some(s => s.sessionId === child.sessionId && s.live)
       },
-      alive => !alive,
-      { description: 'the owned session to exit', timeoutMs: 20_000 },
+      gone => gone,
+      { description: 'the hosted session to stop', timeoutMs: 20_000 },
     )
   })
 
@@ -782,59 +838,33 @@ describe('WebUI gateway', () => {
 
     // Drive one turn, so the resumed session has something to carry back.
     const MARKER = 'a prompt that must survive the resume'
-    const first = await client.openSocket()
+    const first = await client.openStream(child.processKey)
     try {
-      first.socket.send(
-        JSON.stringify({
-          type: 'attach',
-          processKey: child.processKey,
-          csrf: client.csrf,
-        }),
-      )
       const snapshot = await waitFor(
-        () => first.frames,
-        list =>
-          list.some(
-            f =>
-              f.type === 'event' &&
-              (f.event as { kind: string }).kind === 'snapshot',
-          ),
+        () => findEvent(first.envelopes, 'snapshot'),
+        event => event !== undefined,
         { description: 'the child snapshot' },
       )
-      const meta = (
-        snapshot.find(
-          f =>
-            f.type === 'event' &&
-            (f.event as { kind: string }).kind === 'snapshot',
-        )!.event as { meta: { sessionEpoch: number } }
-      ).meta
-
-      await waitForRuntimeReady(first.frames, 'the resumed session')
-      first.socket.send(
-        JSON.stringify({
-          type: 'command',
-          id: 'r1',
-          body: {
-            kind: 'submit',
-            commandId: crypto.randomUUID(),
-            content: MARKER,
-            delivery: 'next',
-            sessionEpoch: meta.sessionEpoch,
-          },
-        }),
-      )
+      await waitForRuntimeReady(first.envelopes, 'the resumed session')
+      await client.command(child.processKey, 'prompt', {
+        kind: 'prompt',
+        commandId: crypto.randomUUID(),
+        content: MARKER,
+        delivery: 'next',
+        sessionEpoch: snapshot!.meta.sessionEpoch,
+      })
       await waitForRequestCount(server, 1, {
         description: 'the first turn reaching the API',
       })
     } finally {
-      first.socket.close()
+      first.close()
     }
 
     // A live session cannot be resumed. The client hides the action, and the
     // server refuses it regardless.
     expect((await post({ resumeSessionId: child.sessionId })).status).toBe(409)
 
-    const deleted = await fetch(`${baseUrl}/api/sessions/${child.pid}`, {
+    const deleted = await fetch(`${baseUrl}/api/sessions/${child.processKey}`, {
       method: 'DELETE',
       headers: { cookie: client.cookie, 'x-freecode-csrf': client.csrf },
     })
@@ -857,26 +887,19 @@ describe('WebUI gateway', () => {
       )
     }
     const { session: revived } = (await resumed.json()) as {
-      session: { pid: number; processKey: string; sessionId: string }
+      session: { processKey: string; sessionId: string }
     }
     // Resume adopts the original ID rather than forking a new one.
     expect(revived.sessionId).toBe(child.sessionId)
-    expect(revived.pid).not.toBe(child.pid)
+    expect(revived.processKey).not.toBe(child.processKey)
 
-    const second = await client.openSocket()
+    const second = await client.openStream(revived.processKey)
     try {
-      second.socket.send(
-        JSON.stringify({
-          type: 'attach',
-          processKey: revived.processKey,
-          csrf: client.csrf,
-        }),
-      )
-      // The first snapshot can be empty: the attach host serializes whatever
-      // the runtime holds, and the headless bridge publishes the transcript on
-      // a poll. So accept the marker from a later patch too.
+      // The first snapshot can be empty: the surface serializes whatever the
+      // runtime holds at connect time. So accept the marker from a later
+      // patch too.
       await waitFor(
-        () => second.frames,
+        () => second.envelopes,
         list => JSON.stringify(list).includes(MARKER),
         {
           description: 'the prior transcript on the resumed session',
@@ -884,7 +907,7 @@ describe('WebUI gateway', () => {
         },
       )
     } finally {
-      second.socket.close()
+      second.close()
     }
 
     // One live row for the resumed ID, and no leftover history row for it.
@@ -894,7 +917,7 @@ describe('WebUI gateway', () => {
     expect(rows[0]!.live).toBe(true)
   })
 
-  test('stops a session it owns and refuses one it does not', async () => {
+  test('stops a session it hosts and refuses one it does not', async () => {
     dirs = await makeDirs()
     server.reset([textResponse('unused')])
 
@@ -913,7 +936,7 @@ describe('WebUI gateway', () => {
       PASSWORD,
     )
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
-    if (!match) throw new Error(`no gateway URL:\n${started}`)
+    if (!match) throw new Error(`no serve URL:\n${started}`)
     baseUrl = match[0]
     {
       const p = await captureDaemonPid(dirs)
@@ -934,7 +957,7 @@ describe('WebUI gateway', () => {
     })
     expect(created.status).toBe(200)
     const { session: child } = (await created.json()) as {
-      session: { pid: number; processKey: string }
+      session: { processKey: string; sessionId: string }
     }
 
     // The list must distinguish the two, or the UI cannot decide which row
@@ -942,24 +965,27 @@ describe('WebUI gateway', () => {
     const listed = await waitFor(
       () => client.sessions(),
       value => value.sessions.some(s => s.owned),
-      { description: 'the owned session to appear as owned' },
+      { description: 'the hosted session to appear as owned' },
     )
-    expect(listed.sessions.find(s => s.pid === child.pid)?.owned).toBe(true)
+    expect(
+      listed.sessions.find(s => s.processKey === child.processKey)?.owned,
+    ).toBe(true)
     expect(listed.sessions.find(s => s.pid === terminalPid)?.owned).toBe(false)
 
-    function del(pid: number, csrf = client.csrf): Promise<Response> {
-      return fetch(`${baseUrl}/api/sessions/${pid}`, {
+    function del(key: string, csrf = client.csrf): Promise<Response> {
+      return fetch(`${baseUrl}/api/sessions/${key}`, {
         method: 'DELETE',
         headers: { cookie: client.cookie, 'x-freecode-csrf': csrf },
       })
     }
 
-    // The terminal session belongs to the user, not the browser.
-    expect((await del(terminalPid)).status).toBe(403)
-    expect((await del(child.pid, 'forged')).status).toBe(403)
+    // The terminal session belongs to the user, not the browser: its bare
+    // pid names nothing this process can stop.
+    expect((await del(String(terminalPid))).status).toBe(403)
+    expect((await del(child.processKey, 'forged')).status).toBe(403)
     expect(
       (
-        await fetch(`${baseUrl}/api/sessions/${child.pid}`, {
+        await fetch(`${baseUrl}/api/sessions/${child.processKey}`, {
           method: 'DELETE',
         })
       ).status,
@@ -968,28 +994,25 @@ describe('WebUI gateway', () => {
     // The terminal session survived every refusal above.
     expect(() => process.kill(terminalPid, 0)).not.toThrow()
 
-    expect((await del(child.pid)).status).toBe(200)
+    expect((await del(child.processKey)).status).toBe(200)
     await waitFor(
-      () => {
-        try {
-          process.kill(child.pid, 0)
-          return true
-        } catch {
-          return false
-        }
+      async () => {
+        const { sessions } = await client.sessions()
+        return !sessions.some(s => s.processKey === child.processKey && s.live)
       },
-      alive => !alive,
-      { description: 'the owned session to exit', timeoutMs: 20_000 },
+      gone => gone,
+      {
+        description: 'the hosted row to leave the live set',
+        timeoutMs: 20_000,
+      },
     )
     expect(() => process.kill(terminalPid, 0)).not.toThrow()
   })
 
-  test('terminal joins a web session and sees engine exit when the child is stopped', async () => {
+  test('a terminal resumes a stopped web session and sees its transcript', async () => {
     dirs = await makeDirs()
     server.reset([textResponse('An answer from the web session.')])
 
-    // The tmux harness is the only thing that writes provider settings, trust
-    // and API-key approval, and a spawned child needs all three.
     session = new TmuxSession({
       serverUrl: server.url,
       reuseConfigDir: dirs.config,
@@ -1004,7 +1027,7 @@ describe('WebUI gateway', () => {
       PASSWORD,
     )
     const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
-    if (!match) throw new Error(`no gateway URL:\n${started}`)
+    if (!match) throw new Error(`no serve URL:\n${started}`)
     baseUrl = match[0]
     {
       const p = await captureDaemonPid(dirs)
@@ -1025,51 +1048,26 @@ describe('WebUI gateway', () => {
     })
     expect(created.status).toBe(200)
     const { session: child } = (await created.json()) as {
-      session: { pid: number; processKey: string; sessionId: string }
+      session: { processKey: string; sessionId: string }
     }
 
-    const browser = await client.openSocket()
+    const browser = await client.openStream(child.processKey)
     try {
-      browser.socket.send(
-        JSON.stringify({
-          type: 'attach',
-          processKey: child.processKey,
-          csrf: client.csrf,
-        }),
-      )
       const snapshot = await waitFor(
-        () => browser.frames,
-        list =>
-          list.some(
-            f =>
-              f.type === 'event' &&
-              (f.event as { kind: string }).kind === 'snapshot',
-          ),
-        { description: 'the child snapshot' },
+        () => findEvent(browser.envelopes, 'snapshot'),
+        event => event !== undefined,
+        { description: 'the hosted session snapshot' },
       )
-      const meta = (
-        snapshot.find(
-          f =>
-            f.type === 'event' &&
-            (f.event as { kind: string }).kind === 'snapshot',
-        )!.event as { meta: { sessionEpoch: number } }
-      ).meta
 
       // Drive one turn so the transcript has content for the terminal to see.
-      await waitForRuntimeReady(browser.frames, 'the web session')
-      browser.socket.send(
-        JSON.stringify({
-          type: 'command',
-          id: 't1',
-          body: {
-            kind: 'submit',
-            commandId: crypto.randomUUID(),
-            content: 'a prompt for the web session',
-            delivery: 'next',
-            sessionEpoch: meta.sessionEpoch,
-          },
-        }),
-      )
+      await waitForRuntimeReady(browser.envelopes, 'the web session')
+      await client.command(child.processKey, 'prompt', {
+        kind: 'prompt',
+        commandId: crypto.randomUUID(),
+        content: 'a prompt for the web session',
+        delivery: 'next',
+        sessionEpoch: snapshot!.meta.sessionEpoch,
+      })
       await waitForRequestCount(server, 1, {
         description: 'the web session turn reaching the API',
       })
@@ -1089,54 +1087,38 @@ describe('WebUI gateway', () => {
         { description: 'the transcript to land on disk', timeoutMs: 30_000 },
       )
 
-      // A terminal joins the session as an attach client. "Join this
-      // session" is the first (already-selected) option in the conflict
-      // dialog.
-      takeover = new TmuxSession({
-        serverUrl: server.url,
-        cwd: workdir,
-        reuseConfigDir: dirs.config,
-        reuseHomeDir: dirs.home,
-        additionalArgs: ['--resume', child.sessionId],
-        readyText: 'Session already open elsewhere',
-      })
-      await takeover.start()
-      await takeover.sendKeys('Enter')
-      await takeover.waitForText('Enter to send', 30_000)
-
-      // The terminal sees the transcript from the web session.
-      await takeover.waitForText('An answer from the web session', 10_000)
-
-      // Joining does not create a second holder. The web child remains the
-      // sole session engine; the terminal is a pure attach client.
-      const listing = await client.sessions()
-      const rows = listing.sessions.filter(s => s.sessionId === child.sessionId)
-      expect(rows).toHaveLength(1)
-      expect(rows[0]!.holders).toBe(1)
-      expect(rows[0]!.owned).toBe(true)
-      expect(rows[0]!.stoppablePid).toBe(child.pid)
-
-      // Stop the web child. The browser gets process_gone.
-      const deleted = await fetch(`${baseUrl}/api/sessions/${child.pid}`, {
-        method: 'DELETE',
-        headers: { cookie: client.cookie, 'x-freecode-csrf': client.csrf },
-      })
+      // Stopping the hosted session ends the browser's stream — the channel
+      // goes with the session, and a closed stream is what the client treats
+      // as offline.
+      const deleted = await fetch(
+        `${baseUrl}/api/sessions/${child.processKey}`,
+        {
+          method: 'DELETE',
+          headers: { cookie: client.cookie, 'x-freecode-csrf': client.csrf },
+        },
+      )
       expect(deleted.status).toBe(200)
 
-      const gone = await waitFor(
-        () => browser.frames,
-        list => list.some(f => f.type === 'process_gone'),
-        { description: 'the process_gone frame', timeoutMs: 30_000 },
+      await waitFor(
+        () => browser.done,
+        ended => ended,
+        { description: 'the browser stream to end', timeoutMs: 30_000 },
       )
-      const frame = gone.find(f => f.type === 'process_gone')!
-      expect(frame.processKey).toBe(child.processKey)
-      expect(frame.sessionId).toBe(child.sessionId)
-
-      // The terminal detects the engine exit.
-      await takeover.waitForText('Session engine exited', 30_000)
     } finally {
-      browser.socket.close()
+      browser.close()
     }
+
+    // A terminal then picks the conversation up from the history row: the
+    // hosted transcript is a first-class one, resumable like any other.
+    takeover = new TmuxSession({
+      serverUrl: server.url,
+      cwd: workdir,
+      reuseConfigDir: dirs.config,
+      reuseHomeDir: dirs.home,
+      additionalArgs: ['--resume', child.sessionId],
+    })
+    await takeover.start()
+    await takeover.waitForText('An answer from the web session', 30_000)
   })
 
   test('publishes a tunnel URL from a custom command provider', async () => {

@@ -101,10 +101,7 @@ describe('mermaid lazy-load wiring', () => {
   })
 
   test('the gateway CSP allows the pinned CDN for scripts', () => {
-    const gateway = readFileSync(
-      join(ROOT, 'src/webui/gateway/gatewayServer.ts'),
-      'utf8',
-    )
+    const gateway = readFileSync(join(ROOT, 'src/sessiond/serve.ts'), 'utf8')
     expect(gateway).toContain(`"script-src 'self' https://cdn.jsdelivr.net"`)
     // The SVG from mermaid carries a <style> element, which needs this.
     expect(gateway).toContain(`"style-src 'self' 'unsafe-inline'"`)

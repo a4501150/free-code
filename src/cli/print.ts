@@ -73,6 +73,8 @@ import { parsePluginIdentifier } from 'src/utils/plugins/pluginIdentifier.js'
 import { validateUuid } from 'src/utils/uuid.js'
 import { fromArray } from 'src/utils/generators.js'
 import { ask } from 'src/QueryEngine.js'
+import { SessionCore, type TurnExecutor } from 'src/session/SessionCore.js'
+import { QueryGuard } from 'src/utils/QueryGuard.js'
 import type { PermissionPromptTool } from 'src/utils/queryHelpers.js'
 import {
   createFileStateCacheWithSizeLimit,
@@ -114,6 +116,7 @@ import type {
   ExternalPermissionMode as PermissionMode,
   PermissionMode as InternalPermissionMode,
 } from 'src/types/permissions.js'
+import { EXTERNAL_PERMISSION_MODES } from 'src/types/permissions.js'
 import { cwd } from 'process'
 import { getCwd } from 'src/utils/cwd.js'
 import omit from 'lodash-es/omit.js'
@@ -305,6 +308,10 @@ import {
   startHeadlessAttach,
   wrapCanUseToolWithWebUI,
 } from '../server/headlessBridge.js'
+import {
+  publishAttachMeta,
+  publishAttachPendingCommands,
+} from '../server/hostSingleton.js'
 import { createCronScheduler } from '../utils/cronScheduler.js'
 import { getCronJitterConfig } from '../utils/cronJitterConfig.js'
 import { isAssistantCronEnabled } from '../tools/ScheduleCronTool/prompt.js'
@@ -376,16 +383,6 @@ export function canBatchWith(
     next.workload === head.workload &&
     next.isMeta === head.isMeta
   )
-}
-
-function commandsToNames(cmds: Command[]): string[] {
-  return [
-    ...new Set(
-      cmds
-        .filter(c => !c.isHidden)
-        .flatMap(c => [getCommandName(c), ...(c.aliases ?? [])]),
-    ),
-  ]
 }
 
 export async function runHeadless(
@@ -1111,7 +1108,7 @@ function runHeadlessStreaming(
   // instant the socket exists, and reading that binding from above its
   // declaration throws a temporal-dead-zone error inside the socket handler,
   // which leaves the connection accepted but never answered.
-  let headlessCommandNames = commandsToNames(commands)
+  let headlessCommands: Command[] = commands
   if (shouldAttachHeadless()) {
     startHeadlessAttach({
       cwd: cwd(),
@@ -1135,12 +1132,21 @@ function runHeadlessStreaming(
           return undefined
         }
       },
-      getPermissionMode: () => getAppState().toolPermissionContext.mode,
-      getCommands: () => headlessCommandNames,
+      // Internal-only modes are not part of the wire enum.
+      getPermissionMode: () =>
+        (EXTERNAL_PERMISSION_MODES as readonly string[]).includes(
+          getAppState().toolPermissionContext.mode,
+        )
+          ? (getAppState().toolPermissionContext.mode as PermissionMode)
+          : undefined,
+      getCommands: () =>
+        uniqBy([...headlessCommands, ...getAppState().mcp.commands], 'name'),
       interrupt: () => abortController?.abort('user-cancel'),
       // `run` is declared below, but only a browser command calls this.
       requestRun: () => void run(),
-      setModel: model => applyModelSwitch(model),
+      // null means the account/config default, which is what an unset
+      // --model resolves to.
+      setModel: model => applyModelSwitch(model ?? 'default'),
       setPermissionMode: mode => {
         setAppState(prev => {
           const context = prev.toolPermissionContext
@@ -1154,6 +1160,71 @@ function runHeadlessStreaming(
         })
       },
     })
+  }
+
+  // One core per process. This path drives it in executor mode: the core
+  // owns the guard and announces the turn lifecycle; the per-turn
+  // QueryEngine executor below owns the loop itself, so the SDKMessage
+  // stdout contract stays exactly as the pre-core drain loop produced it.
+  // The transcript remains the in-place-mutated `mutableMessages` array —
+  // every closure holding it (engine, result builders, resume snapshots)
+  // must observe appends through the same array instance.
+  const queryGuard = new QueryGuard()
+  const sessionCore = new SessionCore({
+    transcriptHost: { current: mutableMessages },
+    turnInputs: {
+      queryGuard,
+      canUseTool,
+      store: { getState: getAppState, setState: setAppState },
+      toolPermissionContext: getAppState().toolPermissionContext,
+      setAppState,
+      // Titles are set through the control protocol here; the drain path
+      // never auto-titled pre-core and still doesn't.
+      title: {
+        disabled: true,
+        current: undefined,
+        agentTitle: undefined,
+        onAutoTitle: () => {},
+      },
+    },
+  })
+
+  // The stdout projector: mirrors every driver-delivered message onto the
+  // stream in the order the pre-core loop body did — structured events
+  // flush first, and a result is held back while background agents run.
+  sessionCore.subscribe(event => {
+    if (event.type !== 'sdk_message') return
+    const message = event.message
+    for (const structuredEvent of drainStructuredEvents()) {
+      output.enqueue(structuredEvent)
+    }
+    if (
+      message.type === 'result' &&
+      getRunningTasks(getAppState()).some(
+        t => t.type === 'local_agent' && isBackgroundTask(t),
+      )
+    ) {
+      heldBackResult = message
+    } else {
+      if (message.type === 'result') heldBackResult = null
+      output.enqueue(message)
+    }
+  })
+
+  // The wire projector: the engine mutates `mutableMessages` in place, so an
+  // attached browser learns about each message when the driver delivers it
+  // and about the turn's end when the core announces it. The 400 ms attach
+  // poll of the pre-core world is gone: every publish now rides an event.
+  if (shouldAttachHeadless()) {
+    sessionCore.subscribe(event => {
+      if (event.type === 'sdk_message' || event.type === 'turn_finished') {
+        publishHeadlessTranscript()
+      }
+      if (event.type === 'activity') {
+        publishAttachMeta()
+      }
+    })
+    subscribeToCommandQueue(() => publishAttachPendingCommands())
   }
 
   // Cache SDK MCP clients to avoid reconnecting on each run
@@ -1619,7 +1690,7 @@ function runHeadlessStreaming(
     // captured by the query loop (REPL uses AppState instead). getCommands is
     // fresh because refreshActivePlugins cleared its cache.
     currentCommands = await getCommands(cwd())
-    headlessCommandNames = commandsToNames(currentCommands)
+    headlessCommands = currentCommands
 
     // Preserve SDK-provided agents (--agents CLI flag or SDK initialize
     // control_request) — both inject via parseAgentsFromJson with
@@ -1677,7 +1748,7 @@ function runHeadlessStreaming(
     clearCommandsCache()
     void getCommands(cwd()).then(newCommands => {
       currentCommands = newCommands
-      headlessCommandNames = commandsToNames(currentCommands)
+      headlessCommands = currentCommands
     })
   })
 
@@ -1956,7 +2027,8 @@ function runHeadlessStreaming(
             }
           }
 
-          abortController = createAbortController()
+          const turnAbort = createAbortController()
+          abortController = turnAbort
 
           headlessProfilerCheckpoint('before_ask')
           startQueryProfile()
@@ -1966,7 +2038,7 @@ function runHeadlessStreaming(
           // const-capture: TS loses `while ((command = dequeue()))` narrowing
           // inside the closure.
           const cmd = command!
-          await runWithWorkload(cmd.workload ?? options.workload, async () => {
+          const executor: TurnExecutor = async deliver => {
             for await (const message of ask({
               commands: uniqBy(
                 [...currentCommands, ...appState.mcp.commands],
@@ -2030,33 +2102,22 @@ function runHeadlessStreaming(
                 })
               },
             })) {
-              if (message.type === 'result') {
-                // Flush pending SDK events so they appear before result on the stream.
-                for (const event of drainStructuredEvents()) {
-                  output.enqueue(event)
-                }
-
-                // Hold-back: don't emit result while background agents are running
-                const currentState = getAppState()
-                if (
-                  getRunningTasks(currentState).some(
-                    t => t.type === 'local_agent' && isBackgroundTask(t),
-                  )
-                ) {
-                  heldBackResult = message
-                } else {
-                  heldBackResult = null
-                  output.enqueue(message)
-                }
-              } else {
-                // Flush SDK events (task_started, task_progress) so background
-                // agent progress is streamed in real-time, not batched until result.
-                for (const event of drainStructuredEvents()) {
-                  output.enqueue(event)
-                }
-                output.enqueue(message)
-              }
+              // The core mirrors this onto its bus as `sdk_message`; the
+              // stdout projector subscribed above does the stream writes.
+              deliver(message)
             }
+          }
+          await runWithWorkload(cmd.workload ?? options.workload, async () => {
+            await sessionCore.submitTurn({
+              newMessages: [],
+              abortController: turnAbort,
+              shouldQuery: true,
+              additionalAllowedTools: [],
+              // Unused in executor mode: the driver resolves the model itself.
+              mainLoopModel: activeUserSpecifiedModel ?? '',
+              input: typeof input === 'string' ? input : undefined,
+              executor,
+            })
           }) // end runWithWorkload
 
           for (const uuid of batchUuids) {
@@ -2637,7 +2698,7 @@ function runHeadlessStreaming(
             ])
             if (cmdsR.status === 'fulfilled') {
               currentCommands = cmdsR.value
-              headlessCommandNames = commandsToNames(currentCommands)
+              headlessCommands = currentCommands
             } else {
               logError(cmdsR.reason)
             }

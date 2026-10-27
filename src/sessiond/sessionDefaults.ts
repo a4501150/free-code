@@ -1,0 +1,59 @@
+/**
+ * What a session the serve process hosts gets for free.
+ *
+ * The old gateway spawned a full CLI per child session, so the child's own
+ * startup assembled the tool pool, the slash-command registry and the
+ * permission context from its cwd and the gateway's inherited flags. A
+ * hosted session needs the same assembly without the process: this is the
+ * core-construction counterpart of those CLI flags.
+ *
+ * MCP connections and the `--settings` overlay pass through untouched (the
+ * caller resolves them; SessionDefaults carries them to the session);
+ * plugins are not assembled here. Hosted sessions run on built-ins plus
+ * project slash commands plus whatever pool the caller handed in.
+ */
+
+import { getCommands } from '../commands.js'
+import { getTools } from '../tools.js'
+import { getAgentDefinitionsWithOverrides } from '../tools/AgentTool/loadAgentsDir.js'
+import { applyCoordinatorToolFilter } from '../utils/toolPool.js'
+import { isCoordinatorMode } from '../coordinator/coordinatorModeGate.js'
+import { initializeToolPermissionContext } from '../utils/permissions/permissionSetup.js'
+import type { SessionDefaults } from './registry.js'
+
+export type SessionDefaultsRequest = SessionDefaults & {
+  /** Inherited from the `web start` flags, as the spawned child used to get them. */
+  allowedTools?: string[]
+  disallowedTools?: string[]
+}
+
+export async function assembleSessionDefaults(
+  cwd: string,
+  request: SessionDefaultsRequest | undefined,
+): Promise<SessionDefaults> {
+  const { toolPermissionContext } = await initializeToolPermissionContext({
+    allowedToolsCli: request?.allowedTools ?? [],
+    disallowedToolsCli: request?.disallowedTools ?? [],
+    permissionMode: request?.permissionMode ?? 'default',
+    allowDangerouslySkipPermissions: false,
+    addDirs: [],
+  })
+  const commands = await getCommands(cwd)
+  let tools = getTools(toolPermissionContext)
+  if (isCoordinatorMode()) tools = applyCoordinatorToolFilter(tools)
+  // Same assembly the REPL path does at startup: built-ins plus the
+  // project/user agent dirs for this cwd. A caller that computed its own
+  // (the CLI launcher merges --agents in) short-circuits this.
+  const agentDefinitions =
+    request?.agentDefinitions ?? (await getAgentDefinitionsWithOverrides(cwd))
+  return {
+    ...request,
+    agentDefinitions,
+    // The store's context type is the DeepImmutable sibling of the one
+    // permissionSetup returns; structurally identical.
+    toolPermissionContext:
+      toolPermissionContext as unknown as SessionDefaults['toolPermissionContext'],
+    commands,
+    tools: [...tools],
+  }
+}

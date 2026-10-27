@@ -1,5 +1,5 @@
 /**
- * The assistant child's spawn flags: permission checks are bypassed by
+ * The assistant session's start defaults: permission checks are bypassed by
  * default (nobody is attached to answer its prompts), swappable through
  * assistant.dangerouslySkipPermissions without any CLI parameter.
  */
@@ -13,42 +13,41 @@ import { join } from 'path'
 // process-wide in the shared unit-test process. The factory spreads the real
 // namespace because Bun replaces the module wholesale for later loads — a
 // bare single-export factory would strip every other settings export from
-// files that import them after this one runs.
+// files that import them after this one runs. The persona/coordinator latches
+// are patched too: they are process-global, and this test must not flip them
+// for the files that run after it.
 let testSettings: Record<string, unknown> = {}
 const actualSettings = await import('../../src/utils/settings/settings.js')
 mock.module('../../src/utils/settings/settings.js', () => ({
   ...actualSettings,
   getInitialSettings: () => testSettings,
 }))
+mock.module('../../src/assistant/index.js', () => ({
+  markAssistantForced: () => {},
+}))
+mock.module('../../src/coordinator/coordinatorModeGate.js', () => ({
+  forceCoordinatorModeFromCli: () => {},
+}))
 
 const { assistantWorkspaceDir, bootstrapAssistantSession } =
-  await import('../../src/webui/gateway/assistantSession.js')
+  await import('../../src/sessiond/assistant.js')
 const configModule = await import('../../src/utils/config.js')
 const { SettingsSchema } = await import('../../src/utils/settings/types.js')
 
-type StartOptions = {
-  cwd: string
-  resumeSessionId?: string
-  extraArgs?: string[]
-}
+type Defaults = { permissionMode?: string }
+type StartOptions = { cwd: string; defaults?: Defaults }
 
 let started: StartOptions[]
 
-function fakeChildren(): Parameters<typeof bootstrapAssistantSession>[0] {
+function fakeRegistry(): Parameters<typeof bootstrapAssistantSession>[0] {
+  const start = async (options: StartOptions) => {
+    started.push(options)
+    return { sessionId: 'session' }
+  }
   return {
-    start: async (options: StartOptions) => {
-      started.push(options)
-      return {
-        pid: 1,
-        processKey: '1:x',
-        cwd: options.cwd,
-        sessionId: 'session',
-      }
-    },
-    stop: () => false,
-    stopAll: () => {},
-    owns: () => false,
-  } as Parameters<typeof bootstrapAssistantSession>[0]
+    create: start,
+    resume: start,
+  } as unknown as Parameters<typeof bootstrapAssistantSession>[0]
 }
 
 let configDir: string
@@ -66,26 +65,22 @@ afterEach(async () => {
   await rm(configDir, { recursive: true, force: true })
 })
 
-describe('bootstrapAssistantSession spawn flags', () => {
-  test('spawns with bypass permissions by default', async () => {
-    const child = await bootstrapAssistantSession(fakeChildren())
-    expect(child).not.toBeNull()
-    expect(started[0]!.extraArgs).toContain('--assistant')
-    expect(started[0]!.extraArgs).toContain('--dangerously-skip-permissions')
+describe('bootstrapAssistantSession defaults', () => {
+  test('starts with bypass permissions by default', async () => {
+    const entry = await bootstrapAssistantSession(fakeRegistry())
+    expect(entry).not.toBeNull()
+    expect(started[0]!.defaults?.permissionMode).toBe('bypassPermissions')
   })
 
   test('assistant.dangerouslySkipPermissions: false keeps it gated', async () => {
     testSettings = { assistant: { dangerouslySkipPermissions: false } }
-    await bootstrapAssistantSession(fakeChildren())
-    expect(started[0]!.extraArgs).toContain('--assistant')
-    expect(started[0]!.extraArgs).not.toContain(
-      '--dangerously-skip-permissions',
-    )
+    await bootstrapAssistantSession(fakeRegistry())
+    expect(started[0]!.defaults?.permissionMode).toBeUndefined()
   })
 
   test('assistant.enabled: false starts nothing', async () => {
     testSettings = { assistant: { enabled: false } }
-    expect(await bootstrapAssistantSession(fakeChildren())).toBeNull()
+    expect(await bootstrapAssistantSession(fakeRegistry())).toBeNull()
     expect(started).toHaveLength(0)
   })
 
@@ -108,14 +103,14 @@ describe('bootstrapAssistantSession spawn flags', () => {
 describe('bootstrapAssistantSession workspace trust', () => {
   test('persists trust for the assistant workspace before spawning', async () => {
     expect(configModule.isPathTrusted(assistantWorkspaceDir())).toBe(false)
-    const child = await bootstrapAssistantSession(fakeChildren())
+    const child = await bootstrapAssistantSession(fakeRegistry())
     expect(child).not.toBeNull()
     expect(configModule.isPathTrusted(assistantWorkspaceDir())).toBe(true)
   })
 
   test('the opt-out starts nothing and writes no trust record', async () => {
     testSettings = { assistant: { enabled: false } }
-    await bootstrapAssistantSession(fakeChildren())
+    await bootstrapAssistantSession(fakeRegistry())
     expect(configModule.isPathTrusted(assistantWorkspaceDir())).toBe(false)
   })
 })

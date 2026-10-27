@@ -17,11 +17,13 @@ const DEV_FULL_BINARY = join(ROOT, 'cli-dev')
  * `frame-ancestors` as a keyword, so it appears in every build.
  */
 const MARKERS = [
-  'bad attach token',
+  'x-freecode-surface',
   'claude web <command>',
   'freecode_webui',
-  'Denied from the WebUI',
-  'the session did not become attachable',
+  // headlessBridge's webui relay — was 'Denied from the WebUI', which the
+  // classic-parity reject composition (REJECT_MESSAGE) replaced.
+  'Aborted before anyone answered',
+  'attach_failed',
 ]
 
 function binaryContains(path: string, needle: string): boolean {
