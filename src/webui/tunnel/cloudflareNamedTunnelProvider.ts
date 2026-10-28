@@ -148,9 +148,11 @@ export function createCloudflareNamedTunnelProvider(
   }
 
   async function pushIngress(tunnelId: string, port: number): Promise<void> {
+    // The singular `/config` route the 2024-era docs show now 404s; the live
+    // account route is `/configurations` (verified against api-version 2026-10).
     await api(
       'PUT',
-      `/accounts/${config.accountTag}/cfd_tunnel/${tunnelId}/config`,
+      `/accounts/${config.accountTag}/cfd_tunnel/${tunnelId}/configurations`,
       {
         config: {
           ingress: [
@@ -163,13 +165,15 @@ export function createCloudflareNamedTunnelProvider(
   }
 
   async function fetchRunToken(tunnelId: string): Promise<string> {
+    // The live API's `result` is the bare token string; older docs show a
+    // {token} object. Accept either.
     const result = await api(
       'GET',
       `/accounts/${config.accountTag}/cfd_tunnel/${tunnelId}/token`,
     )
-    if (!result?.token)
-      throw new Error('cloudflare API returned no tunnel token')
-    return result.token
+    const token = typeof result === 'string' ? result : result?.token
+    if (!token) throw new Error('cloudflare API returned no tunnel token')
+    return token
   }
 
   return {

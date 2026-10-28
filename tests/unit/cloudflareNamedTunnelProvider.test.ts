@@ -93,7 +93,7 @@ describe('cloudflare named tunnel provider', () => {
       )
         return []
       if (call.path === '/accounts/acct1/cfd_tunnel/tun-1/token')
-        return { token: 'jwt-abc' }
+        return 'jwt-abc' // the live API returns the token string bare
       return {}
     })
     const provider = createCloudflareNamedTunnelProvider(settings, deps)
