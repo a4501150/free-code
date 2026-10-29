@@ -993,7 +993,9 @@ export async function getAttachments(
       getPlanModeExitAttachment(messages, toolUseContext),
     ),
     maybe('auto_mode', () => getAutoModeAttachments(messages, toolUseContext)),
-    maybe('auto_mode_exit', () => getAutoModeExitAttachment(toolUseContext)),
+    maybe('auto_mode_exit', () =>
+      getAutoModeExitAttachment(messages, toolUseContext),
+    ),
     maybe('stale_task_list', () =>
       getStaleTaskListAttachment(messages ?? [], toolUseContext),
     ),
@@ -1439,7 +1441,8 @@ async function getAutoModeAttachments(
  * Returns an auto_mode_exit attachment if we just exited auto mode.
  * This is a one-time notification to tell the model it's no longer in auto mode.
  */
-async function getAutoModeExitAttachment(
+export async function getAutoModeExitAttachment(
+  messages: Message[] | undefined,
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
   if (!needsAutoModeExitAttachment()) {
@@ -1458,6 +1461,16 @@ async function getAutoModeExitAttachment(
   }
 
   setNeedsAutoModeExitAttachment(false)
+
+  // Stateless-scan gate: announce the exit only when the transcript actually
+  // carries an auto_mode announcement the model saw. Tab-cycling through
+  // auto mode without a request in between sets the transition flag but
+  // never emits the enter attachment — announcing that exit would tell the
+  // model it left an auto mode it never entered.
+  if (countAutoModeAttachmentsSinceLastExit(messages ?? []) === 0) {
+    return []
+  }
+
   return [{ type: 'auto_mode_exit' }]
 }
 
