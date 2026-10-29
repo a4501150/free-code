@@ -14,6 +14,7 @@
 import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 setDefaultTimeout(120_000)
 import { textResponse } from '../helpers/fixture-builders'
+import { loadScaledTimeoutMs } from '../helpers/wait-helpers'
 import {
   type TmuxSession,
   createLoggingTest,
@@ -94,12 +95,34 @@ describe('LogoV2 vertical divider', () => {
       // number of pages depends on how much of the response rendered, so a
       // fixed press count can land one page short; keep pressing until the
       // logo's top border appears in the captured rows.
+      //
+      // A press must never happen while the logo is already at the top:
+      // sendKeyAndAwaitRender throws when a key changes nothing, and PPage
+      // at the top of the scroll region is exactly such a no-op. A transient
+      // repaint (spinner/status frame) between a scroll landing and the
+      // post-press check once ordered one press too many — a 10s hang on a
+      // no-op, not a paint failure. So: check BEFORE each press, and treat a
+      // timed-out press as "the view is already at top" — the visibility
+      // check below then decides success or failure on the settled screen.
       const maxScrollBackPresses = 10
       for (let i = 0; i < maxScrollBackPresses; i++) {
-        await session.sendKeyAndAwaitRender('PPage')
         screen = await session.capturePane()
         logoLines = screen.split('\n').slice(0, 15)
         if (logoLines.some(line => line.includes('╭'))) break
+
+        try {
+          await session.sendKeyAndAwaitRender(
+            'PPage',
+            loadScaledTimeoutMs(10_000),
+          )
+        } catch {
+          // The press changed nothing: at top (or the region is
+          // exhausted). Stop pressing either way — the logo is either on
+          // this settled screen or the divider genuinely did not survive.
+          screen = await session.capturePane()
+          logoLines = screen.split('\n').slice(0, 15)
+          break
+        }
       }
 
       // Verify divider is still present after re-entering viewport
