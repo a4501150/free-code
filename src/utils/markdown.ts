@@ -1,5 +1,5 @@
 import chalk from 'chalk'
-import { marked, type Token, type Tokens } from 'marked'
+import { marked, Marked, type Token, type Tokens } from 'marked'
 import stripAnsi from 'strip-ansi'
 import { color } from '../components/design-system/color.js'
 import { BLOCKQUOTE_BAR } from '../constants/figures.js'
@@ -18,6 +18,10 @@ const EOL = '\n'
 
 let markedConfigured = false
 
+// Separate instance with no extensions: its lexer is the untouched default
+// used to (re)parse source inside the tokenizer override below.
+const defaultMarked = new Marked()
+
 export function configureMarked(): void {
   if (markedConfigured) return
   markedConfigured = true
@@ -29,8 +33,54 @@ export function configureMarked(): void {
       del() {
         return undefined
       },
+      // A raw `|` inside a code span in a table cell (`| tail` in backticks)
+      // splits the row into more cells than the delimiter row declares, so
+      // GFM rejects the table and the user sees the raw markdown block.
+      // GFM's answer is `\|`, which models rarely write — rewrite it on the
+      // way into the default table rule.
+      table(src) {
+        return defaultMarked.lexer(escapePipesInTable(src))[0] as
+          | Tokens.Table
+          | undefined
+      },
     },
   })
+}
+
+const TABLE_PIPE_SPAN = /(`+)([^`]*?)\1/g
+const TABLE_ROW = /^\s*\|/
+const TABLE_DELIMITER = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/
+
+/**
+ * Escape `|` as `\|` inside code spans on the table-block lines of `src` so
+ * the default GFM table rule sees a well-formed block; the cell inline lexer
+ * turns `\|` back into a literal `|`. Only touches lines of a block with a
+ * delimiter row, so anything the default rule would not have called a table
+ * passes through unchanged.
+ */
+export function escapePipesInTable(src: string): string {
+  const lines = src.split(EOL)
+  let headerEnd = -1
+  for (let i = 0; i + 1 < lines.length; i++) {
+    if (TABLE_ROW.test(lines[i]!) && TABLE_DELIMITER.test(lines[i + 1]!)) {
+      headerEnd = i + 1
+      break
+    }
+  }
+  if (headerEnd === -1) return src
+  let bodyEnd = headerEnd + 1
+  while (bodyEnd < lines.length && TABLE_ROW.test(lines[bodyEnd]!)) bodyEnd++
+  for (let i = 0; i < bodyEnd; i++) {
+    if (!TABLE_ROW.test(lines[i]!)) continue
+    lines[i] = lines[i]!.replace(
+      TABLE_PIPE_SPAN,
+      (span, fence: string, inside: string) =>
+        inside.includes('\\|')
+          ? span
+          : fence + inside.replace(/\|/g, '\\|') + fence,
+    )
+  }
+  return lines.join(EOL)
 }
 
 export function applyMarkdown(
