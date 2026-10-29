@@ -989,7 +989,9 @@ export async function getAttachments(
     maybe('dynamic_skill', () => getDynamicSkillAttachments(context)),
     maybe('skill_listing', () => getSkillListingAttachments(context)),
     maybe('plan_mode', () => getPlanModeAttachments(messages, toolUseContext)),
-    maybe('plan_mode_exit', () => getPlanModeExitAttachment(toolUseContext)),
+    maybe('plan_mode_exit', () =>
+      getPlanModeExitAttachment(messages, toolUseContext),
+    ),
     maybe('auto_mode', () => getAutoModeAttachments(messages, toolUseContext)),
     maybe('auto_mode_exit', () => getAutoModeExitAttachment(toolUseContext)),
     maybe('stale_task_list', () =>
@@ -1293,7 +1295,8 @@ async function getPlanModeAttachments(
  * Returns a plan_mode_exit attachment if we just exited plan mode.
  * This is a one-time notification to tell the model it's no longer in plan mode.
  */
-async function getPlanModeExitAttachment(
+export async function getPlanModeExitAttachment(
+  messages: Message[] | undefined,
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
   // Only trigger if the flag is set (we just exited plan mode)
@@ -1309,6 +1312,15 @@ async function getPlanModeExitAttachment(
 
   // Clear the flag - this is a one-time notification
   setNeedsPlanModeExitAttachment(false)
+
+  // Stateless-scan gate: announce the exit only when the transcript actually
+  // carries a plan_mode announcement the model saw. Tab-cycling through plan
+  // mode without a request in between sets the transition flag but never
+  // emits the enter attachment — announcing that exit would tell the model
+  // it left a plan mode it never entered.
+  if (countPlanModeAttachmentsSinceLastExit(messages ?? []) === 0) {
+    return []
+  }
 
   const planFilePath = getPlanFilePath(toolUseContext.agentId)
   const planExists = getPlan(toolUseContext.agentId) !== null
