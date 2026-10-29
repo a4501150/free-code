@@ -30,7 +30,7 @@ export function getSimplePrompt(): string {
   const paragraphs: Array<string> = [
     patterns,
     'Never `sleep` in a Bash command to wait for a result — the background task notification arrives on its own; end your turn and read the output file when it lands.',
-    'Never cap or capture output yourself with `| tail`, `| head`, `| wc -l`, or a `> out.log 2>&1` redirect (with or without an `echo "EXIT=$?"` tail) — the harness already saves the command\'s full output to a file and gives you the path, and reports the exit status: read that file instead of making your own, since piping or redirecting only destroys rows you and the user may need.',
+    'Every result footer states `[exit N · full output: <path>]`: the harness wrote the command\'s complete stream there (even behind your `| tail`) and rewrites your own `>` targets to it, so read that path instead of piping to cap output or keeping your own log.',
     'In `rg` (ripgrep), `-r` means `--replace`, not recursive (rg is recursive by default): the grep habit `rg -rn PATTERN` silently overwrites every match with a literal `n`; use `rg -n PATTERN`.',
   ]
 

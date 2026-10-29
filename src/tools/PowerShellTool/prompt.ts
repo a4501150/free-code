@@ -59,12 +59,12 @@ export async function getPrompt(): Promise<string> {
 
 Two run patterns:
 - Foreground (default): blocks until the command finishes and returns its output.
-- Background (\`run_in_background: true\`): returns immediately with a task ID and an output file path; a system task notification reports its completion — no waiting or polling. Run the command bare — your own \`> log 2>&1\` redirect hides from the UI the output the harness already captures.`
+- Background (\`run_in_background: true\`): returns immediately with a task ID and an output file path; a system task notification reports its completion — no waiting or polling.`
     : ''
 
   return `Executes a given PowerShell command and returns its output. Shell state (variables, functions) does not persist between commands.${backgroundSection}
 
-The user reads every tool result in the session, and output is auto-saved to a file (referenced in the result) when it grows — run the command without a pipe: a pipe through \`Select-Object\` or \`Select-String\` truncates what the user gets to see.
+Every result footer states \`[exit N · full output: <path>]\`: the harness wrote the command's complete stream there (even behind your \`| Select-Object\`) and rewrites your own \`>\` targets to it, so read that path instead of piping to cap output or keeping your own log.
 
 ${getEditionSection(edition)}
 
