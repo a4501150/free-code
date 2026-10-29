@@ -1,5 +1,5 @@
 import { z } from 'zod/v4'
-import { getAssistantActive, getUserMsgOptIn } from '../../bootstrap/state.js'
+import { getUserMsgOptIn } from '../../bootstrap/state.js'
 
 import type { ValidationResult } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
@@ -70,17 +70,18 @@ export function isBriefEntitled(): boolean {
 
 /**
  * Unified activation gate for the Brief tool. Governs model-facing behavior
- * as a unit: tool availability, system prompt section (getBriefSection), and
- * todo-nag suppression.
+ * as a unit: tool availability, guidance section (BRIEF_PROACTIVE_SECTION
+ * in the assistant_mode carrier), and todo-nag suppression.
  *
  * Activation requires explicit opt-in (userMsgOptIn) set by one of:
  *   - `--brief` CLI flag (maybeActivateBrief in main.tsx)
- *   - `defaultView: 'chat'` in settings (main.tsx init)
+ *   - `defaultView: 'chat'` in settings (main.tsx init, interactive only)
  *   - `/brief` slash command (brief.ts)
  *   - `/config` defaultView picker (Config.tsx)
  *   - SendUserMessage in `--tools` / SDK `tools` option (main.tsx)
- * Assistant mode (assistantActive) bypasses opt-in since its system prompt
- * hard-codes "you MUST use SendUserMessage" (systemPrompt.md:14).
+ * Assistant mode is deliberately NOT an opt-in: the gateway assistant child
+ * has no delivery surface for SendUserMessage (the WebUI renders it as a
+ * plain tool card), so its replies are plain text.
  *
  * The GB gate is re-checked here as a kill-switch AND — flipping
  * tengu_kairos_brief off mid-session disables the tool on the next 5-min
@@ -88,11 +89,10 @@ export function isBriefEntitled(): boolean {
  * of GB (this is the fix for "brief defaults on for enrolled ants").
  *
  * Called from Tool.isEnabled() (lazy, post-init), never at module scope.
- * getAssistantActive() and getUserMsgOptIn() are set in main.tsx before any
- * caller reaches here.
+ * getUserMsgOptIn() is set in main.tsx before any caller reaches here.
  */
 export function isBriefEnabled(): boolean {
-  return (getAssistantActive() || getUserMsgOptIn()) && isBriefEntitled()
+  return getUserMsgOptIn() && isBriefEntitled()
 }
 
 export const BriefTool = buildTool({

@@ -1252,14 +1252,13 @@ async function run(): Promise<CommanderCommand> {
 
       // Assistant mode exists only in the headless gateway child — one
       // assistant per machine, and the TUI can only join it (see the
-      // assistantJoin branch after the setup screens). When the activation
-      // gate is on, force brief on. Permission mode is left to the user —
-      // settings defaultMode or --permission-mode apply as normal.
-      // SendUserMessage (BriefTool) is enabled via the brief env var.
+      // assistantJoin branch after the setup screens). Permission mode is
+      // left to the user — settings defaultMode or --permission-mode apply
+      // as normal. Brief/SendUserMessage stays OFF: the WebUI has no
+      // delivery surface for it, so replies are plain text.
       // assistantEnabled is computed once here and reused by the AppState
       // snapshot further down; the guidance itself rides the
-      // `assistant_mode` attachment.
-      //
+      // `assistant_mode` attachment.      //
       // Trust gate: .freecode/freecode.json is attacker-controllable in an
       // untrusted clone. We run ~1000 lines before showSetupScreens() shows
       // the trust dialog, and by then the assistant persona would already
@@ -1288,8 +1287,6 @@ async function run(): Promise<CommanderCommand> {
           // Assistant mode is enabled unconditionally once the module's own
           // mode check passes (trust dialog accepted).
           assistantEnabled = true
-          const opts = options as { brief?: boolean }
-          opts.brief = true
           setAssistantActive(true)
           // One-time: give the assistant a persona file it can grow into
           // its identity (never overwrites an existing one).

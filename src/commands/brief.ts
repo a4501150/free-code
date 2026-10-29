@@ -1,4 +1,4 @@
-import { getAssistantActive, setUserMsgOptIn } from '../bootstrap/state.js'
+import { setUserMsgOptIn } from '../bootstrap/state.js'
 import type { ToolUseContext } from '../Tool.js'
 import { isBriefEntitled } from '../tools/BriefTool/BriefTool.js'
 import { BRIEF_TOOL_NAME } from '../tools/BriefTool/prompt.js'
@@ -47,21 +47,16 @@ const brief = {
     // (model may keep emitting plain text from inertia, or keep calling a
     // tool that just vanished). Inject an explicit reminder into the next
     // turn's context so the transition is unambiguous.
-    // Skip when the assistant is active: isBriefEnabled() short-circuits on
-    // getAssistantActive() so the tool never actually leaves the list, and
-    // the assistant system prompt already mandates SendUserMessage.
     // Inline <system-reminder> wrap — importing wrapInSystemReminder from
     // utils/messages.ts pulls constants/xml.ts into the SDK bundle
     // via this module's import chain, tripping the excluded-strings check.
-    const metaMessages = getAssistantActive()
-      ? undefined
-      : [
-          `<system-reminder>\n${
-            newState
-              ? `Brief mode is now enabled. Use the ${BRIEF_TOOL_NAME} tool for all user-facing output — plain text outside it is hidden from the user's view.`
-              : `Brief mode is now disabled. The ${BRIEF_TOOL_NAME} tool is no longer available — reply with plain text.`
-          }\n</system-reminder>`,
-        ]
+    const metaMessages = [
+      `<system-reminder>\n${
+        newState
+          ? `Brief mode is now enabled. Use the ${BRIEF_TOOL_NAME} tool for all user-facing output — plain text outside it is hidden from the user's view.`
+          : `Brief mode is now disabled. The ${BRIEF_TOOL_NAME} tool is no longer available — reply with plain text.`
+      }\n</system-reminder>`,
+    ]
 
     onDone(newState ? 'Brief-only mode enabled' : 'Brief-only mode disabled', {
       display: 'system',
