@@ -167,6 +167,13 @@ export type ExecOptions = {
   shouldAutoBackground?: boolean
   /** When provided, stdout is piped (not sent to file) and this callback fires on each data chunk. */
   onStdout?: (data: string) => void
+  /**
+   * Use this task id for the output file instead of generating one, so the
+   * caller knows the path ahead of time — required by the Bash/PowerShell
+   * redirect rewrite, which rewrites the command's own `>` target to this
+   * file so the harness keeps capturing the full stream.
+   */
+  preallocatedTaskId?: string
 }
 
 /**
@@ -185,6 +192,7 @@ export async function exec(
     preventCwdChanges,
     shouldAutoBackground,
     onStdout,
+    preallocatedTaskId,
   } = options ?? {}
   const commandTimeout = timeout || DEFAULT_TIMEOUT
 
@@ -235,7 +243,7 @@ export async function exec(
   // StreamWrapper → TaskOutput in-memory buffer instead of a file fd.
   // This lets callers receive real-time stdout callbacks.
   const usePipeMode = !!onStdout
-  const taskId = generateTaskId('local_bash')
+  const taskId = preallocatedTaskId ?? generateTaskId('local_bash')
   const taskOutput = new TaskOutput(taskId, onProgress ?? null, !usePipeMode)
   await mkdir(getTaskOutputDir(), { recursive: true })
 

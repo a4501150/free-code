@@ -25,6 +25,8 @@ export type ExecResult = {
   outputFileSize?: number
   /** The task ID for the output file (set when outputFilePath is set). */
   outputTaskId?: string
+  /** Set when the command's own > targets were rewritten to the output file. */
+  redirectRewritten?: { harnessPath: string; originalTargets: string[] }
   /** Error message when the command failed before spawning (e.g., deleted cwd). */
   preSpawnError?: string
 }
@@ -304,15 +306,12 @@ class ShellCommandImpl implements ShellCommand {
     }
 
     if (this.taskOutput.stdoutToFile && !this.#backgroundTaskId) {
-      if (this.taskOutput.outputFileRedundant) {
-        // Small file — full content is in result.stdout, delete the file
-        void this.taskOutput.deleteOutputFile()
-      } else {
-        // Large file — tell the caller where the full output lives
-        result.outputFilePath = this.taskOutput.path
-        result.outputFileSize = this.taskOutput.outputFileSize
-        result.outputTaskId = this.taskOutput.taskId
-      }
+      // Always report the file — it is the complete record of the command's
+      // output even when stdout already holds the whole content, and the
+      // model-facing result points at it for every command.
+      result.outputFilePath = this.taskOutput.path
+      result.outputFileSize = this.taskOutput.outputFileSize
+      result.outputTaskId = this.taskOutput.taskId
     }
 
     if (this.#killedForSize) {

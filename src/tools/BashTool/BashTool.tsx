@@ -48,6 +48,8 @@ import { truncate } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
 import { expandPath } from '../../utils/path.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
+import { rewriteRedirectsToHarnessFile } from '../../utils/bash/outputCapture.js'
+import { getMaxOutputLength } from '../../utils/shell/outputLimits.js'
 import { exec } from '../../utils/Shell.js'
 import type { ExecResult } from '../../utils/ShellCommand.js'
 import { getPlatform } from '../../utils/platform.js'
@@ -401,17 +403,30 @@ const outputSchema = z.object({
     .array(z.any())
     .optional()
     .describe('Structured content blocks'),
-  persistedOutputPath: z
+  outputPath: z
     .string()
     .optional()
     .describe(
-      'Path to the persisted full output in tool-results dir (set when output is too large for inline)',
+      "Path to the file holding the command's complete output (always set for foreground commands; the inline stdout may be capped)",
     ),
   persistedOutputSize: z
     .number()
     .optional()
     .describe(
       'Total size of the output in bytes (set when output is too large for inline)',
+    ),
+  exitCode: z
+    .number()
+    .optional()
+    .describe('Process exit code (foreground results)'),
+  redirectRewritten: z
+    .object({
+      harnessPath: z.string(),
+      originalTargets: z.array(z.string()),
+    })
+    .optional()
+    .describe(
+      "Set when the command's own > target was rewritten to the harness output file",
     ),
 })
 
@@ -656,8 +671,10 @@ export const BashTool = buildTool({
       backgroundedByUser,
       assistantAutoBackgrounded,
       structuredContent,
-      persistedOutputPath,
+      outputPath,
       persistedOutputSize,
+      exitCode,
+      redirectRewritten,
     },
     toolUseID,
   ): DomainToolResultBlockParam {
@@ -684,13 +701,14 @@ export const BashTool = buildTool({
       processedStdout = processedStdout.trimEnd()
     }
 
-    // For large output that was persisted to disk, build <persisted-output>
-    // message for the model. The UI never sees this — it uses data.stdout.
-    if (persistedOutputPath) {
+    // For large output that was capped inline, build <persisted-output>
+    // preview for the model. The UI never sees this — it uses data.stdout.
+    // The path itself rides the footer line below, for every command.
+    if (persistedOutputSize !== undefined) {
       const preview = generatePreview(processedStdout, PREVIEW_SIZE_BYTES)
       processedStdout = buildLargeToolResultMessage({
-        filepath: persistedOutputPath,
-        originalSize: persistedOutputSize ?? 0,
+        filepath: outputPath ?? '',
+        originalSize: persistedOutputSize,
         isJson: false,
         preview: preview.preview,
         hasMore: preview.hasMore,
@@ -715,10 +733,22 @@ export const BashTool = buildTool({
       }
     }
 
+    // Footer: the invariant facts every foreground result states — the exit
+    // code and where the complete output lives. Backgrounded results already
+    // name the same file in backgroundInfo; the completion notification
+    // carries the exit code.
+    let footer = ''
+    if (redirectRewritten) {
+      footer += `[redirect rewritten: output saved to ${redirectRewritten.harnessPath} instead of ${redirectRewritten.originalTargets.join(', ')}]\n`
+    }
+    if (!backgroundTaskId && exitCode !== undefined) {
+      footer += `[exit ${exitCode} · full output: ${outputPath}]`
+    }
+
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
-      content: [processedStdout, errorMessage, backgroundInfo]
+      content: [processedStdout, errorMessage, backgroundInfo, footer]
         .filter(Boolean)
         .join('\n'),
       is_error: interrupted,
@@ -815,13 +845,6 @@ export const BashTool = buildTool({
 
       // Check for git index.lock error (stderr is in stdout now)
 
-      if (interpretationResult.isError && !isInterrupt) {
-        // Only add exit code if it's actually an error
-        if (result.code !== 0) {
-          stdoutAccumulator.append(`Exit code ${result.code}`)
-        }
-      }
-
       if (!preventCwdChanges) {
         const appState = getAppState()
         if (resetCwdIfOutsideProject(appState.toolPermissionContext)) {
@@ -853,17 +876,21 @@ export const BashTool = buildTool({
     // Get final string from accumulator
     const stdout = stdoutAccumulator.toString()
 
-    // Large output: the file on disk has more than getMaxOutputLength() bytes.
-    // stdout already contains the first chunk (from getStdout()). Copy the
-    // output file to the tool-results dir so the model can read it via
-    // FileRead. If > 64 MB, truncate after copying.
+    // Every foreground command has an output file with its complete stream.
+    // Hardlink it into the session tool-results dir (session-scoped retention,
+    // survives task-output GC) — the result footer points the model at it.
+    // When the file exceeded the inline limit, stdout only holds the first
+    // chunk and the <persisted-output> preview block is added downstream.
+    // If > 64 MB, truncate the source file before linking.
     const MAX_PERSISTED_SIZE = 64 * 1024 * 1024
-    let persistedOutputPath: string | undefined
+    let outputPath: string | undefined
     let persistedOutputSize: number | undefined
     if (result.outputFilePath && result.outputTaskId) {
       try {
         const fileStat = await fsStat(result.outputFilePath)
-        persistedOutputSize = fileStat.size
+        if (fileStat.size > getMaxOutputLength()) {
+          persistedOutputSize = fileStat.size
+        }
 
         await ensureToolResultsDir()
         const dest = getToolResultPath(result.outputTaskId, false)
@@ -875,9 +902,10 @@ export const BashTool = buildTool({
         } catch {
           await copyFile(result.outputFilePath, dest)
         }
-        persistedOutputPath = dest
+        outputPath = dest
       } catch {
         // File may already be gone — stdout preview is sufficient
+        outputPath = result.outputFilePath
       }
     }
 
@@ -907,9 +935,15 @@ export const BashTool = buildTool({
     }
 
     // Record a content sighting when the command was a recognized single-file
-    // read and we are showing the model its full text output (persisted/
-    // truncated output and image outputs record nothing).
-    if (!persistedOutputPath && !isImage) {
+    // read and we are showing the model its full text output. Capped inline
+    // output, image outputs, and rewritten redirects record nothing — in the
+    // redirect case the text landed in the output file, never in the model's
+    // view of the result.
+    if (
+      persistedOutputSize === undefined &&
+      !isImage &&
+      !result.redirectRewritten
+    ) {
       recordBashReadSighting(
         toolUseContext.readFileState,
         input.command,
@@ -927,8 +961,10 @@ export const BashTool = buildTool({
       backgroundTaskId: result.backgroundTaskId,
       backgroundedByUser: result.backgroundedByUser,
       assistantAutoBackgrounded: result.assistantAutoBackgrounded,
-      persistedOutputPath,
+      outputPath,
       persistedOutputSize,
+      exitCode: result.code,
+      redirectRewritten: result.redirectRewritten,
     }
 
     return {
@@ -1001,32 +1037,56 @@ async function* runShellCommand({
   const shouldAutoBackground =
     !isBackgroundTasksDisabled && isAutobackgroundingAllowed(command)
 
-  const shellCommand = await exec(command, abortController.signal, 'bash', {
-    timeout: timeoutMs,
-    onProgress(lastLines, allLines, totalLines, totalBytes, isIncomplete) {
-      lastProgressOutput = lastLines
-      fullOutput = allLines
-      lastTotalLines = totalLines
-      lastTotalBytes = isIncomplete ? totalBytes : 0
-      // Wake the generator so it yields the new progress data
-      const resolve = resolveProgress
-      if (resolve) {
-        resolveProgress = null
-        resolve()
-      }
+  // Rewrite the command's own > / >> targets to a preallocated harness output
+  // file so the harness keeps capturing the full stream (the redirect would
+  // otherwise send it somewhere we never see). The result footer reports the
+  // substitution to the model.
+  const rewrite = rewriteRedirectsToHarnessFile(command)
+
+  const shellCommand = await exec(
+    rewrite?.rewrittenCommand ?? command,
+    abortController.signal,
+    'bash',
+    {
+      timeout: timeoutMs,
+      preallocatedTaskId: rewrite?.taskId,
+      onProgress(lastLines, allLines, totalLines, totalBytes, isIncomplete) {
+        lastProgressOutput = lastLines
+        fullOutput = allLines
+        lastTotalLines = totalLines
+        lastTotalBytes = isIncomplete ? totalBytes : 0
+        // Wake the generator so it yields the new progress data
+        const resolve = resolveProgress
+        if (resolve) {
+          resolveProgress = null
+          resolve()
+        }
+      },
+      preventCwdChanges,
+      shouldAutoBackground,
     },
-    preventCwdChanges,
-    shouldAutoBackground,
-  })
+  )
 
   // Start the command execution
   const resultPromise = shellCommand.result
+
+  // Stamp the redirect-rewrite fact onto every result this generator returns
+  // so the model-facing footer can report the substitution.
+  function withRewriteInfo(r: ExecResult): ExecResult {
+    if (rewrite) {
+      r.redirectRewritten = {
+        harnessPath: rewrite.harnessPath,
+        originalTargets: rewrite.originalTargets,
+      }
+    }
+    return r
+  }
 
   // Helper to spawn a background task and return its ID
   async function spawnBackgroundTask(): Promise<string> {
     const handle = await spawnShellTask(
       {
-        command,
+        command: rewrite?.rewrittenCommand ?? command,
         description: description || command,
         shellCommand,
         toolUseId,
@@ -1202,16 +1262,16 @@ async function* runShellCommand({
             ...result,
             backgroundTaskId: undefined,
           }
-          // Mirror ShellCommand.#handleExit's large-output branch that was
+          // Mirror ShellCommand.#handleExit's output-file branch that was
           // skipped because #backgroundTaskId was set.
           const { taskOutput } = shellCommand
-          if (taskOutput.stdoutToFile && !taskOutput.outputFileRedundant) {
+          if (taskOutput.stdoutToFile) {
             fixedResult.outputFilePath = taskOutput.path
             fixedResult.outputFileSize = taskOutput.outputFileSize
             fixedResult.outputTaskId = taskOutput.taskId
           }
           shellCommand.cleanup()
-          return fixedResult
+          return withRewriteInfo(fixedResult)
         }
         // Command has completed - return the actual result
         // If we registered as a foreground task, unregister it
@@ -1221,23 +1281,27 @@ async function* runShellCommand({
         // Clean up stream resources for foreground commands
         // (backgrounded commands are cleaned up by LocalShellTask)
         shellCommand.cleanup()
-        return result
+        return withRewriteInfo(result)
       }
 
       // Check if command was backgrounded (either via old mechanism or new backgroundAll)
       if (backgroundShellId) {
-        return backgroundedResult(backgroundShellId, {
-          assistantAutoBackgrounded,
-        })
+        return withRewriteInfo(
+          backgroundedResult(backgroundShellId, {
+            assistantAutoBackgrounded,
+          }),
+        )
       }
 
       // Check if this foreground task was backgrounded via backgroundAll()
       if (foregroundTaskId) {
         // shellCommand.status becomes 'backgrounded' when background() is called
         if (shellCommand.status === 'backgrounded') {
-          return backgroundedResult(foregroundTaskId, {
-            backgroundedByUser: true,
-          })
+          return withRewriteInfo(
+            backgroundedResult(foregroundTaskId, {
+              backgroundedByUser: true,
+            }),
+          )
         }
       }
 

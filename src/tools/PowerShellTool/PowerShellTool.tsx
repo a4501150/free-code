@@ -37,6 +37,8 @@ import {
 import { truncate } from '../../utils/format.js'
 import { logError } from '../../utils/log.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
+import { rewritePsRedirectsToHarnessFile } from '../../utils/bash/outputCapture.js'
+import { getMaxOutputLength } from '../../utils/shell/outputLimits.js'
 import { exec } from '../../utils/Shell.js'
 import type { ExecResult } from '../../utils/ShellCommand.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
@@ -283,14 +285,29 @@ const outputSchema = z.object({
     .boolean()
     .optional()
     .describe('Flag to indicate if stdout contains image data'),
-  persistedOutputPath: z
+  outputPath: z
     .string()
     .optional()
-    .describe('Path to persisted full output when too large for inline'),
+    .describe(
+      "Path to the file holding the command's complete output (always set for foreground commands; the inline stdout may be capped)",
+    ),
   persistedOutputSize: z
     .number()
     .optional()
-    .describe('Total output size in bytes when persisted'),
+    .describe('Total output size in bytes when the inline view was capped'),
+  exitCode: z
+    .number()
+    .optional()
+    .describe('Process exit code (foreground results)'),
+  redirectRewritten: z
+    .object({
+      harnessPath: z.string(),
+      originalTargets: z.array(z.string()),
+    })
+    .optional()
+    .describe(
+      "Set when the command's own > target was rewritten to the harness output file",
+    ),
   backgroundTaskId: z
     .string()
     .optional()
@@ -464,8 +481,10 @@ export const PowerShellTool = buildTool({
       stdout,
       stderr,
       isImage,
-      persistedOutputPath,
+      outputPath,
       persistedOutputSize,
+      exitCode,
+      redirectRewritten,
       backgroundTaskId,
       backgroundedByUser,
       assistantAutoBackgrounded,
@@ -480,12 +499,12 @@ export const PowerShellTool = buildTool({
 
     let processedStdout = stdout
 
-    if (persistedOutputPath) {
+    if (persistedOutputSize !== undefined) {
       const trimmed = stdout ? stdout.replace(/^(\s*\n)+/, '').trimEnd() : ''
       const preview = generatePreview(trimmed, PREVIEW_SIZE_BYTES)
       processedStdout = buildLargeToolResultMessage({
-        filepath: persistedOutputPath,
-        originalSize: persistedOutputSize ?? 0,
+        filepath: outputPath ?? '',
+        originalSize: persistedOutputSize,
         isJson: false,
         preview: preview.preview,
         hasMore: preview.hasMore,
@@ -513,10 +532,20 @@ export const PowerShellTool = buildTool({
       }
     }
 
+    // Footer: the invariant facts every foreground result states — the exit
+    // code and where the complete output lives. Matches BashTool.
+    let footer = ''
+    if (redirectRewritten) {
+      footer += `[redirect rewritten: output saved to ${redirectRewritten.harnessPath} instead of ${redirectRewritten.originalTargets.join(', ')}]\n`
+    }
+    if (!backgroundTaskId && exitCode !== undefined) {
+      footer += `[exit ${exitCode} · full output: ${outputPath}]`
+    }
+
     return {
       tool_use_id: toolUseID,
       type: 'tool_result' as const,
-      content: [processedStdout, errorMessage, backgroundInfo]
+      content: [processedStdout, errorMessage, backgroundInfo, footer]
         .filter(Boolean)
         .join('\n'),
       is_error: interrupted,
@@ -670,22 +699,25 @@ export const PowerShellTool = buildTool({
         )
       }
 
-      // Large output: file on disk has more than getMaxOutputLength() bytes.
-      // stdout already contains the first chunk. Copy the output file to the
-      // tool-results dir so the model can read it via FileRead. If > 64 MB,
-      // truncate after copying. Matches BashTool.tsx:983-1005.
+      // Every foreground command has an output file with its complete stream.
+      // Hardlink it into the session tool-results dir; the result footer
+      // points the model at it. When the file exceeded the inline limit,
+      // stdout only holds the first chunk and the <persisted-output> preview
+      // block is added downstream. If > 64 MB, truncate before linking.
       //
       // Placed AFTER the preSpawnError/ShellError throws (matches BashTool's
       // ordering, where persistence is post-try/finally): a failing command
       // that also produced >maxOutputLength bytes would otherwise do 3-4 disk
       // syscalls, store to tool-results/, then throw — orphaning the file.
       const MAX_PERSISTED_SIZE = 64 * 1024 * 1024
-      let persistedOutputPath: string | undefined
+      let outputPath: string | undefined
       let persistedOutputSize: number | undefined
       if (result.outputFilePath && result.outputTaskId) {
         try {
           const fileStat = await fsStat(result.outputFilePath)
-          persistedOutputSize = fileStat.size
+          if (fileStat.size > getMaxOutputLength()) {
+            persistedOutputSize = fileStat.size
+          }
 
           await ensureToolResultsDir()
           const dest = getToolResultPath(result.outputTaskId, false)
@@ -697,9 +729,10 @@ export const PowerShellTool = buildTool({
           } catch {
             await copyFile(result.outputFilePath, dest)
           }
-          persistedOutputPath = dest
+          outputPath = dest
         } catch {
           // File may already be gone — stdout preview is sufficient
+          outputPath = result.outputFilePath
         }
       }
 
@@ -736,8 +769,10 @@ export const PowerShellTool = buildTool({
           interrupted: result.interrupted,
           returnCodeInterpretation: interpretation.message,
           isImage,
-          persistedOutputPath,
+          outputPath,
           persistedOutputSize,
+          exitCode: result.code,
+          redirectRewritten: result.redirectRewritten,
         },
       }
     } finally {
@@ -825,18 +860,38 @@ async function* runPowerShellCommand({
   }
 
   let shellCommand: Awaited<ReturnType<typeof exec>>
+  // Rewrite the command's own `>` file targets to a preallocated harness
+  // output file so the harness keeps capturing the full stream. Matches
+  // BashTool's redirect rewrite; `2>&1` merges carry no target, untouched.
+  const rewrite = rewritePsRedirectsToHarnessFile(command)
+  // Stamp the redirect-rewrite fact onto every result this generator returns.
+  function withRewriteInfo(r: ExecResult): ExecResult {
+    if (rewrite) {
+      r.redirectRewritten = {
+        harnessPath: rewrite.harnessPath,
+        originalTargets: rewrite.originalTargets,
+      }
+    }
+    return r
+  }
   try {
-    shellCommand = await exec(command, abortController.signal, 'powershell', {
-      timeout: timeoutMs,
-      onProgress(lastLines, allLines, totalLines, totalBytes, isIncomplete) {
-        lastProgressOutput = lastLines
-        fullOutput = allLines
-        lastTotalLines = totalLines
-        lastTotalBytes = isIncomplete ? totalBytes : 0
+    shellCommand = await exec(
+      rewrite?.rewrittenCommand ?? command,
+      abortController.signal,
+      'powershell',
+      {
+        timeout: timeoutMs,
+        preallocatedTaskId: rewrite?.taskId,
+        onProgress(lastLines, allLines, totalLines, totalBytes, isIncomplete) {
+          lastProgressOutput = lastLines
+          fullOutput = allLines
+          lastTotalLines = totalLines
+          lastTotalBytes = isIncomplete ? totalBytes : 0
+        },
+        preventCwdChanges,
+        shouldAutoBackground,
       },
-      preventCwdChanges,
-      shouldAutoBackground,
-    })
+    )
   } catch (e) {
     logError(e)
     // Pre-flight failure: spawn/exec rejected before the command ran. Use
@@ -855,7 +910,7 @@ async function* runPowerShellCommand({
   async function spawnBackgroundTask(): Promise<string> {
     const handle = await spawnShellTask(
       {
-        command,
+        command: rewrite?.rewrittenCommand ?? command,
         description: description || command,
         shellCommand,
         toolUseId,
@@ -1008,10 +1063,10 @@ async function* runPowerShellCommand({
             ...result,
             backgroundTaskId: undefined,
           }
-          // Mirror ShellCommand.#handleExit's large-output branch that was
+          // Mirror ShellCommand.#handleExit's output-file branch that was
           // skipped because #backgroundTaskId was set.
           const { taskOutput } = shellCommand
-          if (taskOutput.stdoutToFile && !taskOutput.outputFileRedundant) {
+          if (taskOutput.stdoutToFile) {
             fixedResult.outputFilePath = taskOutput.path
             fixedResult.outputFileSize = taskOutput.outputFileSize
             fixedResult.outputTaskId = taskOutput.taskId
@@ -1021,22 +1076,22 @@ async function* runPowerShellCommand({
           // correctly skips cleanup for *running* backgrounded tasks, but
           // in this race the process is done. Matches BashTool.tsx:1399.
           shellCommand.cleanup()
-          return fixedResult
+          return withRewriteInfo(fixedResult)
         }
         // Command has completed
-        return result
+        return withRewriteInfo(result)
       }
 
       // Check if command was backgrounded (by timeout or interrupt)
       if (backgroundShellId) {
-        return {
+        return withRewriteInfo({
           stdout: interruptBackgroundingStarted ? fullOutput : '',
           stderr: '',
           code: 0,
           interrupted: false,
           backgroundTaskId: backgroundShellId,
           assistantAutoBackgrounded,
-        }
+        })
       }
 
       // User submitted a new message - background instead of killing
@@ -1060,14 +1115,14 @@ async function* runPowerShellCommand({
       // Check if this foreground task was backgrounded via backgroundAll() (ctrl+b)
       if (foregroundTaskId) {
         if (shellCommand.status === 'backgrounded') {
-          return {
+          return withRewriteInfo({
             stdout: '',
             stderr: '',
             code: 0,
             interrupted: false,
             backgroundTaskId: foregroundTaskId,
             backgroundedByUser: true,
-          }
+          })
         }
       }
 

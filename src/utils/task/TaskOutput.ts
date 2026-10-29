@@ -42,8 +42,6 @@ export class TaskOutput {
   #totalBytes = 0
   #maxMemory: number
   #onProgress: ProgressCallback | null
-  /** Set by getStdout() — true when the file was fully read (≤ maxOutputLength). */
-  #outputFileRedundant = false
   /** Set by getStdout() — total file size in bytes. */
   #outputFileSize = 0
 
@@ -299,15 +297,13 @@ export class TaskOutput {
     try {
       const result = await readFileRange(this.path, 0, maxBytes)
       if (!result) {
-        this.#outputFileRedundant = true
         return ''
       }
       const { content, bytesRead, bytesTotal } = result
-      // If the file fits, it's fully captured inline and can be deleted.
-      // If not, return what we read — processToolResultBlock handles
-      // the <persisted-output> formatting and persistence downstream.
+      // The file always survives (it is the model-facing full-output file);
+      // when it did not fit, processToolResultBlock handles the
+      // <persisted-output> formatting and persistence downstream.
       this.#outputFileSize = bytesTotal
-      this.#outputFileRedundant = bytesTotal <= bytesRead
       return content
     } catch (err) {
       // Surface the error instead of silently returning empty. An ENOENT here
@@ -343,14 +339,6 @@ export class TaskOutput {
 
   get totalBytes(): number {
     return this.#totalBytes
-  }
-
-  /**
-   * True after getStdout() when the output file was fully read.
-   * The file content is redundant (fully in ExecResult.stdout) and can be deleted.
-   */
-  get outputFileRedundant(): boolean {
-    return this.#outputFileRedundant
   }
 
   /** Total file size in bytes, set after getStdout() reads the file. */

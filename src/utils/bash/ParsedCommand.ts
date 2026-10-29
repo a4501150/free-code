@@ -12,9 +12,12 @@ export type OutputRedirection = {
 type RedirectionNode = OutputRedirection & {
   startIndex: number
   endIndex: number
+  /** Offsets of the TARGET word only — what the output-capture rewrite splices. */
+  targetStartIndex: number
+  targetEndIndex: number
 }
 
-function visitNodes(node: Node, visitor: (node: Node) => void): void {
+export function visitNodes(node: Node, visitor: (node: Node) => void): void {
   visitor(node)
   for (const child of node.children) {
     visitNodes(child, visitor)
@@ -50,6 +53,8 @@ function extractRedirectionNodes(rootNode: Node): RedirectionNode[] {
         redirections.push({
           startIndex: node.startIndex,
           endIndex: node.endIndex,
+          targetStartIndex: target.startIndex,
+          targetEndIndex: target.endIndex,
           target: target.text,
           operator: op.type as '>' | '>>',
         })
@@ -141,6 +146,11 @@ export class ParsedCommand {
       target,
       operator,
     }))
+  }
+
+  /** Full redirection nodes including splice offsets (output-capture rewrite). */
+  getRedirectionNodes(): readonly RedirectionNode[] {
+    return this.redirectionNodes
   }
 
   getTreeSitterAnalysis(): TreeSitterAnalysis {
