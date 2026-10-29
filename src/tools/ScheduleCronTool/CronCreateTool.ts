@@ -11,8 +11,8 @@ import {
 } from '../../utils/cronTasks.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
 import {
-  buildCronCreateDescription,
-  buildCronCreatePrompt,
+  CRON_CREATE_DESCRIPTION,
+  CRON_CREATE_PROMPT,
   CRON_CREATE_TOOL_NAME,
   DEFAULT_MAX_AGE_DAYS,
   isDurableCronEnabled,
@@ -62,10 +62,10 @@ export const CronCreateTool = buildTool({
     return `${input.cron}: ${input.prompt}`
   },
   async description() {
-    return buildCronCreateDescription(isDurableCronEnabled())
+    return CRON_CREATE_DESCRIPTION
   },
   async prompt() {
-    return buildCronCreatePrompt(isDurableCronEnabled())
+    return CRON_CREATE_PROMPT
   },
   getPath() {
     return getCronFilePath()

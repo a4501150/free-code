@@ -25,16 +25,12 @@ import { getMonitorPrompt } from './prompt.js'
 import { MonitorPermissionRequest } from './MonitorPermissionRequest.js'
 
 const inputSchema = z.strictObject({
-  command: z
-    .string()
-    .describe(
-      'The shell command to run detached as the watch. Poll world state and print only when the answer changes.',
-    ),
+  command: z.string(),
   description: z
     .string()
     .optional()
     .describe(
-      'Short human-readable label for this monitor, e.g. "watch CI run 1234". Shown in task notifications and the background tasks UI.',
+      'Short human-readable label for this monitor, e.g. "watch CI run 1234".',
     ),
   notify_interval: z
     .string()

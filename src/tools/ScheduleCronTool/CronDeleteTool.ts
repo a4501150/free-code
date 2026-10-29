@@ -7,10 +7,9 @@ import {
   removeCronTasks,
 } from '../../utils/cronTasks.js'
 import {
-  buildCronDeletePrompt,
   CRON_DELETE_DESCRIPTION,
+  CRON_DELETE_PROMPT,
   CRON_DELETE_TOOL_NAME,
-  isDurableCronEnabled,
   isAssistantCronEnabled,
 } from './prompt.js'
 import { renderDeleteResultMessage, renderDeleteToolUseMessage } from './UI.js'
@@ -45,7 +44,7 @@ export const CronDeleteTool = buildTool({
     return CRON_DELETE_DESCRIPTION
   },
   async prompt() {
-    return buildCronDeletePrompt(isDurableCronEnabled())
+    return CRON_DELETE_PROMPT
   },
   getPath() {
     return getCronFilePath()

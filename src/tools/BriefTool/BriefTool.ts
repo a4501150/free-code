@@ -16,9 +16,7 @@ import {
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const inputSchema = z.strictObject({
-  message: z
-    .string()
-    .describe('The message for the user. Supports markdown formatting.'),
+  message: z.string(),
   attachments: z
     .array(z.string())
     .optional()

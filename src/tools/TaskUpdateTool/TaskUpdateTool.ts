@@ -24,9 +24,9 @@ const inputSchema = (() => {
   const TaskUpdateStatusSchema = z.enum([...TASK_STATUSES, 'deleted'] as const)
 
   return z.strictObject({
-    taskId: z.string().describe('The ID of the task to update'),
-    subject: z.string().optional().describe('New subject for the task'),
-    description: z.string().optional().describe('New description for the task'),
+    taskId: z.string(),
+    subject: z.string().optional(),
+    description: z.string().optional(),
     activeForm: z
       .string()
       .optional()

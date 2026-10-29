@@ -57,7 +57,7 @@ const inputSchema = z.strictObject({
     .describe(
       'The absolute path to the file to write (must be absolute, not relative)',
     ),
-  content: z.string().describe('The content to write to the file'),
+  content: z.string(),
 })
 type InputSchema = typeof inputSchema
 

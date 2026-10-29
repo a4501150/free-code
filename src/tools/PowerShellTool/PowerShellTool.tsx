@@ -246,7 +246,7 @@ export function detectBlockedSleepPattern(command: string): string | null {
 const isBackgroundTasksDisabled = !isBackgroundTasksEnabled()
 
 const fullInputSchema = z.strictObject({
-  command: z.string().describe('The PowerShell command to execute'),
+  command: z.string(),
   timeout: semanticNumber(z.number().optional()).describe(
     `Optional timeout in milliseconds. Max ${getMaxTimeoutMs()}; default ${getDefaultTimeoutMs()}.`,
   ),
@@ -256,9 +256,7 @@ const fullInputSchema = z.strictObject({
     .describe(
       'Short description of what the command does. Simple commands get a brief one (5-10 words).',
     ),
-  run_in_background: semanticBoolean(z.boolean().optional()).describe(
-    'Whether to run the command in the background.',
-  ),
+  run_in_background: semanticBoolean(z.boolean().optional()),
 })
 
 // Conditionally remove run_in_background from schema when background tasks are disabled

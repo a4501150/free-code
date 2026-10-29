@@ -23,7 +23,7 @@ const inputSchema = z.object({
     .describe(
       'Recipient: agent name or ID of a subagent you spawned, "parent" for the agent that spawned you (from a depth-1 agent that is the main session), or "session:<id>" for another live session.',
     ),
-  message: z.string().describe('Plain text message content'),
+  message: z.string(),
 })
 type InputSchema = typeof inputSchema
 

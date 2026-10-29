@@ -8,10 +8,7 @@ import { DESCRIPTION, BACKGROUND_TASK_STOP_TOOL_NAME } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const inputSchema = z.strictObject({
-  task_id: z
-    .string()
-    .optional()
-    .describe('The ID of the background task to stop'),
+  task_id: z.string().optional(),
   // shell_id is accepted for backward compatibility with the deprecated KillShell tool
   shell_id: z.string().optional().describe('Deprecated: use task_id instead'),
 })

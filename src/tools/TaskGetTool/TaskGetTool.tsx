@@ -14,7 +14,7 @@ import { TASK_GET_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
 
 const inputSchema = z.strictObject({
-  taskId: z.string().describe('The ID of the task to retrieve'),
+  taskId: z.string(),
 })
 type InputSchema = typeof inputSchema
 

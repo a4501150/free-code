@@ -24,12 +24,8 @@ const inputSchema = z.strictObject({
     .string()
     .max(100)
     .describe('Short notification title (max 100 chars).'),
-  body: z.string().max(500).describe('Notification body text (max 500 chars).'),
-  priority: z
-    .enum(['low', 'normal', 'high'])
-    .optional()
-    .default('normal')
-    .describe('Notification priority level.'),
+  body: z.string().max(500),
+  priority: z.enum(['low', 'normal', 'high']).optional().default('normal'),
 })
 type InputSchema = typeof inputSchema
 

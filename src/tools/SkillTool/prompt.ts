@@ -141,21 +141,12 @@ export function formatCommandsWithinBudget(
 }
 
 export const getPrompt = memoize(async (_cwd: string): Promise<string> => {
-  return `Execute a skill within the main conversation
+  return `Execute a skill within the main conversation — a skill packages a specialized procedure and its domain knowledge.
 
-When users ask you to perform tasks, check whether any of the available skills match. Skills provide specialized capabilities and domain knowledge.
-
-When users reference a "slash command" or "/<something>", invoke this tool only if the referenced name appears in the available skills listing.
-
-Important:
-- Use the exact skill name from the available skills listing with optional arguments; fully qualified plugin names work too (e.g., \`skill: "ms-office-suite:pdf"\`)
-- Available skills are listed in system-reminder messages in the conversation
-- When a listed skill matches the user's request, this is a BLOCKING REQUIREMENT: after any brief acknowledgment, invoke the relevant Skill tool BEFORE performing substantive work or giving a substantive response about the task
-- NEVER mention a skill without calling this tool
-- Do not invoke a skill that is already running
-- Do not infer skill names from examples, common workflows, or built-in CLI commands
-- Do not use this tool for built-in CLI commands (for example /help or /clear)
-- If you see a <${COMMAND_NAME_TAG}> tag in the current conversation turn, the skill is ALREADY loaded - follow the instructions directly instead of calling this tool again
+- Invoke with the exact skill name from the available skills listing (fully qualified plugin names work too); a user-requested "/<name>" is this tool only when that name appears in the listing.
+- When a listed skill matches the user's request, this is a BLOCKING REQUIREMENT: after any brief acknowledgment, invoke the relevant Skill tool BEFORE performing substantive work or giving a substantive response about the task.
+- Do not infer skill names from examples, common workflows, or built-in CLI commands; never use this tool for built-in CLI commands (/help, /clear).
+- A <${COMMAND_NAME_TAG}> tag for the skill in the current turn means it is already loaded — follow its instructions instead of calling again.
 `
 })
 

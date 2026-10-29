@@ -33,9 +33,8 @@ export const ASK_USER_QUESTION_TOOL_PROMPT = `Use this tool to ask the user mult
 Reserve it for decisions where the user's answer changes what you do next; for choices with a conventional default or facts you can verify in the codebase yourself, pick the obvious option, mention it in your response, and proceed.
 
 Usage notes:
-- Users will always be able to select "Other" to provide custom text input
+- Users can always select "Other" to type a custom answer
 - If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label
-- Use the preview field proactively when presenting implementation choices, UI layouts, code variations, or any decision benefiting from a side-by-side visual comparison
 
 Plan mode note: use this tool to clarify requirements or choose between approaches BEFORE finalizing your plan. Do not use it to ask "Is my plan ready?" or "Should I proceed?" — the user cannot see the plan until ${EXIT_PLAN_MODE_TOOL_NAME} is called, and that tool is how you request plan approval.
 `

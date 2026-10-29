@@ -17,7 +17,7 @@ import {
 import { RUN_CODE_TOOL_NAME } from '../../services/toolCatalog/exposure.js'
 import { createRunCodeBridge } from './bridge.js'
 import { runScript } from './loader.js'
-import { RUN_CODE_MODULE_SPECS, withModuleFallback } from './moduleRegistry.js'
+import { withModuleFallback } from './moduleRegistry.js'
 import {
   extractSearchText,
   isResultTruncated,
@@ -31,7 +31,7 @@ import {
 const persistentState: Record<string, unknown> = {}
 
 const inputSchema = z.object({
-  code: z.string().min(1).describe('TypeScript script body.'),
+  code: z.string().min(1),
   title: z
     .string()
     .optional()
@@ -94,13 +94,10 @@ export const RunCodeTool = buildTool({
   },
   async prompt() {
     return [
-      `Run a TypeScript script that imports cataloged tools and orchestrates them in one execution. Each deferred tool's declarations file is named by absolute path in the deferred_tools_delta and mcp_tools_delta system reminders in your context: read those index files (import specifier "mcp/<server>" for server declarations, "freecode:builtins" for built-ins) for exact function names and argument types.`,
-      'Each tool call from the script goes through the normal permission and hook pipeline, so rules for the underlying tools apply unchanged. Use await for each call and console.log to report intermediate findings; only your logs and the call results come back.',
-      'A `state` object persists across RunCode calls within this session: stash intermediate results with state.key = value and read them in later calls. It is in-memory only; write files to disk for anything durable.',
-      'Runtime access: dynamic import() resolves Node and Bun builtins (await import("node:fs"), await import("bun:sqlite")) and bundled modules (' +
-        RUN_CODE_MODULE_SPECS.join(', ') +
-        ') — those also work as static imports. Other specifiers (relative paths, arbitrary npm packages) do not resolve. The Bun, process, and fetch globals are reachable. Default imports in static import declarations are not supported.',
-      'Cataloged tools remain the normal way to act; use direct node/Bun access only when a script genuinely needs it.',
+      `Run a TypeScript script that imports cataloged tools and orchestrates them in one execution; cataloged tools remain the normal way to act — reach for direct runtime access only when a script genuinely needs it. Each tool's declarations file is named by absolute path in the deferred_tools_delta and mcp_tools_delta system reminders: read those index files (import specifier "mcp/<server>" for server declarations, "freecode:builtins" for built-ins) for exact function names and argument types.`,
+      'Every tool call from the script goes through the normal permission and hook pipeline. Await each call; console.log what you want reported — only your logs and the call results come back.',
+      'A `state` object persists across RunCode calls in this session (in-memory only; write files for anything durable).',
+      'Runtime access: dynamic import() resolves Node and Bun builtins (await import("node:fs")) and the bundled tooling modules; other specifiers (relative paths, arbitrary npm packages) do not resolve, and default imports in static import declarations are unsupported. The Bun, process, and fetch globals are reachable.',
     ].join('\n')
   },
   get inputSchema(): InputSchema {

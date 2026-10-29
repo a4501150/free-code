@@ -325,7 +325,7 @@ const DISALLOWED_AUTO_BACKGROUND_COMMANDS = [
 const isBackgroundTasksDisabled = !isBackgroundTasksEnabled()
 
 const fullInputSchema = z.strictObject({
-  command: z.string().describe('The command to execute.'),
+  command: z.string(),
   timeout: semanticNumber(z.number().optional()).describe(
     `Optional timeout in milliseconds. Max ${getMaxTimeoutMs()}; default ${getDefaultTimeoutMs()}.`,
   ),
@@ -335,9 +335,7 @@ const fullInputSchema = z.strictObject({
     .describe(
       `Short description of what the command does. Simple commands get a brief one (5-10 words).`,
     ),
-  run_in_background: semanticBoolean(z.boolean().optional()).describe(
-    `Whether to run the command in the background.`,
-  ),
+  run_in_background: semanticBoolean(z.boolean().optional()),
   _simulatedSedEdit: z
     .object({
       filePath: z.string(),

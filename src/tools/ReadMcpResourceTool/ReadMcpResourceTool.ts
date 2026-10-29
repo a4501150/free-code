@@ -17,8 +17,8 @@ import {
 } from './UI.js'
 
 export const inputSchema = z.object({
-  server: z.string().describe('The MCP server name'),
-  uri: z.string().describe('The resource URI to read'),
+  server: z.string(),
+  uri: z.string(),
 })
 type InputSchema = typeof inputSchema
 

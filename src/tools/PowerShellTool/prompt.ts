@@ -1,5 +1,4 @@
 import { isBackgroundTasksEnabled } from '../../utils/backgroundTasks.js'
-import { getMaxOutputLength } from '../../utils/shell/outputLimits.js'
 import {
   getPowerShellEdition,
   type PowerShellEdition,
@@ -68,18 +67,6 @@ Every result footer states \`[exit N · full output: <path>]\`: the harness wrot
 
 ${getEditionSection(edition)}
 
-PowerShell Syntax Notes:
-   - Variables use $ prefix: $myVar = "value"
-   - Escape character is backtick (\`), not backslash
-   - Use Verb-Noun cmdlet naming: Get-ChildItem, Set-Location, New-Item, Remove-Item
-   - Common aliases: ls (Get-ChildItem), cd (Set-Location), cat (Get-Content), rm (Remove-Item)
-   - Pipe operator | works similarly to bash but passes objects, not text
-   - Use Select-Object, Where-Object, ForEach-Object for filtering and transformation
-   - String interpolation: "Hello $name" or "Hello $($obj.Property)"
-   - Registry access uses PSDrive prefixes: \`HKLM:\\SOFTWARE\\...\`, \`HKCU:\\...\` — NOT raw \`HKEY_LOCAL_MACHINE\\...\`
-   - Environment variables: read with \`$env:NAME\`, set with \`$env:NAME = "value"\` (NOT \`Set-Variable\` or bash \`export\`)
-   - Call native exe with spaces in path via call operator: \`& "C:\\Program Files\\App\\app.exe" arg1 arg2\`
-
 Interactive and blocking commands (these wait for input — this tool runs with -NonInteractive):
    - NEVER use \`Read-Host\`, \`Get-Credential\`, \`Out-GridView\`, \`$Host.UI.PromptForChoice\`, or \`pause\`
    - Destructive cmdlets (\`Remove-Item\`, \`Stop-Process\`, \`Clear-Content\`, and similar) can prompt for confirmation. Add \`-Confirm:$false\` when you intend the action to proceed. Use \`-Force\` for read-only/hidden items.
@@ -97,7 +84,6 @@ Second line with $literal dollar signs.
    - For arguments containing \`-\`, \`@\`, or other characters PowerShell parses as operators, use the stop-parsing token: \`git log --% --format=%H\`
 
 Usage notes:
-   - Output over ${getMaxOutputLength()} characters is truncated before being returned to you.
    - Prefer dedicated tools over PowerShell for file operations: use ${BASH_TOOL_NAME} (find/grep/rg) for search, ${FILE_READ_TOOL_NAME} to read, ${FILE_EDIT_TOOL_NAME} to edit, ${FILE_WRITE_TOOL_NAME} to write.
    - When issuing multiple commands:
    - Independent commands: make multiple ${POWERSHELL_TOOL_NAME} tool calls in a single message.

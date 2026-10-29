@@ -85,12 +85,7 @@ const annotationsSchema = (() => {
       .describe('Free-text notes the user added to their selection.'),
   })
 
-  return z
-    .record(z.string(), annotationSchema)
-    .optional()
-    .describe(
-      'Optional per-question annotations from the user (e.g., notes on preview selections). Keyed by question text.',
-    )
+  return z.record(z.string(), annotationSchema).optional()
 })()
 
 const UNIQUENESS_REFINE = {
@@ -114,10 +109,7 @@ const UNIQUENESS_REFINE = {
 } as const
 
 const commonFields = {
-  answers: z
-    .record(z.string(), z.string())
-    .optional()
-    .describe('User answers collected by the permission component'),
+  answers: z.record(z.string(), z.string()).optional(),
   annotations: annotationsSchema,
 }
 

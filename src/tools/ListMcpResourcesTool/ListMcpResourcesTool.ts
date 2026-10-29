@@ -12,10 +12,7 @@ import { DESCRIPTION, LIST_MCP_RESOURCES_TOOL_NAME, PROMPT } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const inputSchema = z.object({
-  server: z
-    .string()
-    .optional()
-    .describe('Optional server name to filter resources by'),
+  server: z.string().optional(),
 })
 type InputSchema = typeof inputSchema
 

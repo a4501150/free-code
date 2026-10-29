@@ -4,10 +4,9 @@ import { cronToHuman } from '../../utils/cron.js'
 import { listAllCronTasks } from '../../utils/cronTasks.js'
 import { truncate } from '../../utils/format.js'
 import {
-  buildCronListPrompt,
   CRON_LIST_DESCRIPTION,
+  CRON_LIST_PROMPT,
   CRON_LIST_TOOL_NAME,
-  isDurableCronEnabled,
   isAssistantCronEnabled,
 } from './prompt.js'
 import { renderListResultMessage, renderListToolUseMessage } from './UI.js'
@@ -51,7 +50,7 @@ export const CronListTool = buildTool({
     return CRON_LIST_DESCRIPTION
   },
   async prompt() {
-    return buildCronListPrompt(isDurableCronEnabled())
+    return CRON_LIST_PROMPT
   },
   async call() {
     const allTasks = await listAllCronTasks()
