@@ -57,13 +57,17 @@ describe('block math ($$ fences and \\[…\\])', () => {
     expect(tokens[0]!.raw).toContain('$$')
   })
 
-  test('closed $$ block renders a dim latex hint above the source, delimiters dropped', () => {
+  test('closed $$ block renders as a 2D grid, delimiters dropped', () => {
     const out = render('Intro\n\n$$\nx^2 + y^2 = z^2\n$$\n\nafter')
-    expect(out).toContain('latex')
-    expect(out).toContain('x^2 + y^2 = z^2')
+    // Tier 3: typeset grid — exponents move to the row above the baseline.
+    const baseline = out
+      .split('\n')
+      .find(l => l.includes('x') && l.includes('z'))!
+    expect(baseline).toContain('+')
+    expect(baseline).toContain('=')
+    expect(out).toContain('2')
     expect(out).not.toContain('$$')
-    // Hint sits above the body; surrounding content intact.
-    expect(out.indexOf('latex')).toBeLessThan(out.indexOf('x^2'))
+    expect(out).not.toContain('latex') // no dim rail on the success path
     expect(out).toContain('Intro')
     expect(out).toContain('after')
   })
@@ -74,15 +78,17 @@ describe('block math ($$ fences and \\[…\\])', () => {
     expect(tokens[0]!.displayMode).toBe(true)
     expect(tokens[0]!.text).toBe('\\int_0^1 x\\,dx')
     const out = render('\\[\n\\int_0^1 x\\,dx\n\\]')
-    expect(out).toContain('latex')
-    expect(out).toContain('\\int_0^1 x\\,dx')
+    // Typeset: integral sign with trailing limits, kerned spacing.
+    expect(out).toContain('\u222b')
+    expect(out).toContain('x')
     expect(out).not.toContain('\\[')
   })
 
   test('single-line $$x$$ renders as display math', () => {
     const out = render('Text\n\n$$x^2$$\n\nmore')
-    expect(out).toContain('latex')
-    expect(out).toContain('x^2')
+    // 2D grid: the exponent moves to its own row above the x baseline.
+    expect(out).toContain('x')
+    expect(out).toContain('2')
     expect(out).not.toContain('$$')
   })
 
@@ -143,7 +149,8 @@ describe('inline math ($…$ and \\(…\\))', () => {
     const math = allMathTokens(tokens)
     expect(math).toHaveLength(1)
     expect(math[0]!.displayMode).toBe(true)
-    expect(render('see $$\\frac{a}{b}$$ inline')).toContain('\\frac{a}{b}')
+    // Typeset: numerator/denominator stack around a fraction bar.
+    expect(render('see $$\\frac{a}{b}$$ inline')).toContain('\u2500')
   })
 
   test('math renders inside a paragraph sentence', () => {

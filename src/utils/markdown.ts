@@ -10,6 +10,7 @@ import { logForDebugging } from './debug.js'
 import { createHyperlink } from './hyperlink.js'
 import { mathExtension } from './markedMath.js'
 import { stripPromptXMLTags } from './messages.js'
+import { renderMathGrid } from './latexAnsi.js'
 import type { ThemeName } from './theme.js'
 
 // Use \n unconditionally — os.EOL is \r\n on Windows, and the extra \r
@@ -206,11 +207,22 @@ export function formatToken(
         // inline math — codespan treatment, delimiters dropped
         return color('permission', theme)(math.text)
       }
-      // display math — dim rail like mermaid. While streaming an unclosed
-      // block grows as plain dim source instead of showing the hint.
+      // display math — full 2D ANSI typesetting when the block is closed
+      // and fits; the dim rail (mermaid-style) is the fallback for parse
+      // errors and width overflow. While streaming an unclosed block grows
+      // as plain dim source instead of showing the hint.
       if (!isClosedMathBlock(math)) {
         return chalk.dim(math.raw.trimEnd()) + EOL
       }
+      const grid = renderMathGrid(math.text, theme, {
+        // Same source as every other non-React width consumer in the repo;
+        // undefined when stdout is not a tty (tests, pipes) means “no
+        // limit”, which the layouter treats as unbounded.
+        maxWidth: process.stdout.columns
+          ? process.stdout.columns - 2
+          : undefined,
+      })
+      if (grid) return grid + EOL
       return formatMathBlock(math.text)
     }
     case 'hr':
