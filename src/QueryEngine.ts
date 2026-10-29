@@ -311,13 +311,20 @@ export class QueryEngine {
       messages: this.mutableMessages,
       // Slash commands that mutate the message array call setMessages(fn).
       // In interactive mode this writes back to
-      // AppState; in print mode we write back to mutableMessages so the
-      // rest of the query loop (push at :389, snapshot at :392) sees
-      // the result.  The second processUserInputContext below (after
+      // AppState; in print mode the caller's array must observe the result too:
+      // the print loop, the attach runtime's getMessages() and the next ask()
+      // all hold config.initialMessages by reference, so the replacement is
+      // spliced into the existing array — assigning a fresh one strands every
+      // alias holder on the pre-command conversation (a headless /clear then
+      // clears nothing: the WebUI kept publishing the old transcript).
+      // The second processUserInputContext below (after
       // slash-command processing) keeps the no-op — nothing else calls
       // setMessages past that point.
       setMessages: fn => {
-        this.mutableMessages = fn(this.mutableMessages)
+        const next = fn(this.mutableMessages)
+        if (next !== this.mutableMessages) {
+          this.mutableMessages.splice(0, this.mutableMessages.length, ...next)
+        }
       },
       onChangeAPIKey: () => {},
       handleElicitation: this.config.handleElicitation,
