@@ -33,9 +33,7 @@ const inputSchema = (() => {
       .describe(
         'Present continuous form shown in spinner when in_progress (e.g., "Running tests")',
       ),
-    status: TaskUpdateStatusSchema.optional().describe(
-      'New status for the task',
-    ),
+    status: TaskUpdateStatusSchema.optional(),
     addBlocks: z
       .array(z.string())
       .optional()

@@ -23,11 +23,7 @@ import {
 } from './prompt.js'
 
 const questionOptionSchema = z.object({
-  label: z
-    .string()
-    .describe(
-      'The display text for this option that the user will see and select. Keep it concise (1-5 words).',
-    ),
+  label: z.string().describe('Option display text, 1-5 words.'),
   description: z
     .string()
     .describe(
@@ -37,7 +33,7 @@ const questionOptionSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Optional preview content rendered when this option is focused; see the tool description for the expected format.',
+      'Preview content rendered when this option is focused; see the tool description for the format.',
     ),
 })
 
@@ -45,19 +41,19 @@ const questionSchema = z.object({
   question: z
     .string()
     .describe(
-      'The complete question to ask the user, ending with a question mark. Phrase it accordingly when multiSelect is true.',
+      'The complete question, ending with a question mark (phrase it accordingly when multiSelect).',
     ),
   header: z
     .string()
     .describe(
-      `Very short label displayed as a chip/tag (max ${ASK_USER_QUESTION_TOOL_CHIP_WIDTH} chars). Examples: "Auth method", "Library".`,
+      `Short chip/tag label, max ${ASK_USER_QUESTION_TOOL_CHIP_WIDTH} chars (e.g. "Auth method").`,
     ),
   options: z
     .array(questionOptionSchema)
     .min(2)
     .max(4)
     .describe(
-      "The available choices. Each option is a distinct choice (unless multiSelect is true). No 'Other' option — it is added automatically.",
+      "Choices (unless multiSelect). No 'Other' option — it is added automatically.",
     ),
   // Optional, not `.default(false)`: strict presentation makes every
   // property nullable, and `.default()` absorbs undefined but rejects the
@@ -66,9 +62,7 @@ const questionSchema = z.object({
   multiSelect: z
     .boolean()
     .optional()
-    .describe(
-      'Allow multiple answers. Use when the choices are not mutually exclusive.',
-    ),
+    .describe('Set when the choices are not mutually exclusive.'),
 })
 
 const annotationsSchema = (() => {
@@ -113,11 +107,7 @@ const commonFields = {
   annotations: annotationsSchema,
 }
 
-const questionsSchema = z
-  .array(questionSchema)
-  .min(1)
-  .max(4)
-  .describe('Questions to ask the user (1-4 questions)')
+const questionsSchema = z.array(questionSchema).min(1).max(4)
 
 const modelInputSchema = z
   .strictObject({ questions: questionsSchema })

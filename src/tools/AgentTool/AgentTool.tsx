@@ -134,16 +134,10 @@ const baseInputSchema = z.object({
   prompt: z
     .string()
     .describe(
-      'The detailed prompt for the agent to perform the task. The agent sees ONLY this prompt — never your conversation — so it must be self-contained: the full goal and constraints, relevant file paths, and the expected deliverable. Brief it like a colleague who just entered the room.',
+      'The agent sees ONLY this prompt — never your conversation — so it must be self-contained: the full goal and constraints, relevant file paths, and the expected deliverable.',
     ),
-  subagent_type: z
-    .string()
-    .optional()
-    .describe('The type of specialized agent to use for this task'),
-  run_in_background: z
-    .boolean()
-    .optional()
-    .describe('Whether to run the agent in the background.'),
+  subagent_type: z.string().optional(),
+  run_in_background: z.boolean().optional(),
 })
 
 // Full schema combining base + multi-agent params + isolation
@@ -153,7 +147,7 @@ const fullInputSchema = (() => {
       .string()
       .optional()
       .describe(
-        'Name for the spawned agent, making it addressable via SendMessage while it runs.',
+        'Makes the running agent addressable via SendMessage by this name.',
       ),
   })
 
