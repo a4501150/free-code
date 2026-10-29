@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Auto-rebuilding wrapper for cli-dev
-# Usage: alias code='/Users/jinyangli/src/free-code/code'
+# Usage (paste from repo root): alias code="$(pwd)/code"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DEV="$SCRIPT_DIR/cli-dev"
