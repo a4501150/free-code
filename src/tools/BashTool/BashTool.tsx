@@ -49,7 +49,7 @@ import { getFsImplementation } from '../../utils/fsOperations.js'
 import { expandPath } from '../../utils/path.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
 import {
-  rewriteRedirectsToHarnessFile,
+  rewriteRedirectsForDualWrite,
   stripTrailingOutputLimiters,
 } from '../../utils/bash/outputCapture.js'
 import { getMaxOutputLength } from '../../utils/shell/outputLimits.js'
@@ -423,11 +423,17 @@ const outputSchema = z.object({
   redirectRewritten: z
     .object({
       harnessPath: z.string(),
-      originalTargets: z.array(z.string()),
+      targets: z.array(
+        z.object({
+          target: z.string(),
+          operator: z.enum(['>', '>>']),
+          mode: z.enum(['tee', 'passthrough']),
+        }),
+      ),
     })
     .optional()
     .describe(
-      "Set when the command's own > target was rewritten to the harness output file",
+      "Set when the command's redirects were rewritten: tee targets were dual-written (file + capture), passthrough targets ran as written and were not captured",
     ),
   limiterStripped: z
     .boolean()
@@ -750,7 +756,18 @@ export const BashTool = buildTool({
       footer += `[trailing tail/head stage not executed: the complete stream is in the file below — your inline view is capped, not the capture]\n`
     }
     if (redirectRewritten) {
-      footer += `[redirect rewritten: output saved to ${redirectRewritten.harnessPath} instead of ${redirectRewritten.originalTargets.join(', ')}]\n`
+      const teeTargets = redirectRewritten.targets
+        .filter(t => t.mode === 'tee')
+        .map(t => t.target)
+      const passthroughTargets = redirectRewritten.targets
+        .filter(t => t.mode === 'passthrough')
+        .map(t => t.target)
+      if (teeTargets.length > 0) {
+        footer += `[redirect dual-write: ${teeTargets.join(', ')} written as requested; the full stream is also captured below]\n`
+      }
+      if (passthroughTargets.length > 0) {
+        footer += `[redirects left as written: output went to ${passthroughTargets.join(', ')}, not captured]\n`
+      }
     }
     if (!backgroundTaskId && exitCode !== undefined) {
       footer += `[exit ${exitCode} · full output: ${outputPath}]`
@@ -947,9 +964,14 @@ export const BashTool = buildTool({
 
     // Record a content sighting when the command was a recognized single-file
     // read and we are showing the model its full text output. Capped inline
-    // output, image outputs, and rewritten redirects record nothing — in the
-    // redirect case the text landed in the output file, never in the model's
-    // view of the result.
+    // output, image outputs, and commands with redirects record nothing —
+    // even under the dual-write rewrite the tee pipeline fails the sighting
+    // allowlist's no-redirects/no-pipeline check, and passthrough redirects
+    // run in the command text itself. Note the flip the dual-write rewrite
+    // causes: a tee'd `cmd > file` genuinely changes `file`, so a prior
+    // sighting of it goes stale and editApproval correctly rejects an Edit
+    // based on the pre-write content (before, the file never changed and a
+    // stale-content Edit could silently match).
     if (
       persistedOutputSize === undefined &&
       !isImage &&
@@ -1059,11 +1081,13 @@ async function* runShellCommand({
   const limiterStripped = stripTrailingOutputLimiters(command)
   const effectiveCommand = limiterStripped ?? command
 
-  // Rewrite the command's own > / >> targets to a preallocated harness output
-  // file so the harness keeps capturing the full stream (the redirect would
-  // otherwise send it somewhere we never see). The result footer reports the
-  // substitution to the model.
-  const rewrite = rewriteRedirectsToHarnessFile(effectiveCommand)
+  // Dual-write rewrite of the command's own > / >> redirects: tee-able ones
+  // become `| tee [-a] <target>` stages, so the target genuinely receives
+  // the write while tee's passthrough keeps flowing to the stdio capture
+  // file the harness already opened. Redirects a pipeline cannot express
+  // (fd≥2, nested, mid-pipeline) are passed through unchanged — that stream
+  // is not captured. The result footer reports both facts to the model.
+  const rewrite = rewriteRedirectsForDualWrite(effectiveCommand)
 
   const shellCommand = await exec(
     rewrite?.rewrittenCommand ?? effectiveCommand,
@@ -1101,7 +1125,7 @@ async function* runShellCommand({
     if (rewrite) {
       r.redirectRewritten = {
         harnessPath: rewrite.harnessPath,
-        originalTargets: rewrite.originalTargets,
+        targets: rewrite.targets,
       }
     }
     return r
@@ -1250,7 +1274,10 @@ async function* runShellCommand({
 
     if (initialResult !== null) {
       shellCommand.cleanup()
-      return initialResult
+      // Fast completions return before the progress loop: stamp the
+      // rewrite facts here too, or quick commands lose the redirect/
+      // limiter-strip footers the loop's returns carry.
+      return withRewriteInfo(initialResult)
     }
 
     if (backgroundShellId) {

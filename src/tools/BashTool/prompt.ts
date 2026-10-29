@@ -30,7 +30,9 @@ export function getSimplePrompt(): string {
   const paragraphs: Array<string> = [
     patterns,
     'Never `sleep` in a Bash command to wait for a result — the background task notification arrives on its own; end your turn and read the output file when it lands.',
-    "Every result footer states `[exit N · full output: <path>]`: the harness wrote the command's COMPLETE stream there. Your own `>` / `>>` targets are rewritten to it, and a trailing `| tail`/`| head` stage is stripped before execution and never bounds the capture — the user's live output view reads this same file. Your inline view is capped automatically (~30k chars; beyond that, a preview plus the file path), so there is no need to redirect or pipe to cap what you receive — read the output path when you need more.",
+    "Every result footer states `[exit N · full output: <path>]`: the command's COMPLETE output stream lives at that path. Your inline view is the first ~30k characters of that stream; over the cap you receive a preview plus the path — read the path when you need more.",
+    '`| tail`/`| head` cannot bound what the harness captures: a strict trailing stage is stripped before execution, so the path still holds the complete stream and your inline view shows its head (not the tail lines). Never pipe or redirect just to cap what you receive — the cap is automatic.',
+    'Your `>` / `>>` redirects are dual-written: the target file genuinely receives the write, and the same stream is also captured at the footer path. Redirect forms a pipeline cannot express — stderr targets (`2>`), inside `$(…)`, mid-pipeline — run exactly as written: the target gets the stream, the harness does not capture it, and the footer says so.',
     'In `rg` (ripgrep), `-r` means `--replace`, not recursive (rg is recursive by default): the grep habit `rg -rn PATTERN` silently overwrites every match with a literal `n`; use `rg -n PATTERN`.',
   ]
 

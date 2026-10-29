@@ -37,7 +37,7 @@ import {
 import { truncate } from '../../utils/format.js'
 import { logError } from '../../utils/log.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
-import { rewritePsRedirectsToHarnessFile } from '../../utils/bash/outputCapture.js'
+import { rewritePsRedirectsForDualWrite } from '../../utils/bash/outputCapture.js'
 import { getMaxOutputLength } from '../../utils/shell/outputLimits.js'
 import { exec } from '../../utils/Shell.js'
 import type { ExecResult } from '../../utils/ShellCommand.js'
@@ -300,11 +300,17 @@ const outputSchema = z.object({
   redirectRewritten: z
     .object({
       harnessPath: z.string(),
-      originalTargets: z.array(z.string()),
+      targets: z.array(
+        z.object({
+          target: z.string(),
+          operator: z.enum(['>', '>>']),
+          mode: z.enum(['tee', 'passthrough']),
+        }),
+      ),
     })
     .optional()
     .describe(
-      "Set when the command's own > target was rewritten to the harness output file",
+      "Set when the command's redirects were rewritten: tee targets were dual-written (file + capture), passthrough targets ran as written and were not captured",
     ),
   backgroundTaskId: z
     .string()
@@ -534,7 +540,18 @@ export const PowerShellTool = buildTool({
     // code and where the complete output lives. Matches BashTool.
     let footer = ''
     if (redirectRewritten) {
-      footer += `[redirect rewritten: output saved to ${redirectRewritten.harnessPath} instead of ${redirectRewritten.originalTargets.join(', ')}]\n`
+      const teeTargets = redirectRewritten.targets
+        .filter(t => t.mode === 'tee')
+        .map(t => t.target)
+      const passthroughTargets = redirectRewritten.targets
+        .filter(t => t.mode === 'passthrough')
+        .map(t => t.target)
+      if (teeTargets.length > 0) {
+        footer += `[redirect dual-write: ${teeTargets.join(', ')} written as requested; the full stream is also captured below]\n`
+      }
+      if (passthroughTargets.length > 0) {
+        footer += `[redirects left as written: output went to ${passthroughTargets.join(', ')}, not captured]\n`
+      }
     }
     if (!backgroundTaskId && exitCode !== undefined) {
       footer += `[exit ${exitCode} · full output: ${outputPath}]`
@@ -858,16 +875,19 @@ async function* runPowerShellCommand({
   }
 
   let shellCommand: Awaited<ReturnType<typeof exec>>
-  // Rewrite the command's own `>` file targets to a preallocated harness
-  // output file so the harness keeps capturing the full stream. Matches
-  // BashTool's redirect rewrite; `2>&1` merges carry no target, untouched.
-  const rewrite = rewritePsRedirectsToHarnessFile(command)
+  // Dual-write rewrite of the command's own `>` file targets: plain `>`/`>>`
+  // become `| Tee-Object [-Append] -FilePath <target>` stages, so the target
+  // genuinely receives the write while the passthrough keeps flowing to the
+  // stdio capture file. fd-digit forms and mid-pipeline redirects pass
+  // through unchanged. Matches BashTool's dual-write rewrite; `2>&1` merges
+  // carry no target, untouched.
+  const rewrite = rewritePsRedirectsForDualWrite(command)
   // Stamp the redirect-rewrite fact onto every result this generator returns.
   function withRewriteInfo(r: ExecResult): ExecResult {
     if (rewrite) {
       r.redirectRewritten = {
         harnessPath: rewrite.harnessPath,
-        originalTargets: rewrite.originalTargets,
+        targets: rewrite.targets,
       }
     }
     return r

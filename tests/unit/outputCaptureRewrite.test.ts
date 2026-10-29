@@ -1,77 +1,256 @@
 import { describe, expect, test } from 'bun:test'
+import { spawnSync } from 'child_process'
 import {
-  rewritePsRedirectsToHarnessFile,
-  rewriteRedirectsToHarnessFile,
+  rewritePsRedirectsForDualWrite,
+  rewriteRedirectsForDualWrite,
   stripTrailingOutputLimiters,
 } from '../../src/utils/bash/outputCapture.js'
 import { BashTool } from '../../src/tools/BashTool/BashTool.js'
 
-describe('POSIX redirect rewrite', () => {
+describe('POSIX redirect dual-write', () => {
   test('no redirection passes through', () => {
-    expect(rewriteRedirectsToHarnessFile('ls -la | grep x')).toBeNull()
+    expect(rewriteRedirectsForDualWrite('ls -la | grep x')).toBeNull()
   })
 
-  test('single > target is replaced, rest of the command untouched', () => {
-    const r = rewriteRedirectsToHarnessFile('echo hi > /tmp/out.log')
+  test('a single > target becomes a tee stage', () => {
+    const r = rewriteRedirectsForDualWrite('echo hi > /tmp/out.log')
     expect(r).not.toBeNull()
-    expect(r!.rewrittenCommand).toBe(`echo hi > ${r!.harnessPath}`)
-    expect(r!.originalTargets).toEqual(['/tmp/out.log'])
+    expect(r!.rewrittenCommand).toBe('echo hi | tee /tmp/out.log')
+    expect(r!.targets).toEqual([
+      { target: '/tmp/out.log', operator: '>', mode: 'tee' },
+    ])
     expect(r!.harnessPath).toContain(r!.taskId)
   })
 
-  test('multiple redirections across a list are all replaced', () => {
-    const r = rewriteRedirectsToHarnessFile(
-      'make build > /tmp/a.log 2>/dev/null && make test >> /tmp/b.log',
-    )
-    expect(r).not.toBeNull()
-    // Every original target is gone from the rewritten command.
-    expect(r!.rewrittenCommand).not.toContain('/tmp/a.log')
-    expect(r!.rewrittenCommand).not.toContain('/tmp/b.log')
-    expect(r!.rewrittenCommand).toContain('&& make test >>')
-    expect(r!.originalTargets).toEqual([
-      '/tmp/a.log',
-      '/dev/null',
-      '/tmp/b.log',
+  test('>> maps to tee -a', () => {
+    const r = rewriteRedirectsForDualWrite('echo hi >> /tmp/out.log')
+    expect(r!.rewrittenCommand).toBe('echo hi | tee -a /tmp/out.log')
+    expect(r!.targets).toEqual([
+      { target: '/tmp/out.log', operator: '>>', mode: 'tee' },
     ])
   })
 
+  test('a trailing redirect on a list binds to the list end', () => {
+    // bash binds `> f` to `b`; the tee stage after `b` reproduces that.
+    const r = rewriteRedirectsForDualWrite('a && b > f')
+    expect(r!.rewrittenCommand).toBe('a && b | tee f')
+  })
+
+  test('a mid-list redirect tees per owning statement', () => {
+    const r = rewriteRedirectsForDualWrite('a > f1 && b > f2')
+    expect(r!.rewrittenCommand).toBe('a | tee f1 && b | tee f2')
+    expect(r!.targets.every(t => t.mode === 'tee')).toBe(true)
+  })
+
+  test('compound and loop owners tee at statement end', () => {
+    const group = rewriteRedirectsForDualWrite('{ echo a; } > f')
+    expect(group!.rewrittenCommand).toBe('{ echo a; } | tee f')
+    const loop = rewriteRedirectsForDualWrite(
+      'for i in 1; do echo $i; done >> f',
+    )
+    expect(loop!.rewrittenCommand).toBe(
+      'for i in 1; do echo $i; done | tee -a f',
+    )
+  })
+
+  test('a heredoc owner tees right after the delimiter, before the body', () => {
+    // The incident shape: `cat >> file <<'EOF'` used to append to the
+    // harness capture file instead of the file, silently defeating the
+    // write. Inserting after the BODY instead would break the terminator
+    // line (`EOF | tee …` is not a delimiter) and tee would never run.
+    const r = rewriteRedirectsForDualWrite(
+      "cat >> tests/unit/x.test.ts <<'EOF'\nhello\nEOF",
+    )
+    expect(r!.rewrittenCommand).toBe(
+      "cat <<'EOF' | tee -a tests/unit/x.test.ts\nhello\nEOF",
+    )
+  })
+
+  test('a redirect after the heredoc start tees at the same point', () => {
+    const r = rewriteRedirectsForDualWrite("cat <<'EOF' > f\nbody\nEOF")
+    expect(r!.rewrittenCommand).toBe("cat <<'EOF' | tee f\nbody\nEOF")
+  })
+
+  test('a stacked heredoc declines — the stray second heredoc is an ERROR child', () => {
+    // Tee-ing here would attach the second heredoc to the tee stage.
+    const r = rewriteRedirectsForDualWrite("cat >> f <<'A' <<'B'")
+    expect(r!.rewrittenCommand).toBe("cat >> f <<'A' <<'B'")
+    expect(r!.targets).toEqual([
+      { target: 'f', operator: '>>', mode: 'passthrough' },
+    ])
+  })
+
+  test('2>&1 next to a tee target composes', () => {
+    const r = rewriteRedirectsForDualWrite('cmd > f 2>&1')
+    expect(r!.rewrittenCommand).toBe('cmd 2>&1 | tee f')
+  })
+
+  test('fd2 targets pass through unchanged', () => {
+    const r = rewriteRedirectsForDualWrite('cmd 2> err.log')
+    expect(r!.rewrittenCommand).toBe('cmd 2> err.log')
+    expect(r!.targets).toEqual([
+      { target: 'err.log', operator: '>', mode: 'passthrough' },
+    ])
+    const append = rewriteRedirectsForDualWrite('cmd 2>> err.log')
+    expect(append!.rewrittenCommand).toBe('cmd 2>> err.log')
+  })
+
+  test('fd1 and fd2 redirects on one statement compose independently', () => {
+    const r = rewriteRedirectsForDualWrite('cmd > out 2> err')
+    expect(r!.rewrittenCommand).toBe('cmd 2> err | tee out')
+    expect(r!.targets).toEqual([
+      { target: 'out', operator: '>', mode: 'tee' },
+      { target: 'err', operator: '>', mode: 'passthrough' },
+    ])
+  })
+
+  test('two fd1 redirects on one statement decline together', () => {
+    // bash applies only the last redirect; a tee chain would duplicate into
+    // both files.
+    const r = rewriteRedirectsForDualWrite('cmd > f1 > f2')
+    expect(r!.rewrittenCommand).toBe('cmd > f1 > f2')
+    expect(r!.targets.every(t => t.mode === 'passthrough')).toBe(true)
+  })
+
+  test('explicit fd1 (1>) tees like a bare >', () => {
+    const r = rewriteRedirectsForDualWrite('cmd 1> f')
+    expect(r!.rewrittenCommand).toBe('cmd | tee f')
+  })
+
+  test('a mid-pipeline redirect passes through — tee would feed the next stage', () => {
+    const r = rewriteRedirectsForDualWrite('a > f | b')
+    expect(r!.rewrittenCommand).toBe('a > f | b')
+    expect(r!.targets).toEqual([
+      { target: 'f', operator: '>', mode: 'passthrough' },
+    ])
+  })
+
+  test('redirects nested in a substitution pass through; the outer one tees', () => {
+    // Tee-ing `inner > f` would change the substitution's value.
+    const r = rewriteRedirectsForDualWrite('echo x $(inner > f) > out')
+    expect(r!.rewrittenCommand).toBe('echo x $(inner > f) | tee out')
+    expect(r!.targets).toEqual([
+      { target: 'f', operator: '>', mode: 'passthrough' },
+      { target: 'out', operator: '>', mode: 'tee' },
+    ])
+  })
+
+  test('a greedy multi-word redirect passes through (its span covers the extra words)', () => {
+    const r = rewriteRedirectsForDualWrite('cmd >f a b c')
+    expect(r!.rewrittenCommand).toBe('cmd >f a b c')
+    expect(r!.targets).toEqual([
+      { target: 'f', operator: '>', mode: 'passthrough' },
+    ])
+  })
+
+  test('/dev/null is tee-able like any other target (capture keeps what the model discarded)', () => {
+    const r = rewriteRedirectsForDualWrite('cmd > /dev/null')
+    expect(r!.rewrittenCommand).toBe('cmd | tee /dev/null')
+  })
+
   test('quoted or expanded targets are declined (output stays where the model aimed it)', () => {
-    expect(rewriteRedirectsToHarnessFile('echo hi > "$LOG"')).toBeNull()
-    expect(rewriteRedirectsToHarnessFile('echo hi > $HOME/out.log')).toBeNull()
-    expect(rewriteRedirectsToHarnessFile('echo hi > "out log.txt"')).toBeNull()
+    expect(rewriteRedirectsForDualWrite('echo hi > "$LOG"')).toBeNull()
+    expect(rewriteRedirectsForDualWrite('echo hi > $HOME/out.log')).toBeNull()
+    expect(rewriteRedirectsForDualWrite('echo hi > "out log.txt"')).toBeNull()
+  })
+
+  test('&> and >& merges are declined whole', () => {
+    expect(rewriteRedirectsForDualWrite('cmd &> f')).toBeNull()
+    expect(rewriteRedirectsForDualWrite('cmd 2>&1')).toBeNull()
+  })
+
+  test('fd2 /dev/null stays in the command text as written', () => {
+    // The model silenced stderr explicitly — the harness no longer captures
+    // it; the discard is the intent.
+    const r = rewriteRedirectsForDualWrite(
+      'make build > /tmp/a.log 2>/dev/null && make test >> /tmp/b.log',
+    )
+    expect(r!.rewrittenCommand).toBe(
+      'make build 2>/dev/null | tee /tmp/a.log && make test | tee -a /tmp/b.log',
+    )
+    expect(r!.targets).toEqual([
+      { target: '/tmp/a.log', operator: '>', mode: 'tee' },
+      { target: '/dev/null', operator: '>', mode: 'passthrough' },
+      { target: '/tmp/b.log', operator: '>>', mode: 'tee' },
+    ])
   })
 
   test('multi-byte characters before the redirect splice at the right offset', () => {
-    const r = rewriteRedirectsToHarnessFile('echo —em dash— > out.log')
-    expect(r).not.toBeNull()
-    expect(r!.rewrittenCommand).toBe(`echo —em dash— > ${r!.harnessPath}`)
+    const r = rewriteRedirectsForDualWrite('echo —em dash— > out.log')
+    expect(r!.rewrittenCommand).toBe('echo —em dash— | tee out.log')
   })
 
-  test('pipeline producer keeps its own stdout flowing to the consumer', () => {
-    const r = rewriteRedirectsToHarnessFile('build | tail -5')
-    expect(r).toBeNull()
+  test('every tee-transformed command is valid bash (bash -n corpus)', () => {
+    const corpus = [
+      'echo hi > /tmp/out.log',
+      'echo hi >> /tmp/out.log',
+      'a && b > f',
+      'a > f1 && b > f2',
+      '{ echo a; } > f',
+      'for i in 1; do echo $i; done > f',
+      "cat >> f <<'EOF'\nhello\nEOF",
+      "cat <<'EOF' > f\nbody\nEOF",
+      'cmd > f 2>&1',
+      'cmd 1> f',
+      'cmd > /dev/null',
+      'echo —em dash— > out.log',
+      'echo x $(inner > f) > out',
+    ]
+    for (const command of corpus) {
+      const r = rewriteRedirectsForDualWrite(command)
+      expect(r).not.toBeNull()
+      const check = spawnSync('bash', ['-n'], { input: r!.rewrittenCommand })
+      // Warnings (e.g. "here-document delimited by end-of-file") exit 0 —
+      // assert the stderr is clean too, so a broken heredoc terminator can
+      // never pass silently.
+      expect(
+        `${command} → ${r!.rewrittenCommand}: ${check.stderr.toString()}`,
+      ).toBe(`${command} → ${r!.rewrittenCommand}: `)
+      expect(check.status).toBe(0)
+    }
   })
 })
 
-describe('PowerShell redirect rewrite', () => {
+describe('PowerShell redirect dual-write', () => {
   test('no redirection passes through', () => {
-    expect(rewritePsRedirectsToHarnessFile('Get-Process')).toBeNull()
+    expect(rewritePsRedirectsForDualWrite('Get-Process')).toBeNull()
   })
 
-  test('plain and appending file targets are replaced', () => {
-    const r = rewritePsRedirectsToHarnessFile(
-      'build > out.log; test >> err.log',
-    )
+  test('plain and appending file targets become Tee-Object stages', () => {
+    const r = rewritePsRedirectsForDualWrite('build > out.log; test >> err.log')
     expect(r).not.toBeNull()
-    expect(r!.rewrittenCommand).toContain(`> ${r!.harnessPath}`)
-    expect(r!.rewrittenCommand).toContain(`>> ${r!.harnessPath}`)
-    expect(r!.rewrittenCommand).not.toContain('out.log;')
+    expect(r!.rewrittenCommand).toBe(
+      'build | Tee-Object -FilePath out.log; test | Tee-Object -Append -FilePath err.log',
+    )
+    expect(r!.targets).toEqual([
+      { target: 'out.log', operator: '>', mode: 'tee' },
+      { target: 'err.log', operator: '>>', mode: 'tee' },
+    ])
+  })
+
+  test('fd-digit forms pass through unchanged', () => {
+    const r = rewritePsRedirectsForDualWrite('build 2> err.log')
+    expect(r!.rewrittenCommand).toBe('build 2> err.log')
+    expect(r!.targets).toEqual([
+      { target: 'err.log', operator: '>', mode: 'passthrough' },
+    ])
+  })
+
+  test('a pipe after the redirect within the statement declines', () => {
+    const r = rewritePsRedirectsForDualWrite('cmd > f | next')
+    expect(r!.rewrittenCommand).toBe('cmd > f | next')
+    expect(r!.targets[0]!.mode).toBe('passthrough')
+  })
+
+  test('a pipe in a later statement does not block the transform', () => {
+    const r = rewritePsRedirectsForDualWrite('cmd > f; other | x')
+    expect(r!.rewrittenCommand).toBe('cmd | Tee-Object -FilePath f; other | x')
   })
 
   test('2>&1 merges and quoted targets are left alone', () => {
-    const merge = rewritePsRedirectsToHarnessFile('build 2>&1 | Write-Host')
+    const merge = rewritePsRedirectsForDualWrite('build 2>&1 | Write-Host')
     expect(merge).toBeNull()
-    const quoted = rewritePsRedirectsToHarnessFile('build > "out.log"')
+    const quoted = rewritePsRedirectsForDualWrite('build > "out.log"')
     expect(quoted).toBeNull()
   })
 })
@@ -104,7 +283,7 @@ describe('Bash result footer', () => {
     expect(out).not.toContain('Exit code 7')
   })
 
-  test('redirect rewrite is reported with the original target', () => {
+  test('a tee dual-write is reported with its target', () => {
     const out = map({
       stdout: '',
       stderr: '',
@@ -113,13 +292,38 @@ describe('Bash result footer', () => {
       exitCode: 0,
       redirectRewritten: {
         harnessPath: '/tmp/tasks/b3.output',
-        originalTargets: ['/tmp/model.log'],
+        targets: [
+          { target: '/tmp/model.log', operator: '>', mode: 'tee' as const },
+        ],
       },
     })
     expect(out).toContain(
-      '[redirect rewritten: output saved to /tmp/tasks/b3.output instead of /tmp/model.log]',
+      '[redirect dual-write: /tmp/model.log written as requested; the full stream is also captured below]',
     )
     expect(out).toContain('[exit 0 · full output: /tmp/tasks/b3.output]')
+  })
+
+  test('passthrough redirects are reported as not captured', () => {
+    const out = map({
+      stdout: '',
+      stderr: '',
+      interrupted: false,
+      outputPath: '/tmp/tasks/b3.output',
+      exitCode: 0,
+      redirectRewritten: {
+        harnessPath: '/tmp/tasks/b3.output',
+        targets: [
+          { target: 'err.log', operator: '>', mode: 'passthrough' as const },
+          { target: 'out.log', operator: '>', mode: 'tee' as const },
+        ],
+      },
+    })
+    expect(out).toContain(
+      '[redirects left as written: output went to err.log, not captured]',
+    )
+    expect(out).toContain(
+      '[redirect dual-write: out.log written as requested; the full stream is also captured below]',
+    )
   })
 
   test('backgrounded results carry no footer (launch line names the file)', () => {

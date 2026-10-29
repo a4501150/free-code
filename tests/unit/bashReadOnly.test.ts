@@ -178,6 +178,10 @@ const NOT_READ_ONLY: Array<[string, string]> = [
   ['ls >> /tmp/out', 'passthrough'],
   ['cat f > /tmp/x', 'passthrough'],
   ['echo hi > /tmp/x', 'passthrough'],
+  // A model writing the dual-write form by hand must prompt too: tee is a
+  // real write to the target, so it can never classify read-only.
+  ['echo x | tee /tmp/x', 'passthrough'],
+  ['echo x | tee -a /tmp/x', 'passthrough'],
   ['ls < /dev/null', 'passthrough'],
   ['cat < f', 'passthrough'],
   ['ls > /dev/nullo', 'passthrough'],

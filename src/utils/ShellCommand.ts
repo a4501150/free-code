@@ -25,8 +25,19 @@ export type ExecResult = {
   outputFileSize?: number
   /** The task ID for the output file (set when outputFilePath is set). */
   outputTaskId?: string
-  /** Set when the command's own > targets were rewritten to the output file. */
-  redirectRewritten?: { harnessPath: string; originalTargets: string[] }
+  /**
+   * Set when the command's redirects were dual-write rewritten: tee targets
+   * genuinely received the write while the passthrough stayed captured;
+   * passthrough targets were left as written and are not captured.
+   */
+  redirectRewritten?: {
+    harnessPath: string
+    targets: Array<{
+      target: string
+      operator: '>' | '>>'
+      mode: 'tee' | 'passthrough'
+    }>
+  }
   /** Set when trailing `| tail`/`| head` stages were stripped before exec. */
   limiterStripped?: boolean
   /** Error message when the command failed before spawning (e.g., deleted cwd). */
