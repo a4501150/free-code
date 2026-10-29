@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { renderMarkdown } from '../markdown.js'
+import { startMathTypesetting } from '../mathRender.js'
 import { splitMarkdownMermaid } from '../mermaidSplits.js'
 import { Mermaid } from './Mermaid.js'
 
@@ -12,8 +13,14 @@ import { Mermaid } from './Mermaid.js'
  * trailing chunk during a stream re-renders only that div's innerHTML. A
  * mermaid chunk's key encodes the diagram source, so a diagram that stops
  * growing keeps its subtree (and its rendered SVG) through further deltas.
+ *
+ * Math arrives inside the sanitized text chunks as `.md-math` placeholders
+ * holding the LaTeX source; the observer in mathRender.ts typesets them with
+ * lazily-loaded KaTeX, so no ref plumbing is needed here — starting the
+ * observer once, on the first markdown render, covers every `.md` container.
  */
 export function MarkdownBody({ text }: { text: string }): React.ReactElement {
+  useEffect(() => startMathTypesetting(), [])
   const chunks = useMemo(() => splitMarkdownMermaid(text), [text])
   return (
     <>

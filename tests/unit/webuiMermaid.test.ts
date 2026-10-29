@@ -106,7 +106,12 @@ describe('mermaid lazy-load wiring', () => {
       'utf8',
     )
     expect(gateway).toContain(`"script-src 'self' https://cdn.jsdelivr.net"`)
-    // The SVG from mermaid carries a <style> element, which needs this.
-    expect(gateway).toContain(`"style-src 'self' 'unsafe-inline'"`)
+    // The SVG from mermaid carries a <style> element, which needs this, and
+    // KaTeX loads its pinned stylesheet from the same origin (mathRender.ts).
+    expect(gateway).toContain(
+      `"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net"`,
+    )
+    // KaTeX's stylesheet fetches its webfonts off-origin.
+    expect(gateway).toContain(`"font-src 'self' https://cdn.jsdelivr.net"`)
   })
 })

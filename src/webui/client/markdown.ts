@@ -1,5 +1,7 @@
-import { marked } from 'marked'
+import { Marked } from 'marked'
 import { FilterXSS } from 'xss'
+import { mathExtension } from '../../utils/markedMath.js'
+import { mathRenderExtension } from './mathRender.js'
 
 /**
  * Transcript text is untrusted: it can contain a web page the agent fetched or
@@ -23,10 +25,16 @@ const filter = new FilterXSS({
     hr: [],
     i: [],
     li: [],
+    // Math placeholders (mathRender.ts) are the only span/div the transcript
+    // ever contains, and the onTagAttr hook below pins their attributes to
+    // exactly class="md-math" and data-display="0|1" — a model-authored
+    // span/div can neither sneak a style through nor claim a math class.
+    div: ['class', 'data-display'],
     ol: ['start'],
     p: [],
     pre: [],
     s: [],
+    span: ['class', 'data-display'],
     strong: [],
     table: [],
     tbody: [],
@@ -47,11 +55,30 @@ const filter = new FilterXSS({
         ? `href="${value}" rel="noreferrer noopener" target="_blank"`
         : 'href="#"'
     }
+    if (tag === 'div' || tag === 'span') {
+      // Returning '' drops the attribute. Only the exact placeholder pair
+      // survives; anything else a model wrote degrades to a bare tag.
+      if (name === 'class') return value === 'md-math' ? 'class="md-math"' : ''
+      if (name === 'data-display')
+        return value === '0' || value === '1' ? `data-display="${value}"` : ''
+      return ''
+    }
     return undefined
   },
 })
 
-marked.setOptions({ gfm: true, breaks: true })
+/**
+ * A private Marked instance rather than the global singleton: the TUI's
+ * markdown module also configures global marked (and registers markedMath's
+ * `<code>` fallback for the same `math` name), and the renderer registered
+ * last wins the chain — the two consumers must not run each other's
+ * renderers. Registering mathRenderExtension after mathExtension puts the
+ * placeholder renderer ahead of the shared fallback; mathRender.ts's
+ * MutationObserver does the real KaTeX typesetting once the CDN module
+ * resolves.
+ */
+const md = new Marked({ gfm: true, breaks: true })
+md.use({ extensions: [...mathExtension, mathRenderExtension] })
 
 /**
  * Tables need a scroll container of their own: a bare table in a narrow
@@ -64,6 +91,6 @@ const TABLE_RE = /<table(?:\s[^>]*)?>[\s\S]*?<\/table>/g
 
 export function renderMarkdown(source: string): string {
   return filter
-    .process(marked.parse(source, { async: false }))
+    .process(md.parse(source, { async: false }))
     .replace(TABLE_RE, table => `<div class="md-table">${table}</div>`)
 }
