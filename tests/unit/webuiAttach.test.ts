@@ -1305,3 +1305,38 @@ describe('task notification cards', () => {
     expect(result!.endsWith('\n… truncated')).toBe(true)
   })
 })
+
+describe('local command rows', () => {
+  function localCommandMessage(content: string): Message {
+    return {
+      type: 'system',
+      subtype: 'local_command',
+      uuid: randomUUID() as UUID,
+      timestamp: new Date().toISOString(),
+      content,
+      level: 'info',
+      isMeta: false,
+    } as unknown as Message
+  }
+
+  test('unwraps the stdout tag instead of showing it literally', () => {
+    const snapshot = toWireSnapshot([
+      localCommandMessage(
+        '<local-command-stdout>\nSet the model to opus\n</local-command-stdout>',
+      ),
+    ])
+    const item = snapshot.items.find(candidate => candidate.kind === 'system')
+    expect(item).toBeDefined()
+    expect(item!.text).toBe('Set the model to opus')
+    expect(JSON.stringify(snapshot.items)).not.toContain('local-command-stdout')
+  })
+
+  test('drops the row entirely for a no-output command like /clear', () => {
+    // /clear returns an empty text value, which processSlashCommand wraps as
+    // an empty stdout tag — the WebUI must show no literal tag after clearing.
+    const snapshot = toWireSnapshot([
+      localCommandMessage('<local-command-stdout></local-command-stdout>'),
+    ])
+    expect(snapshot.items).toEqual([])
+  })
+})

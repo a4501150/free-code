@@ -556,12 +556,21 @@ export function toWireSnapshot(
         ) {
           break
         }
+        // A local_command row carries its output wrapped in synthetic tags
+        // the TUI unwraps in a dedicated renderer; the browser gets plain
+        // text, so unwrap here. Commands with no output (e.g. /clear) drop
+        // the row entirely rather than show a literal empty tag.
+        const content =
+          subtype === 'local_command'
+            ? stripSyntheticTags(message.content ?? '')
+            : (message.content ?? '')
+        if (!content) break
         items.push(
           finish({
             id: `${message.uuid}:0`,
             kind: 'system',
             timestamp: message.timestamp,
-            text: clip(message.content ?? ''),
+            text: clip(content),
             subtype,
             level: message.level,
             isMeta: message.isMeta,

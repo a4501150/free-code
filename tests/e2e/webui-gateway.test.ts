@@ -1593,6 +1593,11 @@ describe('WebUI gateway', () => {
         },
         'the cleared transcript to reach the browser',
       )
+      // /clear produces an empty <local-command-stdout> row; the wire must
+      // drop it rather than render the literal tag in the browser.
+      expect(JSON.stringify(materialize(collector.events))).not.toContain(
+        'local-command-stdout',
+      )
 
       // And the next turn runs on a genuinely fresh context.
       expect((await submit('hello after the clear')).ok).toBe(true)
