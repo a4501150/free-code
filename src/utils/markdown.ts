@@ -8,6 +8,7 @@ import { supportsHyperlinks } from '../ink/supports-hyperlinks.js'
 import type { CliHighlight } from './cliHighlight.js'
 import { logForDebugging } from './debug.js'
 import { createHyperlink } from './hyperlink.js'
+import { mathExtension } from './markedMath.js'
 import { stripPromptXMLTags } from './messages.js'
 import type { ThemeName } from './theme.js'
 
@@ -25,6 +26,11 @@ const defaultMarked = new Marked()
 export function configureMarked(): void {
   if (markedConfigured) return
   markedConfigured = true
+
+  // LaTeX math tokens (type 'math') for both instances — the table tokenizer
+  // below re-lexes through defaultMarked, so cells need the extension too.
+  marked.use({ extensions: mathExtension })
+  defaultMarked.use({ extensions: mathExtension })
 
   // Disable strikethrough parsing - the model often uses ~ for "approximate"
   // (e.g., ~100) and rarely intends actual strikethrough formatting
@@ -191,6 +197,22 @@ export function formatToken(
             EOL
           )
       }
+    case 'math': {
+      const math = token as Tokens.Generic & {
+        text: string
+        displayMode?: boolean
+      }
+      if (!math.displayMode) {
+        // inline math — codespan treatment, delimiters dropped
+        return color('permission', theme)(math.text)
+      }
+      // display math — dim rail like mermaid. While streaming an unclosed
+      // block grows as plain dim source instead of showing the hint.
+      if (!isClosedMathBlock(math)) {
+        return chalk.dim(math.raw.trimEnd()) + EOL
+      }
+      return formatMathBlock(math.text)
+    }
     case 'hr':
       return '---'
     case 'image':
@@ -364,16 +386,48 @@ function isClosedCodeFence(token: Token): boolean {
 }
 
 /**
- * Dim box treatment for a closed mermaid fence: hint line above the raw body,
- * both behind a dim vertical bar (blockquote-style, no highlight).
+ * marked emits a single `math` token even for an unclosed `$$` opener
+ * mid-stream (raw runs to end of input), so "closed" is decided by raw's
+ * last line being the closing delimiter (or both delimiters sitting on the
+ * single-line `$$x$$` / `\[x\]` form).
  */
-function formatMermaidDiagram(body: string): string {
+export function isClosedMathBlock(token: Token): boolean {
+  const raw = token.raw.trimEnd()
+  const lines = raw.split(EOL)
+  if (lines.length >= 2) {
+    return /^\s*(?:\$\$|\\\])\s*$/.test(lines[lines.length - 1]!)
+  }
+  return raw.startsWith('$$')
+    ? raw.length >= 5 && raw.endsWith('$$')
+    : raw.startsWith('\\[') && raw.endsWith('\\]')
+}
+
+const LATEX_BLOCK_HINT = 'latex'
+
+/**
+ * Dim box treatment for a closed display-math block: hint line above the
+ * raw LaTeX source, both behind a dim vertical bar (mermaid-style).
+ */
+function formatMathBlock(body: string): string {
+  return formatDimRailDiagram(body, LATEX_BLOCK_HINT)
+}
+
+/**
+ * Dim box treatment for a closed non-renderable block (mermaid, latex):
+ * hint line above the raw body, both behind a dim vertical bar
+ * (blockquote-style, no highlight).
+ */
+function formatDimRailDiagram(body: string, hint: string): string {
   const bar = chalk.dim('\u2502') // │
-  const header = `${bar} ${chalk.dim.bold(MERMAID_DIAGRAM_HINT)}`
+  const header = `${bar} ${chalk.dim.bold(hint)}`
   const lines = body
     .split(EOL)
     .map(line => (stripAnsi(line).trim() ? `${bar} ${chalk.dim(line)}` : line))
   return [header, ...lines].join(EOL) + EOL
+}
+
+function formatMermaidDiagram(body: string): string {
+  return formatDimRailDiagram(body, MERMAID_DIAGRAM_HINT)
 }
 
 // Matches owner/repo#NNN style GitHub issue/PR references. The qualified form

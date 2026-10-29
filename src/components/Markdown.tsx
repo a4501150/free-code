@@ -29,9 +29,10 @@ const tokenCache = new Map<string, Token[]>()
 // ~3ms marked.lexer call entirely — render as a single paragraph. Covers
 // the majority of short assistant responses and user prompts that are
 // plain sentences. Checked via indexOf (not regex) for speed.
-// Single regex: matches any MD marker or ordered-list start (N. at line start).
+// Single regex: matches any MD marker, ordered-list start (N. at line start),
+// or math delimiters ($ for $…$/$$…$$, \ for \(…\)/\[…\]).
 // One pass instead of 10× includes scans.
-const MD_SYNTAX_RE = /[#*`|[>\-_~]|\n\n|^\d+\. |\n\d+\. /
+const MD_SYNTAX_RE = /[#*`|[>\-_~$\\]|\n\n|^\d+\. |\n\d+\. /
 function hasMarkdownSyntax(s: string): boolean {
   // Sample first 500 chars — if markdown exists it's usually early (headers,
   // code fence, list). Long tool outputs are mostly plain text tails.
