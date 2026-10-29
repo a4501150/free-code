@@ -130,6 +130,16 @@ export async function createBashShellProvider(
 
       const commandParts: string[] = []
 
+      // Pipelines must report the failing component's exit, not the last
+      // stage's success: `bun run verify | tail` must surface verify's
+      // failure. Without pipefail the whole eval returns tail's 0 and the
+      // result footer claims success over a failed command. Both bash and
+      // zsh accept `set -o pipefail`; unknown shells are skipped, mirroring
+      // the extglob guard below.
+      if (shellPath.includes('bash') || shellPath.includes('zsh')) {
+        commandParts.push('set -o pipefail')
+      }
+
       // Source the snapshot file. The `|| true` guards the race between the
       // access() check above and the spawned shell's `source` — if the file
       // vanishes in that window, the `&&` chain still continues.

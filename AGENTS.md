@@ -45,6 +45,8 @@ commented IN the file that governs them.
 
 One parser, no fallback: `too-complex` must prompt. `shell-quote` is display/completion only; wrapper resolution (`src/utils/bash/wrappers.ts`) fails closed. `sourceText` excludes redirects — checking it alone misses `> /tmp/evil`. A false-positive `isReadOnly` executes unprompted (it feeds memory extraction and speculation auto-approval).
 
+The bash provider's prefix chain enables `pipefail` (`src/utils/shell/bashProvider.ts`): a piped command reports the failing component's exit, so `verify | tail` cannot return 0 over a failed verify. `| head`-style truncation can therefore surface exit 141 (SIGPIPE) for commands that produced the output the model wanted — expected, not a failure.
+
 ## Settings split
 
 Provider keys ONLY in `~/.freecode/modelSettings.json` (full key set: `src/utils/settings/modelSettingsKeys.ts`); unknown keys are dropped pre-validation. Everything else in `freecode.json`. Config home is `~/.freecode` (`FREECODE_CONFIG_DIR`, fallback `CLAUDE_CONFIG_DIR`). Project settings load only from `<cwd>/.freecode/freecode.json` (a legacy `<cwd>/.claude/freecode.json` is not read); local overrides from `<cwd>/.freecode/freecode.local.json`. Behavior is configured through settings files, not env: the env reads `src/` and `scripts/` may perform are allowlisted in `src/utils/envAllowlist.ts` (enforced by a unit test that names the file).
