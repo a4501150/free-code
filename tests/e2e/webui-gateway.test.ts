@@ -22,6 +22,9 @@ import {
   type DaemonControlRequest,
   sendDaemonControl,
 } from '../../src/webui/daemonControl'
+import { connectAttachClient } from '../../src/webui/gateway/attachClient'
+import type { AttachEventBody } from '../../src/webui/protocol/attachSchemas'
+import type { WebTranscriptItem } from '../../src/webui/protocol/transcriptWire'
 import { textResponse } from '../helpers/fixture-builders'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
@@ -242,6 +245,86 @@ async function waitForAttachablePid(configDir: string): Promise<number> {
     pid => pid > 0,
     { description: 'a session to become attachable', timeoutMs: 30_000 },
   )
+}
+
+/** Collects attach events, with helpers to await a particular one. */
+function makeCollector() {
+  const events: AttachEventBody[] = []
+  return {
+    events,
+    handlers: {
+      onEvent: (_seq: number, event: AttachEventBody) => {
+        events.push(event)
+      },
+      onClose: () => {},
+    },
+    waitForEvent: <K extends AttachEventBody['kind']>(
+      kind: K,
+      predicate: (
+        event: Extract<AttachEventBody, { kind: K }>,
+      ) => boolean = () => true,
+      description = `a ${kind} event`,
+    ) =>
+      waitFor(
+        () =>
+          events.filter(
+            (e): e is Extract<AttachEventBody, { kind: K }> => e.kind === kind,
+          ),
+        matches => matches.some(predicate),
+        { description, timeoutMs: 30_000 },
+      ).then(matches => matches.filter(predicate).at(-1)!),
+  }
+}
+
+/** Every transcript item the browser would hold, after applying all patches. */
+function materialize(events: AttachEventBody[]): WebTranscriptItem[] {
+  const byId = new Map<string, WebTranscriptItem>()
+  let order: string[] = []
+
+  for (const event of events) {
+    if (event.kind === 'snapshot') {
+      byId.clear()
+      for (const item of event.transcript.items) byId.set(item.id, item)
+      order = [...event.transcript.order]
+    } else if (event.kind === 'transcript') {
+      const patch = event.patch
+      if (patch.type === 'replace') {
+        byId.clear()
+        for (const item of patch.snapshot.items) byId.set(item.id, item)
+        order = [...patch.snapshot.order]
+      } else {
+        for (const id of patch.remove) byId.delete(id)
+        for (const item of patch.upsert) byId.set(item.id, item)
+        if (patch.order) order = [...patch.order]
+        else if (patch.orderAppend) order = [...order, ...patch.orderAppend]
+      }
+    }
+  }
+
+  return order.map(id => byId.get(id)).filter(Boolean) as WebTranscriptItem[]
+}
+
+/** The `<config>/projects`-tree `<sessionId>.jsonl` file for one session. */
+async function findSessionFile(
+  configDir: string,
+  sessionId: string,
+): Promise<string | undefined> {
+  const queue = [join(configDir, 'projects')]
+  while (queue.length > 0) {
+    const dir = queue.shift()!
+    let entries: Awaited<ReturnType<typeof readdir>>
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) queue.push(path)
+      else if (entry.name === `${sessionId}.jsonl`) return path
+    }
+  }
+  return undefined
 }
 
 describe('WebUI gateway', () => {
@@ -1352,5 +1435,196 @@ describe('WebUI gateway', () => {
       ),
     ) as { sessionId?: unknown }
     expect(typeof pointer.sessionId).toBe('string')
+  })
+
+  test('assistant /clear empties the live transcript and carries no SendUserMessage', async () => {
+    dirs = await makeDirs()
+    server.reset([
+      textResponse('First reply.'),
+      textResponse('Post-clear reply.'),
+    ])
+
+    // Seed provider settings and trust via a terminal session, then enable
+    // the assistant as a PLAIN assistant (coordinator: false): the full tool
+    // list is what makes the SendUserMessage absence a meaningful assertion.
+    session = new TmuxSession({
+      serverUrl: server.url,
+      reuseConfigDir: dirs.config,
+      reuseHomeDir: dirs.home,
+    })
+    await session.start()
+    const settingsPath = join(dirs.config, 'freecode.json')
+    const seeded = JSON.parse(await readFile(settingsPath, 'utf-8'))
+    await writeFile(
+      settingsPath,
+      JSON.stringify({
+        ...seeded,
+        assistant: { enabled: true, coordinator: false },
+      }),
+    )
+
+    const started = await runCli(
+      dirs,
+      ['web', 'start', '--tunnel', 'none', '--password-stdin'],
+      PASSWORD,
+    )
+    const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
+    if (!match) throw new Error(`no gateway URL:\n${started}`)
+    baseUrl = match[0]
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
+    const client = new GatewayClient(baseUrl)
+    expect(await client.login(PASSWORD)).toBe(200)
+
+    const assistant = await waitFor(
+      async () => {
+        const res = await fetch(`${baseUrl}/api/sessions`, {
+          headers: { cookie: client.cookie },
+        })
+        const body = (await res.json()) as {
+          sessions: {
+            role?: string
+            live?: boolean
+            pid?: number
+            sessionId: string
+          }[]
+        }
+        const row = body.sessions.find(s => s.role === 'assistant')
+        return row?.live && row.pid ? row : undefined
+      },
+      row => row !== undefined,
+      {
+        description: 'the assistant row to go live',
+        timeoutMs: 60_000,
+      },
+    )
+    const assistantPid = assistant.pid!
+    const assistantSessionId = assistant.sessionId
+
+    // The attach socket lives in the gateway's config home; point this
+    // process at it before resolving the descriptor.
+    const priorConfig = process.env.FREECODE_CONFIG_DIR
+    const priorClaudeConfig = process.env.CLAUDE_CONFIG_DIR
+    process.env.FREECODE_CONFIG_DIR = dirs.config
+    process.env.CLAUDE_CONFIG_DIR = dirs.config
+
+    const collector = makeCollector()
+    const attach = await connectAttachClient(assistantPid, collector.handlers)
+    try {
+      expect((await attach.request({ kind: 'subscribe' })).ok).toBe(true)
+      await collector.waitForEvent('snapshot')
+
+      // Turn one, through the same submit path a browser uses. The child
+      // registers its runtime shortly after the descriptor appears, so
+      // runtime_not_ready is the one retryable failure.
+      const submit = async (content: string) => {
+        for (;;) {
+          const response = await attach.request({
+            kind: 'submit',
+            commandId: crypto.randomUUID(),
+            content,
+            delivery: 'next',
+            sessionEpoch: attach.meta.sessionEpoch,
+          })
+          if (response.ok) return response
+          if (response.error?.code !== 'runtime_not_ready') return response
+          await sleep(250)
+        }
+      }
+      expect((await submit('hello before the clear')).ok).toBe(true)
+
+      const log = await waitForRequestCount(server, 1, {
+        description: 'the first prompt to reach the model',
+      })
+      const toolNames = ((log[0]!.body.tools ?? []) as Array<{ name: string }>)
+        .map(tool => tool.name)
+        .sort()
+      expect(toolNames).not.toContain('SendUserMessage')
+      const firstBody = JSON.stringify(log[0]!.body)
+      // The WebUI has no delivery surface for SendUserMessage, so neither
+      // the tool nor the "Talking to the user" guidance may reach the model.
+      expect(firstBody).not.toContain('Talking to the user')
+      // The rest of assistant mode still rides the assistant_mode carrier.
+      expect(firstBody).toContain('wakes on events')
+
+      await collector.waitForEvent(
+        'transcript',
+        () =>
+          materialize(collector.events).some(
+            item =>
+              item.kind === 'assistant' && item.text?.includes('First reply'),
+          ),
+        'the first reply to reach the browser transcript',
+      )
+
+      // /clear through the browser's own submit path.
+      const cleared = await attach.request({
+        kind: 'submit',
+        commandId: crypto.randomUUID(),
+        content: '/clear',
+        delivery: 'next',
+        sessionEpoch: attach.meta.sessionEpoch,
+      })
+      expect(
+        cleared.ok,
+        `clear submit failed: ${JSON.stringify(cleared.error ?? '')}`,
+      ).toBe(true)
+
+      // The browser-side transcript must drop the pre-clear conversation:
+      // the child publishes the cleared in-memory array (plus the /clear
+      // command's own rows), not the stale pre-clear content.
+      await collector.waitForEvent(
+        'transcript',
+        () => {
+          const items = materialize(collector.events)
+          return (
+            !items.some(
+              item =>
+                item.kind === 'assistant' && item.text?.includes('First reply'),
+            ) &&
+            !items.some(
+              item =>
+                item.kind === 'user' &&
+                item.text?.includes('hello before the clear'),
+            )
+          )
+        },
+        'the cleared transcript to reach the browser',
+      )
+
+      // And the next turn runs on a genuinely fresh context.
+      expect((await submit('hello after the clear')).ok).toBe(true)
+      const log2 = await waitForRequestCount(server, 2, {
+        description: 'the post-clear prompt to reach the model',
+      })
+      const secondMessages = JSON.stringify(log2[1]!.body.messages ?? [])
+      expect(secondMessages).toContain('hello after the clear')
+      expect(secondMessages).not.toContain('hello before the clear')
+      expect(secondMessages).not.toContain('First reply')
+
+      // The on-disk transcript was truncated in place (assistant mode keeps
+      // the session id): it holds only the post-clear turn.
+      const transcriptText = await waitFor(
+        async () => {
+          const file = await findSessionFile(dirs.config, assistantSessionId)
+          return file ? await readFile(file, 'utf-8') : ''
+        },
+        text => text.includes('hello after the clear'),
+        {
+          description: 'the truncated transcript to hold the post-clear turn',
+          timeoutMs: 30_000,
+        },
+      )
+      expect(transcriptText).not.toContain('First reply')
+      expect(transcriptText).not.toContain('hello before the clear')
+    } finally {
+      attach.close()
+      if (priorConfig === undefined) delete process.env.FREECODE_CONFIG_DIR
+      else process.env.FREECODE_CONFIG_DIR = priorConfig
+      if (priorClaudeConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR
+      else process.env.CLAUDE_CONFIG_DIR = priorClaudeConfig
+    }
   })
 })
