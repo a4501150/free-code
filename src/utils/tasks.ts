@@ -158,8 +158,8 @@ const ownedSessionScopedListIds = new Set<string>()
  * resume or a fresh start must not inherit a previous run's tasks. Guards
  * for the sharing cases (session IDs are not exclusive — see
  * concurrentSessions.ts):
- * - a stable-name list (tasks-mode queue, CLAUDE_CODE_TASK_LIST_ID)
- *   is never registered here, so it is never touched;
+ * - a stable-name list (tasks-mode queue override) is never registered
+ *   here, so it is never touched;
  * - a list still held by another live CLI process (concurrent resume, or a
  *   webui-attached child that outlives this process) is skipped;
  * - after a crash the exit cleanup never runs — gcStaleTaskLists sweeps it.
@@ -238,11 +238,29 @@ export async function cleanupSubagentTaskList(agentId: string): Promise<void> {
   }
 }
 
+// Tasks-mode (--tasks) stable queue name. Set once at flag parse, before any
+// task tool or watcher resolves a list. A module override rather than an env
+// var: it is process-internal wiring, not user configuration, and stable-name
+// lists are exempt from exit cleanup (see cleanupSessionTaskList).
+let taskListIdOverride: string | undefined
+
+export function setTaskListIdOverride(id: string): void {
+  taskListIdOverride = id
+}
+
+export function clearTaskListIdOverride(): void {
+  taskListIdOverride = undefined
+}
+
+export function isTaskListIdOverrideActive(): boolean {
+  return taskListIdOverride !== undefined
+}
+
 /**
  * Gets the task list ID based on the current context.
  * Priority:
  * 0. Subagent isolation: subagents get their own task list scoped by agentId
- * 1. CLAUDE_CODE_TASK_LIST_ID - explicit task list ID
+ * 1. Task-list override — --tasks stable queue name
  * 2. Session ID - fallback for standalone sessions
  */
 export function getTaskListId(): string {
@@ -269,8 +287,8 @@ export function isInSubagentContext(): boolean {
  * Uses the same resolution as getTaskListId() minus the subagent check.
  */
 export function getMainTaskListId(): string {
-  if (process.env.CLAUDE_CODE_TASK_LIST_ID) {
-    return process.env.CLAUDE_CODE_TASK_LIST_ID
+  if (taskListIdOverride) {
+    return taskListIdOverride
   }
   // Session-scoped fallback: track ownership so exit cleanup covers this ID
   // and IDs rotated away from by /resume or /clear.
@@ -509,6 +527,51 @@ export async function listTasks(taskListId: string): Promise<Task[]> {
     .map(f => f.replace('.json', ''))
   const results = await Promise.all(taskIds.map(id => getTask(taskListId, id)))
   return results.filter((t): t is Task => t !== null)
+}
+
+/**
+ * Seeds an empty task list with pre-built tasks (rebuild-from-transcript
+ * replay). List-level lock: re-checks emptiness inside the critical section
+ * so a racing process (concurrent resume of the same session) that already
+ * seeded or mutated the list wins, and the loser's write is dropped. Writes
+ * the high-water mark so post-resume createTask calls don't reuse replayed
+ * IDs. Callers must not pass tasks whose files may already exist — this
+ * overwrites without merging.
+ */
+export async function seedTaskList(
+  taskListId: string,
+  tasks: Task[],
+): Promise<boolean> {
+  const lockPath = await ensureTaskListLockFile(taskListId)
+
+  let release: (() => Promise<void>) | undefined
+  try {
+    release = await lockfile.lock(lockPath, LOCK_OPTIONS)
+
+    // Emptiness re-check under the lock: listTasks above ran without it, and
+    // a live writer may have created tasks in the gap.
+    if ((await findHighestTaskIdFromFiles(taskListId)) > 0) return false
+
+    let maxId = 0
+    for (const task of tasks) {
+      await writeFile(
+        getTaskPath(taskListId, task.id),
+        jsonStringify(task, null, 2),
+      )
+      const numericId = parseInt(task.id, 10)
+      if (!isNaN(numericId) && numericId > maxId) maxId = numericId
+    }
+    const existingMark = await readHighWaterMark(taskListId)
+    if (maxId > existingMark) {
+      await writeHighWaterMark(taskListId, maxId)
+    }
+    notifyTasksUpdated()
+    return true
+  } finally {
+    if (release) {
+      await release()
+    }
+  }
 }
 
 export async function blockTask(

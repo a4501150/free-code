@@ -9,6 +9,7 @@ import {
 } from '../../src/bootstrap/state.js'
 import {
   cleanupSessionTaskList,
+  clearTaskListIdOverride,
   gcStaleTaskLists,
   getMainTaskListId,
   getTasksDir,
@@ -48,7 +49,7 @@ beforeEach(async () => {
   previousConfigDir = process.env.FREECODE_CONFIG_DIR
   configDir = await mkdtemp(join(tmpdir(), 'tasklist-'))
   process.env.FREECODE_CONFIG_DIR = configDir
-  delete process.env.CLAUDE_CODE_TASK_LIST_ID
+  clearTaskListIdOverride()
 })
 
 afterEach(async () => {

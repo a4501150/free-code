@@ -10,7 +10,11 @@ import {
   type StaleTaskListItem,
 } from '../../src/utils/attachments.js'
 import { getAttachmentSystemReminderBodies } from '../../src/utils/messages.js'
-import { createTask } from '../../src/utils/tasks.js'
+import {
+  clearTaskListIdOverride,
+  createTask,
+  setTaskListIdOverride,
+} from '../../src/utils/tasks.js'
 import type { Task } from '../../src/utils/taskSchemas.js'
 import { TASK_UPDATE_TOOL_NAME } from '../../src/tools/TaskUpdateTool/constants.js'
 
@@ -21,12 +25,12 @@ let configDir: string
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'stale-task-list-'))
   process.env.FREECODE_CONFIG_DIR = configDir
-  process.env.CLAUDE_CODE_TASK_LIST_ID = TASK_LIST_ID
+  setTaskListIdOverride(TASK_LIST_ID)
 })
 
 afterEach(async () => {
   delete process.env.FREECODE_CONFIG_DIR
-  delete process.env.CLAUDE_CODE_TASK_LIST_ID
+  clearTaskListIdOverride()
   await rm(configDir, { recursive: true, force: true })
 })
 

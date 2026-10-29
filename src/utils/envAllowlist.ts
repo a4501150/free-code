@@ -57,7 +57,6 @@ export const PROCESS_MECHANICS_ENV_VARS = new Set([
   // Self-written IPC (main.tsx / entrypoints write these, call sites read)
   'CLAUDE_CODE_ENTRYPOINT',
   'CLAUDE_CODE_SIMPLE', // set from --bare; read by isBareMode()
-  'CLAUDE_CODE_TASK_LIST_ID',
   // Injected into hook / MCP-header children
   'CLAUDE_ENV_FILE',
   // Self-injected tmux worktree integration (worktree.ts -> LogoV2 display)

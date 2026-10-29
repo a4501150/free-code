@@ -50,6 +50,7 @@ import { readAttachDescriptor } from '../../server/descriptor.js'
 import { createSystemMessage } from '../../utils/messages.js'
 import { reconstructContentReplacementState } from '../../utils/toolResultStorage.js'
 import { recordContentReplacement } from '../../utils/sessionStorage.js'
+import { maybeRebuildTaskListForResume } from '../../utils/taskListRebuild.js'
 import {
   ResumeSessionConflictDialog,
   type ResumeSessionConflictChoice,
@@ -98,6 +99,11 @@ export function useReplSessionResume({
 }) {
   const resume = useCallback(
     async (sessionId: UUID, log: LogOption, entrypoint: ResumeEntrypoint) => {
+      // Captured before the ownership-fork branch below remints sessionId
+      // and strips log.fullPath — the task-list rebuild needs the SOURCE
+      // session's transcript, not the fork's fresh id.
+      const sourceSessionId = log.sessionId ?? sessionId
+      const sourceTranscriptPath = log.fullPath
       try {
         if (entrypoint !== 'fork') {
           const conflict = await checkResumeSessionOwnership(sessionId)
@@ -263,6 +269,16 @@ export function useReplSessionResume({
         ) {
           await recordContentReplacement(log.contentReplacements)
         }
+
+        // Replay the source transcript's task tool calls into the current
+        // session's list (guards inside: override active / list non-empty
+        // are no-ops; failures never break the resume).
+        await maybeRebuildTaskListForResume({
+          sessionId: sourceSessionId,
+          ...(sourceTranscriptPath
+            ? { transcriptPath: sourceTranscriptPath }
+            : {}),
+        })
 
         setMessages(() => messages)
         setToolJSX(null)

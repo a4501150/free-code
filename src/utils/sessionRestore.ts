@@ -35,6 +35,7 @@ import { createSystemMessage } from './messages.js'
 import { parseUserSpecifiedModel } from './model/model.js'
 import { getPlansDirectory } from './plans.js'
 import { setCwd } from './Shell.js'
+import { maybeRebuildTaskListForResume } from './taskListRebuild.js'
 import {
   adoptResumedSessionFile,
   recordContentReplacement,
@@ -452,6 +453,17 @@ export async function adoptResumedSessionAtStartup(
     // adopt either.
     if (sid) adoptResumedSessionFile()
   }
+
+  // Replay the source transcript's task tool calls into the current
+  // session's list (a no-op when a task-list override is active or the
+  // list already has tasks on disk). Non-fork: source session == sid.
+  // Fork: the source is the loaded conversation, not the fresh startup ID.
+  // The wrapper resolves the transcript path itself and never lets a
+  // rebuild failure break resume.
+  await maybeRebuildTaskListForResume({
+    sessionId: (opts.fork ? result.sessionId : sid) ?? undefined,
+    ...(opts.transcriptPath ? { transcriptPath: opts.transcriptPath } : {}),
+  })
 }
 
 /**

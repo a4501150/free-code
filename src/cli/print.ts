@@ -56,6 +56,7 @@ import {
   type LoadConversationForResumeOptions,
   type TurnInterruptionState,
 } from 'src/utils/conversationRecovery.js'
+import { maybeRebuildTaskListForResume } from 'src/utils/taskListRebuild.js'
 import type {
   MCPServerConnection,
   McpSdkServerConfig,
@@ -4196,6 +4197,14 @@ async function loadInitialMessages(
         // Write mode entry for the resumed session
         saveMode(isCoordinatorMode() ? 'coordinator' : 'normal')
 
+        // Replay task tool calls from the resumed transcript into the
+        // session's task list (no-op when the list is non-empty or a
+        // tasks-mode override is active).
+        await maybeRebuildTaskListForResume({
+          sessionId: result.sessionId ?? undefined,
+          ...(result.fullPath ? { transcriptPath: result.fullPath } : {}),
+        })
+
         return {
           messages: result.messages,
           turnInterruptionState: result.turnInterruptionState,
@@ -4318,6 +4327,14 @@ async function loadInitialMessages(
 
       // Write mode entry for the resumed session
       saveMode(isCoordinatorMode() ? 'coordinator' : 'normal')
+
+      // Replay task tool calls from the resumed transcript into the
+      // session's task list (no-op when the list is non-empty or a
+      // tasks-mode override is active).
+      await maybeRebuildTaskListForResume({
+        sessionId: result.sessionId ?? undefined,
+        ...(result.fullPath ? { transcriptPath: result.fullPath } : {}),
+      })
 
       return {
         messages: result.messages,

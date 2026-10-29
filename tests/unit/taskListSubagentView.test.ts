@@ -5,7 +5,11 @@ import { tmpdir } from 'os'
 import { TaskGetTool } from '../../src/tools/TaskGetTool/TaskGetTool.js'
 import { TaskListTool } from '../../src/tools/TaskListTool/TaskListTool.js'
 import { runWithAgentContext } from '../../src/utils/agentContext.js'
-import { createTask, getMainTaskListId } from '../../src/utils/tasks.js'
+import {
+  clearTaskListIdOverride,
+  createTask,
+  getMainTaskListId,
+} from '../../src/utils/tasks.js'
 ;(globalThis as typeof globalThis & { MACRO?: unknown }).MACRO ??= {
   VERSION: 'test',
   BUILD_TIME: '',
@@ -53,7 +57,7 @@ beforeEach(async () => {
   previousConfigDir = process.env.FREECODE_CONFIG_DIR
   configDir = await mkdtemp(join(tmpdir(), 'tasklist-view-'))
   process.env.FREECODE_CONFIG_DIR = configDir
-  delete process.env.CLAUDE_CODE_TASK_LIST_ID
+  clearTaskListIdOverride()
 })
 
 afterEach(() => {

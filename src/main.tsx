@@ -208,6 +208,7 @@ import type { ValidationError } from './utils/settings/validation.js'
 import {
   DEFAULT_TASKS_MODE_TASK_LIST_ID,
   TASK_STATUSES,
+  setTaskListIdOverride,
 } from './utils/tasks.js'
 import {
   logPluginLoadErrors,
@@ -1341,7 +1342,7 @@ async function run(): Promise<CommanderCommand> {
           : DEFAULT_TASKS_MODE_TASK_LIST_ID
         : undefined
       if (taskListId) {
-        process.env.CLAUDE_CODE_TASK_LIST_ID = taskListId
+        setTaskListIdOverride(taskListId)
         // Tasks mode runs the main loop as a coordinator watching the task list.
         setCoordinatorModeOverride(true)
       }
