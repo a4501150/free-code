@@ -230,13 +230,25 @@ export function formatToken(
         )
         .join('')
     }
-    case 'list_item':
+    case 'list_item': {
+      // marked 17 wraps every item's content in a `paragraph` token (the
+      // old `text`-child shape no longer occurs), so the bullet is emitted
+      // here, on the first content block — otherwise every list renders
+      // as plain run-on lines with no marker.
+      const bullet =
+        orderedListNumber === null
+          ? '-'
+          : `${getListNumber(listDepth, orderedListNumber)}.`
       return (token.tokens ?? [])
-        .map(
-          _ =>
-            `${'  '.repeat(listDepth)}${formatToken(_, theme, listDepth + 1, orderedListNumber, token, highlight)}`,
-        )
+        .map((_, index) => {
+          const indent =
+            index === 0
+              ? `${'  '.repeat(listDepth)}${bullet} `
+              : '  '.repeat(listDepth)
+          return `${indent}${formatToken(_, theme, listDepth + 1, orderedListNumber, token, highlight)}`
+        })
         .join('')
+    }
     case 'paragraph':
       return (
         (token.tokens ?? [])
@@ -256,7 +268,10 @@ export function formatToken(
         return token.text
       }
       if (parent?.type === 'list_item') {
-        return `${orderedListNumber === null ? '-' : getListNumber(listDepth, orderedListNumber) + '.'} ${token.tokens ? token.tokens.map(_ => formatToken(_, theme, listDepth, orderedListNumber, token, highlight)).join('') : linkifyIssueReferences(token.text)}${EOL}`
+        // The bullet comes from the list_item case itself (marked 17 never
+        // produces this shape anymore; kept so a future shape change can
+        // never double-prefix).
+        return `${token.tokens ? token.tokens.map(_ => formatToken(_, theme, listDepth, orderedListNumber, token, highlight)).join('') : linkifyIssueReferences(token.text)}${EOL}`
       }
       return linkifyIssueReferences(token.text)
     case 'table': {
