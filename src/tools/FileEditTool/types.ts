@@ -5,24 +5,49 @@ const editFields = {
   file_path: z.string().describe('The absolute path to the file to modify'),
   old_string: z
     .string()
+    .optional()
     .describe(
-      'The exact text to replace, matching the file content verbatim including indentation. Strip any Read line-number prefix (`N:`) from copied lines — never include the prefix in this string.',
+      'The exact text to replace, matching the file content verbatim including indentation. Strip any Read line-number prefix (`N:`) from copied lines — never include the prefix in this string. With end_string, this is instead the unique start anchor of the range to replace.',
     ),
   new_string: z
     .string()
+    .optional()
     .describe(
       'The text to replace it with (must be different from old_string). An empty string deletes the matched text.',
     ),
+  end_string: z
+    .string()
+    .optional()
+    .describe(
+      "Anchor-range mode: the unique end anchor of the replacement. Everything from the start of old_string's match through the end of end_string's match (inclusive) is replaced by new_string — so a large rewrite only needs two short unique lines quoted instead of the whole block. Each anchor must match exactly once. Cannot be combined with replace_all or edits.",
+    ),
   replace_all: semanticBoolean(z.boolean().optional()).describe(
-    'Replace all occurrences of old_string (default false)',
+    'Replace all occurrences of old_string (default false). Cannot be combined with end_string or edits.',
   ),
+  edits: z
+    .array(
+      z.strictObject({
+        old_string: z.string().describe('The exact text to replace'),
+        new_string: z
+          .string()
+          .describe('The text to replace it with (empty deletes the match)'),
+        end_string: z.string().optional(),
+        replace_all: semanticBoolean(z.boolean().optional()),
+      }),
+    )
+    .optional()
+    .describe(
+      'Multiple replacements for this one file, applied atomically: every entry is validated against the current file content first — if any entry fails (not found, ambiguous, overlapping), nothing is written. Prefer this over repeated single Edit calls for a batch of related changes.',
+    ),
 }
 
 // Model-facing schema. _overrideContent is intentionally absent so the model
 // cannot bypass match validation by supplying raw file content.
 // Placement is content-anchored: there are deliberately no line-range
 // parameters — disambiguation happens by extending old_string's context,
-// which keeps the call shape minimal for structured-output models.
+// which keeps the call shape minimal for structured-output models. Exactly
+// one of the single-edit fields (old_string+new_string, optionally end_string)
+// or the edits array must be present; validateInput enforces the split.
 const inputSchema = z.strictObject(editFields)
 type InputSchema = typeof inputSchema
 

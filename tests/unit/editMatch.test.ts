@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   planEdit,
+  planEditBatch,
   stripLineRowPrefixes,
   type EditPlanRequest,
 } from '../../src/utils/editMatch.js'

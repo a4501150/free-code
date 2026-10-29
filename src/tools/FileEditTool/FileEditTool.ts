@@ -19,7 +19,6 @@ import {
   type ApprovalNote,
   type ApprovalResult,
 } from '../../utils/editApproval.js'
-import { planEdit } from '../../utils/editMatch.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { isENOENT } from '../../utils/errors.js'
 import {
@@ -55,6 +54,7 @@ import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.
 import { validateInputForSettingsFileEdit } from '../../utils/settings/validateEditTool.js'
 import { FILE_EDIT_TOOL_NAME } from './constants.js'
 import { coerceEditInput } from './legacyInput.js'
+import { editRequestsFromInput, planInputAgainst } from './planning.js'
 import { getEditToolDescription } from './prompt.js'
 import {
   type FileEditInput,
@@ -77,20 +77,6 @@ import {
 // can be larger on disk per character, but 1 GiB is a safe byte-level guard
 // that prevents OOM without being unnecessarily restrictive.
 const MAX_EDIT_FILE_SIZE = 1024 * 1024 * 1024 // 1 GiB (stat bytes)
-
-type EditRequest = {
-  oldString: string
-  newString: string
-  replaceAll: boolean
-}
-
-function requestFromInput(input: FileEditInput): EditRequest {
-  return {
-    oldString: input.old_string,
-    newString: input.new_string,
-    replaceAll: input.replace_all ?? false,
-  }
-}
 
 function fileDoesNotExistError(fullFilePath: string): {
   result: false
@@ -134,11 +120,19 @@ export const FileEditTool = buildTool({
     const parsedInput = inputSchema.parse(input)
     return {
       file_path: parsedInput.file_path,
-      old_string: parsedInput.old_string,
-      new_string: parsedInput.new_string,
+      ...(parsedInput.old_string !== undefined && {
+        old_string: parsedInput.old_string,
+      }),
+      ...(parsedInput.new_string !== undefined && {
+        new_string: parsedInput.new_string,
+      }),
+      ...(parsedInput.end_string !== undefined && {
+        end_string: parsedInput.end_string,
+      }),
       ...(parsedInput.replace_all !== undefined && {
         replace_all: parsedInput.replace_all,
       }),
+      ...(parsedInput.edits !== undefined && { edits: parsedInput.edits }),
     }
   },
   userFacingName,
@@ -155,7 +149,16 @@ export const FileEditTool = buildTool({
     return outputSchema
   },
   toAutoClassifierInput(input) {
-    return `${input.file_path}: ${JSON.stringify(input.old_string)} -> ${JSON.stringify(input.new_string)}`
+    const flat = editRequestsFromInput(input)
+    if ('invalid' in flat) {
+      return `${input.file_path}: <malformed edit input>`
+    }
+    const pairs = flat.requests
+      .map(
+        r => `${JSON.stringify(r.oldString)} -> ${JSON.stringify(r.newString)}`,
+      )
+      .join('; ')
+    return `${input.file_path}: ${pairs}`
   },
   getPath(input): string {
     return input.file_path
@@ -183,18 +186,48 @@ export const FileEditTool = buildTool({
   renderToolUseRejectedMessage,
   renderToolUseErrorMessage,
   async validateInput(input: FileEditInput, toolUseContext: ToolUseContext) {
-    const { old_string, new_string } = input
     // Use expandPath for consistent path normalization (especially on Windows
     // where "/" vs "\" can cause readFileState lookup mismatches)
     const fullFilePath = expandPath(input.file_path)
 
+    // Flatten to planner requests first: mode exclusivity (single vs edits[])
+    // is enforced here so every check below works on a uniform shape.
+    const flattened = editRequestsFromInput(input)
+    if ('invalid' in flattened) {
+      return {
+        result: false,
+        behavior: 'ask',
+        message: flattened.invalid,
+        errorCode: 1,
+      }
+    }
+    const requests = flattened.requests
+
     // Reject edits to team memory files that introduce secrets.
     const secretError = checkTeamMemSecrets(
       fullFilePath,
-      old_string + '\n' + new_string,
+      requests.map(r => r.oldString + '\n' + r.newString).join('\n'),
     )
     if (secretError) {
       return { result: false, message: secretError, errorCode: 0 }
+    }
+
+    // No-op check per exact-mode entry (anchor-range entries replace an
+    // unknown span, so their no-op case surfaces after planning instead).
+    const noop = requests.find(
+      r =>
+        r.endString === undefined &&
+        r.oldString !== '' &&
+        r.oldString === r.newString,
+    )
+    if (noop) {
+      return {
+        result: false,
+        behavior: 'ask',
+        message:
+          'No changes to make: old_string and new_string are exactly the same.',
+        errorCode: 1,
+      }
     }
 
     // Check if path should be ignored based on permission settings
@@ -212,16 +245,6 @@ export const FileEditTool = buildTool({
         message:
           'File is in a directory that is denied by your permission settings.',
         errorCode: 2,
-      }
-    }
-
-    if (old_string === new_string) {
-      return {
-        result: false,
-        behavior: 'ask',
-        message:
-          'No changes to make: old_string and new_string are exactly the same.',
-        errorCode: 1,
       }
     }
 
@@ -275,7 +298,7 @@ export const FileEditTool = buildTool({
     if (fileContent === null) {
       // Creation mode: an empty old_string against a missing file writes
       // new_string as the whole file (the Write tool is the other door).
-      if (old_string === '') {
+      if (requests.length === 1 && requests[0]!.oldString === '') {
         return { result: true }
       }
       const similarFilename = findSimilarFile(fullFilePath)
@@ -289,7 +312,7 @@ export const FileEditTool = buildTool({
       return { result: false, behavior: 'ask', message, errorCode: 4 }
     }
 
-    if (old_string === '') {
+    if (requests.length === 1 && requests[0]!.oldString === '') {
       return {
         result: false,
         behavior: 'ask',
@@ -298,7 +321,7 @@ export const FileEditTool = buildTool({
       }
     }
 
-    const planned = planEdit(fileContent, requestFromInput(input))
+    const planned = planInputAgainst(fileContent, input)
     if (!planned.ok) {
       return {
         result: false,
@@ -355,7 +378,10 @@ export const FileEditTool = buildTool({
       input1.file_path === input2.file_path &&
       input1.old_string === input2.old_string &&
       input1.new_string === input2.new_string &&
-      (input1.replace_all ?? false) === (input2.replace_all ?? false)
+      input1.end_string === input2.end_string &&
+      (input1.replace_all ?? false) === (input2.replace_all ?? false) &&
+      JSON.stringify(input1.edits ?? null) ===
+        JSON.stringify(input2.edits ?? null)
     )
   },
   async call(
@@ -438,7 +464,11 @@ export const FileEditTool = buildTool({
         editCount = 1
         approvalNote = 'fresh'
       } else if (!fileExists) {
-        if (input.old_string !== '') {
+        if (input.old_string !== '' || Array.isArray(input.edits)) {
+          throw new Error(fileDoesNotExistError(absoluteFilePath).message)
+        }
+        if (input.old_string === undefined || input.new_string === undefined) {
+          // Unreachable: validateInput rejects missing single-edit fields.
           throw new Error(fileDoesNotExistError(absoluteFilePath).message)
         }
         updatedFile = input.new_string
@@ -447,7 +477,7 @@ export const FileEditTool = buildTool({
       } else if (input.old_string === '') {
         throw new Error('Cannot create new file - file already exists.')
       } else {
-        const planned = planEdit(originalFileContents, requestFromInput(input))
+        const planned = planInputAgainst(originalFileContents, input)
         if (!planned.ok) {
           throw new Error(planned.failure.message)
         }

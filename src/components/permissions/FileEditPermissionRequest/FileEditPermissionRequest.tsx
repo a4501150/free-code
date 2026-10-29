@@ -4,7 +4,7 @@ import { FileEditToolDiff } from 'src/components/FileEditToolDiff.js'
 import { getCwd } from 'src/utils/cwd.js'
 import { isENOENT } from 'src/utils/errors.js'
 import { readFileSync } from 'src/utils/fileRead.js'
-import { planEdit } from 'src/utils/editMatch.js'
+import { planInputAgainst } from '../../../tools/FileEditTool/planning.js'
 import type { z } from 'zod/v4'
 import { Text } from '../../../ink.js'
 import { FileEditTool } from '../../../tools/FileEditTool/FileEditTool.js'
@@ -31,11 +31,7 @@ function computeNewContent(input: FileEditInput): {
   newContent: string
 } {
   const oldContent = readOldContent(input.file_path)
-  const r = planEdit(oldContent, {
-    oldString: input.old_string,
-    newString: input.new_string,
-    replaceAll: input.replace_all ?? false,
-  })
+  const r = planInputAgainst(oldContent, input)
   return { oldContent, newContent: r.ok ? r.plan.updatedContent : oldContent }
 }
 

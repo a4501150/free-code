@@ -38,12 +38,21 @@ export type EditPlanRequest = {
   oldString: string
   newString: string
   replaceAll: boolean
+  /**
+   * Anchor-range mode: replace everything from the start of oldString's
+   * unique match through the end of endString's unique match, inclusive.
+   * Lets a large rewrite quote two short unique lines instead of the whole
+   * block. Mutually exclusive with replaceAll.
+   */
+  endString?: string
 }
 
 export type EditPlan = {
   updatedContent: string
   /** The (possibly repaired) text that was matched, for seen-content checks. */
   searchText: string
+  /** The text written in place of each matched span. */
+  written: string
   strategy: MatchStrategy
   /** Spans that were replaced, ascending. */
   spans: MatchSpan[]
@@ -452,6 +461,39 @@ export function planEdit(
 ): EditPlanResult {
   const { oldString, newString, replaceAll } = req
 
+  // Empty needles make findAllOffsets loop forever; creation mode (empty
+  // old_string) is handled by callers before planning.
+  if (oldString === '' && req.endString === undefined) {
+    return {
+      ok: false,
+      failure: {
+        message:
+          'old_string is empty. To create a new file, use the Write tool.',
+        errorCode: 3,
+      },
+    }
+  }
+  if (req.endString === '') {
+    return {
+      ok: false,
+      failure: { message: 'end_string is empty.', errorCode: 3 },
+    }
+  }
+
+  if (req.endString !== undefined) {
+    if (replaceAll) {
+      return {
+        ok: false,
+        failure: {
+          message:
+            'replace_all cannot be combined with end_string (an anchor-range edit replaces exactly one span).',
+          errorCode: 1,
+        },
+      }
+    }
+    return planAnchoredEdit(fileText, req)
+  }
+
   const lineOffsets = buildLineOffsets(fileText)
   const notFound = (): EditPlanResult => {
     let message = `String to replace not found in file.\nString: ${oldString}`
@@ -538,6 +580,193 @@ export function planEdit(
 
   return {
     ok: true,
-    plan: { updatedContent, searchText, strategy, spans },
+    plan: { updatedContent, searchText, strategy, written, spans },
+  }
+}
+
+// --- Anchor-range mode ---------------------------------------------------------
+
+/**
+ * Resolve one anchor to its single occurrence. Anchors borrow the same
+ * repair ladder as old_string (quotes/escapes/line-prefix), so a drifted
+ * copy still lands — but each anchor must match exactly once, because the
+ * span between two anchors has no other disambiguation.
+ */
+function resolveAnchor(
+  fileText: string,
+  anchor: string,
+  role: 'start' | 'end',
+): { offset: number; length: number } | { failure: EditPlanFailure } {
+  const resolved = resolveSearch(fileText, anchor)
+  if (resolved === null) {
+    return {
+      failure: {
+        message: `${role === 'start' ? 'Start' : 'End'} anchor not found in file.\nAnchor: ${anchor}\n${nearMissHint(fileText, anchor)}`,
+        errorCode: 8,
+      },
+    }
+  }
+  const haystack =
+    resolved.strategy === 'quotes' ? normalizeCurlyQuotes(fileText) : fileText
+  const offsets = findAllOffsets(haystack, resolved.searchText)
+  if (offsets.length !== 1) {
+    const spans = spansFromOffsets(
+      resolved.searchText,
+      offsets,
+      buildLineOffsets(fileText),
+    )
+    return {
+      failure: {
+        message: `Found ${offsets.length} matches of the ${role} anchor, but an anchor-range edit needs each anchor to match exactly once. Matches start at lines: ${matchLineList(spans)}. Extend the anchor with more surrounding text until exactly one copy matches.\nAnchor: ${anchor}`,
+        errorCode: 9,
+      },
+    }
+  }
+  return { offset: offsets[0]!, length: resolved.searchText.length }
+}
+
+/**
+ * Anchor-range planning: a span from the start of the start anchor's match
+ * to the end of the end anchor's match, replaced by newString. The replaced
+ * span (not just the anchors) becomes searchText so placement approval
+ * checks the model saw the lines it is rewriting.
+ */
+function planAnchoredEdit(
+  fileText: string,
+  req: EditPlanRequest,
+): EditPlanResult {
+  const { oldString, newString, endString } = req
+
+  const start = resolveAnchor(fileText, oldString, 'start')
+  if ('failure' in start) return { ok: false, failure: start.failure }
+  const end = resolveAnchor(fileText, endString!, 'end')
+  if ('failure' in end) return { ok: false, failure: end.failure }
+
+  const startEnd = start.offset + start.length
+  if (end.offset + end.length < startEnd) {
+    return {
+      ok: false,
+      failure: {
+        message: `End anchor matches before the start anchor ends, so the replacement range would be negative. Check the anchor order.\nStart anchor: ${oldString}\nEnd anchor: ${endString}`,
+        errorCode: 11,
+      },
+    }
+  }
+  if (end.offset < startEnd) {
+    return {
+      ok: false,
+      failure: {
+        message: `The anchors overlap: the end anchor's match begins inside the start anchor's match. Use anchors that do not overlap.\nStart anchor: ${oldString}\nEnd anchor: ${endString}`,
+        errorCode: 11,
+      },
+    }
+  }
+
+  // Delete-newline heuristic, mirroring the exact path: deleting a range
+  // takes its trailing line break so the emptied line disappears.
+  let length = end.offset + end.length - start.offset
+  if (newString === '' && fileText[start.offset + length] === '\n') {
+    length += 1
+  }
+
+  const lineOffsets = buildLineOffsets(fileText)
+  const span: MatchSpan = {
+    offset: start.offset,
+    length,
+    startLine: lineForOffset(lineOffsets, start.offset),
+    endLine: lineForOffset(lineOffsets, start.offset + length - 1),
+  }
+  const searchText = fileText.slice(span.offset, span.offset + span.length)
+  const updatedContent =
+    fileText.slice(0, span.offset) +
+    newString +
+    fileText.slice(span.offset + span.length)
+  return {
+    ok: true,
+    plan: {
+      updatedContent,
+      searchText,
+      strategy: 'exact',
+      written: newString,
+      spans: [span],
+    },
+  }
+}
+
+// --- Batch mode ------------------------------------------------------------------
+
+/**
+ * Plan a batch of edits against one file: every entry is planned against the
+ * ORIGINAL content first (so all anchors are validated before anything is
+ * written), spans must not overlap across entries, and one combined splice
+ * produces the final content — a mid-batch failure never leaves the file
+ * half-edited. A failure is prefixed with the failing entry's 1-based index.
+ */
+export function planEditBatch(
+  fileText: string,
+  requests: EditPlanRequest[],
+): EditPlanResult {
+  if (requests.length === 0) {
+    return {
+      ok: false,
+      failure: { message: 'No edits supplied.', errorCode: 1 },
+    }
+  }
+
+  const entries: Array<{ plan: EditPlan }> = []
+  for (let i = 0; i < requests.length; i++) {
+    const result = planEdit(fileText, requests[i]!)
+    if (!result.ok) {
+      return {
+        ok: false,
+        failure: {
+          message: `Edit ${i + 1} of ${requests.length}: ${result.failure.message}`,
+          errorCode: result.failure.errorCode,
+        },
+      }
+    }
+    entries.push({ plan: result.plan })
+  }
+
+  const allSpans: Array<{ span: MatchSpan; entry: number }> = []
+  entries.forEach((e, i) => {
+    for (const span of e.plan.spans) allSpans.push({ span, entry: i })
+  })
+  allSpans.sort((a, b) => a.span.offset - b.span.offset)
+
+  for (let i = 1; i < allSpans.length; i++) {
+    const prev = allSpans[i - 1]!
+    const cur = allSpans[i]!
+    const prevEnd = prev.span.offset + prev.span.length
+    if (cur.span.offset < prevEnd && cur.entry !== prev.entry) {
+      return {
+        ok: false,
+        failure: {
+          message: `Edits ${prev.entry + 1} and ${cur.entry + 1} overlap: edit ${cur.entry + 1} starts at line ${cur.span.startLine} inside edit ${prev.entry + 1}'s range (lines ${prev.span.startLine}-${prev.span.endLine}). Give each edit a non-overlapping target.`,
+          errorCode: 12,
+        },
+      }
+    }
+  }
+
+  let updatedContent = ''
+  let last = 0
+  for (const { span, entry } of allSpans) {
+    updatedContent +=
+      fileText.slice(last, span.offset) + entries[entry]!.plan.written
+    last = span.offset + span.length
+  }
+  updatedContent += fileText.slice(last)
+
+  const first = entries[0]!.plan
+  return {
+    ok: true,
+    plan: {
+      updatedContent,
+      searchText: first.searchText,
+      strategy: first.strategy,
+      written: first.written,
+      spans: allSpans.map(({ span }) => span),
+    },
   }
 }

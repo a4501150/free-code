@@ -11,13 +11,13 @@ import type { Tools } from '../../Tool.js'
 import type { Message, ProgressMessage } from '../../types/message.js'
 import { getPatchFromContents } from '../../utils/diff.js'
 import { convertLeadingTabsToSpaces, getDisplayPath } from '../../utils/file.js'
-import { planEdit } from '../../utils/editMatch.js'
 import { logError } from '../../utils/log.js'
+import { planInputAgainst } from './planning.js'
 import { getPlansDirectory } from '../../utils/plans.js'
 import { openForScan, readCapped } from '../../utils/readEditContext.js'
 import { firstLineOf } from '../../utils/stringUtils.js'
 import type { ThemeName } from '../../utils/theme.js'
-import type { FileEditOutput } from './types.js'
+import type { FileEditOutput, FileEditInput } from './types.js'
 
 export function userFacingName(
   input: Partial<{ file_path: string }> | undefined,
@@ -82,6 +82,7 @@ export function renderToolUseRejectedMessage(
     file_path: string
     old_string?: string
     new_string?: string
+    edits?: Array<{ old_string: string; new_string: string }>
   },
   options: {
     columns: number
@@ -95,10 +96,8 @@ export function renderToolUseRejectedMessage(
 ): React.ReactElement {
   const { style, verbose } = options
   const filePath = input.file_path
-  const oldString = input.old_string
-  const newString = input.new_string ?? ''
 
-  if (!oldString) {
+  if (!input.old_string && !input.edits) {
     return (
       <FileEditToolUseRejectedMessage
         file_path={filePath}
@@ -112,8 +111,7 @@ export function renderToolUseRejectedMessage(
   return (
     <EditRejectionDiff
       filePath={filePath}
-      oldString={oldString}
-      newString={newString}
+      input={input}
       style={style}
       verbose={verbose}
     />
@@ -144,20 +142,22 @@ type RejectionDiffData = {
 
 function EditRejectionDiff({
   filePath,
-  oldString,
-  newString,
+  input,
   style,
   verbose,
 }: {
   filePath: string
-  oldString: string
-  newString: string
+  input: {
+    old_string?: string
+    new_string?: string
+    end_string?: string
+    replace_all?: boolean
+    edits?: Array<{ old_string: string; new_string: string }>
+  }
   style?: 'condensed'
   verbose: boolean
 }): React.ReactNode {
-  const [dataPromise] = useState(() =>
-    loadRejectionDiff(filePath, oldString, newString),
-  )
+  const [dataPromise] = useState(() => loadRejectionDiff(filePath, input))
   return (
     <Suspense
       fallback={
@@ -206,8 +206,13 @@ function EditRejectionBody({
 
 async function loadRejectionDiff(
   filePath: string,
-  oldString: string,
-  newString: string,
+  input: {
+    old_string?: string
+    new_string?: string
+    end_string?: string
+    replace_all?: boolean
+    edits?: Array<{ old_string: string; new_string: string }>
+  },
 ): Promise<RejectionDiffData> {
   const empty: RejectionDiffData = {
     patch: [],
@@ -227,11 +232,7 @@ async function loadRejectionDiff(
       await handle.close()
     }
     if (oldContent === null) return empty
-    const r = planEdit(oldContent, {
-      oldString,
-      newString,
-      replaceAll: false,
-    })
+    const r = planInputAgainst(oldContent, input as FileEditInput)
     if (!r.ok) return empty
     const patch = getPatchFromContents({
       filePath,
