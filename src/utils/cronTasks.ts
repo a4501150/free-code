@@ -53,10 +53,9 @@ export type CronTask = {
   recurring?: boolean
   /**
    * When true, the task is exempt from recurringMaxAgeMs auto-expiry.
-   * System escape hatch for assistant mode's built-in tasks (catch-up/
-   * morning-checkin/dream) — the installer's writeIfMissing() skips existing
-   * files so re-install can't recreate them. Not settable via CronCreateTool;
-   * only written directly to scheduled_tasks.json by src/assistant/install.ts.
+   * Not settable via CronCreateTool and not written anywhere in this
+   * tree — it only takes effect on tasks written directly into
+   * scheduled_tasks.json by external tooling.
    */
   permanent?: boolean
   /**
@@ -369,9 +368,7 @@ export type CronJitterConfig = {
    * uptime 61min → 53h post-#19931), and unbounded recurrence lets Tier-1
    * heap leaks compound indefinitely. The default (7 days) covers "check
    * my PRs every hour this week" workflows while capping worst-case
-   * session lifetime. Permanent tasks (assistant mode's catch-up/
-   * morning-checkin/dream) never age out — they can't be recreated if
-   * deleted because install.ts's writeIfMissing() skips existing files.
+   * session lifetime. Tasks marked `permanent` never age out.
    *
    * `0` = unlimited (tasks never auto-expire).
    */

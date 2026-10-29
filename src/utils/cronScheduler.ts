@@ -116,8 +116,8 @@ type CronSchedulerOptions = {
    * Per-task gate applied before any side effect. Tasks returning false are
    * invisible to this scheduler: never fired, never stamped with
    * `lastFiredAt`, never deleted, never surfaced as missed, absent from
-   * `getNextFireTime()`. The daemon cron worker uses `t => t.permanent` so
-   * non-permanent tasks in the same scheduled_tasks.json are untouched.
+   * `getNextFireTime()`. No caller in this tree currently passes a filter
+   * (both schedulers run every task in scheduled_tasks.json).
    */
   filter?: (t: CronTask) => boolean
 }
