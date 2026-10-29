@@ -23,6 +23,7 @@ import {
 } from './ShellCommand.js'
 import { getTaskOutputDir } from './task/diskOutput.js'
 import { TaskOutput } from './task/TaskOutput.js'
+import type { OutputLimiterStage } from './bash/outputCapture.js'
 import { which } from './which.js'
 
 import { accessSync } from 'fs'
@@ -174,6 +175,12 @@ export type ExecOptions = {
    * file so the harness keeps capturing the full stream.
    */
   preallocatedTaskId?: string
+  /**
+   * Stripped trailing `| tail`/`| head` stages, in pipeline order. Applied
+   * to the capture file at delivery so the model receives the exact lines
+   * it asked for while the complete stream stays in the file.
+   */
+  limiterStages?: readonly OutputLimiterStage[]
 }
 
 /**
@@ -193,6 +200,7 @@ export async function exec(
     shouldAutoBackground,
     onStdout,
     preallocatedTaskId,
+    limiterStages,
   } = options ?? {}
   const commandTimeout = timeout || DEFAULT_TIMEOUT
 
@@ -303,6 +311,8 @@ export async function exec(
       commandTimeout,
       taskOutput,
       shouldAutoBackground,
+      undefined,
+      limiterStages,
     )
 
     // Close our copy of the fd — the child has its own dup.

@@ -99,4 +99,42 @@ describe('Bash redirect dual-write', () => {
       `[redirect dual-write: ${target} written as requested; the full stream is also captured below]`,
     )
   })
+
+  test('a stripped trailing tail delivers the requested lines, not the head', async () => {
+    session = await startSession()
+
+    server.reset([
+      toolUseResponse([
+        {
+          name: 'Bash',
+          input: {
+            command:
+              "for i in $(seq 1 100); do printf 'row %03d\\n' $i; done | tail -3",
+          },
+        },
+      ]),
+      textResponse('Done'),
+    ])
+    await session.submitAndApprove('Print rows and tail them')
+    const log = await waitForRequestCount(server, 2, {
+      description: 'tail window tool_result request',
+    })
+    const result = getToolResultString(log)
+
+    // The model receives exactly the lines it asked for: the tail window,
+    // not the head of the stream.
+    expect(result).toContain('row 098')
+    expect(result).toContain('row 099')
+    expect(result).toContain('row 100')
+    expect(result).not.toContain('row 001')
+    expect(result).toContain(
+      '[trailing tail/head applied to your inline result; the complete stream is in the file below]',
+    )
+
+    // The complete stream — all 100 rows — stays in the footer path file.
+    const pathMatch = /\[exit 0 · full output: ([^\]]+)\]/.exec(result)
+    expect(pathMatch).not.toBeNull()
+    const full = await readFile(pathMatch![1], 'utf-8')
+    expect((full.match(/row \d+/g) ?? []).length).toBe(100)
+  })
 })

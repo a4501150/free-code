@@ -314,9 +314,18 @@ export function rewriteRedirectsForDualWrite(
 
 // --- Trailing tail/head stage strip -----------------------------------------
 
+/** One stripped `| tail …`/`| head …` stage: the model's requested inline window. */
+export type OutputLimiterStage = {
+  tool: 'tail' | 'head'
+  /** Line count; both tools default to 10 when the model wrote no count. */
+  lines: number
+}
+
 export type OutputLimiterStrip = {
   /** Command with every trailing tail/head stage removed. */
   strippedCommand: string
+  /** The stripped stages in pipeline order — the delivery window to honor. */
+  stages: OutputLimiterStage[]
 }
 
 // Strict trailing-stage forms: `tail`/`head` with a literal line count
@@ -337,7 +346,9 @@ const HEAD_STAGE = /^head(?:\s+(?:-n\s*(\d+)|-(\d+)))?$/
  * rightmost pipe, but then the trailing text carries the closing `)` and
  * fails the strict form, so nested pipes decline naturally.
  */
-function tryStripOneStage(command: string): string | null {
+function tryStripOneStage(
+  command: string,
+): { stripped: string; stage: OutputLimiterStage } | null {
   const root = parseCommandRaw(command)
   if (!root) return null
   const parsed = buildParsedCommandFromRoot(command, root)
@@ -345,14 +356,27 @@ function tryStripOneStage(command: string): string | null {
   if (lastPipe === null) return null
 
   const bytes = Buffer.from(command, 'utf8')
-  const stage = bytes
+  const stageText = bytes
     .subarray(lastPipe + 1)
     .toString('utf8')
     .trim()
-  if (!TAIL_STAGE.test(stage) && !HEAD_STAGE.test(stage)) return null
+  const tailMatch = TAIL_STAGE.exec(stageText)
+  const headMatch = HEAD_STAGE.exec(stageText)
+  if (!tailMatch && !headMatch) return null
 
   const stripped = bytes.subarray(0, lastPipe).toString('utf8').trimEnd()
-  return stripped === '' ? null : stripped
+  if (stripped === '') return null
+  // Both tools default to 10 lines when the model wrote no count; the two
+  // capture groups cover `-n N` and `-N`.
+  const count = (tailMatch ?? headMatch)!
+  const lines = Number(count[1] ?? count[2] ?? 10)
+  return {
+    stripped,
+    stage: {
+      tool: tailMatch ? 'tail' : 'head',
+      lines,
+    },
+  }
 }
 
 /**
@@ -360,22 +384,62 @@ function tryStripOneStage(command: string): string | null {
  * their own context. Executing that stage would truncate the stream BEFORE
  * the harness captures it — the user's live output view reads the same file
  * the capture writes — so every STRICT trailing tail/head stage is stripped
- * and the complete stream captured instead. The model-facing delivery caps
- * itself as usual (inline under the limit, else preview + file path + exit
- * code). Chains (`cmd | tail -20 | head -5`) strip one stage per iteration.
- * Returns null when nothing was strippable — the caller execs unchanged.
+ * and the complete stream captured instead. The stripped stages ride the
+ * result and TaskOutput applies them to the capture file at delivery, so the
+ * model still receives exactly the lines it asked for (inline under the
+ * limit, else preview + file path + exit code). Chains
+ * (`cmd | tail -20 | head -5`) strip one stage per iteration and are reported
+ * in pipeline order. Returns null when nothing was strippable — the caller
+ * execs unchanged.
  */
-export function stripTrailingOutputLimiters(command: string): string | null {
+export function stripTrailingOutputLimiters(
+  command: string,
+): OutputLimiterStrip | null {
   let current = command
-  let strippedAny = false
+  const strippedStages: OutputLimiterStage[] = []
   // Each iteration removes the rightmost pipe, so the loop terminates.
   while (true) {
     const next = tryStripOneStage(current)
     if (next === null) break
-    current = next
-    strippedAny = true
+    current = next.stripped
+    strippedStages.push(next.stage)
   }
-  return strippedAny ? current : null
+  if (strippedStages.length === 0) return null
+  // Stripped rightmost-first; pipeline order is the reverse.
+  return { strippedCommand: current, stages: strippedStages.reverse() }
+}
+
+/**
+ * Apply stripped tail/head stages to captured text, in pipeline order:
+ * `tail -20 | head -5` yields the first 5 of the last 20 lines. A trailing
+ * newline is preserved as real tail/head would print one. When the windowed
+ * text exceeds maxChars, the cap preserves the model's intent — a
+ * tail-most window keeps its END (the lines it asked for), a head-most
+ * window keeps its start.
+ */
+export function applyLimiterStages(
+  text: string,
+  stages: readonly OutputLimiterStage[],
+  maxChars: number,
+): string {
+  if (stages.length === 0) return text
+  const hadTrailingNewline = text.endsWith('\n')
+  const body = hadTrailingNewline ? text.slice(0, -1) : text
+  let lines = body === '' ? [] : body.split('\n')
+  for (const stage of stages) {
+    lines =
+      stage.tool === 'tail'
+        ? lines.slice(-stage.lines)
+        : lines.slice(0, stage.lines)
+  }
+  let out = lines.join('\n')
+  if (hadTrailingNewline && out !== '') out += '\n'
+  if (out.length > maxChars) {
+    const lastStage = stages[stages.length - 1]!
+    out =
+      lastStage.tool === 'tail' ? out.slice(-maxChars) : out.slice(0, maxChars)
+  }
+  return out
 }
 
 // PowerShell file redirection: plain `>`/`>>` (no fd digit) followed by a

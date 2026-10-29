@@ -9,6 +9,7 @@ import {
   MAX_TASK_OUTPUT_BYTES_DISPLAY,
 } from './task/diskOutput.js'
 import { TaskOutput } from './task/TaskOutput.js'
+import type { OutputLimiterStage } from './bash/outputCapture.js'
 
 export type ExecResult = {
   stdout: string
@@ -145,6 +146,8 @@ class ShellCommandImpl implements ShellCommand {
   #resultResolver: ((result: ExecResult) => void) | null = null
   #exitCodeResolver: ((code: number) => void) | null = null
   #boundAbortHandler: (() => void) | null = null
+  /** Stripped trailing tail/head stages — the delivery window to honor. */
+  #limiterStages: readonly OutputLimiterStage[] | undefined
   readonly taskOutput: TaskOutput
 
   static #handleTimeout(self: ShellCommandImpl): void {
@@ -167,12 +170,14 @@ class ShellCommandImpl implements ShellCommand {
     taskOutput: TaskOutput,
     shouldAutoBackground = false,
     maxOutputBytes = MAX_TASK_OUTPUT_BYTES,
+    limiterStages?: readonly OutputLimiterStage[],
   ) {
     this.#childProcess = childProcess
     this.#abortSignal = abortSignal
     this.#timeout = timeout
     this.#shouldAutoBackground = shouldAutoBackground
     this.#maxOutputBytes = maxOutputBytes
+    this.#limiterStages = limiterStages
     this.taskOutput = taskOutput
 
     // In file mode (bash commands), both stdout and stderr go to the
@@ -309,7 +314,7 @@ class ShellCommandImpl implements ShellCommand {
       this.#status = 'completed'
     }
 
-    const stdout = await this.taskOutput.getStdout()
+    const stdout = await this.taskOutput.getStdout(this.#limiterStages)
     const result: ExecResult = {
       code,
       stdout,
@@ -403,6 +408,7 @@ export function wrapSpawn(
   taskOutput: TaskOutput,
   shouldAutoBackground = false,
   maxOutputBytes = MAX_TASK_OUTPUT_BYTES,
+  limiterStages?: readonly OutputLimiterStage[],
 ): ShellCommand {
   return new ShellCommandImpl(
     childProcess,
@@ -411,6 +417,7 @@ export function wrapSpawn(
     taskOutput,
     shouldAutoBackground,
     maxOutputBytes,
+    limiterStages,
   )
 }
 

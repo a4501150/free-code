@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { spawnSync } from 'child_process'
 import {
+  applyLimiterStages,
   rewritePsRedirectsForDualWrite,
   rewriteRedirectsForDualWrite,
   stripTrailingOutputLimiters,
@@ -326,6 +327,20 @@ describe('Bash result footer', () => {
     )
   })
 
+  test('a stripped trailing stage is reported as applied to the inline result', () => {
+    const out = map({
+      stdout: 'c\nd\n',
+      stderr: '',
+      interrupted: false,
+      outputPath: '/tmp/tasks/b5.output',
+      exitCode: 0,
+      limiterStripped: true,
+    })
+    expect(out).toContain(
+      '[trailing tail/head applied to your inline result; the complete stream is in the file below]',
+    )
+  })
+
   test('backgrounded results carry no footer (launch line names the file)', () => {
     const out = map({
       stdout: '',
@@ -340,70 +355,137 @@ describe('Bash result footer', () => {
 })
 
 describe('Trailing tail/head strip', () => {
-  test('strips a trailing tail with a numeric flag', () => {
-    expect(stripTrailingOutputLimiters('bun run verify 2>&1 | tail -8')).toBe(
-      'bun run verify 2>&1',
-    )
+  const stripCmd = (cmd: string) => stripTrailingOutputLimiters(cmd)
+
+  test('strips a trailing tail and reports its stage', () => {
+    const r = stripCmd('bun run verify 2>&1 | tail -8')
+    expect(r!.strippedCommand).toBe('bun run verify 2>&1')
+    expect(r!.stages).toEqual([{ tool: 'tail', lines: 8 }])
   })
 
-  test('strips bare tail and -n forms', () => {
-    expect(stripTrailingOutputLimiters('make test | tail')).toBe('make test')
-    expect(stripTrailingOutputLimiters('make test | tail -n 20')).toBe(
+  test('strips bare tail and -n forms (both default to 10 lines)', () => {
+    expect(stripCmd('make test | tail')!.strippedCommand).toBe('make test')
+    expect(stripCmd('make test | tail')!.stages).toEqual([
+      { tool: 'tail', lines: 10 },
+    ])
+    expect(stripCmd('make test | tail -n 20')!.strippedCommand).toBe(
       'make test',
     )
-    expect(stripTrailingOutputLimiters('make test | tail -n20')).toBe(
-      'make test',
-    )
+    expect(stripCmd('make test | tail -n 20')!.stages).toEqual([
+      { tool: 'tail', lines: 20 },
+    ])
+    expect(stripCmd('make test | tail -n20')!.stages).toEqual([
+      { tool: 'tail', lines: 20 },
+    ])
   })
 
   test('strips trailing head stages', () => {
-    expect(stripTrailingOutputLimiters('rg pattern src | head -5')).toBe(
+    expect(stripCmd('rg pattern src | head -5')!.strippedCommand).toBe(
       'rg pattern src',
     )
-    expect(stripTrailingOutputLimiters('rg pattern src | head')).toBe(
-      'rg pattern src',
-    )
+    expect(stripCmd('rg pattern src | head -5')!.stages).toEqual([
+      { tool: 'head', lines: 5 },
+    ])
+    expect(stripCmd('rg pattern src | head')!.stages).toEqual([
+      { tool: 'head', lines: 10 },
+    ])
   })
 
-  test('chains strip every trailing limiter stage', () => {
-    expect(stripTrailingOutputLimiters('cmd | tail -20 | head -5')).toBe('cmd')
-    expect(
-      stripTrailingOutputLimiters('cmd | grep x | tail -3 | tail -2'),
-    ).toBe('cmd | grep x')
+  test('chains strip every stage and report them in pipeline order', () => {
+    const chain = stripCmd('cmd | tail -20 | head -5')
+    expect(chain!.strippedCommand).toBe('cmd')
+    // Pipeline order, not strip order (rightmost is stripped first):
+    // `tail -20 | head -5` = first 5 of the last 20 lines.
+    expect(chain!.stages).toEqual([
+      { tool: 'tail', lines: 20 },
+      { tool: 'head', lines: 5 },
+    ])
+    const nested = stripCmd('cmd | grep x | tail -3 | tail -2')
+    expect(nested!.strippedCommand).toBe('cmd | grep x')
+    expect(nested!.stages).toEqual([
+      { tool: 'tail', lines: 3 },
+      { tool: 'tail', lines: 2 },
+    ])
   })
 
   test('non-limiter tails are left untouched', () => {
     // follow mode, byte counts, file operands, from-line offsets
-    expect(stripTrailingOutputLimiters('cmd | tail -f')).toBeNull()
-    expect(stripTrailingOutputLimiters('cmd | tail -c 100')).toBeNull()
-    expect(stripTrailingOutputLimiters('cmd | tail /var/log/syslog')).toBeNull()
-    expect(stripTrailingOutputLimiters('cmd | tail -n +5')).toBeNull()
-    expect(stripTrailingOutputLimiters('cmd | tail -q -5')).toBeNull()
-    expect(stripTrailingOutputLimiters('cmd | tail -5 > /tmp/x')).toBeNull()
+    expect(stripCmd('cmd | tail -f')).toBeNull()
+    expect(stripCmd('cmd | tail -c 100')).toBeNull()
+    expect(stripCmd('cmd | tail /var/log/syslog')).toBeNull()
+    expect(stripCmd('cmd | tail -n +5')).toBeNull()
+    expect(stripCmd('cmd | tail -q -5')).toBeNull()
+    expect(stripCmd('cmd | tail -5 > /tmp/x')).toBeNull()
   })
 
   test('a non-limiter last stage with an earlier tail declines', () => {
     // Stripping only the grep would change what tail delivers; the whole
     // pipeline must keep running as written.
-    expect(stripTrailingOutputLimiters('cmd | tail -3 | grep ERROR')).toBeNull()
+    expect(stripCmd('cmd | tail -3 | grep ERROR')).toBeNull()
   })
 
   test('pipes inside command substitutions decline naturally', () => {
     // The rightmost pipe is inside $(): the trailing text carries the closing
     // paren, fails the strict form, and the command runs untouched.
-    expect(stripTrailingOutputLimiters('echo $(a | tail -8)')).toBeNull()
-    expect(stripTrailingOutputLimiters('echo $(a | tail) | tail -3')).toBe(
+    expect(stripCmd('echo $(a | tail -8)')).toBeNull()
+    expect(stripCmd('echo $(a | tail) | tail -3')!.strippedCommand).toBe(
       'echo $(a | tail)',
     )
   })
 
   test('no pipeline or single-segment commands decline', () => {
-    expect(stripTrailingOutputLimiters('tail -8')).toBeNull()
-    expect(stripTrailingOutputLimiters('ls -la')).toBeNull()
+    expect(stripCmd('tail -8')).toBeNull()
+    expect(stripCmd('ls -la')).toBeNull()
   })
 
   test('multi-byte characters before the strip keep offsets correct', () => {
     const cmd = 'echo "caf\u00e9 — done" | tail -2'
-    expect(stripTrailingOutputLimiters(cmd)).toBe('echo "caf\u00e9 — done"')
+    expect(stripCmd(cmd)!.strippedCommand).toBe('echo "caf\u00e9 — done"')
+  })
+})
+
+describe('Limiter stage application (delivery window)', () => {
+  const apply = (
+    text: string,
+    stages: Array<{ tool: 'tail' | 'head'; lines: number }>,
+    maxChars = 30_000,
+  ) => applyLimiterStages(text, stages, maxChars)
+
+  test('tail delivers the last N lines, trailing newline preserved', () => {
+    expect(apply('a\nb\nc\nd\n', [{ tool: 'tail', lines: 2 }])).toBe('c\nd\n')
+  })
+
+  test('head delivers the first N lines', () => {
+    expect(apply('a\nb\nc\nd\n', [{ tool: 'head', lines: 2 }])).toBe('a\nb\n')
+  })
+
+  test('chains apply in pipeline order', () => {
+    // `| tail -20 | head -5` — first 5 of the last 20.
+    const lines = Array.from({ length: 30 }, (_, i) => `l${i + 1}`).join('\n')
+    expect(
+      apply(`${lines}\n`, [
+        { tool: 'tail', lines: 20 },
+        { tool: 'head', lines: 5 },
+      ]),
+    ).toBe('l11\nl12\nl13\nl14\nl15\n')
+  })
+
+  test('windows larger than the text deliver everything', () => {
+    expect(apply('a\nb\n', [{ tool: 'tail', lines: 50 }])).toBe('a\nb\n')
+    expect(apply('a\nb\n', [{ tool: 'head', lines: 50 }])).toBe('a\nb\n')
+  })
+
+  test('over-cap windows preserve the end for tail, the start for head', () => {
+    const big = `${'x'.repeat(20)}\n`.repeat(10) // 210 chars
+    const tail = apply(big, [{ tool: 'tail', lines: 10 }], 50)
+    expect(tail.length).toBe(50)
+    expect(tail.endsWith('x\n')).toBe(true) // the END lines, not the head
+    const head = apply(big, [{ tool: 'head', lines: 10 }], 50)
+    expect(head.length).toBe(50)
+    expect(head.startsWith('xxxx')).toBe(true) // the START lines
+  })
+
+  test('no stages is a passthrough', () => {
+    expect(apply('anything', [])).toBe('anything')
   })
 })

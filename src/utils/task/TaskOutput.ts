@@ -4,6 +4,10 @@ import { logForDebugging } from '../debug.js'
 import { readFileRange, tailFile } from '../fsOperations.js'
 import { getMaxOutputLength } from '../shell/outputLimits.js'
 import { safeJoinLines } from '../stringUtils.js'
+import {
+  applyLimiterStages,
+  type OutputLimiterStage,
+} from '../bash/outputCapture.js'
 import { DiskTaskOutput, getTaskOutputPath } from './diskOutput.js'
 
 const DEFAULT_MAX_MEMORY = 8 * 1024 * 1024 // 8MB
@@ -276,10 +280,17 @@ export class TaskOutput {
   /**
    * Get stdout. In file mode, reads from the output file.
    * In pipe mode, returns the in-memory buffer or tail from CircularBuffer.
+   *
+   * `limiterStages` are the model's stripped trailing `| tail`/`| head`
+   * stages, applied to the capture file so the inline result carries the
+   * exact lines the model asked for; without them the read is head-capped
+   * as before. Ignored in pipe mode (hooks never strip stages).
    */
-  async getStdout(): Promise<string> {
+  async getStdout(
+    limiterStages?: readonly OutputLimiterStage[],
+  ): Promise<string> {
     if (this.stdoutToFile) {
-      return this.#readStdoutFromFile()
+      return this.#readStdoutFromFile(limiterStages)
     }
     // Pipe mode (hooks) — use in-memory data
     if (this.#disk) {
@@ -292,9 +303,28 @@ export class TaskOutput {
     return this.#stdoutBuffer
   }
 
-  async #readStdoutFromFile(): Promise<string> {
+  async #readStdoutFromFile(
+    limiterStages?: readonly OutputLimiterStage[],
+  ): Promise<string> {
     const maxBytes = getMaxOutputLength()
     try {
+      // Windowed delivery: apply the model's requested tail/head to the
+      // capture file. The read stays bounded by maxBytes — tail windows
+      // read the file's end (tailFile), head windows its start — so a
+      // window larger than the cap delivers the cap's worth of lines at
+      // the end the model asked for, with the complete stream at the
+      // footer path for the rest.
+      if (limiterStages !== undefined && limiterStages.length > 0) {
+        if (limiterStages[0]!.tool === 'tail') {
+          const t = await tailFile(this.path, maxBytes)
+          this.#outputFileSize = t.bytesTotal
+          return applyLimiterStages(t.content, limiterStages, maxBytes)
+        }
+        const h = await readFileRange(this.path, 0, maxBytes)
+        if (!h) return ''
+        this.#outputFileSize = h.bytesTotal
+        return applyLimiterStages(h.content, limiterStages, maxBytes)
+      }
       const result = await readFileRange(this.path, 0, maxBytes)
       if (!result) {
         return ''

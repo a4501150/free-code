@@ -439,7 +439,7 @@ const outputSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      'Set when a trailing `| tail`/`| head` stage was stripped before execution — the complete stream is in the output file; the inline view is capped as usual',
+      'Set when a trailing `| tail`/`| head` stage was stripped before execution and applied to the inline result — the complete stream is in the output file',
     ),
 })
 
@@ -753,7 +753,7 @@ export const BashTool = buildTool({
     // carries the exit code.
     let footer = ''
     if (limiterStripped) {
-      footer += `[trailing tail/head stage not executed: the complete stream is in the file below — your inline view is capped, not the capture]\n`
+      footer += `[trailing tail/head applied to your inline result; the complete stream is in the file below]\n`
     }
     if (redirectRewritten) {
       const teeTargets = redirectRewritten.targets
@@ -1075,11 +1075,13 @@ async function* runShellCommand({
   // cap its own context. Executing that stage would truncate the stream
   // BEFORE the harness captures it (the user's live output view reads the
   // same file), so strict trailing stages are stripped and the complete
-  // stream captured; the model-facing delivery caps itself as usual. The
-  // result footer reports the strip. Applied first so the redirect rewrite
+  // stream captured. The stripped stages ride exec as `limiterStages` and
+  // TaskOutput applies them to the capture file at delivery — the model
+  // receives the exact lines it asked for, and the footer names the file
+  // holding the complete stream. Applied first so the redirect rewrite
   // below splices offsets of the stripped text.
   const limiterStripped = stripTrailingOutputLimiters(command)
-  const effectiveCommand = limiterStripped ?? command
+  const effectiveCommand = limiterStripped?.strippedCommand ?? command
 
   // Dual-write rewrite of the command's own > / >> redirects: tee-able ones
   // become `| tee [-a] <target>` stages, so the target genuinely receives
@@ -1096,6 +1098,7 @@ async function* runShellCommand({
     {
       timeout: timeoutMs,
       preallocatedTaskId: rewrite?.taskId,
+      limiterStages: limiterStripped?.stages,
       onProgress(lastLines, allLines, totalLines, totalBytes, isIncomplete) {
         lastProgressOutput = lastLines
         fullOutput = allLines
