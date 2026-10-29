@@ -63,7 +63,7 @@ Two run patterns:
 
   return `Executes a given PowerShell command and returns its output. Shell state (variables, functions) does not persist between commands.${backgroundSection}
 
-Every result footer states \`[exit N · full output: <path>]\`: the harness wrote the command's complete stream there (even behind your \`| Select-Object\`) and rewrites your own \`>\` targets to it, so read that path instead of piping to cap output or keeping your own log.
+Every result footer states \`[exit N · full output: <path>]\`: the harness wrote what the command printed there, and rewrites your own \`>\` targets to it. Your inline view is capped automatically; beyond that you get a preview plus the file path — so avoid \`Select-Object -First/-Last\` (or \`head\`/\`tail\`) pipes just to cap output: they also truncate the captured stream (the user's live view reads this same file). Read the output path when you need more.
 
 ${getEditionSection(edition)}
 

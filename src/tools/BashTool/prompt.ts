@@ -30,7 +30,7 @@ export function getSimplePrompt(): string {
   const paragraphs: Array<string> = [
     patterns,
     'Never `sleep` in a Bash command to wait for a result — the background task notification arrives on its own; end your turn and read the output file when it lands.',
-    "Every result footer states `[exit N · full output: <path>]`: the harness wrote the command's complete stream there (even behind your `| tail`) and rewrites your own `>` targets to it, so read that path instead of piping to cap output or keeping your own log.",
+    "Every result footer states `[exit N · full output: <path>]`: the harness wrote the command's COMPLETE stream there. Your own `>` / `>>` targets are rewritten to it, and a trailing `| tail`/`| head` stage is stripped before execution and never bounds the capture — the user's live output view reads this same file. Your inline view is capped automatically (~30k chars; beyond that, a preview plus the file path), so there is no need to redirect or pipe to cap what you receive — read the output path when you need more.",
     'In `rg` (ripgrep), `-r` means `--replace`, not recursive (rg is recursive by default): the grep habit `rg -rn PATTERN` silently overwrites every match with a literal `n`; use `rg -n PATTERN`.',
   ]
 

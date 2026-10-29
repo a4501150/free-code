@@ -27,6 +27,8 @@ export type ExecResult = {
   outputTaskId?: string
   /** Set when the command's own > targets were rewritten to the output file. */
   redirectRewritten?: { harnessPath: string; originalTargets: string[] }
+  /** Set when trailing `| tail`/`| head` stages were stripped before exec. */
+  limiterStripped?: boolean
   /** Error message when the command failed before spawning (e.g., deleted cwd). */
   preSpawnError?: string
 }

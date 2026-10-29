@@ -76,6 +76,72 @@ export function rewriteRedirectsToHarnessFile(
   }
 }
 
+// --- Trailing tail/head stage strip -----------------------------------------
+
+export type OutputLimiterStrip = {
+  /** Command with every trailing tail/head stage removed. */
+  strippedCommand: string
+}
+
+// Strict trailing-stage forms: `tail`/`head` with a literal line count
+// (`-8`, `-n 8`, `-n8`) or none (both default to 10 lines). Anything else —
+// `-f`/`-F` (follow), `-c` (bytes), `+N` (from-line), file operands, extra
+// flags, a stage carrying its own redirect — either changes semantics or
+// bounds delivery in ways the stripped execution would not reproduce, and is
+// left to execute exactly as written.
+const TAIL_STAGE = /^tail(?:\s+(?:-n\s*(\d+)|-(\d+)))?$/
+const HEAD_STAGE = /^head(?:\s+(?:-n\s*(\d+)|-(\d+)))?$/
+
+/**
+ * Strip one trailing `| tail …` / `| head …` stage: returns the command
+ * without it, or null when the last pipeline stage is not a strict
+ * tail/head form. Uses the rightmost pipe's BYTE offset (tree-sitter
+ * offsets are UTF-8 bytes; a string slice would land mid-token after
+ * multi-byte characters) — a pipe inside a command substitution can be the
+ * rightmost pipe, but then the trailing text carries the closing `)` and
+ * fails the strict form, so nested pipes decline naturally.
+ */
+function tryStripOneStage(command: string): string | null {
+  const root = parseCommandRaw(command)
+  if (!root) return null
+  const parsed = buildParsedCommandFromRoot(command, root)
+  const lastPipe = parsed.getLastPipePosition()
+  if (lastPipe === null) return null
+
+  const bytes = Buffer.from(command, 'utf8')
+  const stage = bytes
+    .subarray(lastPipe + 1)
+    .toString('utf8')
+    .trim()
+  if (!TAIL_STAGE.test(stage) && !HEAD_STAGE.test(stage)) return null
+
+  const stripped = bytes.subarray(0, lastPipe).toString('utf8').trimEnd()
+  return stripped === '' ? null : stripped
+}
+
+/**
+ * Pre-training habit: models end commands with `| tail`/`| head` to cap
+ * their own context. Executing that stage would truncate the stream BEFORE
+ * the harness captures it — the user's live output view reads the same file
+ * the capture writes — so every STRICT trailing tail/head stage is stripped
+ * and the complete stream captured instead. The model-facing delivery caps
+ * itself as usual (inline under the limit, else preview + file path + exit
+ * code). Chains (`cmd | tail -20 | head -5`) strip one stage per iteration.
+ * Returns null when nothing was strippable — the caller execs unchanged.
+ */
+export function stripTrailingOutputLimiters(command: string): string | null {
+  let current = command
+  let strippedAny = false
+  // Each iteration removes the rightmost pipe, so the loop terminates.
+  while (true) {
+    const next = tryStripOneStage(current)
+    if (next === null) break
+    current = next
+    strippedAny = true
+  }
+  return strippedAny ? current : null
+}
+
 // PowerShell file redirection: `[n]>` / `[n]>>` followed by a bare literal
 // path. Anything quoted, parenthesized (subexpression), or variable-laden is
 // declined — same fail-closed rule as the POSIX rewrite.

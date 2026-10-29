@@ -48,7 +48,10 @@ import { truncate } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
 import { expandPath } from '../../utils/path.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
-import { rewriteRedirectsToHarnessFile } from '../../utils/bash/outputCapture.js'
+import {
+  rewriteRedirectsToHarnessFile,
+  stripTrailingOutputLimiters,
+} from '../../utils/bash/outputCapture.js'
 import { getMaxOutputLength } from '../../utils/shell/outputLimits.js'
 import { exec } from '../../utils/Shell.js'
 import type { ExecResult } from '../../utils/ShellCommand.js'
@@ -333,7 +336,7 @@ const fullInputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      `Short description of what the command does. Simple commands get a brief one (5-10 words).`,
+      `Short description of what the command does. Simple commands get a brief one (5-10 words). Shown to the user as the label of the running or backgrounded task.`,
     ),
   run_in_background: semanticBoolean(z.boolean().optional()),
   _simulatedSedEdit: z
@@ -425,6 +428,12 @@ const outputSchema = z.object({
     .optional()
     .describe(
       "Set when the command's own > target was rewritten to the harness output file",
+    ),
+  limiterStripped: z
+    .boolean()
+    .optional()
+    .describe(
+      'Set when a trailing `| tail`/`| head` stage was stripped before execution — the complete stream is in the output file; the inline view is capped as usual',
     ),
 })
 
@@ -673,6 +682,7 @@ export const BashTool = buildTool({
       persistedOutputSize,
       exitCode,
       redirectRewritten,
+      limiterStripped,
     },
     toolUseID,
   ): DomainToolResultBlockParam {
@@ -736,6 +746,9 @@ export const BashTool = buildTool({
     // name the same file in backgroundInfo; the completion notification
     // carries the exit code.
     let footer = ''
+    if (limiterStripped) {
+      footer += `[trailing tail/head stage not executed: the complete stream is in the file below — your inline view is capped, not the capture]\n`
+    }
     if (redirectRewritten) {
       footer += `[redirect rewritten: output saved to ${redirectRewritten.harnessPath} instead of ${redirectRewritten.originalTargets.join(', ')}]\n`
     }
@@ -963,6 +976,7 @@ export const BashTool = buildTool({
       persistedOutputSize,
       exitCode: result.code,
       redirectRewritten: result.redirectRewritten,
+      limiterStripped: result.limiterStripped,
     }
 
     return {
@@ -1035,14 +1049,24 @@ async function* runShellCommand({
   const shouldAutoBackground =
     !isBackgroundTasksDisabled && isAutobackgroundingAllowed(command)
 
+  // Pre-training habit: the model ends commands with `| tail`/`| head` to
+  // cap its own context. Executing that stage would truncate the stream
+  // BEFORE the harness captures it (the user's live output view reads the
+  // same file), so strict trailing stages are stripped and the complete
+  // stream captured; the model-facing delivery caps itself as usual. The
+  // result footer reports the strip. Applied first so the redirect rewrite
+  // below splices offsets of the stripped text.
+  const limiterStripped = stripTrailingOutputLimiters(command)
+  const effectiveCommand = limiterStripped ?? command
+
   // Rewrite the command's own > / >> targets to a preallocated harness output
   // file so the harness keeps capturing the full stream (the redirect would
   // otherwise send it somewhere we never see). The result footer reports the
   // substitution to the model.
-  const rewrite = rewriteRedirectsToHarnessFile(command)
+  const rewrite = rewriteRedirectsToHarnessFile(effectiveCommand)
 
   const shellCommand = await exec(
-    rewrite?.rewrittenCommand ?? command,
+    rewrite?.rewrittenCommand ?? effectiveCommand,
     abortController.signal,
     'bash',
     {
@@ -1068,9 +1092,12 @@ async function* runShellCommand({
   // Start the command execution
   const resultPromise = shellCommand.result
 
-  // Stamp the redirect-rewrite fact onto every result this generator returns
-  // so the model-facing footer can report the substitution.
+  // Stamp the redirect-rewrite and limiter-strip facts onto every result this
+  // generator returns so the model-facing footer can report them.
   function withRewriteInfo(r: ExecResult): ExecResult {
+    if (limiterStripped !== null) {
+      r.limiterStripped = true
+    }
     if (rewrite) {
       r.redirectRewritten = {
         harnessPath: rewrite.harnessPath,
@@ -1084,7 +1111,7 @@ async function* runShellCommand({
   async function spawnBackgroundTask(): Promise<string> {
     const handle = await spawnShellTask(
       {
-        command: rewrite?.rewrittenCommand ?? command,
+        command: rewrite?.rewrittenCommand ?? effectiveCommand,
         description: description || command,
         shellCommand,
         toolUseId,

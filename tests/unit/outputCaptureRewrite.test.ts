@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   rewritePsRedirectsToHarnessFile,
   rewriteRedirectsToHarnessFile,
+  stripTrailingOutputLimiters,
 } from '../../src/utils/bash/outputCapture.js'
 import { BashTool } from '../../src/tools/BashTool/BashTool.js'
 
@@ -131,5 +132,74 @@ describe('Bash result footer', () => {
     })
     expect(out).not.toContain('[exit')
     expect(out).toContain('Command running in background with ID: b4')
+  })
+})
+
+describe('Trailing tail/head strip', () => {
+  test('strips a trailing tail with a numeric flag', () => {
+    expect(stripTrailingOutputLimiters('bun run verify 2>&1 | tail -8')).toBe(
+      'bun run verify 2>&1',
+    )
+  })
+
+  test('strips bare tail and -n forms', () => {
+    expect(stripTrailingOutputLimiters('make test | tail')).toBe('make test')
+    expect(stripTrailingOutputLimiters('make test | tail -n 20')).toBe(
+      'make test',
+    )
+    expect(stripTrailingOutputLimiters('make test | tail -n20')).toBe(
+      'make test',
+    )
+  })
+
+  test('strips trailing head stages', () => {
+    expect(stripTrailingOutputLimiters('rg pattern src | head -5')).toBe(
+      'rg pattern src',
+    )
+    expect(stripTrailingOutputLimiters('rg pattern src | head')).toBe(
+      'rg pattern src',
+    )
+  })
+
+  test('chains strip every trailing limiter stage', () => {
+    expect(stripTrailingOutputLimiters('cmd | tail -20 | head -5')).toBe('cmd')
+    expect(
+      stripTrailingOutputLimiters('cmd | grep x | tail -3 | tail -2'),
+    ).toBe('cmd | grep x')
+  })
+
+  test('non-limiter tails are left untouched', () => {
+    // follow mode, byte counts, file operands, from-line offsets
+    expect(stripTrailingOutputLimiters('cmd | tail -f')).toBeNull()
+    expect(stripTrailingOutputLimiters('cmd | tail -c 100')).toBeNull()
+    expect(stripTrailingOutputLimiters('cmd | tail /var/log/syslog')).toBeNull()
+    expect(stripTrailingOutputLimiters('cmd | tail -n +5')).toBeNull()
+    expect(stripTrailingOutputLimiters('cmd | tail -q -5')).toBeNull()
+    expect(stripTrailingOutputLimiters('cmd | tail -5 > /tmp/x')).toBeNull()
+  })
+
+  test('a non-limiter last stage with an earlier tail declines', () => {
+    // Stripping only the grep would change what tail delivers; the whole
+    // pipeline must keep running as written.
+    expect(stripTrailingOutputLimiters('cmd | tail -3 | grep ERROR')).toBeNull()
+  })
+
+  test('pipes inside command substitutions decline naturally', () => {
+    // The rightmost pipe is inside $(): the trailing text carries the closing
+    // paren, fails the strict form, and the command runs untouched.
+    expect(stripTrailingOutputLimiters('echo $(a | tail -8)')).toBeNull()
+    expect(stripTrailingOutputLimiters('echo $(a | tail) | tail -3')).toBe(
+      'echo $(a | tail)',
+    )
+  })
+
+  test('no pipeline or single-segment commands decline', () => {
+    expect(stripTrailingOutputLimiters('tail -8')).toBeNull()
+    expect(stripTrailingOutputLimiters('ls -la')).toBeNull()
+  })
+
+  test('multi-byte characters before the strip keep offsets correct', () => {
+    const cmd = 'echo "caf\u00e9 — done" | tail -2'
+    expect(stripTrailingOutputLimiters(cmd)).toBe('echo "caf\u00e9 — done"')
   })
 })

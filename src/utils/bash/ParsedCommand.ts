@@ -156,6 +156,17 @@ export class ParsedCommand {
   getTreeSitterAnalysis(): TreeSitterAnalysis {
     return this.treeSitterAnalysis
   }
+
+  /**
+   * Byte offset of the last `|` (ascending-sorted, so the final element is
+   * the rightmost pipe anywhere in the command, nested command
+   * substitutions included), or null when no pipeline was found.
+   */
+  getLastPipePosition(): number | null {
+    return this.pipePositions.length > 0
+      ? this.pipePositions[this.pipePositions.length - 1]!
+      : null
+  }
 }
 
 /** Build a ParsedCommand from an AST root the caller already has. */

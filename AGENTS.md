@@ -48,6 +48,8 @@ One parser, no fallback: `too-complex` must prompt. `shell-quote` is display/com
 
 The bash provider's prefix chain enables `pipefail` (`src/utils/shell/bashProvider.ts`): a piped command reports the failing component's exit, so `verify | tail` cannot return 0 over a failed verify. `| head`-style truncation can therefore surface exit 141 (SIGPIPE) for commands that produced the output the model wanted — expected, not a failure.
 
+Bash output capture composes two fail-closed rewrites (`src/utils/bash/outputCapture.ts`): `>`/`>>` targets are redirected to the harness output file, and a strict trailing `| tail`/`| head` stage is STRIPPED before exec — executing it would truncate the stream before capture (the user's Shell-details view reads the same file, and a piped `tail` buffers until EOF so the live view shows nothing). The model's inline stdout is HEAD-capped (`getStdout`, ~30k), never tail-capped: the last lines a stripped `tail` would have delivered are not reconstructable from stdout — over the cap the result delivers preview + file path + exit code instead.
+
 ## Settings split
 
 Provider keys ONLY in `~/.freecode/modelSettings.json` (full key set: `src/utils/settings/modelSettingsKeys.ts`); unknown keys are dropped pre-validation. Everything else in `freecode.json`. Config home is `~/.freecode` (`FREECODE_CONFIG_DIR`, fallback `CLAUDE_CONFIG_DIR`). Project settings load only from `<cwd>/.freecode/freecode.json` (a legacy `<cwd>/.claude/freecode.json` is not read); local overrides from `<cwd>/.freecode/freecode.local.json`. Behavior is configured through settings files, not env: the env reads `src/` and `scripts/` may perform are allowlisted in `src/utils/envAllowlist.ts` (enforced by a unit test that names the file).
