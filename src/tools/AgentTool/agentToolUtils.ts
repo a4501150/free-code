@@ -51,7 +51,10 @@ import {
 import { emitTaskProgress as emitTaskProgressEvent } from '../../utils/task/structuredProgress.js'
 import { getTokenCountFromUsage } from '../../utils/tokens.js'
 import { EXIT_PLAN_MODE_TOOL_NAME } from '../ExitPlanModeTool/constants.js'
-import { isEndTurnToolUse } from '../EndTurnTool/constants.js'
+import {
+  END_TURN_REMINDER,
+  isEndTurnToolUse,
+} from '../EndTurnTool/constants.js'
 import { AGENT_TOOL_NAME, LEGACY_AGENT_TOOL_NAME } from './constants.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 export type ResolvedAgentTools = {
@@ -232,6 +235,100 @@ export function countToolUses(messages: MessageType[]): number {
   return count
 }
 
+/**
+ * Text of a user message, whichever content shape it stores (string or
+ * blocks). Used to recognize the harness's end-turn nudge in a run.
+ */
+function userMessageText(m: MessageType): string | undefined {
+  if (m.type !== 'user') return undefined
+  const content = m.message.content
+  if (typeof content === 'string') return content
+  const block = content[0]
+  return block?.type === 'text' ? block.text : undefined
+}
+
+/**
+ * Index of the last end-turn nudge (the exact END_TURN_REMINDER meta user
+ * message) in the run, or -1. The owned-tasks reminder shares the wrapper
+ * tag but not the exact text and must not match: a reply to it is a
+ * genuine choice to keep waiting, not protocol noise.
+ */
+function lastEndReminderIndex(messages: MessageType[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!
+    if (
+      m.type === 'user' &&
+      m.isMeta === true &&
+      userMessageText(m) === END_TURN_REMINDER
+    ) {
+      return i
+    }
+  }
+  return -1
+}
+
+/**
+ * Whether any real (non-EndTurn) tool use happened after index `from` —
+ * the difference between a post-nudge ack and a genuine new report.
+ */
+function hasRealWorkAfter(messages: MessageType[], from: number): boolean {
+  for (let i = from + 1; i < messages.length; i++) {
+    const m = messages[i]!
+    if (m.type !== 'assistant') continue
+    for (const block of m.message.content) {
+      if (block.type === 'tool_use' && !isEndTurnToolUse(block)) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Search bound for the result text: the last end-turn nudge when the run
+ * ended in a nudge reply with no real work after it — the post-nudge text
+ * is then an ack or a restatement, protocol noise rather than the result —
+ * else the end of the run (last text wins).
+ */
+function resultSearchBound(messages: MessageType[]): number {
+  const reminderIdx = lastEndReminderIndex(messages)
+  if (reminderIdx >= 0 && !hasRealWorkAfter(messages, reminderIdx)) {
+    return reminderIdx
+  }
+  return messages.length
+}
+
+/**
+ * The agent's result text blocks: the last assistant text before the
+ * search bound, walking back past pure-tool_use messages. When the bound
+ * is a nudge and no text exists before it, the post-nudge text still
+ * reports something rather than nothing.
+ */
+function selectResultTextBlocks(
+  messages: MessageType[],
+): Array<{ type: 'text'; text: string }> {
+  const bound = resultSearchBound(messages)
+  const blocks = lastTextBlocksBefore(messages, bound)
+  if (blocks !== undefined) return blocks
+  if (bound < messages.length) {
+    return lastTextBlocksBefore(messages, messages.length) ?? []
+  }
+  return []
+}
+
+function lastTextBlocksBefore(
+  messages: MessageType[],
+  bound: number,
+): Array<{ type: 'text'; text: string }> | undefined {
+  for (let i = bound - 1; i >= 0; i--) {
+    const m = messages[i]!
+    if (m.type !== 'assistant') continue
+    const textBlocks = m.message.content.filter(_ => _.type === 'text')
+    if (textBlocks.length > 0) {
+      return textBlocks as Array<{ type: 'text'; text: string }>
+    }
+  }
+  return undefined
+}
+
 export function finalizeAgentTool(
   agentMessages: MessageType[],
   agentId: string,
@@ -258,23 +355,11 @@ export function finalizeAgentTool(
   if (lastAssistantMessage === undefined) {
     throw new Error('No assistant messages found')
   }
-  // Extract text content from the agent's response. If the final assistant
-  // message is a pure tool_use block (loop exited mid-turn), fall back to
-  // the most recent assistant message that has text content.
-  let content = lastAssistantMessage.message.content.filter(
-    _ => _.type === 'text',
-  )
-  if (content.length === 0) {
-    for (let i = agentMessages.length - 1; i >= 0; i--) {
-      const m = agentMessages[i]!
-      if (m.type !== 'assistant') continue
-      const textBlocks = m.message.content.filter(_ => _.type === 'text')
-      if (textBlocks.length > 0) {
-        content = textBlocks
-        break
-      }
-    }
-  }
+  // Extract text content from the agent's response: the last assistant
+  // text, walking back past pure-tool_use tails (loop exited mid-turn, or
+  // an EndTurn-only final message) and past post-nudge ack text (see
+  // selectResultTextBlocks).
+  const content = selectResultTextBlocks(agentMessages)
 
   // Use the tracker's cumulative counts rather than the last assistant
   // message's `usage`. For long-running subagents this reports the true
@@ -419,18 +504,32 @@ export async function classifyHandoffIfNeeded({
 /**
  * Extract a partial result string from an agent's accumulated messages.
  * Used when an async agent is killed to preserve what it accomplished.
+ * Applies the same post-nudge skip as selectResultTextBlocks: text acked in
+ * reply to the end-turn nudge (with no real work after it) is protocol
+ * noise, and the partial result is the report from before the nudge.
  * Returns undefined if no text content is found.
  */
 export function extractPartialResult(
   messages: MessageType[],
 ): string | undefined {
-  for (let i = messages.length - 1; i >= 0; i--) {
+  const bound = resultSearchBound(messages)
+  const text = lastTextBefore(messages, bound)
+  if (text !== undefined) return text
+  if (bound < messages.length) {
+    return lastTextBefore(messages, messages.length)
+  }
+  return undefined
+}
+
+function lastTextBefore(
+  messages: MessageType[],
+  bound: number,
+): string | undefined {
+  for (let i = bound - 1; i >= 0; i--) {
     const m = messages[i]!
     if (m.type !== 'assistant') continue
     const text = extractTextContent(m.message.content, '\n')
-    if (text) {
-      return text
-    }
+    if (text) return text
   }
   return undefined
 }

@@ -46,7 +46,10 @@ import {
 import { getAgentModel } from '../../utils/model/agent.js'
 import { getMainLoopModel } from '../../utils/model/model.js'
 import type { Theme, ThemeName } from '../../utils/theme.js'
-import { isEndTurnToolUse } from '../EndTurnTool/constants.js'
+import {
+  isEndTurnReminderText,
+  isEndTurnToolUse,
+} from '../EndTurnTool/constants.js'
 import type { outputSchema, Progress } from './AgentTool.js'
 import { inputSchema } from './AgentTool.js'
 import { getAgentColor } from './agentColorManager.js'
@@ -265,7 +268,8 @@ function VerboseAgentTranscript({
   // Filter out user tool_result messages that lack toolUseResult.
   // Subagent progress messages don't carry the parsed tool output,
   // so UserToolSuccessMessage returns null and MessageResponse renders
-  // a bare ⎿ with no content.
+  // a bare ⎿ with no content. End-turn nudges are the exception: they
+  // carry no tool result but must stay visible in the drill-down.
   const filteredMessages = progressMessages.filter(
     (pm): pm is ProgressMessage<AgentToolProgress> => {
       if (!hasProgressMessage(pm.data)) {
@@ -273,7 +277,8 @@ function VerboseAgentTranscript({
       }
       const msg = pm.data.message
       if (msg.type === 'user' && msg.toolUseResult === undefined) {
-        return false
+        const block = msg.message.content[0]
+        return block?.type === 'text' && isEndTurnReminderText(block.text)
       }
       return true
     },

@@ -19,8 +19,9 @@ export type Output = z.infer<typeof outputSchema>
  * query.ts, which watches for this tool name and ends the loop after the
  * round's tools have run, and in runAgent.ts, whose finally block then kills
  * the agent's still-running background tasks. The result text delivered to
- * the parent is the agent's most recent assistant text (finalizeAgentTool's
- * extraction, unchanged).
+ * the parent is the agent's most recent assistant text, skipping ack text
+ * emitted in reply to an end-turn reminder (finalizeAgentTool's
+ * extraction).
  *
  * Deliberately React-free (no renderToolResultMessage): the run's completion
  * is surfaced by the Agent tool's own UI, not by this tool's result row, and

@@ -9,6 +9,12 @@
  * extract TEXT BLOCKS ONLY, so the internal EndTurn call never reaches the
  * parent model as response content. These tests pin that invariant.
  *
+ * They also pin the post-nudge skip: text the agent emits in reply to the
+ * end-turn reminder (an ack or a restatement, with no real work after the
+ * nudge) must NOT become the delivered result — the report from before the
+ * nudge is. Real work after the nudge, and replies to the owned-tasks
+ * reminder, are genuine output and last-wins stands.
+ *
  * AgentTool.js is imported first: agentToolUtils sits in a module cycle
  * (agentToolUtils → LocalAgentTask → ... → AgentTool.tsx) where loading
  * agentToolUtils first hits a TDZ on agentToolResultSchema at AgentTool.tsx
@@ -22,7 +28,11 @@ import {
   finalizeAgentTool,
 } from '../../src/tools/AgentTool/agentToolUtils.js'
 import { createProgressTracker } from '../../src/tasks/LocalAgentTask/LocalAgentTask.js'
-import { END_TURN_TOOL_NAME } from '../../src/tools/EndTurnTool/constants.js'
+import {
+  END_TURN_REMINDER,
+  END_TURN_REMINDER_TAG,
+  END_TURN_TOOL_NAME,
+} from '../../src/tools/EndTurnTool/constants.js'
 import type {
   AssistantMessage,
   Message,
@@ -68,6 +78,36 @@ function userToolResult(toolUseId: string): UserMessage {
 
 function endTurnBlock(id: string) {
   return { type: 'tool_use', id, name: END_TURN_TOOL_NAME, input: {} }
+}
+
+function endReminderUserMessage(): UserMessage {
+  return {
+    type: 'user',
+    uuid: randomUUID(),
+    timestamp: new Date().toISOString(),
+    parentUuid: null,
+    sessionId: 'test',
+    isMeta: true,
+    message: {
+      role: 'user',
+      content: END_TURN_REMINDER,
+    },
+  } as unknown as UserMessage
+}
+
+function ownedTasksReminderUserMessage(): UserMessage {
+  return {
+    type: 'user',
+    uuid: randomUUID(),
+    timestamp: new Date().toISOString(),
+    parentUuid: null,
+    sessionId: 'test',
+    isMeta: true,
+    message: {
+      role: 'user',
+      content: `<${END_TURN_REMINDER_TAG}>\nYou ended your message while still owning 1 running background task(s):\n- t1 (background): npm test\n</${END_TURN_REMINDER_TAG}>`,
+    },
+  } as unknown as UserMessage
 }
 
 function finalize(messages: Message[]) {
@@ -146,5 +186,128 @@ describe('EndTurn does not leak into the agent response', () => {
     ])
 
     expect(partial).toBe('Partial findings so far.')
+  })
+})
+
+describe('post-nudge ack text does not become the result', () => {
+  test('restatement in reply to the nudge: original report wins', () => {
+    const endTurnId = randomUUID()
+    const result = finalize([
+      assistantMessage([
+        {
+          type: 'text',
+          text: 'Full report: seven areas, with file:line cites.',
+        },
+      ]),
+      endReminderUserMessage(),
+      assistantMessage([
+        {
+          type: 'text',
+          text: 'Restatement: the report again, shorter and worse.',
+        },
+        endTurnBlock(endTurnId),
+      ]),
+      userToolResult(endTurnId),
+    ])
+
+    expect(result.content).toEqual([
+      { type: 'text', text: 'Full report: seven areas, with file:line cites.' },
+    ])
+  })
+
+  test('brief ack in reply to the nudge: original report wins', () => {
+    const endTurnId = randomUUID()
+    const result = finalize([
+      assistantMessage([{ type: 'text', text: 'The diagnosis and the fix.' }]),
+      endReminderUserMessage(),
+      assistantMessage([
+        { type: 'text', text: 'Understood — ending now.' },
+        endTurnBlock(endTurnId),
+      ]),
+      userToolResult(endTurnId),
+    ])
+
+    expect(result.content).toEqual([
+      { type: 'text', text: 'The diagnosis and the fix.' },
+    ])
+  })
+
+  test('EndTurn-only reply to the nudge: original report wins', () => {
+    const endTurnId = randomUUID()
+    const result = finalize([
+      assistantMessage([{ type: 'text', text: 'Report before the nudge.' }]),
+      endReminderUserMessage(),
+      assistantMessage([endTurnBlock(endTurnId)]),
+      userToolResult(endTurnId),
+    ])
+
+    expect(result.content).toEqual([
+      { type: 'text', text: 'Report before the nudge.' },
+    ])
+  })
+
+  test('real work after the nudge: new trailing text wins', () => {
+    const endTurnId = randomUUID()
+    const bashId = randomUUID()
+    const result = finalize([
+      assistantMessage([{ type: 'text', text: 'First report.' }]),
+      endReminderUserMessage(),
+      assistantMessage([
+        { type: 'tool_use', id: bashId, name: 'Bash', input: {} },
+      ]),
+      userToolResult(bashId),
+      assistantMessage([
+        { type: 'text', text: 'Second report after finishing the extra work.' },
+        endTurnBlock(endTurnId),
+      ]),
+      userToolResult(endTurnId),
+    ])
+
+    expect(result.content).toEqual([
+      { type: 'text', text: 'Second report after finishing the extra work.' },
+    ])
+  })
+
+  test('no text before the nudge: post-nudge text still reports something', () => {
+    const endTurnId = randomUUID()
+    const result = finalize([
+      endReminderUserMessage(),
+      assistantMessage([
+        { type: 'text', text: 'Here is the report you asked for.' },
+        endTurnBlock(endTurnId),
+      ]),
+      userToolResult(endTurnId),
+    ])
+
+    expect(result.content).toEqual([
+      { type: 'text', text: 'Here is the report you asked for.' },
+    ])
+  })
+
+  test('owned-tasks reminder is not the end-turn nudge: reply text wins', () => {
+    const endTurnId = randomUUID()
+    const result = finalize([
+      assistantMessage([{ type: 'text', text: 'Initial findings.' }]),
+      ownedTasksReminderUserMessage(),
+      assistantMessage([
+        { type: 'text', text: 'Still waiting on the background build task.' },
+        endTurnBlock(endTurnId),
+      ]),
+      userToolResult(endTurnId),
+    ])
+
+    expect(result.content).toEqual([
+      { type: 'text', text: 'Still waiting on the background build task.' },
+    ])
+  })
+
+  test('partial result after a kill also skips the post-nudge restatement', () => {
+    const partial = extractPartialResult([
+      assistantMessage([{ type: 'text', text: 'Real partial report.' }]),
+      endReminderUserMessage(),
+      assistantMessage([{ type: 'text', text: 'Restated partial report.' }]),
+    ])
+
+    expect(partial).toBe('Real partial report.')
   })
 })

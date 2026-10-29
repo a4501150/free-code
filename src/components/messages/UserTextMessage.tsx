@@ -15,6 +15,10 @@ import {
   isSystemReminderText,
   isTaskNotificationText,
 } from '../../utils/messages.js'
+import {
+  extractEndTurnReminderBody,
+  isEndTurnReminderText,
+} from '../../tools/EndTurnTool/constants.js'
 import { InjectedContextMessage } from './InjectedContextMessage.js'
 import { InterruptedByUser } from '../InterruptedByUser.js'
 import { MessageResponse } from '../MessageResponse.js'
@@ -157,6 +161,23 @@ export function UserTextMessage({
   if (param.text.startsWith('<channel source="')) {
     const { UserChannelMessage } = userChannelNs
     return <UserChannelMessage addMargin={addMargin} param={param} />
+  }
+
+  // Harness end-turn nudge to a subagent (runAgent's reminder round). Always
+  // visible — the user must see when a subagent had to be reminded to end —
+  // and never rendered as user input.
+  if (isEndTurnReminderText(param.text)) {
+    const body = extractEndTurnReminderBody(param.text)
+    if (body) {
+      return (
+        <InjectedContextMessage
+          addMargin={addMargin}
+          label="End-turn reminder"
+          content={body}
+          verbose={verbose}
+        />
+      )
+    }
   }
 
   // Model-facing context the user does not normally see. Gated on isMeta so a

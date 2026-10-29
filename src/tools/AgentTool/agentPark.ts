@@ -17,7 +17,8 @@ export const PARK_MAX_IDLE_MS = 60 * 60 * 1000
 /**
  * Backstop for the strict end_turn model: consecutive implicit ends with no
  * owned tasks and no EndTurn call after this many reminders force-complete
- * the run with the last text (mirrors the silent maxTurns end).
+ * the run (mirrors the silent maxTurns end; the delivered result skips
+ * post-nudge ack text — see finalizeAgentTool's extraction).
  */
 export const MAX_END_REMINDERS = 2
 

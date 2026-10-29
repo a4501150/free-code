@@ -43,7 +43,11 @@ import {
   getQueuedCommandAttachments,
 } from '../../utils/attachments.js'
 import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../BackgroundTaskStopTool/prompt.js'
-import { END_TURN_TOOL_NAME } from '../EndTurnTool/constants.js'
+import {
+  END_TURN_REMINDER,
+  END_TURN_REMINDER_TAG,
+  END_TURN_TOOL_NAME,
+} from '../EndTurnTool/constants.js'
 import { EndTurnTool } from '../EndTurnTool/EndTurnTool.js'
 import {
   MAX_END_REMINDERS,
@@ -874,12 +878,38 @@ export async function* runAgent({
   // Set at the two true-completion break sites (EndTurn, force-complete
   // backstop) — the gate for the relocated SubagentStop hooks below.
   let fireStopHooks = false
+  // Reminders ride the conversation (runMessages → next round's API input)
+  // but must also surface: yielded into the stream (drill-down/task views
+  // pick them up via the consumers) and recorded to the sidechain
+  // transcript. An outbox is needed because pushReminder runs between
+  // rounds and a closure can't yield — reminders queue here and drain at
+  // the top of the next loop pass.
+  const reminderOutbox: UserMessage[] = []
   const pushReminder = (content: string) => {
-    runMessages.push(createUserMessage({ content, isMeta: true }))
+    const reminder = createUserMessage({ content, isMeta: true })
+    runMessages.push(reminder)
+    reminderOutbox.push(reminder)
   }
 
   try {
     while (true) {
+      // Drain queued reminders before the next round starts. Record before
+      // yielding — disk-write-before-yield keeps the live view a suffix of
+      // the on-disk chain (appendRetainedAgentMessage's contract) — so the
+      // nudge lands in the sidechain transcript and the drill-down instead
+      // of being invisible everywhere but the next API request.
+      while (reminderOutbox.length > 0) {
+        const reminder = reminderOutbox.shift()!
+        await recordSidechainTranscript(
+          [reminder],
+          agentId,
+          lastRecordedUuid,
+        ).catch(err =>
+          logForDebugging(`Failed to record sidechain transcript: ${err}`),
+        )
+        lastRecordedUuid = reminder.uuid
+        yield reminder
+      }
       const agentQuery = query({
         messages: [...initialMessages, ...runMessages],
         systemPrompt: agentSystemPrompt,
@@ -1101,8 +1131,9 @@ export async function* runAgent({
         consecutiveEndReminders++
         if (consecutiveEndReminders > MAX_END_REMINDERS) {
           // Backstop: MAX_END_REMINDERS reminders were delivered and
-          // ignored. End like maxTurns does — silently, with the last
-          // text as the result.
+          // ignored. End like maxTurns does — silently; the delivered
+          // result is the last text before the trailing nudges
+          // (finalizeAgentTool skips post-nudge acks).
           logForDebugging(
             `[Agent: ${agentDefinition.agentType}] Ignored ${MAX_END_REMINDERS} end reminders without EndTurn; force-completing`,
           )
@@ -1277,10 +1308,13 @@ export function filterIncompleteToolCalls(messages: Message[]): Message[] {
   })
 }
 
-// Reminder texts for the strict end_turn model. isMeta user messages: the
-// model sees them, the transcript hides them.
-const END_TURN_REMINDER = `You ended your message without calling the ${END_TURN_TOOL_NAME} tool, so your run is still active. If your work is complete, call ${END_TURN_TOOL_NAME} now — your most recent text message is delivered to the caller as your result. Otherwise, continue working.`
-
+// Reminder texts for the strict end_turn model: isMeta user messages that
+// ride the conversation, the sidechain transcript and the drill-down (the
+// outbox above delivers them). Both are wrapped in END_TURN_REMINDER_TAG so
+// the UI renders them as visible reminder rows; only END_TURN_REMINDER
+// itself (exact text, from EndTurnTool/constants) triggers the post-nudge
+// ack skip in finalizeAgentTool — a reply to the owned-tasks reminder is a
+// genuine decision to keep waiting, not protocol noise.
 function ownedTasksReminderText(tasks: TaskState[], idle = false): string {
   const lines = tasks
     .map(task => {
@@ -1296,7 +1330,7 @@ function ownedTasksReminderText(tasks: TaskState[], idle = false): string {
   const lead = idle
     ? `Still waiting on ${tasks.length} background task(s) you own:\n${lines}`
     : `You ended your message while still owning ${tasks.length} running background task(s):\n${lines}`
-  return `${lead}\nWait for them to finish (their notifications are delivered to you), stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME}, or call ${END_TURN_TOOL_NAME} to end your run — ending it kills the tasks you still own.`
+  return `<${END_TURN_REMINDER_TAG}>\n${lead}\nWait for them to finish (their notifications are delivered to you), stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME}, or call ${END_TURN_TOOL_NAME} to end your run — ending it kills the tasks you still own.\n</${END_TURN_REMINDER_TAG}>`
 }
 
 async function getAgentSystemPrompt(
