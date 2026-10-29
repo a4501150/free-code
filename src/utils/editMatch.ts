@@ -338,6 +338,100 @@ function findWhitespaceSpans(
   return spans.length > 0 ? spans : null
 }
 
+// --- Near-miss diagnostics ----------------------------------------------------
+
+/** Files larger than this skip the failure-path scan (cost control). */
+const NEAR_MISS_MAX_FILE_LINES = 50_000
+/** Windows larger than this skip it too: old_string itself is huge. */
+const NEAR_MISS_MAX_WINDOW_LINES = 100
+/** Report the closest window only when at least this fraction of
+ *  old_string's words appear there; below it "closest" is noise. */
+const NEAR_MISS_MIN_SCORE = 0.5
+/** Tiny old_strings "match" half the file — no hint below this many words. */
+const NEAR_MISS_MIN_TOKENS = 4
+
+/**
+ * Lowercased words with leading/trailing punctuation stripped (comment
+ * markers, quotes, commas), so a line-wrap or reflow difference between
+ * old_string and the file still scores as the same words.
+ */
+function tokenizeWords(text: string): string[] {
+  const out: string[] = []
+  for (const raw of text.split(/\s+/)) {
+    const token = raw.replace(/^[^\p{L}\p{N}_]+|[^\p{L}\p{N}_]+$/gu, '')
+    if (token) out.push(token.toLowerCase())
+  }
+  return out
+}
+
+/**
+ * Best-scoring window of file lines for old_string's words. Score is
+ * containment of old_string's token multiset in the window; window line
+ * count runs old_string's ± 1 because wrap drift moves words across line
+ * boundaries (the whole-line whitespace pass can't see that).
+ */
+function findNearestWindow(
+  fileLines: string[],
+  oldString: string,
+): { startLine: number; endLine: number; score: number } | null {
+  const oldTokens = tokenizeWords(oldString)
+  if (oldTokens.length < NEAR_MISS_MIN_TOKENS) return null
+  const oldCounts = new Map<string, number>()
+  for (const t of oldTokens) oldCounts.set(t, (oldCounts.get(t) ?? 0) + 1)
+  const wantLines = oldString.split('\n').length
+  const lineTokens = fileLines.map(l => tokenizeWords(l))
+
+  let best: { startLine: number; endLine: number; score: number } | null = null
+  for (const n of new Set([wantLines - 1, wantLines, wantLines + 1])) {
+    if (n < 1 || n > fileLines.length) continue
+    for (let i = 0; i + n <= fileLines.length; i++) {
+      const winCounts = new Map<string, number>()
+      for (let j = i; j < i + n; j++) {
+        for (const t of lineTokens[j]!) {
+          winCounts.set(t, (winCounts.get(t) ?? 0) + 1)
+        }
+      }
+      let matched = 0
+      for (const [t, c] of oldCounts) {
+        matched += Math.min(c, winCounts.get(t) ?? 0)
+      }
+      const score = matched / oldTokens.length
+      if (
+        score >= NEAR_MISS_MIN_SCORE &&
+        (best === null || score > best.score)
+      ) {
+        best = { startLine: i + 1, endLine: i + n, score }
+      }
+    }
+  }
+  return best
+}
+
+/**
+ * Diagnostic appended to the not-found error: the closest region of the
+ * file by word content, so a wrap/indentation drift can be corrected in
+ * one retry instead of a fresh Read. Rows carry `N:` prefixes on purpose —
+ * the line-prefix repair strips them if pasted back into old_string.
+ */
+function nearMissHint(fileText: string, oldString: string): string {
+  const fileLines = fileText.split('\n')
+  if (fileLines.length > NEAR_MISS_MAX_FILE_LINES) return ''
+  if (oldString.split('\n').length > NEAR_MISS_MAX_WINDOW_LINES) return ''
+  const best = findNearestWindow(fileLines, oldString)
+  if (best === null) return ''
+  const rows = fileLines
+    .slice(best.startLine - 1, best.endLine)
+    .map((line, k) => `${best.startLine + k}: ${line.slice(0, 200)}`)
+    .join('\n')
+  return (
+    `\nClosest region in the file: lines ${best.startLine}-${best.endLine} ` +
+    `(${Math.round(best.score * 100)}% of old_string's words appear there — ` +
+    `likely an indentation, whitespace or line-wrap mismatch). ` +
+    `Actual file content:\n${rows}\n` +
+    `Retry with the exact text from that region.`
+  )
+}
+
 // --- Plan ---------------------------------------------------------------------
 
 function matchLineList(spans: MatchSpan[]): string {
@@ -369,6 +463,7 @@ export function planEdit(
       message +=
         ' (note: the tool also tried swapping unicode escapes and their characters, and curly and straight quotes; neither form matched, so the mismatch is likely elsewhere in old_string. Re-read the file and copy the exact surrounding text.)'
     }
+    message += nearMissHint(fileText, oldString)
     return { ok: false, failure: { message, errorCode: 8 } }
   }
 

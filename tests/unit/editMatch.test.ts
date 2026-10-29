@@ -40,6 +40,11 @@ describe('planEdit — exact matches', () => {
     expect(!r.ok && r.failure.errorCode).toBe(8)
   })
 
+  test('missing string with too few words gives no near-miss hint', () => {
+    const r = edit('const a = 1\nconst b = 2', 'zzz q', 'x')
+    expect(!r.ok && r.failure.message).not.toContain('Closest region')
+  })
+
   test('empty new_string removes the matched text and its line break', () => {
     const r = edit('a\nb\nc', 'b', '')
     expect(r.ok && r.plan.updatedContent).toBe('a\nc')
