@@ -53,6 +53,7 @@ import {
 import { markPluginVersionOrphaned } from './cacheUtils.js'
 import { classifyFetchError, logPluginFetch } from './fetchTelemetry.js'
 import { removeAllPluginsForMarketplace } from './installedPluginsManager.js'
+import { remapKnownMarketplacesConfig } from './legacyHomePaths.js'
 import {
   OFFICIAL_MARKETPLACE_NAME,
   OFFICIAL_MARKETPLACE_SOURCE,
@@ -269,7 +270,10 @@ export async function loadKnownMarketplacesConfig(): Promise<KnownMarketplacesCo
       })
       throw new ConfigParseError(errorMsg, configFile, data)
     }
-    return parsed.data
+    // Repair legacy-home prefixes left by the ~/.claude → ~/.freecode config
+    // dir migration (see legacyHomePaths.ts). In-memory only: the fix rides
+    // into the file on the next save (e.g. refresh updating lastUpdated).
+    return remapKnownMarketplacesConfig(parsed.data)
   } catch (error) {
     if (isENOENT(error)) {
       return {}
@@ -2046,7 +2050,9 @@ export async function getMarketplaceCacheOnly(
 
   try {
     const content = await fs.readFile(configFile, { encoding: 'utf-8' })
-    const config = jsonParse(content) as KnownMarketplacesConfig
+    const config = remapKnownMarketplacesConfig(
+      jsonParse(content) as KnownMarketplacesConfig,
+    )
     const entry = config[name]
 
     if (!entry) {
@@ -2160,7 +2166,9 @@ export async function getPluginByIdCacheOnly(pluginId: string): Promise<{
 
   try {
     const content = await fs.readFile(configFile, { encoding: 'utf-8' })
-    const config = jsonParse(content) as KnownMarketplacesConfig
+    const config = remapKnownMarketplacesConfig(
+      jsonParse(content) as KnownMarketplacesConfig,
+    )
     const marketplaceConfig = config[marketplaceName]
 
     if (!marketplaceConfig) {

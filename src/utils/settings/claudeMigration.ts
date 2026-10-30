@@ -9,9 +9,9 @@
  * Settings loading is read-only and never triggers migration.
  */
 
-import { cpSync, existsSync, readFileSync } from 'fs'
+import { cpSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
-import { join } from 'path'
+import { join, sep } from 'path'
 import { getClaudeConfigHomeDir } from '../envUtils.js'
 import { safeParseJSON } from '../json.js'
 import { synthesizeProvidersFromLegacy } from '../model/legacyProviderMigration.js'
@@ -53,7 +53,85 @@ export function copyConfigDir(
 }
 
 export function migrateToFreecodeDir(): void {
-  copyConfigDir(getLegacyClaudeConfigDir(), getClaudeConfigHomeDir())
+  const legacyHome = getLegacyClaudeConfigDir()
+  const newHome = getClaudeConfigHomeDir()
+  copyConfigDir(legacyHome, newHome)
+  rewriteMigratedPluginStatePaths(legacyHome, newHome)
+}
+
+/**
+ * The directory copy carries plugin state files over verbatim, so recorded
+ * absolute paths (marketplace installLocation, plugin installPath) still
+ * point at the legacy home. Rewrite them to the copied location — same
+ * relative layout under the new home. Without this, marketplace refresh
+ * rejects the entries as corrupted (see utils/plugins/legacyHomePaths.ts for
+ * the runtime repair that heals state migrated before this existed).
+ */
+export function rewriteMigratedPluginStatePaths(
+  legacyHome: string,
+  newHome: string,
+): void {
+  const rewriteFile = (
+    filePath: string,
+    visit: (parsed: Record<string, unknown>) => boolean,
+  ): void => {
+    try {
+      if (!existsSync(filePath)) return
+      const parsed = safeParseJSON(readFileSync(filePath, 'utf8'))
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return
+      }
+      if (visit(parsed as Record<string, unknown>)) {
+        writeFileSync(filePath, JSON.stringify(parsed, null, 2), 'utf8')
+      }
+    } catch {
+      // Non-fatal: the load-time remap in legacyHomePaths.ts still repairs it.
+    }
+  }
+
+  const remap = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null
+    const prefix = legacyHome + sep
+    return value.startsWith(prefix)
+      ? join(newHome, value.slice(prefix.length))
+      : null
+  }
+
+  rewriteFile(join(newHome, 'plugins', 'known_marketplaces.json'), parsed => {
+    let changed = false
+    for (const entry of Object.values(parsed)) {
+      if (!entry || typeof entry !== 'object') continue
+      const record = entry as Record<string, unknown>
+      const next = remap(record.installLocation)
+      if (next) {
+        record.installLocation = next
+        changed = true
+      }
+    }
+    return changed
+  })
+
+  rewriteFile(join(newHome, 'plugins', 'installed_plugins.json'), parsed => {
+    let changed = false
+    const plugins = (parsed.plugins ?? {}) as Record<string, unknown>
+    for (const value of Object.values(plugins)) {
+      const entries = Array.isArray(value)
+        ? value
+        : value && typeof value === 'object'
+          ? [value]
+          : []
+      for (const entry of entries) {
+        if (!entry || typeof entry !== 'object') continue
+        const record = entry as Record<string, unknown>
+        const next = remap(record.installPath)
+        if (next) {
+          record.installPath = next
+          changed = true
+        }
+      }
+    }
+    return changed
+  })
 }
 
 // ── User CLAUDE.md migration (~/.claude/CLAUDE.md → <config home>/CLAUDE.md) ──

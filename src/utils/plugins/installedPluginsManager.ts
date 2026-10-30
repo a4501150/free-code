@@ -23,6 +23,7 @@ import {
   jsonStringify,
   writeFileSync_DEPRECATED,
 } from '../slowOperations.js'
+import { remapInstalledPluginPaths } from './legacyHomePaths.js'
 import { getPluginsDirectory } from './pluginDirectories.js'
 import {
   type InstalledPlugin,
@@ -320,6 +321,10 @@ export function loadInstalledPluginsV2(): InstalledPluginsFileV2 {
       if (rawData.version === 2) {
         // V2 format - validate and return
         const validated = InstalledPluginsFileSchemaV2.parse(rawData.data)
+        // Repair legacy-home installPaths left by the ~/.claude → ~/.freecode
+        // config dir migration (see legacyHomePaths.ts). In-memory only: the
+        // fix rides into the file on the next save.
+        remapInstalledPluginPaths(validated)
         installedPluginsCacheV2 = validated
         logForDebugging(
           `Loaded ${Object.keys(validated.plugins).length} installed plugins from ${filePath}`,
