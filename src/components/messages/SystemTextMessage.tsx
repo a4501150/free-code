@@ -29,6 +29,7 @@ import { getInitialSettings } from '../../utils/settings/settings.js'
 import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { Markdown } from '../Markdown.js'
 import { useAppStateStore } from '../../state/AppState.js'
+import { getScopedBackgroundTasks } from '../../state/agentViewHelpers.js'
 import { isBackgroundTask, type TaskState } from '../../tasks/types.js'
 import { getPillLabel } from '../../tasks/pillLabel.js'
 import { useSelectedMessageBg } from '../messageActions.js'
@@ -296,11 +297,16 @@ function TurnDurationMessage({
   const bg = useSelectedMessageBg()
   const [verb] = useState(() => sample(TURN_COMPLETION_VERBS) ?? 'Worked')
   const store = useAppStateStore()
+  // Same scoped set the footer pill and the tasks dialog show — a summary
+  // promising "1 shell still running" while ↓ reveals an empty list (agent
+  // view scopes the session's work out) is a false trail.
   const [backgroundTaskSummary] = useState(() => {
-    const tasks = store.getState().tasks
-    const running = (Object.values(tasks ?? {}) as TaskState[]).filter(
-      isBackgroundTask,
-    )
+    const state = store.getState()
+    const running = (
+      Object.values(
+        getScopedBackgroundTasks(state.tasks ?? {}, state.viewingAgentTaskId),
+      ) as TaskState[]
+    ).filter(isBackgroundTask)
     return running.length > 0 ? getPillLabel(running) : null
   })
 

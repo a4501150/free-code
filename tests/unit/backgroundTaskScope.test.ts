@@ -49,4 +49,15 @@ describe('getScopedBackgroundTasks', () => {
     const scoped = getScopedBackgroundTasks(tasks, 'a_view')
     expect(Object.keys(scoped)).toEqual(['a_nested'])
   })
+
+  test('a dangling view pointer (row evicted) does not narrow to nothing', () => {
+    // The transcript/statusline surfaces degrade to "no agent view" when the
+    // pointed row is gone; scoping must not keep hiding the session's own
+    // background work behind the ghost id.
+    const tasks = {
+      b_parent: makeLocalShellTask({ id: 'b_parent' }),
+      a_other: makeLocalAgentTask({ id: 'a_other' }),
+    }
+    expect(getScopedBackgroundTasks(tasks, 'a_evicted')).toBe(tasks)
+  })
 })

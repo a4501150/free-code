@@ -120,7 +120,14 @@ export function getScopedBackgroundTasks(
   tasks: Record<string, TaskState>,
   viewingAgentTaskId: string | undefined,
 ): Record<string, TaskState> {
-  if (viewingAgentTaskId === undefined) return tasks
+  // A pointer whose row has been evicted (or never existed) must not narrow
+  // to nothing: every other view-pointer consumer (transcript fallback,
+  // statusline, navigation) degrades to "no agent view" on a dangling id —
+  // scoping to an absent agent would hide the session's own background work
+  // while the UI looks like the plain main view.
+  if (viewingAgentTaskId === undefined || !(viewingAgentTaskId in tasks)) {
+    return tasks
+  }
   const scoped: Record<string, TaskState> = {}
   for (const [id, task] of Object.entries(tasks)) {
     if (id === viewingAgentTaskId) continue
