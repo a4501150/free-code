@@ -1,5 +1,5 @@
 import { type FSWatcher, watch } from 'fs'
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useAppState, useSetAppState } from '../state/AppState.js'
 import { createSignal } from '../utils/signal.js'
 import type { Task } from '../utils/tasks.js'
@@ -219,9 +219,10 @@ export function useTasksV2(): Task[] | undefined {
 }
 
 /**
- * Same as useTasksV2, plus collapses the expanded task view when the list
- * becomes hidden. Call this from exactly one always-mounted component (REPL)
- * so the collapse effect runs once instead of N× per consumer.
+ * Same as useTasksV2, plus keeps the expanded task view in sync with the
+ * store: expanded while a non-hidden list is visible, collapsed when the
+ * list becomes hidden. Call this from exactly one always-mounted component
+ * (REPL) so the effects run once instead of N× per consumer.
  */
 export function useTasksV2WithCollapseEffect(): Task[] | undefined {
   const tasks = useTasksV2()
@@ -235,12 +236,30 @@ export function useTasksV2WithCollapseEffect(): Task[] | undefined {
   // makes view exit re-run this effect, so a still-hidden main list
   // collapses then.
   const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
+  // Expansion fires only on a hidden/empty → non-empty transition, so a
+  // manual "hide tasks" mid-list is never undone by the next mutation or
+  // fallback-poll refetch (same non-empty state, no transition).
+  const previousHiddenRef = useRef(hidden)
   useEffect(() => {
-    if (!hidden || viewingAgentTaskId) return
-    setAppState(prev => {
-      if (prev.expandedView !== 'tasks') return prev
-      return { ...prev, expandedView: 'none' as const }
-    })
+    const wasHidden = previousHiddenRef.current
+    previousHiddenRef.current = hidden
+    if (viewingAgentTaskId) return
+    if (hidden) {
+      setAppState(prev => {
+        if (prev.expandedView !== 'tasks') return prev
+        return { ...prev, expandedView: 'none' as const }
+      })
+    } else if (wasHidden) {
+      // The transition path is what restores visibility to lists that reach
+      // the store without a tool call — the resume rebuild's seedTaskList
+      // notify included (tool-side auto-expand only covers live
+      // TaskCreate/TaskUpdate calls). A cold store's first snapshot is
+      // undefined, so a list already on disk at mount takes this path too.
+      setAppState(prev => {
+        if (prev.expandedView === 'tasks') return prev
+        return { ...prev, expandedView: 'tasks' as const }
+      })
+    }
   }, [hidden, viewingAgentTaskId, setAppState])
 
   return tasks
