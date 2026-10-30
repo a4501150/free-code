@@ -5,11 +5,13 @@
  *
  * - BashTool: a small allowlist of single-file read commands (cat, head, nl,
  *   sed -n 'A,Bp', grep -n, rg -n) whose output we can map back to exact line
- *   ranges
- *   through the security AST. Everything outside the allowlist — pipelines,
- *   redirects, multiple operands, unrecognized flags — records nothing (fail
- *   closed): no sighting just means the model must Read before editing
- *   non-uniquely.
+ *   ranges through the security AST, chained with `;`/`&&` (and constant
+ *   `echo` separators) as long as every stage is recognized: the stages' own
+ *   outputs verify against disk in stream order, so each records its sighting
+ *   where it matched. Everything outside the allowlist — pipeline stages that
+ *   consume stdin, redirects, multiple operands, unrecognized flags — records
+ *   nothing for the whole command (fail closed): no sighting just means the
+ *   model must Read before editing non-uniquely.
  */
 
 import { parseForSecurity } from './bash/ast.js'
@@ -108,18 +110,11 @@ export type BashSightingCommand = {
   /** Lines the command should display, in order, as (1-based) line numbers. */
   expectedLineNos: number[]
   kind: 'contiguous-from' | 'sparse'
+  /** Rows carry nl-style `num\t` prefixes (affects expected-output compare). */
+  numbered: boolean
 }
 
 const HEAD_DEFAULT_LINES = 10
-
-function singleSimpleCommand(
-  command: string,
-): { argv: string[]; noRedirects: boolean } | null {
-  const parsed = parseForSecurity(command)
-  if (parsed.kind !== 'simple' || parsed.commands.length !== 1) return null
-  const cmd = parsed.commands[0]!
-  return { argv: cmd.argv, noRedirects: (cmd.redirects?.length ?? 0) === 0 }
-}
 
 /** Classify argv into a line-mappable single-file read, or null (fail closed). */
 export function classifyBashReadCommand(
@@ -138,6 +133,7 @@ export function classifyBashReadCommand(
         path: fileArg(args[0]!),
         expectedLineNos: [],
         kind: 'contiguous-from',
+        numbered: bin === 'nl',
       }
     }
     case 'head': {
@@ -162,6 +158,7 @@ export function classifyBashReadCommand(
         path: fileArg(file),
         expectedLineNos: rangeToArray(1, count),
         kind: 'contiguous-from',
+        numbered: false,
       }
     }
     case 'sed': {
@@ -176,6 +173,7 @@ export function classifyBashReadCommand(
         path: fileArg(args[2]!),
         expectedLineNos: rangeToArray(start, end),
         kind: 'contiguous-from',
+        numbered: false,
       }
     }
     case 'rg': {
@@ -205,6 +203,7 @@ export function classifyBashReadCommand(
         path: fileArg(positional[1]!),
         expectedLineNos: [],
         kind: 'sparse',
+        numbered: false,
       }
     }
     case 'grep': {
@@ -233,11 +232,37 @@ export function classifyBashReadCommand(
         path: fileArg(positional[1]!),
         expectedLineNos: [],
         kind: 'sparse',
+        numbered: false,
       }
     }
     default:
       return null
   }
+}
+
+/**
+ * One stage of a `;`/`&&`-chained read view: a classified read command, or an
+ * `echo` with literal args (a constant separator row the verifier skips).
+ * Every classification requires a file operand, so a pipeline stage reading
+ * stdin (head, tail, a second grep) is never classified and the whole command
+ * stays out of the ledger.
+ */
+type ChainStep =
+  | { kind: 'echo'; line: string }
+  | { kind: 'read'; cmd: BashSightingCommand }
+
+function classifyChainStep(argv: string[], cwd: string): ChainStep | null {
+  if (argv[0] === 'echo') {
+    const args = argv.slice(1)
+    // -n/-e change the emitted bytes; a run of bare dashes is printed
+    // literally by both BSD and GNU echo.
+    for (const a of args) {
+      if (a.startsWith('-') && !/^[-+]+$/.test(a)) return null
+    }
+    return { kind: 'echo', line: args.join(' ') }
+  }
+  const cmd = classifyBashReadCommand(argv, cwd)
+  return cmd ? { kind: 'read', cmd } : null
 }
 
 function rangeToArray(start: number, end: number): number[] {
@@ -266,69 +291,131 @@ function shownLinesOf(
   return out
 }
 
+/**
+ * Verify one chain stage's output at `start` in the observed stream and
+ * record what it proves. Returns the rows consumed and whether the chain
+ * stops here: a contiguous stage whose expected output ended early means the
+ * capture cut the stream — later stages produced nothing the model saw. A
+ * sparse stage never stops the chain; its unverified tail is handed to the
+ * next stage (or ends the walk at the last stage, where it voids that stage
+ * but not the earlier sightings).
+ */
+function verifyReadStep(
+  readFileState: FileStateCache,
+  cmd: BashSightingCommand,
+  snap: Snapshot,
+  observed: string[],
+  start: number,
+  hasNextStep: boolean,
+): { consumed: number; stop: boolean } {
+  if (cmd.kind === 'sparse') {
+    // grep -n: rows must be `num:content` and agree with disk, or we know
+    // nothing about what the model actually saw. A non-verifying row ends
+    // the stage's output; mid-chain it may be the next stage's first row,
+    // so the verified prefix is still recorded. As the last stage, one bad
+    // row voids the stage: it may be a display-width cut, and trusting a
+    // prefix of unverifiable output is exactly what fails open.
+    const seen: SeenRange[] = []
+    let i = start
+    for (; i < observed.length; i++) {
+      const m = observed[i]!.match(/^(\d+):(.*)$/)
+      if (!m) break
+      const lineNo = Number(m[1])
+      if (snap.lineArray[lineNo - 1] !== m[2]) break
+      seen.push({ start: lineNo, end: lineNo })
+    }
+    const aborted = i < observed.length
+    if (seen.length === 0 || (aborted && !hasNextStep)) {
+      return { consumed: 0, stop: false }
+    }
+    recordSighting(readFileState, cmd.path, snap, seen, 'bash')
+    return { consumed: i - start, stop: false }
+  }
+
+  // Contiguous readers: compare the longest matching prefix of expected
+  // output. `cat`/`nl` display the whole file; `head`/`sed -n` a window.
+  let expected = shownLinesOf(snap, cmd.numbered)
+  if (cmd.expectedLineNos.length > 0) {
+    const want = new Set(cmd.expectedLineNos)
+    expected = expected.filter(e => want.has(e.lineNo))
+  }
+  let matched = 0
+  while (
+    start + matched < observed.length &&
+    matched < expected.length &&
+    observed[start + matched] === expected[matched]!.text
+  ) {
+    matched++
+  }
+  if (matched === 0) return { consumed: 0, stop: false }
+  const lastLine = expected[matched - 1]!.lineNo
+  // Prefix match — whether or not the output was cut, the model saw lines
+  // start..lastLine (blank lines were stripped from the output but remain
+  // inferable from their gaps, so the range is contiguous).
+  const startLine = expected[0]!.lineNo
+  recordSighting(
+    readFileState,
+    cmd.path,
+    snap,
+    [{ start: startLine, end: lastLine }],
+    'bash',
+  )
+  return { consumed: matched, stop: matched < expected.length }
+}
+
 function markBashSighting(
   readFileState: FileStateCache,
   command: string,
   stdout: string,
   cwd: string,
 ): void {
-  const single = singleSimpleCommand(command)
-  if (!single || !single.noRedirects) return
-  const classified = classifyBashReadCommand(single.argv, cwd)
-  if (!classified) return
-
-  const snapResult = snapshotFile(classified.path)
-  if (!snapResult.ok) return
-  const snap = snapResult.snap
+  const parsed = parseForSecurity(command)
+  if (parsed.kind !== 'simple' || parsed.commands.length === 0) return
+  const steps: ChainStep[] = []
+  for (const cmd of parsed.commands) {
+    if ((cmd.redirects?.length ?? 0) > 0) return
+    const step = classifyChainStep(cmd.argv, cwd)
+    if (!step) return
+    steps.push(step)
+  }
 
   const shown = stdout.trim()
   if (shown === '') return
   const observed = shown.split('\n')
 
-  if (classified.kind === 'sparse') {
-    // grep -n: every output line must be `num:content` and agree with disk,
-    // or we know nothing about what the model actually saw.
-    const seen: SeenRange[] = []
-    for (const line of observed) {
-      const m = line.match(/^(\d+):(.*)$/)
-      if (!m) return
-      const lineNo = Number(m[1])
-      if (snap.lineArray[lineNo - 1] !== m[2]) return
-      seen.push({ start: lineNo, end: lineNo })
+  // Stages execute in order, so their outputs are concatenated in the
+  // stream; walk it with a cursor. Recorded claims are verified against
+  // disk wherever they matched, so a stage that consumed rows belonging to
+  // a later stage (identical text) still records a true sighting.
+  let cursor = 0
+  for (let i = 0; i < steps.length; i++) {
+    if (cursor >= observed.length) break
+    const hasNextStep = i < steps.length - 1
+    const step = steps[i]!
+    if (step.kind === 'echo') {
+      // An argument-less echo prints a blank line, which the harness strips
+      // from the model's view — it consumes nothing.
+      if (step.line === '') continue
+      if (observed[cursor] !== step.line) return
+      cursor++
+      continue
     }
-    recordSighting(readFileState, classified.path, snap, seen, 'bash')
-    return
+    const snapResult = snapshotFile(step.cmd.path)
+    if (!snapResult.ok) return
+    const r = verifyReadStep(
+      readFileState,
+      step.cmd,
+      snapResult.snap,
+      observed,
+      cursor,
+      hasNextStep,
+    )
+    // A stage that matched nothing may legitimately have printed nothing
+    // (no grep hits, a window past EOF): give the next stage its chance at
+    // the same rows. A stage that ended early means the capture cut here.
+    cursor += r.consumed
+    if (r.stop) break
   }
-
-  // Contiguous readers: compare the longest matching prefix of expected
-  // output. `cat`/`nl` display the whole file; `head`/`sed -n` a window.
-  const numbered = single.argv[0] === 'nl'
-  let expected = shownLinesOf(snap, numbered)
-  if (classified.expectedLineNos.length > 0) {
-    const want = new Set(classified.expectedLineNos)
-    expected = expected.filter(e => want.has(e.lineNo))
-  }
-  let matched = 0
-  while (
-    matched < observed.length &&
-    matched < expected.length &&
-    observed[matched] === expected[matched]!.text
-  ) {
-    matched++
-  }
-  if (matched === 0) return
-  const lastLine = expected[matched - 1]!.lineNo
-  // Prefix match — whether or not the output was cut, the model saw lines
-  // start..lastLine (blank lines were stripped from the output but remain
-  // inferable from their gaps, so the range is contiguous).
-  const start = expected[0]!.lineNo
-  recordSighting(
-    readFileState,
-    classified.path,
-    snap,
-    [{ start, end: lastLine }],
-    'bash',
-  )
 }
 
 /**

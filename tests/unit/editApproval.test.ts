@@ -6,7 +6,11 @@ import {
   seenCoversLines,
   wholeFileSeen,
 } from '../../src/utils/editApproval.js'
-import { planEdit } from '../../src/utils/editMatch.js'
+import {
+  planEdit,
+  planEditBatch,
+  type EditPlanRequest,
+} from '../../src/utils/editMatch.js'
 import type { FileState } from '../../src/utils/fileStateCache.js'
 
 function state(over: Partial<FileState>): FileState {
@@ -31,6 +35,21 @@ function planFor(
     replaceAll,
   })
   if (!r.ok) throw new Error('test setup: plan failed: ' + r.failure.message)
+  return r.plan
+}
+
+function planBatchFor(
+  content: string,
+  reqs: Array<
+    Partial<EditPlanRequest> & { oldString: string; newString: string }
+  >,
+) {
+  const r = planEditBatch(
+    content,
+    reqs.map(q => ({ replaceAll: false, ...q })),
+  )
+  if (!r.ok)
+    throw new Error('test setup: batch plan failed: ' + r.failure.message)
   return r.plan
 }
 
@@ -167,6 +186,86 @@ describe('approveEdit', () => {
       plan: planFor(now, 'core line', 'fixed line'),
     })
     expect(r.ok && r.note).toBe('recovered')
+  })
+
+  test('no entry: batch of unique-match entries applies as blind', () => {
+    // The transcript failure mode: no sighting at all (the file was only
+    // shown via chained sed calls), every edits[] entry matches uniquely —
+    // the same proof N single blind edits get.
+    const r = approveEdit({
+      state: undefined,
+      currentContent: FILE,
+      plan: planBatchFor(FILE, [
+        { oldString: 'head', newString: 'HEAD2' },
+        { oldString: 'core line', newString: '' },
+      ]),
+    })
+    expect(r.ok && r.note).toBe('blind')
+  })
+
+  test('no entry: batch with a multi-match replace_all entry needs a Read', () => {
+    const two = 'head\none one\ntail'
+    const r = approveEdit({
+      state: undefined,
+      currentContent: two,
+      plan: planBatchFor(two, [
+        { oldString: 'head', newString: 'HEAD2' },
+        { oldString: 'one', newString: 'x', replaceAll: true },
+      ]),
+    })
+    expect(!r.ok && r.errorCode).toBe(6)
+  })
+
+  test('changed disk: batch of unique-match entries approves', () => {
+    const now = 'HEAD\ncore line\nTAIL\nextra'
+    const r = approveEdit({
+      state: state({ content: FILE, seenRanges: [{ start: 2, end: 2 }] }),
+      currentContent: now,
+      plan: planBatchFor(now, [
+        { oldString: 'HEAD', newString: 'head' },
+        { oldString: 'TAIL', newString: 'tail' },
+      ]),
+    })
+    // Seen content does not contain the formatter's rows: blind-modified.
+    expect(r.ok && r.note).toBe('blind-modified')
+  })
+
+  test('changed disk: one grounded and one blind entry take the weaker note', () => {
+    const now = 'head\ncore line\nTAIL'
+    const r = approveEdit({
+      state: state({ content: FILE, seenRanges: [{ start: 2, end: 2 }] }),
+      currentContent: now,
+      plan: planBatchFor(now, [
+        { oldString: 'core line', newString: 'fixed' },
+        { oldString: 'TAIL', newString: 'tail' },
+      ]),
+    })
+    expect(r.ok && r.note).toBe('blind-modified')
+  })
+
+  test('changed disk: batch with a multi-match replace_all entry re-Reads', () => {
+    const now = 'head\none one\ntail\nextra'
+    const r = approveEdit({
+      state: state({ content: FILE, seenRanges: [{ start: 1, end: 3 }] }),
+      currentContent: now,
+      plan: planBatchFor(now, [
+        { oldString: 'head', newString: 'HEAD2' },
+        { oldString: 'one', newString: 'x', replaceAll: true },
+      ]),
+    })
+    expect(!r.ok && r.errorCode).toBe(7)
+  })
+
+  test('unchanged disk: batch inside seen lines is fresh', () => {
+    const r = approveEdit({
+      state: state({ content: FILE, seenRanges: [{ start: 1, end: 3 }] }),
+      currentContent: FILE,
+      plan: planBatchFor(FILE, [
+        { oldString: 'head', newString: 'HEAD2' },
+        { oldString: 'tail', newString: 'TAIL2' },
+      ]),
+    })
+    expect(r.ok && r.note).toBe('fresh')
   })
 
   test('unverified (resume-rebuilt) entries approve only unique-match placements', () => {

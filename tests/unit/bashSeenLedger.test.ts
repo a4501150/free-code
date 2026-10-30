@@ -245,6 +245,124 @@ describe('grep -n sightings', () => {
   })
 })
 
+describe('chained read commands', () => {
+  const FILE = 'l1\nl2\nl3\nl4\nl5\nl6'
+
+  test('sed windows around an echo separator record both ranges', async () => {
+    const file = await tempFile('f.txt', FILE)
+    try {
+      const cache = newCache()
+      recordBashReadSighting(
+        cache,
+        `sed -n 2,3p ${file}; echo ---; sed -n 5,6p ${file}`,
+        'l2\nl3\n---\nl5\nl6',
+        '/x',
+      )
+      expect(cache.get(file)?.seenRanges).toEqual([
+        { start: 2, end: 3 },
+        { start: 5, end: 6 },
+      ])
+    } finally {
+      await rm(file, { recursive: true, force: true })
+    }
+  })
+
+  test('sed and grep joined by && union their sightings', async () => {
+    const file = await tempFile('f.txt', FILE)
+    try {
+      const cache = newCache()
+      recordBashReadSighting(
+        cache,
+        `sed -n 1,2p ${file} && grep -n l4 ${file}`,
+        'l1\nl2\n4:l4',
+        '/x',
+      )
+      expect(cache.get(file)?.seenRanges).toEqual([
+        { start: 1, end: 2 },
+        { start: 4, end: 4 },
+      ])
+    } finally {
+      await rm(file, { recursive: true, force: true })
+    }
+  })
+
+  test('one unrecognized stage voids the whole chain', async () => {
+    const file = await tempFile('f.txt', FILE)
+    try {
+      const cache = newCache()
+      recordBashReadSighting(cache, `cd /x; cat ${file}`, FILE, '/x')
+      expect(cache.get(file)).toBeUndefined()
+    } finally {
+      await rm(file, { recursive: true, force: true })
+    }
+  })
+
+  test('a capture cut inside one stage still records its prefix', async () => {
+    const file = await tempFile('f.txt', FILE)
+    try {
+      const cache = newCache()
+      // The harness cut the stream before the echo separator.
+      recordBashReadSighting(cache, `cat ${file}; echo done`, 'l1\nl2', '/x')
+      expect(cache.get(file)?.seenRanges).toEqual([{ start: 1, end: 2 }])
+    } finally {
+      await rm(file, { recursive: true, force: true })
+    }
+  })
+
+  test('a grep stage with no hits does not hide the next stage', async () => {
+    const file = await tempFile('f.txt', FILE)
+    try {
+      const cache = newCache()
+      recordBashReadSighting(
+        cache,
+        `grep -n zzz ${file}; sed -n 1,2p ${file}`,
+        'l1\nl2',
+        '/x',
+      )
+      expect(cache.get(file)?.seenRanges).toEqual([{ start: 1, end: 2 }])
+    } finally {
+      await rm(file, { recursive: true, force: true })
+    }
+  })
+
+  test('a grep stage hands its unverified tail to the next stage', async () => {
+    const file = await tempFile('f.txt', FILE)
+    try {
+      const cache = newCache()
+      recordBashReadSighting(
+        cache,
+        `grep -n l2 ${file}; sed -n 4,5p ${file}`,
+        '2:l2\nl4\nl5',
+        '/x',
+      )
+      expect(cache.get(file)?.seenRanges).toEqual([
+        { start: 2, end: 2 },
+        { start: 4, end: 5 },
+      ])
+    } finally {
+      await rm(file, { recursive: true, force: true })
+    }
+  })
+
+  test('a missing separator row stops attribution', async () => {
+    const file = await tempFile('f.txt', FILE)
+    try {
+      const cache = newCache()
+      // Output does not contain the echo row: attribution stops there, so
+      // only the first window is claimed.
+      recordBashReadSighting(
+        cache,
+        `sed -n 2,3p ${file}; echo ---; sed -n 5,6p ${file}`,
+        'l2\nl3\nl5\nl6',
+        '/x',
+      )
+      expect(cache.get(file)?.seenRanges).toEqual([{ start: 2, end: 3 }])
+    } finally {
+      await rm(file, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('recordSighting merging with prior entries', () => {
   test('a grep after a whole-file sighting does not narrow it', async () => {
     const file = await tempFile('f.txt', 'one\ntwo\nthree')

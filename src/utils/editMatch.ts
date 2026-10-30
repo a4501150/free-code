@@ -56,6 +56,19 @@ export type EditPlan = {
   strategy: MatchStrategy
   /** Spans that were replaced, ascending. */
   spans: MatchSpan[]
+  /**
+   * One entry per requested edit (a single edit has one entry), carrying that
+   * entry's own spans and searchText. Placement approval is per request:
+   * flattening batch entries into `spans` would make N independently unique
+   * placements look like one ambiguous placement. */
+  entries: EditPlanEntry[]
+}
+
+export type EditPlanEntry = {
+  /** Spans this request matched (several only for replace_all). */
+  spans: MatchSpan[]
+  /** The matched text of this request, for seen-content checks. */
+  searchText: string
 }
 
 export type EditPlanFailure = {
@@ -580,7 +593,14 @@ export function planEdit(
 
   return {
     ok: true,
-    plan: { updatedContent, searchText, strategy, written, spans },
+    plan: {
+      updatedContent,
+      searchText,
+      strategy,
+      written,
+      spans,
+      entries: [{ spans, searchText }],
+    },
   }
 }
 
@@ -689,6 +709,7 @@ function planAnchoredEdit(
       strategy: 'exact',
       written: newString,
       spans: [span],
+      entries: [{ spans: [span], searchText }],
     },
   }
 }
@@ -767,6 +788,10 @@ export function planEditBatch(
       strategy: first.strategy,
       written: first.written,
       spans: allSpans.map(({ span }) => span),
+      entries: entries.map(e => ({
+        spans: e.plan.spans,
+        searchText: e.plan.searchText,
+      })),
     },
   }
 }
