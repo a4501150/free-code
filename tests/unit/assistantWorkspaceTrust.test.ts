@@ -6,7 +6,7 @@
  * operates on its in-memory test config — the same code paths, minus disk.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'fs/promises'
+import { mkdtemp, realpath, rm, symlink } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
@@ -23,7 +23,10 @@ let workspace: string
 beforeEach(async () => {
   resetTrustDialogAcceptedCacheForTesting()
   configDir = await mkdtemp(join(tmpdir(), 'assistant-trust-'))
-  workspace = join(configDir, 'webui', 'assistant')
+  // Config keys are symlink-resolved (a child's process.cwd() is resolved by
+  // the OS), so expectations must use the canonical tmpdir path — on macOS
+  // the raw mkdtemp path goes through the /var → /private/var link.
+  workspace = join(await realpath(configDir), 'webui', 'assistant')
 })
 
 afterEach(async () => {
@@ -58,6 +61,20 @@ describe('ensureWorkspaceTrustPersisted', () => {
     const record = getGlobalConfig().projects?.[workspace]
     expect(record?.hasTrustDialogAccepted).toBe(true)
     expect(record?.allowedTools).toEqual(['Bash'])
+  })
+
+  test('a workspace reached through a symlink records trust under the real path', async () => {
+    // The gateway daemon persists trust from an env-var config home (which
+    // may traverse a symlink) while the child looks it up from its resolved
+    // cwd: both must land on the same key.
+    const link = join(configDir, 'homelink')
+    await symlink(configDir, link)
+    ensureWorkspaceTrustPersisted(join(link, 'webui', 'assistant'))
+    expect(isPathTrusted(workspace)).toBe(true)
+    // The record carries the canonical path, not the symlinked one.
+    expect(
+      getGlobalConfig().projects?.[workspace]?.hasTrustDialogAccepted,
+    ).toBe(true)
   })
 
   test('trust on an ancestor is enough: no redundant child record', () => {

@@ -1,7 +1,10 @@
 import { homedir } from 'os'
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'path'
 import { getCwd } from './cwd.js'
-import { getFsImplementation } from './fsOperations.js'
+import {
+  getFsImplementation,
+  resolveDeepestExistingAncestorSync,
+} from './fsOperations.js'
 import { getPlatform } from './platform.js'
 import { posixPathToWindowsPath } from './windowsPaths.js'
 
@@ -124,18 +127,31 @@ export function containsPathTraversal(path: string): boolean {
 export { sanitizePath } from './sessionStoragePortable.js'
 
 /**
- * Normalizes a path for use as a JSON config key.
+ * Normalizes a path for use as a JSON config key (the trust-key space).
  * On Windows, paths can have inconsistent separators (C:\path vs C:/path)
  * depending on whether they come from git, Node.js APIs, or user input.
  * This normalizes to forward slashes for consistent JSON serialization.
  *
+ * It also resolves symlinks: the OS reports a process cwd fully resolved
+ * (macOS /var → /private/var, symlinked homes), so a writer that persists a
+ * key from an env/CLI path and a reader that derives it from process.cwd()
+ * otherwise disagree on the SAME directory and the reader silently loses the
+ * entry (e.g. a gateway child losing its persisted trust record).
+ * Best-effort: for a path that does not exist (yet), the deepest existing
+ * ancestor is resolved; when no existing ancestor is under a symlink, or
+ * resolution fails, the normalized logical path is kept.
+ *
  * @param path - The path to normalize
- * @returns The normalized path with consistent forward slashes
+ * @returns The normalized, symlink-resolved path with forward slashes
  */
 export function normalizePathForConfigKey(path: string): string {
   // First use Node's normalize to resolve . and .. segments
   const normalized = normalize(path)
+  const resolved = resolveDeepestExistingAncestorSync(
+    getFsImplementation(),
+    normalized,
+  )
   // Then convert all backslashes to forward slashes for consistent JSON keys
   // This is safe because forward slashes work in Windows paths for most operations
-  return normalized.replace(/\\/g, '/')
+  return (resolved ?? normalized).replace(/\\/g, '/')
 }
