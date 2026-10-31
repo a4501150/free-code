@@ -4,18 +4,6 @@ import { COORDINATOR_MODE_ALLOWED_TOOLS } from '../constants/tools.js'
 import { isMcpTool } from '../services/mcp/utils.js'
 import type { Tool, ToolPermissionContext, Tools } from '../Tool.js'
 
-// MCP tool name suffixes for PR activity subscription. These are lightweight
-// orchestration actions the coordinator calls directly rather than delegating
-// to workers. Matched by suffix since the MCP server name prefix may vary.
-const PR_ACTIVITY_TOOL_SUFFIXES = [
-  'subscribe_pr_activity',
-  'unsubscribe_pr_activity',
-]
-
-export function isPrActivitySubscriptionTool(name: string): boolean {
-  return PR_ACTIVITY_TOOL_SUFFIXES.some(suffix => name.endsWith(suffix))
-}
-
 import * as coordinatorModeModule from '../coordinator/coordinatorMode.js'
 
 /**
@@ -23,14 +11,16 @@ import * as coordinatorModeModule from '../coordinator/coordinatorMode.js'
  * Shared between the REPL path (mergeAndFilterTools) and the headless
  * path (main.tsx) so both stay in sync.
  *
- * PR activity subscription tools are always allowed since subscription
- * management is orchestration.
+ * MCP tools stay in the pool: they never ride the request tools[] array
+ * unless their server opts into alwaysLoad (claude.ts filters by
+ * isToolExposedToModel), and the coordinator reaches them through the
+ * RunCode catalog — a filter here would starve the catalog render, the
+ * mcp_tools_delta / mcp_instructions_delta announcements and the bridge's
+ * mcp/<server> dispatch, all of which read this thread's tool list.
  */
 export function applyCoordinatorToolFilter(tools: Tools): Tools {
   return tools.filter(
-    t =>
-      COORDINATOR_MODE_ALLOWED_TOOLS.has(t.name) ||
-      isPrActivitySubscriptionTool(t.name),
+    t => COORDINATOR_MODE_ALLOWED_TOOLS.has(t.name) || isMcpTool(t),
   )
 }
 

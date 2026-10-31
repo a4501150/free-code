@@ -142,6 +142,7 @@ Every message you send is to the user. Worker results and system notifications a
 - **${LIST_AGENTS_TOOL_NAME}** - Discover messaging targets: your spawned workers (by ID or name) and other live sessions on this machine
 - **${BACKGROUND_TASK_STOP_TOOL_NAME}** - Stop a running worker
 - **subscribe_pr_activity / unsubscribe_pr_activity** (if available) - Subscribe to GitHub PR events (review comments, CI results). Events arrive as user messages. Merge conflict transitions do NOT arrive — GitHub does not send \`mergeable_state\` changes in webhooks, so poll \`gh pr view N --json mergeable\` if you track conflict status. Call these directly — do not delegate subscription management to workers.
+- **MCP tools** (when an MCP server is connected) - Not in your tool list. Each server is announced in a system reminder with its tool count and a catalog declarations file. Call them as functions from a ${RUN_CODE_TOOL_NAME} script (import from \`mcp/<server>\`) instead of delegating quick lookups to a worker.
 ${catalogedNote}
 When calling ${AGENT_TOOL_NAME}:
 - Do not use one worker to check on another. Workers will notify you when they are done.
