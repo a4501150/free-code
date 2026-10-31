@@ -953,6 +953,33 @@ function runHeadlessStreaming(
     pendingLastEmittedEntry: null,
   }
 
+  // WebUI Stop / SDK interrupt latch. Beyond aborting the in-flight turn it
+  // stops running background tasks (the same kill path as the per-task Stop
+  // button) and latches stopRequested: the agent-wait park below refuses to
+  // park again, and queued task-notifications are held back (see the drain
+  // filter) so a killed agent's terminal notification cannot immediately
+  // start a fresh turn and flip the session back to busy. The latch clears
+  // when the next prompt command is dequeued.
+  let stopRequested = false
+  const requestStop = () => {
+    stopRequested = true
+    abortController?.abort('user-cancel')
+    suggestionState.abortController?.abort()
+    suggestionState.abortController = null
+    suggestionState.lastEmitted = null
+    suggestionState.pendingSuggestion = null
+    for (const task of getRunningTasks(getAppState())) {
+      if (
+        isBackgroundTask(task) &&
+        // The main session registers itself as a local_agent task for the
+        // terminal panel; it is not a subagent to kill.
+        !(task.type === 'local_agent' && task.agentType === 'main-session')
+      ) {
+        void stopTask(task.id, { getAppState, setAppState }).catch(logError)
+      }
+    }
+  }
+
   // Set up AWS auth status listener if enabled
   let unsubscribeAuthStatus: (() => void) | undefined
   if (options.enableAuthStatus) {
@@ -1138,7 +1165,7 @@ function runHeadlessStreaming(
       },
       getPermissionMode: () => getAppState().toolPermissionContext.mode,
       getCommands: () => headlessCommandNames,
-      interrupt: () => abortController?.abort('user-cancel'),
+      interrupt: () => requestStop(),
       // `run` is declared below, but only a browser command calls this.
       requestRun: () => void run(),
       setModel: model => applyModelSwitch(model),
@@ -1754,6 +1781,13 @@ function runHeadlessStreaming(
     // queue re-checks at the bottom of run().
     const isMainThread = (cmd: QueuedCommand) => cmd.agentId === undefined
 
+    // While a stop is latched, non-prompt commands (task-notifications) are
+    // held in the queue: a killed agent's terminal notification must not wake
+    // the session into a fresh turn until the user drives it again. The
+    // filter reads the latch live, so dequeuing a prompt re-admits them.
+    const mainThreadNotHeld = (cmd: QueuedCommand) =>
+      isMainThread(cmd) && !(stopRequested && cmd.mode !== 'prompt')
+
     try {
       let command: QueuedCommand | undefined
       let waitingForAgents = false
@@ -1763,7 +1797,7 @@ function runHeadlessStreaming(
       // ask() call so messages that queued up during a long turn coalesce
       // into a single follow-up turn instead of N separate turns.
       const drainCommandQueue = async () => {
-        while ((command = dequeue(isMainThread))) {
+        while ((command = dequeue(mainThreadNotHeld))) {
           if (
             command.mode !== 'prompt' &&
             command.mode !== 'orphaned-permission' &&
@@ -1774,13 +1808,20 @@ function runHeadlessStreaming(
             )
           }
 
+          // Any prompt — user message, cron fire, attach submit — releases
+          // the stop latch before it is processed, so the notifications held
+          // behind it join this drain.
+          if (stopRequested && command.mode === 'prompt') {
+            stopRequested = false
+          }
+
           // Non-prompt commands (task-notification, orphaned-permission) carry
           // side effects or orphanedPermission state, so they process singly.
           // Prompt commands greedily collect followers with matching workload.
           const batch: QueuedCommand[] = [command]
           if (command.mode === 'prompt') {
-            while (canBatchWith(command, peek(isMainThread))) {
-              batch.push(dequeue(isMainThread)!)
+            while (canBatchWith(command, peek(mainThreadNotHeld))) {
+              batch.push(dequeue(mainThreadNotHeld)!)
             }
             if (batch.length > 1) {
               command = {
@@ -2175,8 +2216,11 @@ function runHeadlessStreaming(
           const hasRunningBg = getRunningTasks(state).some(t =>
             isBackgroundTask(t),
           )
-          const hasMainThreadQueued = peek(isMainThread) !== undefined
-          if (hasRunningBg || hasMainThreadQueued) {
+          const hasMainThreadQueued = peek(mainThreadNotHeld) !== undefined
+          // A latched stop means the park below would just wait out kills in
+          // flight: exit the loop, flush the result, and let the session go
+          // idle — held notifications ride in the queue for the next prompt.
+          if ((hasRunningBg && !stopRequested) || hasMainThreadQueued) {
             waitingForAgents = true
             if (!hasMainThreadQueued) {
               runPhase = 'waiting_for_agents'
@@ -2260,8 +2304,9 @@ function runHeadlessStreaming(
     // arrived (and called run()) between the last dequeue() returning
     // undefined and `running = false` above. In that case the caller
     // saw `running === true` and returned immediately, leaving the
-    // message stranded in the queue with no one to process it.
-    if (peek(isMainThread) !== undefined) {
+    // message stranded in the queue with no one to process it. Held
+    // notifications do not count — re-running for them alone would spin.
+    if (peek(mainThreadNotHeld) !== undefined) {
       void run()
       return
     }
@@ -2403,13 +2448,7 @@ function runHeadlessStreaming(
 
       if (message.type === 'control_request') {
         if (message.request.subtype === 'interrupt') {
-          if (abortController) {
-            abortController.abort()
-          }
-          suggestionState.abortController?.abort()
-          suggestionState.abortController = null
-          suggestionState.lastEmitted = null
-          suggestionState.pendingSuggestion = null
+          requestStop()
           sendControlResponseSuccess(message)
         } else if (message.request.subtype === 'end_session') {
           logForDebugging(

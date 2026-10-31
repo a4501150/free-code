@@ -88,6 +88,13 @@ const VISIBLE_FIXTURES: Array<[Attachment, string]> = [
   ],
   [
     {
+      type: 'coordinator_mode',
+      text: '# Coordinator Mode\n\nYou are running as a coordinator.',
+    },
+    'Coordinator Mode',
+  ],
+  [
+    {
       type: 'git_instructions',
       text: '# Git commits and pull requests\n\n- Use conventional commit format.',
     },

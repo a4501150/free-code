@@ -42,7 +42,7 @@ describe('Coordinator worker transcript view', () => {
             input: {
               prompt: 'Run a sleep command and wait',
               description: 'sleeper worker',
-              subagent_type: 'worker',
+              subagent_type: 'general-purpose',
               run_in_background: true,
             },
           },
@@ -149,7 +149,7 @@ describe('Coordinator worker transcript view', () => {
             input: {
               prompt: 'Say ack and stop',
               description: 'sleeper worker',
-              subagent_type: 'worker',
+              subagent_type: 'general-purpose',
               run_in_background: true,
             },
           },

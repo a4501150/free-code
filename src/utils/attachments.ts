@@ -141,9 +141,13 @@ import {
 import { filterDeniedAgents } from './permissions/permissions.js'
 import { mcpInfoFromString } from '../services/mcp/mcpStringUtils.js'
 import {
+  getScratchpadDir,
+  isScratchpadEnabled,
   matchingRuleForInput,
   pathInAllowedWorkingPath,
 } from './permissions/filesystem.js'
+import { isCoordinatorMode } from '../coordinator/coordinatorModeGate.js'
+import { buildCoordinatorModeBlock } from '../coordinator/coordinatorMode.js'
 import {
   generateTaskAttachments,
   applyTaskOffsetsAndEvictions,
@@ -724,6 +728,12 @@ export type Attachment =
       text: string
     }
   | {
+      type: 'coordinator_mode'
+      /** Fully rendered delegation-guidance block; coordinator mode is this
+       * carrier plus the normal prompt/pool — no system-prompt branch. */
+      text: string
+    }
+  | {
       type: 'bagel_console'
       errorCount: number
       warningCount: number
@@ -943,8 +953,9 @@ export async function getAttachments(
       Promise.resolve(getUltrathinkEffortAttachment(input)),
     ),
     // Context-group ordering (same in compact.ts re-announce and the
-    // runAgent.ts turn-0 seed): assistant_mode (main-thread only, so absent
-    // from the seed), session_guidance, git_instructions, companion_intro,
+    // runAgent.ts turn-0 seed): assistant_mode and coordinator_mode (both
+    // main-thread only, so absent from the seed), session_guidance,
+    // git_instructions, companion_intro,
     // deferred_tools_delta (built-ins only move with settings, so
     // they sit ahead of the mid-session-fragile MCP pair),
     // mcp_instructions_delta, mcp_tools_delta, agent_listing_delta, then
@@ -959,6 +970,9 @@ export async function getAttachments(
     // assistant can Read/Edit them by path (same main-thread gate).
     maybe('assistant_context_files', () =>
       getAssistantContextFileAttachments(toolUseContext, messages),
+    ),
+    maybe('coordinator_mode', () =>
+      Promise.resolve(getCoordinatorModeAttachment(toolUseContext, messages)),
     ),
     maybe('session_guidance', () =>
       Promise.resolve(getSessionGuidanceAttachment(toolUseContext, messages)),
@@ -1860,7 +1874,11 @@ export function getGitInstructionsAttachment(
  */
 function lastAnnouncementText(
   messages: Message[] | undefined,
-  type: 'session_guidance' | 'assistant_mode' | 'git_instructions',
+  type:
+    | 'session_guidance'
+    | 'assistant_mode'
+    | 'coordinator_mode'
+    | 'git_instructions',
 ): string | null {
   let lastText: string | null = null
   for (const msg of messages ?? []) {
@@ -1892,6 +1910,26 @@ export function getAssistantModeAttachment(
 
   if (lastAnnouncementText(messages, 'assistant_mode') === text) return []
   return [{ type: 'assistant_mode', text }]
+}
+
+/**
+ * Coordinator-mode delegation guidance (see coordinatorMode.ts). Same
+ * wholesale-replacement scan as assistant_mode, main-thread only. Rendered
+ * fresh each turn from live inputs (connected MCP servers, scratchpad state);
+ * the carrier replays byte-identically while those don't move.
+ */
+export function getCoordinatorModeAttachment(
+  toolUseContext: ToolUseContext,
+  messages: Message[] | undefined,
+): Attachment[] {
+  if (toolUseContext.agentId) return []
+  if (!isCoordinatorMode()) return []
+  const text = buildCoordinatorModeBlock({
+    mcpServerNames: toolUseContext.options.mcpClients.map(c => c.name),
+    scratchpadDir: isScratchpadEnabled() ? getScratchpadDir() : undefined,
+  })
+  if (lastAnnouncementText(messages, 'coordinator_mode') === text) return []
+  return [{ type: 'coordinator_mode', text }]
 }
 
 /**
@@ -3678,6 +3716,7 @@ export function createAttachmentMessage(
 export const CONTEXT_GROUP_ATTACHMENT_TYPES: ReadonlySet<Attachment['type']> =
   new Set([
     'assistant_mode',
+    'coordinator_mode',
     'session_guidance',
     'git_instructions',
     'companion_intro',

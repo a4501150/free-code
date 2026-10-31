@@ -4,14 +4,13 @@ import type { AgentDefinition } from './loadAgentsDir.js'
 /**
  * Resolve which agent type to launch when the model omits subagent_type.
  *
- * Historically this always defaulted to general-purpose, but that agent is
- * not registered in every mode (coordinator mode registers only `worker`),
- * so a defaulted call could fail with "Agent type 'general-purpose' not
- * found". Resolution order:
+ * The default is general-purpose, but custom registries (deny rules,
+ * CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS) may omit it, and a defaulted
+ * call must not fail with "Agent type 'general-purpose' not found".
+ * Resolution order:
  *
  * 1. general-purpose when it is among the available agents (legacy default);
- * 2. the single available agent when exactly one is registered
- *    (coordinator mode: `worker`);
+ * 2. the single available agent when exactly one is registered;
  * 3. otherwise return general-purpose anyway so the caller's lookup fails
  *    with the existing error that lists the available agents — with multiple
  *    candidates there is no principled guess to make.

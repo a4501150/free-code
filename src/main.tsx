@@ -80,7 +80,6 @@ import * as assistantModule from './assistant/index.js'
 import * as coordinatorModeModule from './coordinator/coordinatorMode.js'
 import {
   forceCoordinatorModeFromCli,
-  isCoordinatorMode,
   setCoordinatorModeOverride,
 } from './coordinator/coordinatorModeGate.js'
 
@@ -318,7 +317,6 @@ import {
   parsePRReference,
 } from './utils/worktree.js'
 import { initSinks } from './utils/sinks.js'
-import { applyCoordinatorToolFilter } from './utils/toolPool.js'
 import { setup } from './setup.js'
 import { buildMergePrompt } from './components/agents/SnapshotUpdateDialog.js'
 import { runHeadless } from 'src/cli/print.js'
@@ -1882,12 +1880,6 @@ async function run(): Promise<CommanderCommand> {
 
       let tools = getTools(toolPermissionContext)
 
-      // Apply coordinator mode tool filtering for headless path
-      // (mirrors useMergedTools.ts filtering for REPL/interactive path)
-      if (isCoordinatorMode()) {
-        tools = applyCoordinatorToolFilter(tools)
-      }
-
       profileCheckpoint('action_tools_loaded')
 
       let jsonSchema: ToolInputJSONSchema | undefined
@@ -2991,8 +2983,6 @@ async function run(): Promise<CommanderCommand> {
         modeApi: coordinatorModeModule,
         mainThreadAgentDefinition,
         agentDefinitions,
-        currentCwd,
-        cliAgents,
         initialState,
       }
 

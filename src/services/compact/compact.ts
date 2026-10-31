@@ -34,6 +34,7 @@ import {
   getMcpInstructionsDeltaAttachment,
   getMcpToolsDeltaAttachment,
   getAssistantModeAttachment,
+  getCoordinatorModeAttachment,
   getSessionGuidanceAttachment,
   getGitInstructionsAttachment,
   getPostCompactSkillListingAttachment,
@@ -363,13 +364,16 @@ async function pushReAnnounceAttachments(
   scanMessages: Message[],
 ): Promise<void> {
   // Context-group ordering (same in attachments.ts and the runAgent.ts
-  // turn-0 seed): assistant_mode, session_guidance, git_instructions,
-  // deferred_tools_delta, then the MCP pair
-  // (mcp_instructions_delta, mcp_tools_delta). assistant_mode is
-  // main-thread-only: the seed omits it, compaction re-announce does not,
-  // and its scan treats a post-compaction transcript with no prior
-  // announcement as a full re-arm.
+  // turn-0 seed): assistant_mode, coordinator_mode, session_guidance,
+  // git_instructions, deferred_tools_delta, then the MCP pair
+  // (mcp_instructions_delta, mcp_tools_delta). assistant_mode and
+  // coordinator_mode are main-thread-only: the seed omits them, compaction
+  // re-announce does not, and their scans treat a post-compaction transcript
+  // with no prior announcement as a full re-arm.
   for (const att of getAssistantModeAttachment(context, scanMessages)) {
+    target.push(createAttachmentMessage(att))
+  }
+  for (const att of getCoordinatorModeAttachment(context, scanMessages)) {
     target.push(createAttachmentMessage(att))
   }
   for (const att of getSessionGuidanceAttachment(context, scanMessages)) {

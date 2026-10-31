@@ -93,26 +93,10 @@ import {
 } from './utils/messages/mappers.js'
 import { buildSystemInitMessage } from './utils/messages/systemInit.js'
 import {
-  getScratchpadDir,
-  isScratchpadEnabled,
-} from './utils/permissions/filesystem.js'
-import {
   handleOrphanedPermission,
   isResultSuccessful,
   normalizeMessage,
 } from './utils/queryHelpers.js'
-
-import * as coordinatorModeModule from './coordinator/coordinatorMode.js'
-
-function getCoordinatorUserContext(
-  mcpClients: ReadonlyArray<{ name: string }>,
-  scratchpadDir?: string,
-): { [k: string]: string } {
-  return coordinatorModeModule.getCoordinatorUserContext(
-    mcpClients,
-    scratchpadDir,
-  )
-}
 
 export type QueryEngineConfig = {
   cwd: string
@@ -266,13 +250,7 @@ export class QueryEngine {
       customSystemPrompt: customPrompt,
     })
     headlessProfilerCheckpoint('after_getSystemPrompt')
-    const userContext = {
-      ...baseUserContext,
-      ...getCoordinatorUserContext(
-        mcpClients,
-        isScratchpadEnabled() ? getScratchpadDir() : undefined,
-      ),
-    }
+    const userContext = baseUserContext
 
     // When an SDK caller provides a custom system prompt AND has set
     // CLAUDE_COWORK_MEMORY_PATH_OVERRIDE, inject the memory-mechanics prompt.
@@ -285,16 +263,8 @@ export class QueryEngine {
         ? await loadMemoryPrompt()
         : null
 
-    const coordinatorPrompt =
-      customPrompt === undefined && coordinatorModeModule.isCoordinatorMode()
-        ? coordinatorModeModule.getCoordinatorSystemPrompt()
-        : null
     const systemPrompt = asSystemPrompt([
-      ...(customPrompt !== undefined
-        ? [customPrompt]
-        : coordinatorPrompt
-          ? [coordinatorPrompt]
-          : defaultSystemPrompt),
+      ...(customPrompt !== undefined ? [customPrompt] : defaultSystemPrompt),
       ...(memoryMechanicsPrompt ? [memoryMechanicsPrompt] : []),
       ...(appendSystemPrompt ? [appendSystemPrompt] : []),
     ])

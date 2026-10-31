@@ -5,9 +5,6 @@ import { GENERAL_PURPOSE_AGENT } from '../../src/tools/AgentTool/built-in/genera
 import { getPrompt } from '../../src/tools/AgentTool/prompt.js'
 import { resolveOmittedSubagentType } from '../../src/tools/AgentTool/resolveOmittedSubagentType.js'
 import type { AgentDefinition } from '../../src/tools/AgentTool/loadAgentsDir.js'
-import { getCoordinatorAgents } from '../../src/coordinator/coordinatorAgentRegistry.js'
-// Registers the coordinator worker agent provider at module init.
-import '../../src/coordinator/workerAgent.js'
 
 function fakeAgent(agentType: string): AgentDefinition {
   return {
@@ -20,14 +17,7 @@ function fakeAgent(agentType: string): AgentDefinition {
   }
 }
 
-const WORKER_AGENTS = getCoordinatorAgents()
-
 describe('resolveOmittedSubagentType', () => {
-  test('coordinator registry (worker only) falls back to worker', () => {
-    expect(WORKER_AGENTS.map(a => a.agentType)).toEqual(['worker'])
-    expect(resolveOmittedSubagentType(WORKER_AGENTS)).toBe('worker')
-  })
-
   test('single non-general-purpose agent is the fallback', () => {
     expect(resolveOmittedSubagentType([fakeAgent('scout')])).toBe('scout')
   })
@@ -74,15 +64,11 @@ describe('resolveOmittedSubagentType', () => {
 })
 
 describe('Agent tool prompt subagent_type sentence', () => {
-  test('coordinator prompt does not advertise general-purpose and names worker', async () => {
-    const prompt = await getPrompt(WORKER_AGENTS, true)
-    expect(prompt).not.toContain('general-purpose')
-    expect(prompt).toContain('worker')
-    expect(prompt).toContain('subagent_type')
-  })
-
-  test('non-coordinator prompt is unchanged', async () => {
-    const prompt = await getPrompt([GENERAL_PURPOSE_AGENT], false)
+  // The prompt is mode-agnostic: coordinator mode runs the same registry and
+  // the same Agent-tool description as normal mode.
+  test('prompt always advertises general-purpose as the omitted default', async () => {
+    const prompt = await getPrompt([GENERAL_PURPOSE_AGENT])
     expect(prompt).toContain('when omitted, the general-purpose agent is used')
+    expect(prompt).toContain('subagent_type')
   })
 })

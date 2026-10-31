@@ -26,10 +26,6 @@ import {
   checkAndDisableBypassPermissionsIfNeeded,
   checkAndDisableAutoModeIfNeeded,
 } from '../../utils/permissions/bypassPermissionsKillswitch.js'
-import {
-  getScratchpadDir,
-  isScratchpadEnabled,
-} from '../../utils/permissions/filesystem.js'
 import { maybeMarkProjectOnboardingComplete } from '../../projectOnboardingState.js'
 import { closeOpenDiffs, getConnectedIdeClient } from '../../utils/ide.js'
 import { diagnosticTracker } from '../../services/diagnosticTracking.js'
@@ -81,18 +77,6 @@ import type {
   StreamingToolUse,
   StreamingThinking,
 } from '../../utils/messages.js'
-
-import * as coordinatorModeModule from '../../coordinator/coordinatorMode.js'
-
-function getCoordinatorUserContext(
-  mcpClients: ReadonlyArray<{ name: string }>,
-  scratchpadDir?: string,
-): { [k: string]: string } {
-  return coordinatorModeModule.getCoordinatorUserContext(
-    mcpClients,
-    scratchpadDir,
-  )
-}
 
 export function useReplQueryExecution({
   messagesRef,
@@ -358,8 +342,7 @@ export function useReplQueryExecution({
         abortController,
         mainLoopModelParam,
       )
-      const { tools: freshTools, mcpClients: freshMcpClients } =
-        toolUseContext.options
+      const { tools: freshTools } = toolUseContext.options
 
       if (effort !== undefined) {
         toolUseContext.effortOverride = effort
@@ -386,13 +369,7 @@ export function useReplQueryExecution({
           getUserContext(),
           getSystemContext(),
         ])
-      const userContext = {
-        ...baseUserContext,
-        ...getCoordinatorUserContext(
-          freshMcpClients,
-          isScratchpadEnabled() ? getScratchpadDir() : undefined,
-        ),
-      }
+      const userContext = baseUserContext
       queryCheckpoint('query_context_loading_end')
 
       const systemPrompt = buildEffectiveSystemPrompt({

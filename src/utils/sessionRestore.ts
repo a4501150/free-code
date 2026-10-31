@@ -14,8 +14,6 @@ import type { AgentColorName } from '../tools/AgentTool/agentColorManager.js'
 import {
   type AgentDefinition,
   type AgentDefinitionsResult,
-  getActiveAgentsFromList,
-  getAgentDefinitionsWithOverrides,
 } from '../tools/AgentTool/loadAgentsDir.js'
 import { asSessionId } from '../types/ids.js'
 import type { PersistedWorktreeSession } from '../types/logs.js'
@@ -199,35 +197,6 @@ export function restoreAgentFromSession(
   }
 
   return { agentDefinition: resumedAgent, agentType: resumedAgent.agentType }
-}
-
-/**
- * Refresh agent definitions after a coordinator/normal mode switch.
- *
- * When resuming a session that was in a different mode (coordinator vs normal),
- * the built-in agents need to be re-derived to match the new mode. CLI-provided
- * agents (from --agents flag) are merged back in.
- */
-export async function refreshAgentDefinitionsForModeSwitch(
-  modeWasSwitched: boolean,
-  currentCwd: string,
-  cliAgents: AgentDefinition[],
-  currentAgentDefinitions: AgentDefinitionsResult,
-): Promise<AgentDefinitionsResult> {
-  if (!modeWasSwitched) {
-    return currentAgentDefinitions
-  }
-
-  // Re-derive agent definitions after mode switch so built-in agents
-  // reflect the new coordinator/normal mode
-  getAgentDefinitionsWithOverrides.cache.clear?.()
-  const freshAgentDefs = await getAgentDefinitionsWithOverrides(currentCwd)
-  const freshAllAgents = [...freshAgentDefs.allAgents, ...cliAgents]
-  return {
-    ...freshAgentDefs,
-    allAgents: freshAllAgents,
-    activeAgents: getActiveAgentsFromList(freshAllAgents),
-  }
 }
 
 /**
@@ -484,8 +453,6 @@ export async function processResumedConversation(
     modeApi: CoordinatorModeApi | null
     mainThreadAgentDefinition: AgentDefinition | undefined
     agentDefinitions: AgentDefinitionsResult
-    currentCwd: string
-    cliAgents: AgentDefinition[]
     initialState: AppState
   },
 ): Promise<ProcessedResume> {
@@ -521,12 +488,6 @@ export async function processResumedConversation(
     result.agentColor,
   )
   void updateSessionName(result.agentName)
-  const refreshedAgentDefs = await refreshAgentDefinitionsForModeSwitch(
-    !!modeWarning,
-    context.currentCwd,
-    context.cliAgents,
-    context.agentDefinitions,
-  )
 
   return {
     messages: result.messages,
@@ -541,7 +502,7 @@ export async function processResumedConversation(
       ...context.initialState,
       ...(resumedAgentType && { agent: resumedAgentType }),
       ...(standaloneAgentContext && { standaloneAgentContext }),
-      agentDefinitions: refreshedAgentDefs,
+      agentDefinitions: context.agentDefinitions,
     },
   }
 }

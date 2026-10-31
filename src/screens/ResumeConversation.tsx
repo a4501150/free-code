@@ -1,7 +1,6 @@
 import * as coordinatorModeModule from '../coordinator/coordinatorMode.js'
 import React from 'react'
 import { useTerminalSize } from 'src/hooks/useTerminalSize.js'
-import { getOriginalCwd } from '../bootstrap/state.js'
 import type { Command } from '../commands.js'
 import { LogSelector } from '../components/LogSelector.js'
 import {
@@ -39,7 +38,6 @@ import {
   restoreAgentFromSession,
 } from '../utils/sessionRestore.js'
 import { isCustomTitleEnabled, saveMode } from '../utils/sessionStorage.js'
-import * as loadAgentsDirNs from '../tools/AgentTool/loadAgentsDir.js'
 import type { ThinkingConfig } from '../utils/thinking.js'
 import type { ContentReplacementRecord } from '../utils/toolResultStorage.js'
 import { REPL } from './REPL.js'
@@ -203,19 +201,8 @@ export function ResumeConversation({
 
       const warning = coordinatorModeModule.matchSessionMode(result.mode)
       if (warning) {
-        const { getAgentDefinitionsWithOverrides, getActiveAgentsFromList } =
-          loadAgentsDirNs
-        getAgentDefinitionsWithOverrides.cache.clear?.()
-        const freshAgentDefs =
-          await getAgentDefinitionsWithOverrides(getOriginalCwd())
-        setAppState(prev => ({
-          ...prev,
-          agentDefinitions: {
-            ...freshAgentDefs,
-            allAgents: freshAgentDefs.allAgents,
-            activeAgents: getActiveAgentsFromList(freshAgentDefs.allAgents),
-          },
-        }))
+        // The agent registry no longer depends on the mode (coordinator mode
+        // runs the normal registry), so a mode switch needs no agent refresh.
         result.messages.push(createSystemMessage(warning, 'warning'))
       }
 

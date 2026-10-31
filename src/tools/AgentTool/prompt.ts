@@ -79,7 +79,6 @@ export function shouldInjectAgentListInMessages(): boolean {
 
 export async function getPrompt(
   agentDefinitions: AgentDefinition[],
-  isCoordinator?: boolean,
   allowedAgentTypes?: string[],
 ): Promise<string> {
   // Filter agents by allowed types when Agent(x,y) restricts which agents can be spawned
@@ -101,14 +100,8 @@ export async function getPrompt(
     : `Available agent types and the tools they have access to:
 ${effectiveAgents.map(agent => formatAgentLine(agent)).join('\n')}`
 
-  // Coordinator mode registers only `worker`, so it must not advertise
-  // general-purpose as the default; the call path falls back to the single
-  // registered agent when subagent_type is omitted.
-  const pickTypeSentence = isCoordinator
-    ? `Set the ${AGENT_TOOL_NAME} tool's subagent_type parameter to pick a type; 'worker' is the available type in coordinator mode and is used when it is omitted.`
-    : `Set the ${AGENT_TOOL_NAME} tool's subagent_type parameter to pick a type; when omitted, the general-purpose agent is used.`
+  const pickTypeSentence = `Set the ${AGENT_TOOL_NAME} tool's subagent_type parameter to pick a type; when omitted, the general-purpose agent is used.`
 
-  // Shared core prompt used by both coordinator and non-coordinator modes
   const shared = `Launches a subagent to handle complex, multi-step tasks autonomously.
 
 ${agentListSection}
@@ -118,12 +111,6 @@ ${pickTypeSentence}
 The agent you launch sees only its own prompt — none of your conversation. References like "the bug above" or "that file we discussed" reach the agent as noise.
 
 ${AGENT_PARALLELISM_GUIDANCE}`
-
-  // Coordinator mode gets the slim prompt -- the coordinator system prompt
-  // already covers usage notes, examples, and when-not-to-use guidance.
-  if (isCoordinator) {
-    return shared
-  }
 
   // Shares the backgroundTasksEnabled gate with the run_in_background param
   // (stripped from the schema in AgentTool.tsx when the setting is off), so
@@ -145,7 +132,7 @@ Backgrounding is not a parallelism mechanism — it only avoids blocking; parall
  - Fork Agent (pass \`subagent_type: "fork"\`) is a specialized subagent that forks yourself. ${FORK_USAGE_GUIDANCE} Write its prompt as a directive (what to do), not a briefing, since it inherits your full context.`
     : ''
 
-  // Non-coordinator gets the lean worker contract: handoff facts, no examples.
+  // The lean worker contract: handoff facts, no examples.
   // The isolation and cwd facts live on their schema descriptions, which are
   // always in the schema, so they need no bullet here.
   return `${shared}${backgroundSection}

@@ -291,8 +291,7 @@ export const AgentTool = buildTool({
       AGENT_TOOL_NAME,
     )
 
-    const isCoordinator = isCoordinatorMode()
-    return await getPrompt(filteredAgents, isCoordinator, allowedAgentTypes)
+    return await getPrompt(filteredAgents, allowedAgentTypes)
   },
   name: AGENT_TOOL_NAME,
   aliases: [LEGACY_AGENT_TOOL_NAME],

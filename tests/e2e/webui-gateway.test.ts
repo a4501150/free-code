@@ -25,7 +25,7 @@ import {
 import { connectAttachClient } from '../../src/webui/gateway/attachClient'
 import type { AttachEventBody } from '../../src/webui/protocol/attachSchemas'
 import type { WebTranscriptItem } from '../../src/webui/protocol/transcriptWire'
-import { textResponse } from '../helpers/fixture-builders'
+import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { MockAnthropicServer } from '../helpers/mock-server'
 import { waitForRequestCount } from '../helpers/mock-server-wait'
 import { waitFor } from '../helpers/wait-helpers'
@@ -1435,6 +1435,179 @@ describe('WebUI gateway', () => {
       ),
     ) as { sessionId?: unknown }
     expect(typeof pointer.sessionId).toBe('string')
+  })
+
+  test('interrupt on an assistant coordinator kills its running agent and frees the session', async () => {
+    dirs = await makeDirs()
+    server.reset([
+      // #0: coordinator → Agent tool (agents are force-async in an
+      // assistant/coordinator session).
+      toolUseResponse(
+        [
+          {
+            name: 'Agent',
+            input: {
+              description: 'long sleeper',
+              prompt: 'Run the sleep command and report.',
+              run_in_background: true,
+            },
+          },
+        ],
+        'Launching a worker.',
+      ),
+      // #1: coordinator follow-up turn.
+      textResponse('Worker launched.'),
+      // #2: worker first turn → Bash sleep keeps it running (under the
+      // assistant-mode 15s auto-background threshold).
+      toolUseResponse([
+        { name: 'Bash', input: { command: 'sleep 12', description: 'nap' } },
+      ]),
+    ])
+
+    session = new TmuxSession({
+      serverUrl: server.url,
+      reuseConfigDir: dirs.config,
+      reuseHomeDir: dirs.home,
+    })
+    await session.start()
+    const settingsPath = join(dirs.config, 'freecode.json')
+    const seeded = JSON.parse(await readFile(settingsPath, 'utf-8'))
+    await writeFile(
+      settingsPath,
+      JSON.stringify({
+        // The harness seeds backgroundTasksEnabled: false; the interrupt
+        // test needs the production-shaped assistant: background agents
+        // enabled, coordinator on.
+        ...seeded,
+        backgroundTasksEnabled: true,
+        assistant: { enabled: true },
+      }),
+    )
+
+    const started = await runCli(
+      dirs,
+      ['web', 'start', '--tunnel', 'none', '--password-stdin'],
+      PASSWORD,
+    )
+    const match = /http:\/\/127\.0\.0\.1:\d+/.exec(started)
+    if (!match) throw new Error(`no gateway URL:\n${started}`)
+    baseUrl = match[0]
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
+
+    const client = new GatewayClient(baseUrl)
+    expect(await client.login(PASSWORD)).toBe(200)
+
+    const assistantProcessKey = await waitFor(
+      async () => {
+        const res = await fetch(`${baseUrl}/api/sessions`, {
+          headers: { cookie: client.cookie },
+        })
+        const body = (await res.json()) as {
+          sessions: { role?: string; live?: boolean; processKey?: string }[]
+        }
+        const row = body.sessions.find(
+          s => s.role === 'assistant' && s.live && s.processKey,
+        )
+        return row?.processKey
+      },
+      key => key !== undefined,
+      {
+        description: 'the assistant row to go live',
+        timeoutMs: 60_000,
+      },
+    )
+
+    const { socket, frames } = await client.openSocket()
+    try {
+      socket.send(
+        JSON.stringify({
+          type: 'attach',
+          processKey: assistantProcessKey,
+          csrf: client.csrf,
+        }),
+      )
+      await waitForRuntimeReady(frames, 'the assistant session')
+
+      const requestsBefore = server.getRequestCount()
+      const control = await sendControlRequest(dirs.config, {
+        kind: 'assistant.notify',
+        text: 'Delegate the sleep task.',
+      })
+      expect(control.ok, `assistant.notify failed: ${control.error}`).toBe(true)
+
+      // The force-async worker appears as a running agent task (this also
+      // proves #0 and #1 were consumed — the coordinator spawned and
+      // followed up).
+      type TaskRow = {
+        id: string
+        taskType: string
+        status: string
+      }
+      const taskRows = () =>
+        frames
+          .filter(
+            f => (f.event as { kind?: string } | undefined)?.kind === 'tasks',
+          )
+          .flatMap(f => (f.event as { tasks?: TaskRow[] }).tasks ?? [])
+      const worker = await waitFor(
+        taskRows,
+        rows =>
+          rows.some(
+            t => t.taskType === 'local_agent' && t.status === 'running',
+          ),
+        { description: 'the worker task to go running', timeoutMs: 30_000 },
+      ).then(
+        rows =>
+          rows.find(
+            t => t.taskType === 'local_agent' && t.status === 'running',
+          )!,
+      )
+
+      // The Stop button: a bare interrupt command frame.
+      socket.send(
+        JSON.stringify({
+          type: 'command',
+          id: 'stop1',
+          body: { kind: 'interrupt' },
+        }),
+      )
+      await waitFor(
+        () => frames,
+        list =>
+          list.some(
+            f => f.type === 'response' && f.id === 'stop1' && f.ok === true,
+          ),
+        { description: 'the interrupt ack', timeoutMs: 15_000 },
+      )
+
+      // The kill rides the same path as the browser's per-task Stop: the
+      // agent row flips to killed…
+      await waitFor(
+        taskRows,
+        rows => rows.some(t => t.id === worker.id && t.status === 'killed'),
+        { description: 'the worker task to be killed', timeoutMs: 30_000 },
+      )
+      // …and the headless agent-wait park exits, so the browser leaves the
+      // busy state (the pre-fix silent no-op left it parked forever).
+      await waitFor(
+        () =>
+          frames
+            .filter(
+              f => (f.event as { kind?: string } | undefined)?.kind === 'meta',
+            )
+            .map(f => (f.event as { meta?: { state?: string } }).meta?.state),
+        states => states.includes('idle'),
+        {
+          description: 'the assistant session to return to idle',
+          timeoutMs: 30_000,
+        },
+      )
+    } finally {
+      socket.close()
+    }
   })
 
   test('assistant /clear empties the live transcript and carries no SendUserMessage', async () => {

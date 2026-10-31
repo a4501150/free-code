@@ -106,14 +106,22 @@ describe('conditional mode prompt alignment', () => {
     expect(startup).not.toContain('Proactive Mode')
   })
 
-  test('headless coordinator prompt follows the live coordinator gate', () => {
-    const source = readSource('src/QueryEngine.ts')
-
-    expect(source).toContain('coordinatorModeModule.isCoordinatorMode()')
-    expect(source).toContain(
-      'coordinatorModeModule.getCoordinatorSystemPrompt()',
+  test('coordinator mode is an attachment carrier, not a prompt branch', () => {
+    // Coordinator mode must not fork the system prompt on either execution
+    // path — the delegation guidance rides the coordinator_mode attachment.
+    expect(readSource('src/QueryEngine.ts')).not.toContain(
+      'getCoordinatorSystemPrompt',
     )
-    expect(source).toContain('customPrompt === undefined')
+    expect(readSource('src/utils/systemPrompt.ts')).not.toContain(
+      'isCoordinatorMode',
+    )
+
+    const attachments = readSource('src/utils/attachments.ts')
+    expect(attachments).toContain('getCoordinatorModeAttachment')
+    expect(attachments).toContain("maybe('coordinator_mode'")
+    expect(readSource('src/coordinator/coordinatorMode.ts')).toContain(
+      'buildCoordinatorModeBlock',
+    )
   })
 
   test('universal platform policy has one owner', () => {

@@ -124,8 +124,9 @@ export const getTools = (permissionContext: ToolPermissionContext): Tools => {
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
     const simpleTools: Tool[] = [BashTool, FileReadTool, FileEditTool]
     // When coordinator mode is also active, include AgentTool and BackgroundTaskStopTool
-    // so the coordinator gets Agent+BackgroundTaskStop (via useMergedTools filtering) and
-    // workers get Bash/Read/Edit (via filterToolsForAgent filtering).
+    // so the coordinator can delegate and retract (simple mode otherwise has no
+    // Agent tool at all); workers still get Bash/Read/Edit via
+    // filterToolsForAgent filtering.
     if (coordinatorModeMod.isCoordinatorMode()) {
       simpleTools.push(AgentTool, BackgroundTaskStopTool)
     }
