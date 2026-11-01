@@ -343,9 +343,9 @@ export const AgentTool = buildTool({
     )
 
     // When subagent_type is omitted, fall back to general-purpose if it is
-    // available, else to the single registered agent (coordinator mode
-    // registers only `worker`); with several agents and no general-purpose
-    // the lookup below fails with the available-agents error.
+    // available, else to the single registered agent; with several agents
+    // and no general-purpose the lookup below fails with the
+    // available-agents error.
     const effectiveType = subagent_type ?? resolveOmittedSubagentType(agents)
 
     const found = agents.find(agent => agent.agentType === effectiveType)

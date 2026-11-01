@@ -34,7 +34,7 @@ export function filterToolsByDenyRules<
  * Assemble the full tool pool for a given permission context and MCP tools.
  *
  * This is the single source of truth for combining built-in tools with MCP tools.
- * Both REPL.tsx (via useMergedTools hook) and runAgent.ts (for coordinator workers)
+ * Both REPL.tsx (via useMergedTools hook) and runAgent.ts (for subagent pools)
  * use this function to ensure consistent tool pool assembly.
  *
  * The function:
