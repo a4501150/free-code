@@ -80,7 +80,7 @@ function createMinimalToolUseContext(tools: Tools = []): ToolUseContext {
     options: {
       commands: [],
       debug: false,
-      mainLoopModel: 'gpt-test',
+      mainLoopModel: 'codex:gpt-test',
       tools,
       verbose: false,
       thinkingConfig: { type: 'disabled' },
@@ -202,7 +202,7 @@ describe('Codex stream retry', () => {
         signal: new AbortController().signal,
         options: {
           getToolPermissionContext: async () => getEmptyToolPermissionContext(),
-          model: 'gpt-test',
+          model: 'codex:gpt-test',
           isNonInteractiveSession: true,
           querySource: 'repl_main_thread',
           agents: [],
@@ -288,7 +288,7 @@ describe('Codex stream retry', () => {
         signal: new AbortController().signal,
         options: {
           getToolPermissionContext: async () => getEmptyToolPermissionContext(),
-          model: 'gpt-test',
+          model: 'codex:gpt-test',
           isNonInteractiveSession: true,
           querySource: 'repl_main_thread',
           agents: [],
@@ -566,7 +566,7 @@ describe('Codex stream retry', () => {
         signal: new AbortController().signal,
         options: {
           getToolPermissionContext: async () => getEmptyToolPermissionContext(),
-          model: 'gpt-test',
+          model: 'codex:gpt-test',
           isNonInteractiveSession: true,
           querySource: 'repl_main_thread',
           agents: [],
@@ -687,7 +687,7 @@ describe('Codex stream retry', () => {
             options: {
               getToolPermissionContext: async () =>
                 getEmptyToolPermissionContext(),
-              model: 'gpt-test',
+              model: 'codex:gpt-test',
               isNonInteractiveSession: true,
               querySource: 'repl_main_thread',
               agents: [],
@@ -921,7 +921,7 @@ describe('Codex stream retry', () => {
             options: {
               getToolPermissionContext: async () =>
                 getEmptyToolPermissionContext(),
-              model: 'gpt-test',
+              model: 'codex:gpt-test',
               isNonInteractiveSession: true,
               querySource: 'repl_main_thread',
               agents: [],
@@ -1045,7 +1045,7 @@ describe('Codex stream retry', () => {
         signal: new AbortController().signal,
         options: {
           getToolPermissionContext: async () => getEmptyToolPermissionContext(),
-          model: 'gpt-test',
+          model: 'codex:gpt-test',
           isNonInteractiveSession: true,
           querySource: 'repl_main_thread',
           agents: [],
@@ -1136,7 +1136,7 @@ describe('Codex stream retry', () => {
             options: {
               getToolPermissionContext: async () =>
                 getEmptyToolPermissionContext(),
-              model: 'gpt-test',
+              model: 'codex:gpt-test',
               isNonInteractiveSession: true,
               querySource: 'repl_main_thread',
               agents: [],
@@ -1267,7 +1267,7 @@ describe('Mid-stream retry (non-Codex)', () => {
         signal: new AbortController().signal,
         options: {
           getToolPermissionContext: async () => getEmptyToolPermissionContext(),
-          model: 'claude-test',
+          model: 'anthropic:claude-test',
           isNonInteractiveSession: true,
           querySource: 'repl_main_thread',
           agents: [],

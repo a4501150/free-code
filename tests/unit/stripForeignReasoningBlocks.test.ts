@@ -236,9 +236,10 @@ describe('stripForeignReasoningBlocks model identity', () => {
     anthropic: { signature: 'sig', blockKind: 'thinking' },
   })
 
-  // Mirrors ProviderRegistry.resolveModelBackend: qualified and bare ids
-  // resolve to the entry's backend identity (credential = serialization of
-  // its auth config); unknown strings resolve to null.
+  // Mirrors ProviderRegistry.resolveModelBackend, which is strict like
+  // getProviderForModel: only qualified provider:model strings resolve (to
+  // the entry's backend identity, credential = serialization of its auth
+  // config); bare strings return null.
   const CRED_TASKFORCE = JSON.stringify({ active: 'bearer', token: 't1' })
   const CRED_ANTHROPIC = JSON.stringify({ active: 'bearer', token: 't2' })
   const CRED_ALT = JSON.stringify({ active: 'bearer', token: 't3' })
@@ -273,11 +274,6 @@ describe('stripForeignReasoningBlocks model identity', () => {
         providerName: 'anthropic-alt',
         modelId: 'claude-opus-5-5',
         credential: CRED_ALT,
-      },
-      'claude-opus-5-5': {
-        providerName: 'anthropic',
-        modelId: 'claude-opus-5-5',
-        credential: CRED_ANTHROPIC,
       },
     }
     return table[model.toLowerCase()] ?? null
@@ -353,23 +349,41 @@ describe('stripForeignReasoningBlocks model identity', () => {
     ).toEqual(['reasoning', 'tool_use'])
   })
 
-  test('untagged legacy envelopes fall back to the wire model string', () => {
-    // Resolves into the target's entry (same credential) → keep — a resumed
-    // session switching opus→sonnet keeps working as it did pre-tag.
+  test('untagged legacy envelopes compare by string equality, never registry resolution', () => {
+    // Wire string equal to the target's model id → keep (same backend echoed
+    // the id it was asked to serve — a resumed session without a switch).
+    expect(
+      keptModel(minted('claude-opus-5-5'), 'anthropic:claude-opus-5-5'),
+    ).toEqual(['reasoning', 'tool_use'])
+    // Bare strings never resolve through the registry, so a cross-model
+    // switch on pre-tag history drops the reasoning — safe (backends accept
+    // history without previous-turn thinking) and strictly better than
+    // replaying a signature the sibling backend rejects.
     expect(
       keptModel(minted('claude-opus-5-5'), 'anthropic:claude-sonnet-5-5'),
-    ).toEqual(['reasoning', 'tool_use'])
-    // Unresolvable proxy string vs a different backend → drop (the original
-    // bug, on a transcript persisted before tagging).
+    ).toEqual(['tool_use'])
+    // Proxy-echoed string vs a different backend → drop (the original bug,
+    // on a transcript persisted before tagging).
     expect(
       keptModel(minted('zai-org/GLM-5.3'), 'anthropic:claude-opus-5-5'),
     ).toEqual(['tool_use'])
-    // Unresolvable proxy string vs its own configured target → drop too: the
+    // Proxy-echoed string vs its own configured target → drop too: the
     // proxy accepts history without previous-turn reasoning (verified
     // against the live backend), and keeping it poisons same-type switches.
     expect(keptModel(minted('zai-org/GLM-5.3'), 'taskforce:glm-5-3')).toEqual([
       'tool_use',
     ])
+  })
+
+  test('a bare tag is foreign by definition — bare strings never resolve', () => {
+    // The tag is stamped in qualified provider:model form; a bare tag cannot
+    // name a backend, so its reasoning is dropped rather than guessed at.
+    expect(
+      keptModel(
+        minted('claude-opus-5-5', 'claude-opus-5-5'),
+        'anthropic:claude-sonnet-5-5',
+      ),
+    ).toEqual(['tool_use'])
   })
 
   test('a tag naming no configured model is foreign by definition', () => {

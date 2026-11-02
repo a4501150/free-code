@@ -13,6 +13,7 @@ import {
   isBuiltInPlanAgentEnabled,
 } from '../../utils/planAgent.js'
 import { VERIFICATION_AGENT } from './built-in/verificationAgent.js'
+import { parseUserSpecifiedModel } from '../../utils/model/modelResolution.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 
 export function getBuiltInAgents(): AgentDefinition[] {
@@ -41,8 +42,14 @@ export function getBuiltInAgents(): AgentDefinition[] {
     const planConfig = getPlanAgentConfig()
     agents.push({
       ...PLAN_AGENT,
+      // Settings-sourced model references go through the strict parser so a
+      // bare id fails fast with a qualified suggestion instead of silently
+      // resolving to whichever provider registered that id first.
       ...(planConfig.planModel
-        ? { model: planConfig.planModel, roleConfiguredModel: true }
+        ? {
+            model: parseUserSpecifiedModel(planConfig.planModel),
+            roleConfiguredModel: true,
+          }
         : {}),
     })
   }
@@ -55,7 +62,7 @@ export function getBuiltInAgents(): AgentDefinition[] {
   if (advisorConfig.enabled && advisorConfig.advisorModel) {
     agents.push({
       ...ADVISOR_AGENT,
-      model: advisorConfig.advisorModel,
+      model: parseUserSpecifiedModel(advisorConfig.advisorModel),
       roleConfiguredModel: true,
     })
   }

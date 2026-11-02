@@ -108,7 +108,7 @@ async function captureBody(
     signal: new AbortController().signal,
     options: {
       getToolPermissionContext: async () => getEmptyToolPermissionContext(),
-      model: 'gpt-test',
+      model: 'test:gpt-test',
       isNonInteractiveSession: true,
       querySource,
       agents: [],

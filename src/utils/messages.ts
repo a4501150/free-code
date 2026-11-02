@@ -4948,15 +4948,19 @@ function nonEmpty(value: string | undefined): boolean {
  *
  * The wrapper `modelId` tag is stamped at stream-in and is authoritative: a
  * tag resolving to nothing names a model no longer configured — its backend's
- * credential can't be verified, so it is foreign by definition. Messages
- * persisted before tagging fall back to the envelope's wire `model` string,
- * which proxies may report in any shape ('zai-org/GLM-5.3' for configured id
- * 'glm-5-3'). An unresolvable wire string can't have come from the target
- * backend — a backend echoes a model id it was asked for, and the ask is the
- * configured id — so it is foreign unless it IS the target's model id.
- * Backends that would reject history for missing previous-turn reasoning
- * don't exist in practice (verified against the Anthropic-wire proxy this
- * rule was built for; the API contract allows omitting past-turn thinking).
+ * credential can't be verified, so it is foreign by definition.
+ *
+ * Messages persisted before tagging carry only the envelope's wire `model`
+ * string — the id the BACKEND echoed, which is bare by nature (the provider
+ * prefix is our concept, the wire never had one) and may take any shape
+ * ('zai-org/GLM-5.3' for configured id 'glm-5-3'). Bare strings are never
+ * resolved through the registry (a bare id is ambiguous by construction);
+ * the only safe reading is string equality with the target's model id — a
+ * backend echoes the id it was asked to serve, so a mismatch means a
+ * different backend minted it. Cross-model switches on untagged history
+ * therefore drop reasoning (safe: backends accept history without
+ * previous-turn thinking, verified against the live proxy this rule was
+ * built for).
  */
 function isForeignMint(
   msg: AssistantMessage,
@@ -4967,17 +4971,16 @@ function isForeignMint(
   const target = resolveBackend(targetModelId)
   if (!target) return false
   const tagged = typeof msg.modelId === 'string' ? msg.modelId : undefined
-  const mint = tagged ?? msg.message.model
-  if (!mint) return false
-  const mintBackend = resolveBackend(mint)
-  if (mintBackend) {
+  if (tagged) {
+    const mintBackend = resolveBackend(tagged)
     // Credential comparison only — the model id is irrelevant (cross-model
     // replay under one key is valid), and two entries sharing a credential
     // front the same account, so their continuation data is interchangeable.
-    return mintBackend.credential !== target.credential
+    return mintBackend ? mintBackend.credential !== target.credential : true
   }
-  if (tagged) return true
-  return mint.toLowerCase() !== target.modelId
+  const mint = msg.message.model
+  if (!mint) return false
+  return mint.trim().toLowerCase() !== target.modelId
 }
 
 /**
@@ -5006,7 +5009,8 @@ function isForeignMint(
  *
  *    Identity comes from the wrapper `modelId` tag (authoritative) or, for
  *    messages persisted before tagging, the envelope's wire `model` string
- *    — see isForeignMint for how unresolvable legacy strings are judged.
+ *    — which is compared by string equality, never resolved through the
+ *    registry (see isForeignMint).
  */
 export type ModelBackendResolver = (
   model: string,

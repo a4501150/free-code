@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { afterEach, beforeEach, describe, test, expect } from 'bun:test'
 import type { Tool, ToolUseContext, Tools } from '../../src/Tool.js'
 import type { ToolPermissionContext } from '../../src/types/permissions.js'
 import { hasPermissionsToUseTool } from '../../src/utils/permissions/permissions.js'
@@ -6,8 +6,13 @@ import {
   getMainLoopModel,
   runWithMainLoopModelScope,
 } from '../../src/utils/model/modelResolution.js'
+import {
+  initProviderRegistry,
+  resetProviderRegistry,
+} from '../../src/utils/model/providerRegistry.js'
 import { getMcpInstructionsDeltaAttachment } from '../../src/utils/attachments.js'
 import type { MCPServerConnection } from '../../src/services/mcp/types.js'
+import type { ProviderConfig } from '../../src/utils/settings/types.js'
 
 function makeTool(name: string, askReason?: string): Tool {
   return {
@@ -108,10 +113,23 @@ describe('subagent passthrough-ask policy', () => {
 })
 
 describe('main loop model scope', () => {
+  // Model strings must be qualified with a REGISTERED provider — the strict
+  // parser throws on an unknown provider prefix.
+  beforeEach(() =>
+    initProviderRegistry({
+      scopeprovider: {
+        type: 'anthropic',
+        auth: { active: 'apiKey', apiKey: { key: 'k' } },
+        models: [{ id: 'scopemodel' }, { id: 'innermodel' }],
+      } as ProviderConfig,
+    }),
+  )
+  afterEach(() => resetProviderRegistry())
+
   test('getMainLoopModel resolves to the scoped model and nests', () => {
-    // No global default is configured in the unit env, so only assert what
-    // the scope itself resolves — outer-scope restoration stands in for the
-    // outside-scope behavior.
+    // No global default is configured, so only assert what the scope itself
+    // resolves — outer-scope restoration stands in for the outside-scope
+    // behavior.
     runWithMainLoopModelScope('scopeprovider:scopemodel', () => {
       expect(getMainLoopModel()).toContain('scopemodel')
       const inner = runWithMainLoopModelScope('scopeprovider:innermodel', () =>

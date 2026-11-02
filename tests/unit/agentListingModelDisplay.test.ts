@@ -5,6 +5,17 @@ import {
   initProviderRegistry,
   resetProviderRegistry,
 } from '../../src/utils/model/providerRegistry.js'
+import type { ProviderConfig } from '../../src/utils/settings/types.js'
+
+// Settings model references are validated at registry construction, so the
+// referenced models must be declared by a registered provider.
+const providers: Record<string, ProviderConfig> = {
+  anthropic: {
+    type: 'anthropic',
+    auth: { active: 'apiKey', apiKey: { key: 'k' } },
+    models: [{ id: 'claude-sonnet-4-5' }, { id: 'claude-haiku-4-5' }],
+  },
+}
 
 // Minimal built-in definition — formatAgentLine reads agentType, whenToUse,
 // model, roleConfiguredModel, tools and disallowedTools only.
@@ -28,13 +39,10 @@ describe('formatAgentLine effective model display', () => {
 
   describe('with defaultSubagentModel set', () => {
     beforeEach(() =>
-      initProviderRegistry(
-        {},
-        {
-          defaultModel: 'anthropic:claude-sonnet-4-5',
-          defaultSubagentModel: 'anthropic:claude-haiku-4-5',
-        },
-      ),
+      initProviderRegistry(providers, {
+        defaultModel: 'anthropic:claude-sonnet-4-5',
+        defaultSubagentModel: 'anthropic:claude-haiku-4-5',
+      }),
     )
 
     test('agents-dir frontmatter model is replaced by the override', () => {
@@ -65,7 +73,9 @@ describe('formatAgentLine effective model display', () => {
 
   describe('without defaultSubagentModel', () => {
     beforeEach(() =>
-      initProviderRegistry({}, { defaultModel: 'anthropic:claude-sonnet-4-5' }),
+      initProviderRegistry(providers, {
+        defaultModel: 'anthropic:claude-sonnet-4-5',
+      }),
     )
 
     test('frontmatter model is advertised as-is', () => {

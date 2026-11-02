@@ -109,7 +109,10 @@ export function computePromptCacheSummary(
     const usage = m.message?.usage
     if (!usage) continue
     const atMs = new Date(m.timestamp).getTime()
-    lastModel = m.message.model ?? lastModel
+    // Prefer the qualified mint tag: the envelope's wire `model` string is
+    // what the backend echoed (bare by nature) and cannot resolve through
+    // the registry under the qualified-only contract.
+    lastModel = m.modelId ?? m.message.model ?? lastModel
 
     const input = usage.input_tokens ?? 0
     const read = usage.cache_read_input_tokens ?? 0

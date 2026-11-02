@@ -20,7 +20,7 @@ import {
   applyBedrockRegionPrefix,
   getBedrockRegionPrefix,
 } from './bedrockInferenceProfiles.js'
-import { parseModelString, stripContextSuffix } from './parseModelString.js'
+import { stripContextSuffix } from './parseModelString.js'
 
 // ── Capability defaults by provider type ──────────────────────────────
 
@@ -234,13 +234,8 @@ let _instance: ProviderRegistry | null = null
 
 export class ProviderRegistry {
   private readonly providers: Map<string, ProviderConfig>
-  /** Qualified "providerName:modelId" → entry */
+  /** Qualified "providerName:modelId" (lowercased) → entry */
   private readonly qualifiedIndex: Map<
-    string,
-    { providerName: string; config: ProviderConfig; model: ProviderModelConfig }
-  >
-  /** canonical model ID → entry (e.g. 'claude-opus-4-6' → provider entry) */
-  private readonly canonicalIdIndex: Map<
     string,
     { providerName: string; config: ProviderConfig; model: ProviderModelConfig }
   >
@@ -269,29 +264,57 @@ export class ProviderRegistry {
   ) {
     this.providers = new Map(Object.entries(providers))
     this.qualifiedIndex = new Map()
-    this.canonicalIdIndex = new Map()
     this.capabilitiesCache = new Map()
     this.providerNames = new Set(
       [...this.providers.keys()].map(n => n.toLowerCase()),
     )
+    this.buildIndex()
+
+    // Model references in settings are part of the qualified-only contract:
+    // fail at startup rather than silently resolving a bare id to whichever
+    // provider registered it first.
+    const requireQualified = (
+      field: string,
+      value: string | undefined,
+    ): void => {
+      if (!value) return
+      const trimmed = value.trim()
+      const colonIdx = trimmed.indexOf(':')
+      const prefix =
+        colonIdx > 0 ? trimmed.slice(0, colonIdx).toLowerCase() : null
+      if (prefix === null || !this.providerNames.has(prefix)) {
+        throw new Error(
+          `modelSettings.json "${field}" must be provider-qualified ("provider:modelId"), got "${value}"` +
+            (colonIdx > 0
+              ? ` — unknown provider "${trimmed.slice(0, colonIdx)}"`
+              : ''),
+        )
+      }
+      const key = `${prefix}:${trimmed.slice(colonIdx + 1).toLowerCase()}`
+      if (!this.qualifiedIndex.has(key)) {
+        throw new Error(
+          `modelSettings.json "${field}" references "${value}", but provider "${prefix}" does not declare that model`,
+        )
+      }
+    }
+    requireQualified('defaultModel', opts?.defaultModel)
+    requireQualified('defaultSubagentModel', opts?.defaultSubagentModel)
+    requireQualified('utilityModel', opts?.utilityModel)
+
     this._defaultModel = opts?.defaultModel
     this._defaultSubagentModel = opts?.defaultSubagentModel
     this._utilityModel = opts?.utilityModel
-    this.buildIndex()
   }
 
   private buildIndex(): void {
     for (const [name, config] of this.providers) {
       const lowerName = name.toLowerCase()
       for (const model of config.models) {
-        const entry = { providerName: name, config, model }
-        // Index by qualified "providerName:modelId"
-        this.qualifiedIndex.set(`${lowerName}:${model.id}`, entry)
-        // Index by canonical model ID (the bare model id string)
-        const canonicalKey = model.id.toLowerCase()
-        if (!this.canonicalIdIndex.has(canonicalKey)) {
-          this.canonicalIdIndex.set(canonicalKey, entry)
-        }
+        this.qualifiedIndex.set(`${lowerName}:${model.id.toLowerCase()}`, {
+          providerName: name,
+          config,
+          model,
+        })
       }
     }
   }
@@ -315,18 +338,24 @@ export class ProviderRegistry {
     return first.value
   }
 
+  /**
+   * Resolve a provider-qualified model string to its provider entry.
+   * STRICT: model strings are always `provider:modelId` — a bare id must
+   * NOT resolve (it would silently pick whichever provider happened to
+   * register the id first), and a qualified string naming a model its
+   * provider doesn't declare must NOT fall through to a different provider
+   * that owns the same bare id. Callers surface the null (user-input paths
+   * throw with suggestions via parseUserSpecifiedModel). Matching is
+   * case-insensitive on both parts.
+   */
   getProviderForModel(qualifiedModel: string): ResolvedProvider | null {
-    const parsed = parseModelString(
-      qualifiedModel,
-      this.providerNames,
-      this.getDefaultProviderName() ?? '',
-    )
-    const key = `${parsed.provider.toLowerCase()}:${parsed.modelId}`
-    const entry =
-      this.qualifiedIndex.get(key) ??
-      // Bare wire IDs (no provider prefix) for non-default providers must still
-      // resolve to their configured provider, not the default one.
-      this.canonicalIdIndex.get(parsed.modelId.toLowerCase())
+    const trimmed = qualifiedModel.trim()
+    const colonIdx = trimmed.indexOf(':')
+    if (colonIdx <= 0) return null // bare: provider-qualified strings only
+    const providerName = trimmed.slice(0, colonIdx).toLowerCase()
+    if (!this.providerNames.has(providerName)) return null // unknown provider
+    const key = `${providerName}:${trimmed.slice(colonIdx + 1).toLowerCase()}`
+    const entry = this.qualifiedIndex.get(key)
     if (!entry) return null
     return {
       providerName: entry.providerName,
@@ -355,20 +384,6 @@ export class ProviderRegistry {
 
   hasProviders(): boolean {
     return this.providers.size > 0
-  }
-
-  /**
-   * Look up a provider entry by canonical model ID (e.g. 'claude-opus-4-6').
-   * Returns the provider entry if found, or null if the canonical ID is not registered.
-   */
-  getModelByCanonicalId(canonicalId: string): ResolvedProvider | null {
-    const entry = this.canonicalIdIndex.get(canonicalId.toLowerCase())
-    if (!entry) return null
-    return {
-      providerName: entry.providerName,
-      config: entry.config,
-      model: entry.model,
-    }
   }
 
   // ── Per-model queries ────────────────────────────────────────────

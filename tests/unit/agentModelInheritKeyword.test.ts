@@ -69,11 +69,24 @@ describe('getAgentModel with inherit keywords', () => {
 describe('getAgentModel role-configured precedence', () => {
   // defaultSubagentModel installed as the blanket override. parseUserSpecifiedModel
   // resolves the same string both inside getAgentModel and here, so comparing
-  // against its output sidesteps normalization differences.
+  // against its output sidesteps normalization differences. The override model
+  // must be declared by a registered provider — settings model references
+  // are validated at registry construction.
   const override = 'anthropic:claude-haiku-4-5'
   const parent = 'anthropic:claude-sonnet-4-5'
 
-  beforeEach(() => initProviderRegistry({}, { defaultSubagentModel: override }))
+  beforeEach(() =>
+    initProviderRegistry(
+      {
+        anthropic: {
+          type: 'anthropic',
+          auth: { active: 'apiKey', apiKey: { key: 'k' } },
+          models: [{ id: 'claude-haiku-4-5' }],
+        },
+      },
+      { defaultSubagentModel: override },
+    ),
+  )
   afterEach(() => resetProviderRegistry())
 
   test('blanket override still wins without the role flag', () => {

@@ -143,23 +143,37 @@ export function getDefaultMainLoopModel(): ModelName {
  */
 export function parseUserSpecifiedModel(modelInput: string): ModelName {
   const registry = getProviderRegistry()
-  const resolved = registry.getProviderForModel(modelInput)
+  const trimmed = modelInput.trim()
+  const colonIdx = trimmed.indexOf(':')
+  const prefix = colonIdx > 0 ? trimmed.slice(0, colonIdx).toLowerCase() : null
+
+  if (prefix === null || !registry.getProviderNames().has(prefix)) {
+    // Bare or unknown-provider strings never resolve: a bare id would
+    // silently pick whichever provider registered that model id first,
+    // and an unknown prefix names nothing. Suggest the qualified forms
+    // that actually exist.
+    const owners = registry
+      .getAllModels()
+      .filter(({ model }) => model.id.toLowerCase() === trimmed.toLowerCase())
+      .map(({ providerName, model }) => `${providerName}:${model.id}`)
+    throw new Error(
+      (colonIdx > 0
+        ? `Unknown provider "${trimmed.slice(0, colonIdx)}". `
+        : '') +
+        `Model strings must be provider-qualified ("provider:modelId"), got "${modelInput}".` +
+        (owners.length
+          ? ` Did you mean: ${owners.join(', ')}?`
+          : ` No configured provider declares this model id — add it to a provider's "models" list in modelSettings.json.`),
+    )
+  }
+
+  const resolved = registry.getProviderForModel(trimmed)
   if (resolved) {
     return qualifyModel(resolved.providerName, resolved.model.id)
   }
-  const colonIdx = modelInput.indexOf(':')
-  if (colonIdx > 0) {
-    // Keep the given prefix (lowercased) instead of assuming a default
-    // provider; resolveProviderForModel reports the mismatch at request time.
-    return qualifyModel(
-      modelInput.slice(0, colonIdx).toLowerCase(),
-      modelInput.slice(colonIdx + 1),
-    )
-  }
-  throw new Error(
-    `Model "${modelInput}" is not declared by any configured provider. ` +
-      `Use "provider:${modelInput}" or add it to a provider's "models" list in modelSettings.json.`,
-  )
+  // Known provider, undeclared model: keep the qualified form; request-time
+  // resolution reports the mismatch (validateModel may also probe).
+  return qualifyModel(prefix, trimmed.slice(colonIdx + 1))
 }
 
 export function normalizeModelStringForAPI(model: string): string {

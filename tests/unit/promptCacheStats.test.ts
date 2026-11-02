@@ -51,6 +51,7 @@ function assistant(
     type: 'assistant',
     uuid: `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`,
     timestamp: new Date(atMs).toISOString(),
+    modelId: 'p:test-model',
     message: {
       id: `msg-${seq}`,
       type: 'message',

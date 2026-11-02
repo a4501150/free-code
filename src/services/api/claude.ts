@@ -980,6 +980,16 @@ async function* queryModel(
       ? ((await getInferenceProfileBackingModel(options.model)) ??
         options.model)
       : options.model
+  // Mint tag stamped on every assistant message this query produces (read by
+  // stripForeignReasoningBlocks). Resolved to the qualified provider:model
+  // form so a bare `--model claude-opus-5-5` doesn't depend on which entry
+  // the registry's canonical-id index favors at strip time — two entries can
+  // share a model id, and only the qualified form names the minting entry
+  // stably across registry config changes.
+  const resolvedMint = registry.getProviderForModel(options.model)
+  const mintingModelId = resolvedMint
+    ? `${resolvedMint.providerName}:${resolvedMint.model.id}`
+    : options.model
   queryCheckpoint('query_tool_schema_build_start')
   const isAgenticQuery = isAgenticQuerySource(options.querySource)
 
@@ -1653,7 +1663,7 @@ async function* queryModel(
                 type: 'assistant',
                 uuid: randomUUID(),
                 timestamp: new Date().toISOString(),
-                modelId: options.model,
+                modelId: mintingModelId,
               }
               newMessages.push(m)
               if (part.providerConfirmed) {
@@ -2003,7 +2013,7 @@ async function* queryModel(
           type: 'assistant',
           uuid: randomUUID(),
           timestamp: new Date().toISOString(),
-          modelId: options.model,
+          modelId: mintingModelId,
         }
         newMessages.push(m)
         fallbackMessage = m

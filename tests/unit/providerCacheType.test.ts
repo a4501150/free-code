@@ -32,7 +32,7 @@ function cacheTypeFor(
     } as ProviderConfig,
   }
   initProviderRegistry(providers)
-  return getProviderRegistry().getProviderCacheType('test-model')
+  return getProviderRegistry().getProviderCacheType('p:test-model')
 }
 
 describe('default cache type by provider', () => {
