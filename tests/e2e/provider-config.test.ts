@@ -62,7 +62,7 @@ describe('Provider Config E2E', () => {
             },
           },
         },
-        additionalArgs: ['--model', 'test-model'],
+        additionalArgs: ['--model', 'test-openai:test-model'],
       })
 
       openaiServer.reset([{ kind: 'text', text: 'Hello from OpenAI!' }])
@@ -237,7 +237,7 @@ describe('Provider Config E2E', () => {
             },
           },
         },
-        additionalArgs: ['--model', 'test-model'],
+        additionalArgs: ['--model', 'test-openai:test-model'],
       })
 
       await session.sendLine('Test caching')

@@ -1047,12 +1047,13 @@ async function* queryModel(
   // OpenAI Responses needs encrypted reasoning with a reasoningId, Bedrock and
   // Gemini need their own signatures, and OpenAI-compatible endpoints need to
   // have told us which reasoning field they use. The target model id adds a
-  // second, finer check: reasoning minted under a DIFFERENT CREDENTIAL is
+  // second, finer check: reasoning minted by a DIFFERENT PROVIDER ENTRY is
   // dropped even when the provider type matches, because continuation data
-  // is bound to the credential that minted it — two provider entries can
-  // share the 'anthropic' wire type, and replaying one's signatures to the
-  // other 400s with `Invalid signature in thinking block`. Cross-model replay
-  // under the same credential stays valid and is kept.
+  // is bound to the backend the entry routes to — two entries can share the
+  // 'anthropic' wire type AND a gateway token (one proxy fronting GLM and
+  // real Claude), and replaying one's signatures to the other 400s with
+  // `Invalid signature in thinking block`. Cross-model replay within an
+  // entry stays valid and is kept.
   messagesForAPI = stripForeignReasoningBlocks(
     messagesForAPI,
     registry.getProviderType(options.model),

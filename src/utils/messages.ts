@@ -4942,13 +4942,20 @@ function nonEmpty(value: string | undefined): boolean {
 }
 
 /**
- * Whether a message's reasoning blocks were minted under a different
- * credential than the one this request uses (see stripForeignReasoningBlocks,
+ * Whether a message's reasoning blocks were minted by a different provider
+ * ENTRY than the one this request targets (see stripForeignReasoningBlocks,
  * layer 2).
  *
+ * The entry — not the credential — is the unit of a backend: one gateway can
+ * authenticate every route with a shared token while fronting different
+ * upstreams (a single proxy here serves GLM and real Claude under one
+ * token), so credential equality proves nothing about signature validity.
+ * The model id is irrelevant within an entry (verified live: opus-signed
+ * thinking is accepted by sonnet).
+ *
  * The wrapper `modelId` tag is stamped at stream-in and is authoritative: a
- * tag resolving to nothing names a model no longer configured — its backend's
- * credential can't be verified, so it is foreign by definition.
+ * tag resolving to nothing names a model no longer configured — its entry's
+ * backend can't be verified, so it is foreign by definition.
  *
  * Messages persisted before tagging carry only the envelope's wire `model`
  * string — the id the BACKEND echoed, which is bare by nature (the provider
@@ -4973,10 +4980,7 @@ function isForeignMint(
   const tagged = typeof msg.modelId === 'string' ? msg.modelId : undefined
   if (tagged) {
     const mintBackend = resolveBackend(tagged)
-    // Credential comparison only — the model id is irrelevant (cross-model
-    // replay under one key is valid), and two entries sharing a credential
-    // front the same account, so their continuation data is interchangeable.
-    return mintBackend ? mintBackend.credential !== target.credential : true
+    return mintBackend ? mintBackend.providerName !== target.providerName : true
   }
   const mint = msg.message.model
   if (!mint) return false
@@ -4995,17 +4999,19 @@ function isForeignMint(
  *    `preservesReasoningAcrossTurns` capability and is the kill switch for
  *    endpoints that reject unknown assistant-message fields.
  *
- * 2. Backend identity: reasoning minted under a DIFFERENT CREDENTIAL is
+ * 2. Backend identity: reasoning minted by a DIFFERENT PROVIDER ENTRY is
  *    dropped even when the provider type matches, because continuation data
- *    is bound to the credential that minted it, not to the model — two
- *    provider entries can both be 'anthropic' (an Anthropic-wire proxy and
- *    real Claude), and replaying one's thinking blocks to the other 400s
- *    with `Invalid signature in thinking block`. Cross-model replay under
- *    the same credential is valid (verified live: opus-signed thinking is
- *    accepted by sonnet through the same key), so the model id is NOT part
- *    of the comparison. Dropping is safe when it does fire: backends accept
- *    history without previous-turn reasoning, and the live tool loop never
- *    spans a backend switch (a switch lands between query calls).
+ *    is bound to the backend the entry routes to — not to the model, and
+ *    not to the credential (one gateway can front GLM and real Claude under
+ *    a single shared token). Two entries can both be 'anthropic' (an
+ *    Anthropic-wire proxy and real Claude), and replaying one's thinking
+ *    blocks to the other 400s with `Invalid signature in thinking block`.
+ *    Cross-model replay within an entry is valid (verified live:
+ *    opus-signed thinking is accepted by sonnet), so the model id is NOT
+ *    part of the comparison. Dropping is safe when it does fire: backends
+ *    accept history without previous-turn reasoning, and the live tool
+ *    loop never spans a backend switch (a switch lands between query
+ *    calls).
  *
  *    Identity comes from the wrapper `modelId` tag (authoritative) or, for
  *    messages persisted before tagging, the envelope's wire `model` string
@@ -5014,7 +5020,7 @@ function isForeignMint(
  */
 export type ModelBackendResolver = (
   model: string,
-) => { providerName: string; modelId: string; credential: string } | null
+) => { providerName: string; modelId: string } | null
 
 const defaultResolveModelBackend: ModelBackendResolver = model =>
   getProviderRegistry().resolveModelBackend(model)

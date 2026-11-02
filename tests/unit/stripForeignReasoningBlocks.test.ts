@@ -236,44 +236,25 @@ describe('stripForeignReasoningBlocks model identity', () => {
     anthropic: { signature: 'sig', blockKind: 'thinking' },
   })
 
-  // Mirrors ProviderRegistry.resolveModelBackend, which is strict like
-  // getProviderForModel: only qualified provider:model strings resolve (to
-  // the entry's backend identity, credential = serialization of its auth
-  // config); bare strings return null.
-  const CRED_TASKFORCE = JSON.stringify({ active: 'bearer', token: 't1' })
-  const CRED_ANTHROPIC = JSON.stringify({ active: 'bearer', token: 't2' })
-  const CRED_ALT = JSON.stringify({ active: 'bearer', token: 't3' })
+  // Mirrors ProviderRegistry.resolveModelBackend: only qualified
+  // provider:model strings resolve to the entry's identity; bare strings
+  // return null.
   const resolveBackend: ModelBackendResolver = model => {
-    const table: Record<
-      string,
-      { providerName: string; modelId: string; credential: string }
-    > = {
-      'taskforce:glm-5-3': {
-        providerName: 'taskforce',
-        modelId: 'glm-5-3',
-        credential: CRED_TASKFORCE,
-      },
+    const table: Record<string, { providerName: string; modelId: string }> = {
+      'taskforce:glm-5-3': { providerName: 'taskforce', modelId: 'glm-5-3' },
       'anthropic:claude-opus-5-5': {
         providerName: 'anthropic',
         modelId: 'claude-opus-5-5',
-        credential: CRED_ANTHROPIC,
       },
       'anthropic:claude-sonnet-5-5': {
         providerName: 'anthropic',
         modelId: 'claude-sonnet-5-5',
-        credential: CRED_ANTHROPIC,
       },
-      // A second entry fronting the same account (same credential).
+      // A second entry fronting the same account — same model id, same
+      // credential, but a different ROUTE.
       'anthropic-eu:claude-opus-5-5': {
         providerName: 'anthropic-eu',
         modelId: 'claude-opus-5-5',
-        credential: CRED_ANTHROPIC,
-      },
-      // A same-model entry under a different key.
-      'anthropic-alt:claude-opus-5-5': {
-        providerName: 'anthropic-alt',
-        modelId: 'claude-opus-5-5',
-        credential: CRED_ALT,
       },
     }
     return table[model.toLowerCase()] ?? null
@@ -301,23 +282,15 @@ describe('stripForeignReasoningBlocks model identity', () => {
     ).map(b => b.type)
   }
 
-  test('drops reasoning minted under a different credential (the GLM/Claude 400)', () => {
-    // taskforce and anthropic both speak the 'anthropic' wire type; the
-    // proxy-minted signature is invalid at real Claude, so the type-level
-    // predicate alone kept poison. Credential comparison drops it.
+  test('drops reasoning minted by a different provider entry (the GLM/Claude 400)', () => {
+    // taskforce and anthropic both speak the 'anthropic' wire type AND share
+    // one gateway token; the proxy-minted signature is invalid at real
+    // Claude, so neither the type-level predicate nor the credential can
+    // catch it. Entry comparison drops it.
     expect(
       keptModel(
         minted('zai-org/GLM-5.3', 'taskforce:glm-5-3'),
         'anthropic:claude-opus-5-5',
-      ),
-    ).toEqual(['tool_use'])
-  })
-
-  test('drops reasoning across entries with different credentials, same model id', () => {
-    expect(
-      keptModel(
-        minted('claude-opus-5-5', 'anthropic:claude-opus-5-5'),
-        'anthropic-alt:claude-opus-5-5',
       ),
     ).toEqual(['tool_use'])
   })
@@ -331,7 +304,7 @@ describe('stripForeignReasoningBlocks model identity', () => {
     ).toEqual(['reasoning', 'tool_use'])
   })
 
-  test('keeps cross-model reasoning under the same credential (verified live: opus-signed thinking accepted by sonnet)', () => {
+  test('keeps cross-model reasoning within one entry (verified live: opus-signed thinking accepted by sonnet)', () => {
     expect(
       keptModel(
         minted('claude-opus-5-5', 'anthropic:claude-opus-5-5'),
@@ -340,13 +313,13 @@ describe('stripForeignReasoningBlocks model identity', () => {
     ).toEqual(['reasoning', 'tool_use'])
   })
 
-  test('keeps reasoning across entries sharing a credential', () => {
+  test('drops reasoning across entries sharing a credential — one gateway token can front different upstreams', () => {
     expect(
       keptModel(
         minted('claude-opus-5-5', 'anthropic:claude-opus-5-5'),
         'anthropic-eu:claude-opus-5-5',
       ),
-    ).toEqual(['reasoning', 'tool_use'])
+    ).toEqual(['tool_use'])
   })
 
   test('untagged legacy envelopes compare by string equality, never registry resolution', () => {

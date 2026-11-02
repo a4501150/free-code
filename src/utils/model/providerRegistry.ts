@@ -424,26 +424,24 @@ export class ProviderRegistry {
   /**
    * Resolve a model string — qualified ('taskforce:glm-5-3') or bare
    * ('claude-opus-5-5', as backends echo in message envelopes) — to the
-   * minting BACKEND identity: its provider entry and a stable serialization
-   * of that entry's auth config. Two entries can share a wire type (an
-   * Anthropic-wire proxy and real Claude are both 'anthropic'), so provider
-   * type alone can't tell minted-here from minted-elsewhere. The credential
-   * is what matters for replay: continuation data (thinking signatures,
-   * reasoning ids) is bound to the credential that minted it — NOT to the
-   * model (verified live: opus-signed thinking is accepted by sonnet under
-   * the same key). Returns null for strings no configured model claims.
+   * minting BACKEND identity: the provider ENTRY that serves it. The entry,
+   * not the credential, is the unit of "a backend": a single gateway can
+   * authenticate every route with one shared token while fronting different
+   * upstreams (one proxy here serves GLM and real Claude under the same
+   * token), so credential equality proves nothing about signature validity.
+   * The model id is irrelevant within an entry (verified live: opus-signed
+   * thinking is accepted by sonnet). Returns null for strings no configured
+   * model claims.
    */
   resolveModelBackend(model: string): {
     providerName: string
     modelId: string
-    credential: string
   } | null {
     const entry = this.getProviderForModel(model)
     if (!entry) return null
     return {
       providerName: entry.providerName.toLowerCase(),
       modelId: entry.model.id.toLowerCase(),
-      credential: JSON.stringify(entry.config.auth ?? null),
     }
   }
 

@@ -101,7 +101,7 @@ describe('Codex reasoning continuity E2E', () => {
           },
         },
       },
-      additionalArgs: ['--model', 'gpt-5-codex'],
+      additionalArgs: ['--model', 'test-codex:gpt-5-codex'],
     })
 
     await session.sendLine('First question please')
