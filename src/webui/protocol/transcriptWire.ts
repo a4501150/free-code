@@ -16,7 +16,12 @@ import type {
   DomainContentBlock,
   DomainUserContentBlock,
 } from '../../types/domain.js'
-import { extractTag, isTaskNotificationText } from '../../utils/messages.js'
+import stripAnsi from 'strip-ansi'
+import {
+  extractTag,
+  isTaskNotificationText,
+  NO_RESPONSE_REQUESTED,
+} from '../../utils/messages.js'
 import {
   MONITOR_OUTPUT_TAG,
   STATUS_TAG,
@@ -185,7 +190,10 @@ function stripSyntheticTags(text: string): string {
       '$1',
     )
   }
-  return result.trim()
+  // Local commands style their output with chalk for the terminal (e.g. the
+  // /model breadcrumb bolds the model name); the escapes would reach the
+  // browser as stray control characters, so strip them at this boundary.
+  return stripAnsi(result).trim()
 }
 
 /**
@@ -428,6 +436,9 @@ function assistantBlockItems(
     const id = `${message.uuid}:${index}`
     switch (block.type) {
       case 'text':
+        // A sentinel the API layer or conversation recovery injects so the
+        // transcript stays valid; the TUI hides it, so the browser must too.
+        if (block.text === NO_RESPONSE_REQUESTED) break
         items.push(
           finish({ ...base, id, kind: 'assistant', text: clip(block.text) }),
         )

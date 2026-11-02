@@ -36,6 +36,7 @@ import { BACKGROUND_BASH_SUMMARY_PREFIX } from '../../src/tasks/LocalShellTask/n
 import { escapeXml } from '../../src/utils/xml.js'
 import { applyEvent, emptyView } from '../../src/session/viewStore.js'
 import { renderTaskNotificationBlock } from '../../src/utils/task/notification.js'
+import { NO_RESPONSE_REQUESTED } from '../../src/utils/messages.js'
 import {
   toWireSnapshot,
   type WebTranscriptItem,
@@ -1338,5 +1339,54 @@ describe('local command rows', () => {
       localCommandMessage('<local-command-stdout></local-command-stdout>'),
     ])
     expect(snapshot.items).toEqual([])
+  })
+
+  test('strips chalk escapes from command output, e.g. /model bolding', () => {
+    // /model styles the model name with chalk.bold for the terminal, and that
+    // text is persisted verbatim in a local-command-stdout user message; the
+    // browser would otherwise render the escapes as stray control characters.
+    const snapshot = toWireSnapshot([
+      {
+        type: 'user',
+        uuid: randomUUID() as UUID,
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'user',
+          content:
+            '<local-command-stdout>Set model to \u001b[1mGLM-5.3\u001b[22m</local-command-stdout>',
+        },
+      } as unknown as Message,
+    ])
+    const item = snapshot.items.find(candidate => candidate.kind === 'user')
+    expect(item).toBeDefined()
+    expect(item!.text).toBe('Set model to GLM-5.3')
+  })
+})
+
+describe('synthetic assistant sentinels', () => {
+  function sentinelMessage(text: string): Message {
+    return {
+      type: 'assistant',
+      uuid: randomUUID() as UUID,
+      timestamp: new Date().toISOString(),
+      message: {
+        role: 'assistant',
+        model: '<synthetic>',
+        content: [{ type: 'text', text }],
+      },
+    } as unknown as Message
+  }
+
+  test('a "No response requested." sentinel renders no item', () => {
+    // Injected by the rate-limit fallback and conversation recovery so the
+    // transcript stays API-valid; the TUI hides it and so must the browser.
+    const snapshot = toWireSnapshot([sentinelMessage(NO_RESPONSE_REQUESTED)])
+    expect(snapshot.items).toEqual([])
+  })
+
+  test('a real assistant text still renders', () => {
+    const snapshot = toWireSnapshot([sentinelMessage('here is the answer')])
+    expect(snapshot.items).toHaveLength(1)
+    expect(snapshot.items[0]!.text).toBe('here is the answer')
   })
 })
