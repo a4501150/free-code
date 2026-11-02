@@ -1036,11 +1036,18 @@ async function* queryModel(
   // providers (including Vertex and Foundry) need signed thinking blocks,
   // OpenAI Responses needs encrypted reasoning with a reasoningId, Bedrock and
   // Gemini need their own signatures, and OpenAI-compatible endpoints need to
-  // have told us which reasoning field they use.
+  // have told us which reasoning field they use. The target model id adds a
+  // second, finer check: reasoning minted under a DIFFERENT CREDENTIAL is
+  // dropped even when the provider type matches, because continuation data
+  // is bound to the credential that minted it — two provider entries can
+  // share the 'anthropic' wire type, and replaying one's signatures to the
+  // other 400s with `Invalid signature in thinking block`. Cross-model replay
+  // under the same credential stays valid and is kept.
   messagesForAPI = stripForeignReasoningBlocks(
     messagesForAPI,
     registry.getProviderType(options.model),
     registry.getCapability(options.model, 'preservesReasoningAcrossTurns'),
+    options.model,
   )
 
   // Repair tool_use/tool_result pairing mismatches that can occur when resuming
@@ -1646,6 +1653,7 @@ async function* queryModel(
                 type: 'assistant',
                 uuid: randomUUID(),
                 timestamp: new Date().toISOString(),
+                modelId: options.model,
               }
               newMessages.push(m)
               if (part.providerConfirmed) {
@@ -1995,6 +2003,7 @@ async function* queryModel(
           type: 'assistant',
           uuid: randomUUID(),
           timestamp: new Date().toISOString(),
+          modelId: options.model,
         }
         newMessages.push(m)
         fallbackMessage = m

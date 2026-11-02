@@ -2,7 +2,10 @@ import { randomUUID } from 'crypto'
 import { describe, expect, test } from 'bun:test'
 import type { AssistantMessage } from '../../src/types/message.js'
 import type { ProviderState } from '../../src/types/domain.js'
-import { stripForeignReasoningBlocks } from '../../src/utils/messages.js'
+import {
+  stripForeignReasoningBlocks,
+  type ModelBackendResolver,
+} from '../../src/utils/messages.js'
 
 function assistant(content: unknown[]): AssistantMessage {
   return {
@@ -225,5 +228,170 @@ describe('stripForeignReasoningBlocks', () => {
       'tool_use',
       'text',
     ])
+  })
+})
+
+describe('stripForeignReasoningBlocks model identity', () => {
+  const signed = reasoning({
+    anthropic: { signature: 'sig', blockKind: 'thinking' },
+  })
+
+  // Mirrors ProviderRegistry.resolveModelBackend: qualified and bare ids
+  // resolve to the entry's backend identity (credential = serialization of
+  // its auth config); unknown strings resolve to null.
+  const CRED_TASKFORCE = JSON.stringify({ active: 'bearer', token: 't1' })
+  const CRED_ANTHROPIC = JSON.stringify({ active: 'bearer', token: 't2' })
+  const CRED_ALT = JSON.stringify({ active: 'bearer', token: 't3' })
+  const resolveBackend: ModelBackendResolver = model => {
+    const table: Record<
+      string,
+      { providerName: string; modelId: string; credential: string }
+    > = {
+      'taskforce:glm-5-3': {
+        providerName: 'taskforce',
+        modelId: 'glm-5-3',
+        credential: CRED_TASKFORCE,
+      },
+      'anthropic:claude-opus-5-5': {
+        providerName: 'anthropic',
+        modelId: 'claude-opus-5-5',
+        credential: CRED_ANTHROPIC,
+      },
+      'anthropic:claude-sonnet-5-5': {
+        providerName: 'anthropic',
+        modelId: 'claude-sonnet-5-5',
+        credential: CRED_ANTHROPIC,
+      },
+      // A second entry fronting the same account (same credential).
+      'anthropic-eu:claude-opus-5-5': {
+        providerName: 'anthropic-eu',
+        modelId: 'claude-opus-5-5',
+        credential: CRED_ANTHROPIC,
+      },
+      // A same-model entry under a different key.
+      'anthropic-alt:claude-opus-5-5': {
+        providerName: 'anthropic-alt',
+        modelId: 'claude-opus-5-5',
+        credential: CRED_ALT,
+      },
+      'claude-opus-5-5': {
+        providerName: 'anthropic',
+        modelId: 'claude-opus-5-5',
+        credential: CRED_ANTHROPIC,
+      },
+    }
+    return table[model.toLowerCase()] ?? null
+  }
+
+  function minted(model: string, modelId?: string): AssistantMessage {
+    const msg = assistant([signed, toolUse])
+    msg.message.model = model
+    if (modelId !== undefined) msg.modelId = modelId
+    return msg
+  }
+
+  function keptModel(msg: AssistantMessage, targetModelId: string): string[] {
+    const [out] = stripForeignReasoningBlocks(
+      [msg],
+      'anthropic',
+      true,
+      targetModelId,
+      resolveBackend,
+    )
+    return (
+      (out as AssistantMessage).message.content as {
+        type: string
+      }[]
+    ).map(b => b.type)
+  }
+
+  test('drops reasoning minted under a different credential (the GLM/Claude 400)', () => {
+    // taskforce and anthropic both speak the 'anthropic' wire type; the
+    // proxy-minted signature is invalid at real Claude, so the type-level
+    // predicate alone kept poison. Credential comparison drops it.
+    expect(
+      keptModel(
+        minted('zai-org/GLM-5.3', 'taskforce:glm-5-3'),
+        'anthropic:claude-opus-5-5',
+      ),
+    ).toEqual(['tool_use'])
+  })
+
+  test('drops reasoning across entries with different credentials, same model id', () => {
+    expect(
+      keptModel(
+        minted('claude-opus-5-5', 'anthropic:claude-opus-5-5'),
+        'anthropic-alt:claude-opus-5-5',
+      ),
+    ).toEqual(['tool_use'])
+  })
+
+  test('keeps reasoning minted by the target backend', () => {
+    expect(
+      keptModel(
+        minted('claude-opus-5-5', 'anthropic:claude-opus-5-5'),
+        'anthropic:claude-opus-5-5',
+      ),
+    ).toEqual(['reasoning', 'tool_use'])
+  })
+
+  test('keeps cross-model reasoning under the same credential (verified live: opus-signed thinking accepted by sonnet)', () => {
+    expect(
+      keptModel(
+        minted('claude-opus-5-5', 'anthropic:claude-opus-5-5'),
+        'anthropic:claude-sonnet-5-5',
+      ),
+    ).toEqual(['reasoning', 'tool_use'])
+  })
+
+  test('keeps reasoning across entries sharing a credential', () => {
+    expect(
+      keptModel(
+        minted('claude-opus-5-5', 'anthropic:claude-opus-5-5'),
+        'anthropic-eu:claude-opus-5-5',
+      ),
+    ).toEqual(['reasoning', 'tool_use'])
+  })
+
+  test('untagged legacy envelopes fall back to the wire model string', () => {
+    // Resolves into the target's entry (same credential) → keep — a resumed
+    // session switching opus→sonnet keeps working as it did pre-tag.
+    expect(
+      keptModel(minted('claude-opus-5-5'), 'anthropic:claude-sonnet-5-5'),
+    ).toEqual(['reasoning', 'tool_use'])
+    // Unresolvable proxy string vs a different backend → drop (the original
+    // bug, on a transcript persisted before tagging).
+    expect(
+      keptModel(minted('zai-org/GLM-5.3'), 'anthropic:claude-opus-5-5'),
+    ).toEqual(['tool_use'])
+    // Unresolvable proxy string vs its own configured target → drop too: the
+    // proxy accepts history without previous-turn reasoning (verified
+    // against the live backend), and keeping it poisons same-type switches.
+    expect(keptModel(minted('zai-org/GLM-5.3'), 'taskforce:glm-5-3')).toEqual([
+      'tool_use',
+    ])
+  })
+
+  test('a tag naming no configured model is foreign by definition', () => {
+    expect(
+      keptModel(
+        minted('whatever', 'old-provider:gone'),
+        'anthropic:claude-opus-5-5',
+      ),
+    ).toEqual(['tool_use'])
+  })
+
+  test('an unresolvable target model disables the identity check', () => {
+    expect(
+      keptModel(
+        minted('zai-org/GLM-5.3', 'taskforce:glm-5-3'),
+        'unknown:model',
+      ),
+    ).toEqual(['reasoning', 'tool_use'])
+  })
+
+  test('without a target model id the pass is a no-op (same array identity)', () => {
+    const messages = [minted('zai-org/GLM-5.3', 'taskforce:glm-5-3')]
+    expect(stripForeignReasoningBlocks(messages, 'anthropic')).toBe(messages)
   })
 })

@@ -109,6 +109,16 @@ export type AssistantMessage = {
   isSidechain?: boolean
   agentId?: string
   caller?: string
+  /**
+   * Internal qualified model id (e.g. 'taskforce:glm-5-3') that minted this
+   * message — stamped at stream-in and persisted with the wrapper. A proxy
+   * can echo any wire `model` string (one GLM route reports
+   * 'zai-org/GLM-5.3' for configured id 'glm-5-3'), so the envelope's model
+   * alone can't identify the minter. Read by stripForeignReasoningBlocks to
+   * drop reasoning blocks a different backend would reject. Absent on
+   * messages persisted before this field existed.
+   */
+  modelId?: string
   [extraField: string]: unknown
 }
 

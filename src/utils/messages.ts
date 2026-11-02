@@ -11,6 +11,7 @@ import { type CatalogAnnouncementServer } from '../utils/attachments.js'
 import { RUN_CODE_TOOL_NAME } from '../services/toolCatalog/exposure.js'
 import { isAutoMemoryEnabled } from '../memdir/paths.js'
 import { getInitialSettings } from './settings/settings.js'
+import { getProviderRegistry } from './model/providerRegistry.js'
 import {
   getImageTooLargeErrorMessage,
   getPdfInvalidErrorMessage,
@@ -4941,17 +4942,85 @@ function nonEmpty(value: string | undefined): boolean {
 }
 
 /**
+ * Whether a message's reasoning blocks were minted under a different
+ * credential than the one this request uses (see stripForeignReasoningBlocks,
+ * layer 2).
+ *
+ * The wrapper `modelId` tag is stamped at stream-in and is authoritative: a
+ * tag resolving to nothing names a model no longer configured — its backend's
+ * credential can't be verified, so it is foreign by definition. Messages
+ * persisted before tagging fall back to the envelope's wire `model` string,
+ * which proxies may report in any shape ('zai-org/GLM-5.3' for configured id
+ * 'glm-5-3'). An unresolvable wire string can't have come from the target
+ * backend — a backend echoes a model id it was asked for, and the ask is the
+ * configured id — so it is foreign unless it IS the target's model id.
+ * Backends that would reject history for missing previous-turn reasoning
+ * don't exist in practice (verified against the Anthropic-wire proxy this
+ * rule was built for; the API contract allows omitting past-turn thinking).
+ */
+function isForeignMint(
+  msg: AssistantMessage,
+  targetModelId: string | null | undefined,
+  resolveBackend: ModelBackendResolver,
+): boolean {
+  if (!targetModelId) return false
+  const target = resolveBackend(targetModelId)
+  if (!target) return false
+  const tagged = typeof msg.modelId === 'string' ? msg.modelId : undefined
+  const mint = tagged ?? msg.message.model
+  if (!mint) return false
+  const mintBackend = resolveBackend(mint)
+  if (mintBackend) {
+    // Credential comparison only — the model id is irrelevant (cross-model
+    // replay under one key is valid), and two entries sharing a credential
+    // front the same account, so their continuation data is interchangeable.
+    return mintBackend.credential !== target.credential
+  }
+  if (tagged) return true
+  return mint.toLowerCase() !== target.modelId
+}
+
+/**
  * Strip reasoning blocks the target provider can't replay.
  *
- * Vertex and Foundry share Anthropic's wire format and its signed thinking
- * blocks, so they use the same predicate. `preservesReasoning` comes from the
- * provider's `preservesReasoningAcrossTurns` capability and is the kill switch
- * for endpoints that reject unknown assistant-message fields.
+ * Two layers, in one pass:
+ *
+ * 1. Provider-type: each provider only accepts its own opaque continuation
+ *    data (see REASONING_STATE_PREDICATES). Vertex and Foundry share
+ *    Anthropic's wire format and its signed thinking blocks, so they use the
+ *    same predicate. `preservesReasoning` comes from the provider's
+ *    `preservesReasoningAcrossTurns` capability and is the kill switch for
+ *    endpoints that reject unknown assistant-message fields.
+ *
+ * 2. Backend identity: reasoning minted under a DIFFERENT CREDENTIAL is
+ *    dropped even when the provider type matches, because continuation data
+ *    is bound to the credential that minted it, not to the model — two
+ *    provider entries can both be 'anthropic' (an Anthropic-wire proxy and
+ *    real Claude), and replaying one's thinking blocks to the other 400s
+ *    with `Invalid signature in thinking block`. Cross-model replay under
+ *    the same credential is valid (verified live: opus-signed thinking is
+ *    accepted by sonnet through the same key), so the model id is NOT part
+ *    of the comparison. Dropping is safe when it does fire: backends accept
+ *    history without previous-turn reasoning, and the live tool loop never
+ *    spans a backend switch (a switch lands between query calls).
+ *
+ *    Identity comes from the wrapper `modelId` tag (authoritative) or, for
+ *    messages persisted before tagging, the envelope's wire `model` string
+ *    — see isForeignMint for how unresolvable legacy strings are judged.
  */
+export type ModelBackendResolver = (
+  model: string,
+) => { providerName: string; modelId: string; credential: string } | null
+
+const defaultResolveModelBackend: ModelBackendResolver = model =>
+  getProviderRegistry().resolveModelBackend(model)
+
 export function stripForeignReasoningBlocks(
   messages: (UserMessage | AssistantMessage)[],
   targetProviderType: ProviderType | null,
   preservesReasoning = true,
+  targetModelId?: string | null,
+  resolveModelBackend: ModelBackendResolver = defaultResolveModelBackend,
 ): (UserMessage | AssistantMessage)[] {
   const predicate =
     preservesReasoning && targetProviderType
@@ -4969,6 +5038,7 @@ export function stripForeignReasoningBlocks(
     const content = msg.message.content
     if (!Array.isArray(content)) return msg
 
+    const foreignMint = isForeignMint(msg, targetModelId, resolveModelBackend)
     let blockChanged = false
     const filtered: typeof content = []
     for (const block of content) {
@@ -4977,7 +5047,7 @@ export function stripForeignReasoningBlocks(
         continue
       }
 
-      if (predicate?.(block as DomainReasoningBlock)) {
+      if (!foreignMint && predicate?.(block as DomainReasoningBlock)) {
         filtered.push(block)
       } else {
         blockChanged = true
