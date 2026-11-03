@@ -52,11 +52,47 @@ const inputSchema = (() => {
 })()
 type InputSchema = typeof inputSchema
 
+// Metadata values arrive as model-authored JSON, so a plain recursive
+// structural equality over JSON value shapes is enough.
+function jsonEqual(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((v, i) => jsonEqual(v, b[i]))
+    )
+  }
+  if (
+    typeof a !== 'object' ||
+    typeof b !== 'object' ||
+    a === null ||
+    b === null
+  ) {
+    return false
+  }
+  const aRecord = a as Record<string, unknown>
+  const bRecord = b as Record<string, unknown>
+  const aKeys = Object.keys(aRecord)
+  return (
+    aKeys.length === Object.keys(bRecord).length &&
+    aKeys.every(
+      k => Object.hasOwn(bRecord, k) && jsonEqual(aRecord[k], bRecord[k]),
+    )
+  )
+}
+
 const outputSchema = z.object({
   success: z.boolean(),
   taskId: z.string(),
   updatedFields: z.array(z.string()),
   error: z.string().optional(),
+  // Dependency IDs from addBlocks/addBlockedBy whose target task does not
+  // exist, so no edge was added (blockTask fails closed).
+  failedDependencies: z.array(z.string()).optional(),
   statusChange: z
     .object({
       from: z.string(),
@@ -168,8 +204,10 @@ export const TaskUpdateTool = buildTool({
           merged[key] = value
         }
       }
-      updates.metadata = merged
-      updatedFields.push('metadata')
+      if (!jsonEqual(merged, existingTask.metadata ?? {})) {
+        updates.metadata = merged
+        updatedFields.push('metadata')
+      }
     }
     if (status !== undefined) {
       // Handle deletion - delete the task file and return early
@@ -199,15 +237,25 @@ export const TaskUpdateTool = buildTool({
       await updateTask(taskListId, taskId, updates)
     }
 
+    // blockTask fails closed when either end of the edge names a task that
+    // does not exist (this task always does, so a false return means the
+    // OTHER id is unknown). Collect those instead of reporting success.
+    const failedDependencies: string[] = []
+
     // Add blocks if provided and not already present
     if (addBlocks && addBlocks.length > 0) {
       const newBlocks = addBlocks.filter(
         id => !existingTask.blocks.includes(id),
       )
+      let blocksAdded = 0
       for (const blockId of newBlocks) {
-        await blockTask(taskListId, taskId, blockId)
+        if (await blockTask(taskListId, taskId, blockId)) {
+          blocksAdded++
+        } else {
+          failedDependencies.push(blockId)
+        }
       }
-      if (newBlocks.length > 0) {
+      if (blocksAdded > 0) {
         updatedFields.push('blocks')
       }
     }
@@ -217,10 +265,15 @@ export const TaskUpdateTool = buildTool({
       const newBlockedBy = addBlockedBy.filter(
         id => !existingTask.blockedBy.includes(id),
       )
+      let blockedByAdded = 0
       for (const blockerId of newBlockedBy) {
-        await blockTask(taskListId, blockerId, taskId)
+        if (await blockTask(taskListId, blockerId, taskId)) {
+          blockedByAdded++
+        } else {
+          failedDependencies.push(blockerId)
+        }
       }
-      if (newBlockedBy.length > 0) {
+      if (blockedByAdded > 0) {
         updatedFields.push('blockedBy')
       }
     }
@@ -254,6 +307,8 @@ export const TaskUpdateTool = buildTool({
         success: true,
         taskId,
         updatedFields,
+        failedDependencies:
+          failedDependencies.length > 0 ? failedDependencies : undefined,
         statusChange:
           updates.status !== undefined
             ? { from: existingTask.status, to: updates.status }
@@ -263,8 +318,14 @@ export const TaskUpdateTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(content, toolUseID) {
-    const { success, taskId, updatedFields, error, verificationNudgeNeeded } =
-      content as Output
+    const {
+      success,
+      taskId,
+      updatedFields,
+      error,
+      failedDependencies,
+      verificationNudgeNeeded,
+    } = content as Output
     if (!success) {
       // Return as non-error so it doesn't trigger sibling tool cancellation
       // in StreamingToolExecutor. "Task not found" is a benign condition
@@ -277,6 +338,10 @@ export const TaskUpdateTool = buildTool({
     }
 
     let resultContent = `Updated task #${taskId} ${updatedFields.join(', ')}`
+
+    if (failedDependencies && failedDependencies.length > 0) {
+      resultContent += `\nWARNING: no dependency edge added for unknown task ID(s): ${failedDependencies.join(', ')}`
+    }
 
     if (verificationNudgeNeeded) {
       resultContent += `\n\nNOTE: You just closed out 3+ tasks and none of them was a verification step. Before writing your final summary, spawn the verification agent (subagent_type="${VERIFICATION_AGENT_TYPE}"). You cannot self-assign PARTIAL by listing caveats in your summary — only the verifier issues a verdict.`
