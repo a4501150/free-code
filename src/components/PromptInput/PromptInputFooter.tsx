@@ -3,6 +3,7 @@ import { memo, type ReactNode, useMemo, useRef } from 'react'
 import { isCoordinatorMode } from '../../coordinator/coordinatorModeGate.js'
 import { useSettings } from '../../hooks/useSettings.js'
 import { useTerminalSize } from '../../hooks/useTerminalSize.js'
+import { useTerminalTaskEviction } from '../../hooks/useTerminalTaskEviction.js'
 import { Box, Text } from '../../ink.js'
 import { useAppState } from '../../state/AppState.js'
 import type { ToolPermissionContext } from '../../Tool.js'
@@ -68,6 +69,10 @@ function PromptInputFooter({
   onOpenTasksDialog,
   conversationId,
 }: Props): ReactNode {
+  // Always-on eviction of finished subagent tasks — the coordinator panel's
+  // own tick only mounts in coordinator/agent-panel mode, but this footer
+  // renders in every interactive mode.
+  useTerminalTaskEviction()
   const settings = useSettings()
   const { columns, rows } = useTerminalSize()
   const messagesRef = useRef(messages)

@@ -4,6 +4,7 @@ import type { Message } from '../../src/types/message.js'
 import {
   createCompactBoundaryMessage,
   getMessagesAfterCompactBoundary,
+  pruneMessagesToLastCompactBoundary,
 } from '../../src/utils/messages.js'
 
 function userMessage(content: string): Message {
@@ -41,5 +42,62 @@ describe('getMessagesAfterCompactBoundary', () => {
         afterSecond,
       ]),
     ).toEqual([secondBoundary, afterSecond])
+  })
+})
+
+describe('pruneMessagesToLastCompactBoundary', () => {
+  test('prunes in place, keeping array identity and the boundary onward', () => {
+    const before = userMessage('before')
+    const boundary = createCompactBoundaryMessage('manual', 100)
+    const after = userMessage('after')
+    const messages = [before, boundary, after]
+    const identity = messages
+
+    const pruned = pruneMessagesToLastCompactBoundary(messages)
+
+    expect(pruned).toBe(true)
+    expect(messages).toBe(identity)
+    expect(messages).toEqual([boundary, after])
+  })
+
+  test('returns false and leaves the array alone when no boundary exists', () => {
+    const messages = [userMessage('one'), userMessage('two')]
+    const identity = messages
+
+    const pruned = pruneMessagesToLastCompactBoundary(messages)
+
+    expect(pruned).toBe(false)
+    expect(messages).toBe(identity)
+    expect(messages.length).toBe(2)
+  })
+
+  test('boundary at index 0 is a no-op', () => {
+    const boundary = createCompactBoundaryMessage('manual', 100)
+    const after = userMessage('after')
+    const messages = [boundary, after]
+
+    expect(pruneMessagesToLastCompactBoundary(messages)).toBe(false)
+    expect(messages).toEqual([boundary, after])
+  })
+
+  test('prunes to the LAST boundary when several exist', () => {
+    const firstBoundary = createCompactBoundaryMessage('manual', 100)
+    const between = userMessage('between')
+    const secondBoundary = createCompactBoundaryMessage('auto', 200)
+    const after = userMessage('after')
+    const messages = [
+      userMessage('old'),
+      firstBoundary,
+      between,
+      secondBoundary,
+      after,
+    ]
+
+    expect(pruneMessagesToLastCompactBoundary(messages)).toBe(true)
+    expect(messages).toEqual([secondBoundary, after])
+  })
+
+  test('empty array is a no-op', () => {
+    expect(pruneMessagesToLastCompactBoundary([])).toBe(false)
   })
 })

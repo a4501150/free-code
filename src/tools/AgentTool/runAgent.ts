@@ -81,7 +81,6 @@ import { isMemoryFilePath } from '../../utils/claudemd.js'
 import { parseEffortValue } from '../../utils/effort.js'
 import { AbortError } from '../../utils/errors.js'
 import {
-  cloneFileStateCache,
   createFileStateCacheWithSizeLimit,
   READ_FILE_STATE_CACHE_SIZE,
 } from '../../utils/fileStateCache.js'
@@ -94,6 +93,8 @@ import { clearSessionHooks } from '../../utils/hooks/sessionHooks.js'
 import { executeSubagentStartHooks } from '../../utils/hooks.js'
 import {
   createUserMessage,
+  isCompactBoundaryMessage,
+  pruneMessagesToLastCompactBoundary,
   type StreamingThinking,
 } from '../../utils/messages.js'
 import { getAgentModel } from '../../utils/model/agent.js'
@@ -403,9 +404,13 @@ export async function* runAgent({
     : []
   const initialMessages: Message[] = [...contextMessages, ...promptMessages]
 
+  // createSubagentContext clones the override itself (or the parent's cache
+  // when no override is given) — pass the fork source directly instead of
+  // pre-cloning here, or every fork agent pays for two full cache clones
+  // (≤25 MB each) and only one is ever cleared.
   const agentReadFileState =
     forkContextMessages !== undefined
-      ? cloneFileStateCache(toolUseContext.readFileState)
+      ? toolUseContext.readFileState
       : createFileStateCacheWithSizeLimit(READ_FILE_STATE_CACHE_SIZE)
 
   const [baseUserContext, baseSystemContext] = await Promise.all([
@@ -1100,6 +1105,15 @@ export async function* runAgent({
           // Accumulate for strict-loop re-entry: the next round's query() is
           // seeded with these on top of the initial messages.
           runMessages.push(message)
+          // The subagent's own compaction boundary: everything before it is
+          // dead weight for future seeding (query() re-slices after the
+          // boundary anyway), so drop the pre-compaction lifetime in place
+          // and stop carrying initialMessages — a parked agent would
+          // otherwise hold its entire history across compactions.
+          if (isCompactBoundaryMessage(message)) {
+            pruneMessagesToLastCompactBoundary(runMessages)
+            initialMessages.length = 0
+          }
           yield message
         }
       }

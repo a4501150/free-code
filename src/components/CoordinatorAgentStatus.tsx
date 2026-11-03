@@ -1,9 +1,11 @@
 /**
  * Host adapter for the coordinator agent panel. Renders below the prompt
  * input footer whenever local_agent tasks exist. Owns the store reads
- * (AppState tasks/registry/selection), the 1s eviction tick, and the
+ * (AppState tasks/registry/selection), the 1s re-render tick, and the
  * view-switching callbacks; delegates rendering to the host-agnostic
- * panels/CoordinatorTaskPanel component.
+ * panels/CoordinatorTaskPanel component. Terminal-task eviction lives in
+ * useTerminalTaskEviction, not here — this panel only mounts in
+ * coordinator/agent-panel mode.
  */
 
 import * as React from 'react'
@@ -14,7 +16,6 @@ import {
   isPanelAgentTask,
   type LocalAgentTaskState,
 } from '../tasks/LocalAgentTask/LocalAgentTask.js'
-import { evictTerminalTask } from '../utils/task/framework.js'
 import {
   CoordinatorTaskPanel as CoordinatorTaskPanelView,
   type CoordinatorTaskRow,
@@ -23,11 +24,11 @@ import { isTerminalStatus } from './tasks/taskStatusUtils.js'
 
 /**
  * Which panel-managed tasks currently have a visible row.
- * Presence in AppState.tasks IS visibility — the 1s tick in
- * CoordinatorTaskPanel evicts tasks past their evictAfter deadline. The
- * evictAfter !== 0 check handles immediate dismiss (x key) without making
- * the filter time-dependent. Shared by panel render, useCoordinatorTaskCount,
- * and index resolvers so the math can't drift.
+ * Presence in AppState.tasks IS visibility — useTerminalTaskEviction evicts
+ * tasks past their evictAfter deadline. The evictAfter !== 0 check handles
+ * immediate dismiss (x key) without making the filter time-dependent.
+ * Shared by panel render, useCoordinatorTaskCount, and index resolvers so
+ * the math can't drift.
  */
 export function getVisibleAgentTasks(
   tasks: AppState['tasks'],
@@ -51,31 +52,20 @@ export function CoordinatorTaskPanel(): React.ReactNode {
 
   const hasTasks = Object.values(tasks).some(isPanelAgentTask)
 
-  // 1s tick: re-render for elapsed time + evict tasks past their deadline.
-  // The eviction deletes from prev.tasks, which makes useCoordinatorTaskCount
-  // (and other consumers) see the updated count without their own tick.
-  const tasksRef = React.useRef(tasks)
-  tasksRef.current = tasks
+  // 1s tick: re-render for elapsed-time rows. Terminal-task eviction moved
+  // to useTerminalTaskEviction (mounted unconditionally via
+  // PromptInputFooter — this panel only mounts in coordinator/agent-panel
+  // mode). The eviction deletes from prev.tasks, which makes
+  // useCoordinatorTaskCount (and other consumers) see the updated count;
+  // setTick still covers the re-render.
   const [, setTick] = React.useState(0)
   React.useEffect(() => {
     if (!hasTasks) return
-    const interval = setInterval(
-      (tasksRef, setAppState, setTick) => {
-        const now = Date.now()
-        for (const t of Object.values(tasksRef.current)) {
-          if (isPanelAgentTask(t) && (t.evictAfter ?? Infinity) <= now) {
-            evictTerminalTask(t.id, setAppState)
-          }
-        }
-        setTick((prev: number) => prev + 1)
-      },
-      1000,
-      tasksRef,
-      setAppState,
-      setTick,
-    )
+    const interval = setInterval(() => {
+      setTick((prev: number) => prev + 1)
+    }, 1000)
     return () => clearInterval(interval)
-  }, [hasTasks, setAppState])
+  }, [hasTasks])
 
   const visibleTasks = getVisibleAgentTasks(tasks)
   const nameByAgentId = React.useMemo(() => {

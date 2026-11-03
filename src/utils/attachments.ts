@@ -1017,7 +1017,9 @@ export async function getAttachments(
       getAgentPendingMessageAttachments(toolUseContext),
     ),
     maybe('critical_system_reminder', () =>
-      Promise.resolve(getCriticalSystemReminderAttachment(toolUseContext)),
+      Promise.resolve(
+        getCriticalSystemReminderAttachment(toolUseContext, messages),
+      ),
     ),
   ]
 
@@ -1878,13 +1880,17 @@ function lastAnnouncementText(
     | 'session_guidance'
     | 'assistant_mode'
     | 'coordinator_mode'
-    | 'git_instructions',
+    | 'git_instructions'
+    | 'critical_system_reminder',
 ): string | null {
   let lastText: string | null = null
   for (const msg of messages ?? []) {
     if (msg.type !== 'attachment') continue
     if (msg.attachment.type !== type) continue
-    lastText = (msg.attachment as { text: string }).text
+    lastText =
+      type === 'critical_system_reminder'
+        ? (msg.attachment as { content: string }).content
+        : (msg.attachment as { text: string }).text
   }
   return lastText
 }
@@ -2225,11 +2231,19 @@ export function getMcpInstructionsDeltaAttachment(
   return [{ type: 'mcp_instructions_delta', ...delta }]
 }
 
-function getCriticalSystemReminderAttachment(
+export function getCriticalSystemReminderAttachment(
   toolUseContext: ToolUseContext,
+  messages: Message[] | undefined,
 ): Attachment[] {
   const reminder = toolUseContext.criticalSystemReminder_EXPERIMENTAL
   if (!reminder) {
+    return []
+  }
+  // Stateless-scan dedupe: the reminder is fixed text, and announced
+  // attachments stay in the conversation — re-attach only when the
+  // transcript doesn't already carry the identical content (compaction
+  // drops it and re-arms the announce).
+  if (lastAnnouncementText(messages, 'critical_system_reminder') === reminder) {
     return []
   }
   return [{ type: 'critical_system_reminder', content: reminder }]

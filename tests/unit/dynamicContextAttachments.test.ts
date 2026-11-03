@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { Tool, ToolUseContext } from '../../src/Tool.js'
 import type { Message } from '../../src/types/message.js'
 import {
+  getCriticalSystemReminderAttachment,
   getSessionGuidanceAttachment,
   getUserContextDeltaAttachment,
   scanUserContextAttachments,
@@ -60,6 +61,60 @@ describe('session_guidance attachment', () => {
       ...updated.map(attachMessage),
     ])
     expect(quiet).toEqual([])
+  })
+})
+
+describe('critical_system_reminder attachment', () => {
+  function ctxWithReminder(reminder?: string): ToolUseContext {
+    return {
+      options: { tools: [], mcpClients: [] },
+      criticalSystemReminder_EXPERIMENTAL: reminder,
+    } as ToolUseContext
+  }
+
+  test('announces once and stays quiet while the content is unchanged', () => {
+    const ctx = ctxWithReminder('verify before done')
+
+    const first = getCriticalSystemReminderAttachment(ctx, [])
+    expect(first).toEqual([
+      { type: 'critical_system_reminder', content: 'verify before done' },
+    ])
+
+    const second = getCriticalSystemReminderAttachment(
+      ctx,
+      first.map(attachMessage),
+    )
+    expect(second).toEqual([])
+  })
+
+  test('re-announces when the reminder text changes', () => {
+    const first = getCriticalSystemReminderAttachment(
+      ctxWithReminder('old reminder'),
+      [],
+    )
+    const updated = getCriticalSystemReminderAttachment(
+      ctxWithReminder('new reminder'),
+      first.map(attachMessage),
+    )
+    expect(updated).toEqual([
+      { type: 'critical_system_reminder', content: 'new reminder' },
+    ])
+  })
+
+  test('no reminder set announces nothing', () => {
+    expect(getCriticalSystemReminderAttachment(ctxWithReminder(), [])).toEqual(
+      [],
+    )
+  })
+
+  test('post-compaction transcript (announcement dropped) re-arms', () => {
+    const ctx = ctxWithReminder('verify before done')
+    const announced = getCriticalSystemReminderAttachment(ctx, [])
+    expect(announced.length).toBe(1)
+
+    // Compaction drops the announcement from the carried transcript.
+    const rearmed = getCriticalSystemReminderAttachment(ctx, [])
+    expect(rearmed.length).toBe(1)
   })
 })
 

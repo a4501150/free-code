@@ -105,7 +105,7 @@ export type BaseAgentDefinition = {
   maxTurns?: number // Maximum number of agentic turns before stopping
   filename?: string // Original filename without .md extension (for user/project agents)
   baseDir?: string
-  criticalSystemReminder_EXPERIMENTAL?: string // Short message re-injected at every user turn
+  criticalSystemReminder_EXPERIMENTAL?: string // Short message announced once per window (re-armed after compaction)
   requiredMcpServers?: string[] // MCP server name patterns that must be configured for agent to be available
   background?: boolean // Always run as background task when spawned
   initialPrompt?: string // Prepended to the first user turn (slash commands work)

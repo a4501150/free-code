@@ -62,7 +62,12 @@ import { headlessProfilerCheckpoint } from './utils/headlessProfiler.js'
 import { setIsCompacting } from './utils/streamActivity.js'
 import { registerStructuredOutputEnforcement } from './utils/hooks/hookHelpers.js'
 import { getInMemoryErrors } from './utils/log.js'
-import { countToolCalls, SYNTHETIC_MESSAGES } from './utils/messages.js'
+import {
+  countToolCalls,
+  isCompactBoundaryMessage,
+  pruneMessagesToLastCompactBoundary,
+  SYNTHETIC_MESSAGES,
+} from './utils/messages.js'
 import {
   getMainLoopModel,
   parseUserSpecifiedModel,
@@ -378,6 +383,16 @@ export class QueryEngine {
 
     // Push new messages, including user input and any attachments
     this.mutableMessages.push(...messagesFromUserInput)
+
+    // A manual /compact returns post-compact messages led by a compact
+    // boundary. The stream path splices at the boundary inside the query
+    // loop below, but shouldQuery=false skips that loop — prune here so
+    // repeated manual compacts don't strand every pre-compact generation
+    // in this aliased array (print loop + attach runtime hold it by
+    // reference; splice in place, never reassign).
+    if (messagesFromUserInput.some(isCompactBoundaryMessage)) {
+      pruneMessagesToLastCompactBoundary(this.mutableMessages)
+    }
 
     // Update params to reflect updates from processing /slash commands
     const messages = [...this.mutableMessages]

@@ -4488,6 +4488,22 @@ export function getMessagesAfterCompactBoundary<
   return boundaryIndex === -1 ? messages : messages.slice(boundaryIndex)
 }
 
+/**
+ * Drops everything before the last compact boundary, in place (splice, never
+ * reassign — callers like QueryEngine.mutableMessages are aliased by
+ * reference). Returns whether anything was pruned.
+ */
+export function pruneMessagesToLastCompactBoundary<
+  T extends Message | NormalizedMessage,
+>(messages: T[]): boolean {
+  const boundaryIndex = findLastCompactBoundaryIndex(messages)
+  if (boundaryIndex <= 0) {
+    return false
+  }
+  messages.splice(0, boundaryIndex)
+  return true
+}
+
 export function shouldShowUserMessage(
   message: NormalizedMessage,
   isTranscriptMode: boolean,
