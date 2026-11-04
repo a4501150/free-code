@@ -5,6 +5,7 @@ import type { DOMNode } from './dom.js'
 import type Output from './output.js'
 import { stringWidth } from './stringWidth.js'
 import type { Color } from './styles.js'
+import sliceAnsi from '../utils/sliceAnsi.js'
 
 export type BorderTextOptions = {
   content: string // Pre-rendered string with ANSI color codes
@@ -43,7 +44,18 @@ function embedTextInBorder(
   const borderLength = borderLine.length
 
   if (textLength >= borderLength - 2) {
-    return ['', text.substring(0, borderLength), '']
+    // The text meets or exceeds the interior width: keep the corner
+    // characters and slice ANSI-aware by display cells. A raw substring()
+    // here cuts mid-escape-sequence (swallowing the rest of the row) and
+    // dropping the corners leaves the box without its top/bottom bound.
+    if (borderLength < 2) {
+      return [borderLine, '', '']
+    }
+    return [
+      borderLine.substring(0, 1),
+      borderLength > 2 ? sliceAnsi(text, 0, borderLength - 2) : '',
+      borderLine.substring(borderLine.length - 1),
+    ]
   }
 
   let position: number
