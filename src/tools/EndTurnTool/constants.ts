@@ -56,5 +56,5 @@ export function isEndTurnToolUse(block: {
 
 export const DESCRIPTION = `Signals that your work is complete and ends your run.
 Your most recent text message is delivered to the caller as your final result, so write your report BEFORE or TOGETHER WITH this call — the tool takes no content.
-Any background tasks you still own (backgrounded bash, monitors) are killed when you call this, so stop anything that must keep running, or keep waiting for it instead.
+Ending your run kills every background task you still own (backgrounded bash, monitors). To wait for a running task instead of abandoning it, end your message WITHOUT calling this tool — your run stays open and the task's completion notification is delivered to you. With owned tasks running, a first call is gated with a reminder; a second consecutive call ends the run and abandons them.
 This is the ONLY way to finish your run: ending your message without tool calls does not end it — you will be asked again to either continue working or call this tool.`

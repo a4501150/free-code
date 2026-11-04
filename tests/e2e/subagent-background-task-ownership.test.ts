@@ -7,8 +7,10 @@
  *     read-only hint rows carrying the owner). Asserted on the agent
  *     request's tools[] and the tool result embedded in its next request.
  *  2. Strict end_turn: an implicit end while owning running tasks produces
- *     ONE reminder round (never a silent park), after which EndTurn kills
- *     the tasks and completes the run.
+ *     ONE reminder round (never a silent park); the EndTurn that follows is
+ *     itself gated (first strike — the tasks are still running), and only
+ *     the second consecutive EndTurn kills the tasks and completes the
+ *     run.
  *  3. Park: an agent that answers the reminder by waiting parks, wakes on
  *     the owned task's completion notification, and ends cleanly.
  *
@@ -86,8 +88,12 @@ describe('subagent background task ownership', () => {
       // Agent iteration 3: text-only end — implicit, so the strict loop
       // answers with the owned-tasks reminder…
       forAgent(textResponse('agent done')),
-      // …and iteration 4 is the reminder round: EndTurn kills the owned
-      // sleep and completes the run.
+      // …and iteration 4 is the reminder round: the EndTurn there arrives
+      // with the sleep still running, so the gate returns it (first
+      // strike)…
+      forAgent(toolUseResponse([{ name: 'EndTurn', input: {} }])),
+      // …and iteration 5 takes the gated round's second EndTurn: honored,
+      // the owned sleep is killed and the run completes.
       forAgent(toolUseResponse([{ name: 'EndTurn', input: {} }])),
       // Main turn 2: acknowledge and end the turn.
       forMain(textResponse('probe finished')),
@@ -152,8 +158,9 @@ describe('subagent background task ownership', () => {
     expect(listBlob.match(new RegExp(PARENT_DESC, 'g'))?.length).toBe(1)
 
     // 3. The reminder round: after the text-only end, the next agent request
-    // carries the owned-tasks reminder listing the sleep, and EndTurn ends
-    // the run (the main session receives the agent's result).
+    // carries the owned-tasks reminder listing the sleep, the EndTurn over
+    // the still-running sleep is gated with its own reminder, and the
+    // second EndTurn ends the run (the main session receives the result).
     const reqWithReminder = agentReqs.find(req =>
       userTextBlob(req).includes('still owning'),
     )
@@ -161,6 +168,13 @@ describe('subagent background task ownership', () => {
     const reminderBlob = userTextBlob(reqWithReminder!)
     expect(reminderBlob).toContain(AGENT_DESC)
     expect(reminderBlob).toContain('EndTurn')
+    // The gated round: the EndTurn over the still-running sleep was
+    // returned with its own reminder stating the second-strike contract.
+    const reqWithGate = agentReqs.find(req =>
+      userTextBlob(req).includes('was not carried out'),
+    )
+    expect(reqWithGate).toBeDefined()
+    expect(userTextBlob(reqWithGate!)).toContain('call EndTurn again')
     // The parent's final request carries the agent's report.
     const mainReqs = log.filter(req =>
       JSON.stringify(req.body.system ?? '').includes('interactive agent'),

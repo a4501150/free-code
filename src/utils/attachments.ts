@@ -22,6 +22,8 @@ import type { IDESelection } from '../types/ide.js'
 import type { AgentId } from '../types/ids.js'
 import type { AppState } from '../state/AppStateStore.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
+import { SEND_MESSAGE_TOOL_NAME } from '../tools/SendMessageTool/constants.js'
+import { END_TURN_TOOL_NAME } from '../tools/EndTurnTool/constants.js'
 import { POWERSHELL_TOOL_NAME } from '../tools/PowerShellTool/toolName.js'
 import {
   getCommitAndPRInstructions,
@@ -954,8 +956,9 @@ export async function getAttachments(
     ),
     // Context-group ordering (same in compact.ts re-announce and the
     // runAgent.ts turn-0 seed): assistant_mode and coordinator_mode (both
-    // main-thread only, so absent from the seed), session_guidance,
-    // git_instructions, companion_intro,
+    // main-thread only, so absent from the seed), session_guidance (plus
+    // its agentId-gated subagent twin immediately after), git_instructions,
+    // companion_intro,
     // deferred_tools_delta (built-ins only move with settings, so
     // they sit ahead of the mid-session-fragile MCP pair),
     // mcp_instructions_delta, mcp_tools_delta, agent_listing_delta, then
@@ -976,6 +979,13 @@ export async function getAttachments(
     ),
     maybe('session_guidance', () =>
       Promise.resolve(getSessionGuidanceAttachment(toolUseContext, messages)),
+    ),
+    // Subagent twin of session_guidance (same carrier type, agentId-gated):
+    // announces at the worker's first tool round and re-arms after
+    // compaction; the runAgent turn-0 seed usually wins the race and the
+    // scan dedupes.
+    maybe('subagent_guidance', () =>
+      Promise.resolve(getSubagentGuidanceAttachment(toolUseContext, messages)),
     ),
     maybe('git_instructions', () =>
       Promise.resolve(getGitInstructionsAttachment(toolUseContext, messages)),
@@ -1831,6 +1841,47 @@ export function getSessionGuidanceAttachment(
   const text = ['# Session-specific guidance', ...prependBullets(items)].join(
     '\n',
   )
+
+  if (lastAnnouncementText(messages, 'session_guidance') === text) return []
+  return [{ type: 'session_guidance', text }]
+}
+
+/**
+ * Subagent run-mechanics carrier: how the strict end_turn model, owned
+ * background tasks and parent messaging work — the pieces a worker cannot
+ * infer from its tool list, and which live agents have already missed (a
+ * port agent started a build, said "I'll wait for the build to complete"
+ * and called EndTurn, killing the build). Shares the session_guidance
+ * attachment type with the main-thread getter: the two never coexist in one
+ * transcript (this one is agentId-gated, that one main-thread-gated), and
+ * a fork inheriting the parent's main-thread guidance triggers the
+ * wholesale-replacement announce, which is exactly right — the fork runs
+ * with subagent mechanics. Stateless-scan carrier: no prior announcement
+ * (turn-0 seed, post-compaction re-arm) means full announce, an identical
+ * announcement means silence, a different one means replacement.
+ */
+export function getSubagentGuidanceAttachment(
+  toolUseContext: ToolUseContext,
+  messages: Message[] | undefined,
+): Attachment[] {
+  if (!toolUseContext.agentId) return []
+  const pool = toolUseContext.options.tools
+  const hasBash = pool.some(tool => tool.name === BASH_TOOL_NAME)
+  const hasSendMessage = pool.some(tool => tool.name === SEND_MESSAGE_TOOL_NAME)
+  const items = [
+    `Your run ends only when you call the ${END_TURN_TOOL_NAME} tool — ending a message without tool calls does not end it; you will be reminded to continue working or call ${END_TURN_TOOL_NAME}.`,
+    hasBash
+      ? `Background tasks you own (Bash with run_in_background, Monitor) deliver their completion notifications to you while your run stays open. To wait out a long task, start it and end your message WITHOUT calling ${END_TURN_TOOL_NAME} — your run parks and wakes when the task signals.`
+      : null,
+    hasBash
+      ? `${END_TURN_TOOL_NAME} ends your run and kills every background task you still own. With one running, a first ${END_TURN_TOOL_NAME} is gated with a reminder; a second consecutive one ends the run and abandons the tasks.`
+      : null,
+    hasSendMessage
+      ? `If you need your parent's input — a decision, an approval, missing instructions — call ${SEND_MESSAGE_TOOL_NAME} with to "parent": your run stays open, the message reaches your parent, and the reply arrives as a message to you. Do not end your run just to ask a question.`
+      : null,
+  ].filter(item => item !== null)
+
+  const text = ['# Subagent run mechanics', ...prependBullets(items)].join('\n')
 
   if (lastAnnouncementText(messages, 'session_guidance') === text) return []
   return [{ type: 'session_guidance', text }]

@@ -31,7 +31,6 @@ import type {
 } from '../../Tool.js'
 import { killShellTasksForAgent } from '../../tasks/LocalShellTask/killShellTasks.js'
 import { getRunningOwnedShellTasks } from '../../tasks/ownership.js'
-import type { TaskState } from '../../tasks/types.js'
 import { executeStopHooks } from '../../utils/hooks.js'
 import {
   dequeueAllMatching,
@@ -41,19 +40,18 @@ import {
   getAgentPendingMessageAttachments,
   getAgentPendingMessageCount,
   getQueuedCommandAttachments,
+  getSubagentGuidanceAttachment,
 } from '../../utils/attachments.js'
-import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../BackgroundTaskStopTool/prompt.js'
-import {
-  END_TURN_REMINDER,
-  END_TURN_REMINDER_TAG,
-  END_TURN_TOOL_NAME,
-} from '../EndTurnTool/constants.js'
+import { END_TURN_REMINDER } from '../EndTurnTool/constants.js'
 import { EndTurnTool } from '../EndTurnTool/EndTurnTool.js'
 import {
+  endTurnOwnedTasksReminderText,
   MAX_END_REMINDERS,
+  ownedTasksReminderText,
   PARK_INITIAL_IDLE_MS,
   PARK_MAX_IDLE_MS,
   parkUntilOwnedTaskSignal,
+  resolveEndTurnOwnedTasksGate,
 } from './agentPark.js'
 import type { Command } from '../../types/command.js'
 import { isAnyReasoningBlock } from '../../types/domainGuards.js'
@@ -755,6 +753,22 @@ export async function* runAgent({
     agentToolUseContext.preserveToolUseResults = true
   }
 
+  // Turn-0 subagent run-mechanics seed (the session_guidance carrier,
+  // agentId-gated — see getSubagentGuidanceAttachment): the worker's
+  // pipeline would announce it too, but only with its first tool batch,
+  // and an agent that opens with a background build and an immediate
+  // EndTurn — the exact mistake this guidance exists for — must see it
+  // before that. The scan dedupes the pipeline's copy; a fork that
+  // inherited the parent's main-thread guidance announces the
+  // replacement. Context-group ordering: guidance blocks before the git
+  // seed below.
+  for (const attachment of getSubagentGuidanceAttachment(
+    agentToolUseContext,
+    initialMessages,
+  )) {
+    initialMessages.push(createAttachmentMessage(attachment))
+  }
+
   // Turn-0 git guidance seed: the worker's pipeline would announce it too,
   // but only with its first tool batch — too late to shape an opening
   // commit. Unscoped by fork status: the scan dedupes a fork that inherited
@@ -878,6 +892,9 @@ export async function* runAgent({
   const totalMaxTurns = maxTurns ?? agentDefinition.maxTurns
   let turnsUsed = 0
   let consecutiveEndReminders = 0
+  // Gated EndTurns with owned tasks in a row (see resolveEndTurnOwnedTasksGate
+  // for the strike semantics). A round that did work resets it to 1.
+  let endTurnOwnedTaskStrikes = 0
   let remindedAboutOwnedTasks = false
   let parkIdleMs = PARK_INITIAL_IDLE_MS
   // Set at the two true-completion break sites (EndTurn, force-complete
@@ -1121,18 +1138,43 @@ export async function* runAgent({
       turnsUsed += assistantTurnsThisRound
 
       // The round ended. Abort first, then non-implicit terminals —
-      // end_turn, max_turns, aborts, hook stops, and API errors all end
-      // the run like the old single-query model. Only a genuine implicit
-      // end (completed, last assistant not an API error) continues into
-      // the reminder handler below.
+      // max_turns, aborts, hook stops, and API errors all end the run like
+      // the old single-query model. end_turn is handled by the gate below
+      // (it may be converted to a reminder round); only a genuine implicit
+      // end (completed, last assistant not an API error) continues into the
+      // reminder handler after it.
       if (agentAbortController.signal.aborted) break
+
+      if (terminal?.reason === 'end_turn') {
+        // EndTurn while owning running tasks is gated like an implicit end:
+        // models call EndTurn to "pause" for a build (two port agents ended
+        // "I'll wait for the build to complete" via EndTurn and the finally
+        // block killed their builds). First such call gets the reminder and
+        // parks; a second consecutive no-work one is honored as deliberate
+        // abandonment. Over budget or taskless, EndTurn always honors.
+        const ownedTasks = getRunningOwnedShellTasks(agentId, agentGetAppState)
+        const gate = resolveEndTurnOwnedTasksGate({
+          ownedTaskCount: ownedTasks.length,
+          strikes: endTurnOwnedTaskStrikes,
+          roundDidWork: assistantTurnsThisRound > 1,
+          overBudget: totalMaxTurns !== undefined && turnsUsed >= totalMaxTurns,
+        })
+        if (gate === 'honor') {
+          fireStopHooks = true
+          break
+        }
+        endTurnOwnedTaskStrikes =
+          assistantTurnsThisRound > 1 ? 1 : endTurnOwnedTaskStrikes + 1
+        // Share the flag with the implicit-end path so a later implicit end
+        // over the same tasks parks directly instead of re-reminding.
+        remindedAboutOwnedTasks = true
+        pushReminder(endTurnOwnedTasksReminderText(ownedTasks))
+        continue
+      }
 
       const implicitEnd =
         terminal?.reason === 'completed' && !lastAssistantIsApiError
-      if (!implicitEnd) {
-        fireStopHooks = terminal?.reason === 'end_turn'
-        break
-      }
+      if (!implicitEnd) break
 
       // The reminder rounds share one maxTurns budget with the work rounds.
       if (totalMaxTurns !== undefined && turnsUsed >= totalMaxTurns) break
@@ -1320,31 +1362,6 @@ export function filterIncompleteToolCalls(messages: Message[]): Message[] {
     // Keep all non-assistant messages and assistant messages without tool calls
     return true
   })
-}
-
-// Reminder texts for the strict end_turn model: isMeta user messages that
-// ride the conversation, the sidechain transcript and the drill-down (the
-// outbox above delivers them). Both are wrapped in END_TURN_REMINDER_TAG so
-// the UI renders them as visible reminder rows; only END_TURN_REMINDER
-// itself (exact text, from EndTurnTool/constants) triggers the post-nudge
-// ack skip in finalizeAgentTool — a reply to the owned-tasks reminder is a
-// genuine decision to keep waiting, not protocol noise.
-function ownedTasksReminderText(tasks: TaskState[], idle = false): string {
-  const lines = tasks
-    .map(task => {
-      const kind =
-        task.type === 'local_bash' && task.kind ? task.kind : 'background'
-      const what =
-        task.type === 'local_bash'
-          ? (task.command ?? task.description)
-          : task.description
-      return `- ${task.id} (${kind}): ${what}`
-    })
-    .join('\n')
-  const lead = idle
-    ? `Still waiting on ${tasks.length} background task(s) you own:\n${lines}`
-    : `You ended your message while still owning ${tasks.length} running background task(s):\n${lines}`
-  return `<${END_TURN_REMINDER_TAG}>\n${lead}\nWait for them to finish (their notifications are delivered to you), stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME}, or call ${END_TURN_TOOL_NAME} to end your run — ending it kills the tasks you still own.\n</${END_TURN_REMINDER_TAG}>`
 }
 
 async function getAgentSystemPrompt(

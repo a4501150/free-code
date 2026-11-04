@@ -45,7 +45,7 @@ export const EndTurnTool = buildTool({
     return true
   },
   async description() {
-    return 'End your run; your last text message is your result'
+    return 'End your run (kills owned background tasks); your last text message is your result'
   },
   async prompt() {
     return DESCRIPTION

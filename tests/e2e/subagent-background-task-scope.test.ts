@@ -92,10 +92,14 @@ describe('subagent background task scope', () => {
         ]),
       ),
       // Strict end_turn: the agent must call EndTurn to finish (a text-only
-      // message would park it on its owned background sleeps).
+      // message would park it on its owned background sleeps). The sleeps
+      // are still running, so this first EndTurn is gated…
       forAgent(
         toolUseResponse([{ name: 'EndTurn', input: {} }], 'agent holding'),
       ),
+      // …and the gated round's second EndTurn is honored: the sleeps are
+      // killed and the run completes.
+      forAgent(toolUseResponse([{ name: 'EndTurn', input: {} }])),
       // Main turn 2: acknowledge and end the turn.
       forMain(textResponse('probe spawned, standing by')),
       forMain(textResponse('probe acknowledged')),

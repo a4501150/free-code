@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  endTurnOwnedTasksReminderText,
+  ownedTasksReminderText,
   parkUntilOwnedTaskSignal,
   PARK_INITIAL_IDLE_MS,
+  resolveEndTurnOwnedTasksGate,
 } from '../../src/tools/AgentTool/agentPark.js'
+import type { TaskState } from '../../src/tasks/types.js'
+import { END_TURN_REMINDER_TAG } from '../../src/tools/EndTurnTool/constants.js'
 import {
   clearCommandQueue,
   enqueuePendingNotification,
@@ -98,5 +103,101 @@ describe('parkUntilOwnedTaskSignal', () => {
     notifyCommandQueueListeners()
     await expect(p).resolves.toBe('signal')
     clearCommandQueue()
+  })
+})
+
+describe('resolveEndTurnOwnedTasksGate', () => {
+  test('honors EndTurn with no owned tasks', () => {
+    expect(
+      resolveEndTurnOwnedTasksGate({
+        ownedTaskCount: 0,
+        strikes: 0,
+        roundDidWork: false,
+        overBudget: false,
+      }),
+    ).toBe('honor')
+  })
+
+  test('honors EndTurn when the turns budget is exhausted', () => {
+    expect(
+      resolveEndTurnOwnedTasksGate({
+        ownedTaskCount: 3,
+        strikes: 0,
+        roundDidWork: false,
+        overBudget: true,
+      }),
+    ).toBe('honor')
+  })
+
+  test('gates the first EndTurn with owned tasks', () => {
+    expect(
+      resolveEndTurnOwnedTasksGate({
+        ownedTaskCount: 2,
+        strikes: 0,
+        roundDidWork: false,
+        overBudget: false,
+      }),
+    ).toBe('gate')
+  })
+
+  test('honors the second consecutive no-work EndTurn (deliberate abandon)', () => {
+    expect(
+      resolveEndTurnOwnedTasksGate({
+        ownedTaskCount: 2,
+        strikes: 1,
+        roundDidWork: false,
+        overBudget: false,
+      }),
+    ).toBe('honor')
+  })
+
+  test('a round that did work answers the previous gate and gates again', () => {
+    expect(
+      resolveEndTurnOwnedTasksGate({
+        ownedTaskCount: 2,
+        strikes: 1,
+        roundDidWork: true,
+        overBudget: false,
+      }),
+    ).toBe('gate')
+  })
+})
+
+describe('owned-task reminder texts', () => {
+  const shellTask = {
+    type: 'local_bash',
+    id: 'bash1',
+    kind: 'monitor',
+    command: 'tail -f build.log',
+    description: 'build watcher',
+  } as unknown as TaskState
+  const agentTask = {
+    type: 'local_agent',
+    id: 'agent1',
+    description: 'port agent',
+  } as unknown as TaskState
+
+  test('ownedTasksReminderText lists tasks and wraps the reminder tag', () => {
+    const text = ownedTasksReminderText([shellTask, agentTask])
+    expect(text.startsWith(`<${END_TURN_REMINDER_TAG}>`)).toBe(true)
+    expect(text).toContain('ended your message while still owning 2')
+    expect(text).toContain('- bash1 (monitor): tail -f build.log')
+    expect(text).toContain('- agent1 (background): port agent')
+  })
+
+  test('ownedTasksReminderText idle variant says still waiting', () => {
+    expect(ownedTasksReminderText([shellTask], true)).toContain(
+      'Still waiting on 1 background task(s) you own',
+    )
+  })
+
+  test('endTurnOwnedTasksReminderText corrects the EndTurn and states the second-strike contract', () => {
+    const text = endTurnOwnedTasksReminderText([shellTask])
+    expect(text.startsWith(`<${END_TURN_REMINDER_TAG}>`)).toBe(true)
+    expect(text).toContain('was not carried out')
+    expect(text).toContain('still own 1 running background task')
+    expect(text).toContain('end your message WITHOUT calling EndTurn')
+    expect(text).toContain('call EndTurn again to end your run now')
+    expect(text).toContain('- bash1 (monitor): tail -f build.log')
   })
 })

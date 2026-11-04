@@ -36,6 +36,7 @@ import {
   getAssistantModeAttachment,
   getCoordinatorModeAttachment,
   getSessionGuidanceAttachment,
+  getSubagentGuidanceAttachment,
   getGitInstructionsAttachment,
   getPostCompactSkillListingAttachment,
 } from '../../utils/attachments.js'
@@ -377,6 +378,11 @@ async function pushReAnnounceAttachments(
     target.push(createAttachmentMessage(att))
   }
   for (const att of getSessionGuidanceAttachment(context, scanMessages)) {
+    target.push(createAttachmentMessage(att))
+  }
+  // Subagent twin, same carrier type: silent on the main thread, full
+  // re-arm in a worker's post-compaction transcript.
+  for (const att of getSubagentGuidanceAttachment(context, scanMessages)) {
     target.push(createAttachmentMessage(att))
   }
   for (const att of getGitInstructionsAttachment(context, scanMessages)) {
