@@ -23,7 +23,7 @@ import type { AgentId } from '../types/ids.js'
 import type { AppState } from '../state/AppStateStore.js'
 import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
 import { SEND_MESSAGE_TOOL_NAME } from '../tools/SendMessageTool/constants.js'
-import { END_TURN_TOOL_NAME } from '../tools/EndTurnTool/constants.js'
+import { FINISH_RUN_TOOL_NAME } from '../tools/FinishRunTool/constants.js'
 import { POWERSHELL_TOOL_NAME } from '../tools/PowerShellTool/toolName.js'
 import {
   getCommitAndPRInstructions,
@@ -643,7 +643,7 @@ export type Attachment =
       turnCount: number
     }
   | {
-      // Internal signal: the model called EndTurn; query ends the loop and
+      // Internal signal: the model called FinishRun; query ends the loop and
       // runAgent consumes this. Never rendered to the API.
       type: 'end_turn_requested'
     }
@@ -1851,7 +1851,7 @@ export function getSessionGuidanceAttachment(
  * background tasks and parent messaging work — the pieces a worker cannot
  * infer from its tool list, and which live agents have already missed (a
  * port agent started a build, said "I'll wait for the build to complete"
- * and called EndTurn, killing the build). Shares the session_guidance
+ * and called FinishRun, killing the build). Shares the session_guidance
  * attachment type with the main-thread getter: the two never coexist in one
  * transcript (this one is agentId-gated, that one main-thread-gated), and
  * a fork inheriting the parent's main-thread guidance triggers the
@@ -1869,12 +1869,15 @@ export function getSubagentGuidanceAttachment(
   const hasBash = pool.some(tool => tool.name === BASH_TOOL_NAME)
   const hasSendMessage = pool.some(tool => tool.name === SEND_MESSAGE_TOOL_NAME)
   const items = [
-    `Your run ends only when you call the ${END_TURN_TOOL_NAME} tool — ending a message without tool calls does not end it; you will be reminded to continue working or call ${END_TURN_TOOL_NAME}.`,
+    `Your run ends only when you call the ${FINISH_RUN_TOOL_NAME} tool — ending a message without tool calls does not end it; you will be reminded to continue working or call ${FINISH_RUN_TOOL_NAME}.`,
     hasBash
-      ? `Background tasks you own (Bash with run_in_background, Monitor) deliver their completion notifications to you while your run stays open. To wait out a long task, start it and end your message WITHOUT calling ${END_TURN_TOOL_NAME} — your run parks and wakes when the task signals.`
+      ? `Background tasks you own (Bash with run_in_background, Monitor) deliver their completion notifications to you while your run stays open. To wait out a long task, start it and end your message WITHOUT calling ${FINISH_RUN_TOOL_NAME} — your run parks and wakes when the task signals.`
       : null,
     hasBash
-      ? `${END_TURN_TOOL_NAME} ends your run and kills every background task you still own. With one running, a first ${END_TURN_TOOL_NAME} is gated with a reminder; a second consecutive one ends the run and abandons the tasks.`
+      ? `Never wait on a background task by sleeping or polling its output file (sleep N; grep …) — that burns your turns. Start it, end your message, and the task's completion notification wakes you; to watch for a condition, start a Monitor instead of polling.`
+      : null,
+    hasBash
+      ? `${FINISH_RUN_TOOL_NAME} ends your run and kills every background task you still own. With one running, a first ${FINISH_RUN_TOOL_NAME} is gated with a reminder; a second consecutive one ends the run and abandons the tasks.`
       : null,
     hasSendMessage
       ? `If you need your parent's input — a decision, an approval, missing instructions — call ${SEND_MESSAGE_TOOL_NAME} with to "parent": your run stays open, the message reaches your parent, and the reply arrives as a message to you. Do not end your run just to ask a question.`

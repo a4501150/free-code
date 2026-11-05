@@ -47,9 +47,9 @@ import { getAgentModel } from '../../utils/model/agent.js'
 import { getMainLoopModel } from '../../utils/model/model.js'
 import type { Theme, ThemeName } from '../../utils/theme.js'
 import {
-  isEndTurnReminderText,
-  isEndTurnToolUse,
-} from '../EndTurnTool/constants.js'
+  isFinishRunReminderText,
+  isFinishRunToolUse,
+} from '../FinishRunTool/constants.js'
 import type { outputSchema, Progress } from './AgentTool.js'
 import { inputSchema } from './AgentTool.js'
 import { getAgentColor } from './agentColorManager.js'
@@ -146,24 +146,24 @@ type ProcessedMessage =
   | SummaryMessage
 
 /**
- * The EndTurn completion call is internal protocol, not work. In the expand
+ * The FinishRun completion call is internal protocol, not work. In the expand
  * and progress views it rendered as a solid green tool card right above the
  * captured Response — reading as a leaked tool call next to the agent's
  * result, and occupying one of the "last N tool calls" slots meant for real
  * work. The run's completion is already signaled by the Done line here and
  * by the run-complete attachment line in transcript views (which do show
- * the card deliberately). Returns a display copy with EndTurn tool_use
+ * the card deliberately). Returns a display copy with FinishRun tool_use
  * blocks stripped, or undefined when nothing displayable remains.
  */
-function stripEndTurnFromDisplay(
+function stripFinishRunFromDisplay(
   m: ProgressMessage<AgentToolProgress>,
 ): ProgressMessage<AgentToolProgress> | undefined {
   const msg = m.data.message
   if (msg.type !== 'assistant') return m
   const content = msg.message.content
   if (!Array.isArray(content)) return m
-  if (!content.some(isEndTurnToolUse)) return m
-  const stripped = content.filter(b => !isEndTurnToolUse(b))
+  if (!content.some(isFinishRunToolUse)) return m
+  const stripped = content.filter(b => !isFinishRunToolUse(b))
   if (stripped.length === 0) return undefined
   return {
     ...m,
@@ -196,7 +196,7 @@ export function processProgressMessages(
       (m): m is ProgressMessage<AgentToolProgress> =>
         hasProgressMessage(m.data) && m.data.message.type !== 'user',
     )
-    .map(stripEndTurnFromDisplay)
+    .map(stripFinishRunFromDisplay)
     .filter((m): m is ProgressMessage<AgentToolProgress> => m !== undefined)
     .map(m => ({ type: 'original', message: m }))
 }
@@ -268,7 +268,7 @@ function VerboseAgentTranscript({
   // Filter out user tool_result messages that lack toolUseResult.
   // Subagent progress messages don't carry the parsed tool output,
   // so UserToolSuccessMessage returns null and MessageResponse renders
-  // a bare ⎿ with no content. End-turn nudges are the exception: they
+  // a bare ⎿ with no content. Finish-run nudges are the exception: they
   // carry no tool result but must stay visible in the drill-down.
   const filteredMessages = progressMessages.filter(
     (pm): pm is ProgressMessage<AgentToolProgress> => {
@@ -278,7 +278,7 @@ function VerboseAgentTranscript({
       const msg = pm.data.message
       if (msg.type === 'user' && msg.toolUseResult === undefined) {
         const block = msg.message.content[0]
-        return block?.type === 'text' && isEndTurnReminderText(block.text)
+        return block?.type === 'text' && isFinishRunReminderText(block.text)
       }
       return true
     },
@@ -770,9 +770,9 @@ export function renderToolUseProgressMessage(
       if (message.type !== 'assistant' && message.type !== 'user') return false
       const content = message.message.content
       if (!Array.isArray(content)) return false
-      // EndTurn is completion protocol, not a tool use — the count must
+      // FinishRun is completion protocol, not a tool use — the count must
       // match what the progress/expand rows and "Done (N tool uses)" show.
-      return content.some(c => c.type === 'tool_use' && !isEndTurnToolUse(c))
+      return content.some(c => c.type === 'tool_use' && !isFinishRunToolUse(c))
     })
 
     return {
@@ -1071,9 +1071,9 @@ function calculateAgentStats(
     }
   }
 
-  // tool_use_ids of EndTurn calls — their tool_results ("Run complete.") are
+  // tool_use_ids of FinishRun calls — their tool_results ("Run complete.") are
   // completion protocol and must not count as a tool use.
-  const endTurnToolUseIds = new Set(
+  const finishRunToolUseIds = new Set(
     progressMessages.flatMap(msg => {
       if (!hasProgressMessage(msg.data)) return []
       const message = msg.data.message
@@ -1081,7 +1081,7 @@ function calculateAgentStats(
       const content = message.message.content
       if (!Array.isArray(content)) return []
       return content
-        .filter(isEndTurnToolUse)
+        .filter(isFinishRunToolUse)
         .map(block => (block.type === 'tool_use' ? block.id : ''))
     }),
   )
@@ -1096,7 +1096,7 @@ function calculateAgentStats(
       message.message.content.some(
         content =>
           content.type === 'tool_result' &&
-          !endTurnToolUseIds.has(content.tool_use_id),
+          !finishRunToolUseIds.has(content.tool_use_id),
       )
     )
   })

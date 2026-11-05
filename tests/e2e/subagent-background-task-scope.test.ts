@@ -91,15 +91,15 @@ describe('subagent background task scope', () => {
           { name: 'Bash', input: { command: AGENT_HOLD, description: 'hold' } },
         ]),
       ),
-      // Strict end_turn: the agent must call EndTurn to finish (a text-only
+      // Strict end_turn: the agent must call FinishRun to finish (a text-only
       // message would park it on its owned background sleeps). The sleeps
-      // are still running, so this first EndTurn is gated…
+      // are still running, so this first FinishRun is gated…
       forAgent(
-        toolUseResponse([{ name: 'EndTurn', input: {} }], 'agent holding'),
+        toolUseResponse([{ name: 'FinishRun', input: {} }], 'agent holding'),
       ),
-      // …and the gated round's second EndTurn is honored: the sleeps are
+      // …and the gated round's second FinishRun is honored: the sleeps are
       // killed and the run completes.
-      forAgent(toolUseResponse([{ name: 'EndTurn', input: {} }])),
+      forAgent(toolUseResponse([{ name: 'FinishRun', input: {} }])),
       // Main turn 2: acknowledge and end the turn.
       forMain(textResponse('probe spawned, standing by')),
       forMain(textResponse('probe acknowledged')),

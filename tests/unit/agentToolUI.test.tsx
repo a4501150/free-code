@@ -178,7 +178,7 @@ describe('AgentTool UI', () => {
     expect(collectPropValues(node, 'isAgentRunning')).toEqual([false])
   })
 
-  test('EndTurn completion call is stripped from the progress/expand display', () => {
+  test('FinishRun completion call is stripped from the progress/expand display', () => {
     const endTurnMessage = {
       ...agentProgressMessage({ toolUseId: 'tool-endturn' }),
       data: {
@@ -193,7 +193,7 @@ describe('AgentTool UI', () => {
               {
                 type: 'tool_use',
                 id: 'tool-endturn',
-                name: 'EndTurn',
+                name: 'FinishRun',
                 input: {},
               },
             ],
@@ -208,7 +208,7 @@ describe('AgentTool UI', () => {
       false,
     )
 
-    // The response text survives; the EndTurn card does not.
+    // The response text survives; the FinishRun card does not.
     expect(processed).toHaveLength(2)
     const last = processed[1]!.message.data.message.message
     expect(
@@ -218,19 +218,19 @@ describe('AgentTool UI', () => {
     ).toBe('Final report.')
     expect(
       (last.content as Array<{ type: string; name?: string }>).filter(
-        b => b.type === 'tool_use' && b.name === 'EndTurn',
+        b => b.type === 'tool_use' && b.name === 'FinishRun',
       ),
     ).toHaveLength(0)
-    // Display copy only — the original message keeps its EndTurn block
+    // Display copy only — the original message keeps its FinishRun block
     // (recorded transcripts and full transcript views still show it).
     expect(
       (
         endTurnMessage.data.message.message.content as Array<{ name?: string }>
-      ).some(b => b.name === 'EndTurn'),
+      ).some(b => b.name === 'FinishRun'),
     ).toBe(true)
   })
 
-  test('an EndTurn-only final message is dropped from the progress display', () => {
+  test('a FinishRun-only final message is dropped from the progress display', () => {
     const endTurnOnly = {
       ...agentProgressMessage({ toolUseId: 'tool-endturn' }),
       data: {
@@ -244,7 +244,7 @@ describe('AgentTool UI', () => {
               {
                 type: 'tool_use',
                 id: 'tool-endturn',
-                name: 'EndTurn',
+                name: 'FinishRun',
                 input: {},
               },
             ],

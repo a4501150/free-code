@@ -1,6 +1,6 @@
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import { DESCRIPTION, END_TURN_TOOL_NAME } from './constants.js'
+import { DESCRIPTION, FINISH_RUN_TOOL_NAME } from './constants.js'
 
 const inputSchema = z.strictObject({})
 type InputSchema = typeof inputSchema
@@ -20,16 +20,18 @@ export type Output = z.infer<typeof outputSchema>
  * round's tools have run, and in runAgent.ts, whose finally block then kills
  * the agent's still-running background tasks. The result text delivered to
  * the parent is the agent's most recent assistant text, skipping ack text
- * emitted in reply to an end-turn reminder (finalizeAgentTool's
- * extraction).
+ * emitted in reply to a finish-run reminder (finalizeAgentTool's
+ * extraction). The EndTurn alias keeps tool_use blocks from pre-rename
+ * transcripts resolvable by name (findToolByName).
  *
  * Deliberately React-free (no renderToolResultMessage): the run's completion
  * is surfaced by the Agent tool's own UI, not by this tool's result row, and
  * runAgent's module graph must stay ink-free.
  */
-export const EndTurnTool = buildTool({
-  name: END_TURN_TOOL_NAME,
-  userFacingName: () => 'End Turn',
+export const FinishRunTool = buildTool({
+  name: FINISH_RUN_TOOL_NAME,
+  aliases: ['EndTurn'],
+  userFacingName: () => 'Finish Run',
   get inputSchema(): InputSchema {
     return inputSchema
   },

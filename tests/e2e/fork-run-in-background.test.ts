@@ -91,9 +91,9 @@ describe('Fork run_in_background', () => {
           },
         },
       ]),
-      // The fork's own turn: report + explicit EndTurn (strict end_turn —
+      // The fork's own turn: report + explicit FinishRun (strict end_turn —
       // a text-only message would not end the run).
-      toolUseResponse([{ name: 'EndTurn', input: {} }], 'fg-fork-report'),
+      toolUseResponse([{ name: 'FinishRun', input: {} }], 'fg-fork-report'),
       // Main's final turn, after receiving the report as the tool_result.
       textResponse('The fork reported fg-fork-report.'),
     ])
@@ -140,7 +140,7 @@ describe('Fork run_in_background', () => {
         selector: body =>
           JSON.stringify(body.messages ?? '').includes('worker fork'),
         response: toolUseResponse(
-          [{ name: 'EndTurn', input: {} }],
+          [{ name: 'FinishRun', input: {} }],
           'bg-fork-report',
         ),
       },

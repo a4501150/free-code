@@ -29,7 +29,7 @@ function contextWithTools(
   } as unknown as ToolUseContext
 }
 
-const FULL_POOL = ['Bash', 'Monitor', 'SendMessage', 'EndTurn']
+const FULL_POOL = ['Bash', 'Monitor', 'SendMessage', 'FinishRun']
 
 describe('getSubagentGuidanceAttachment', () => {
   test('silent on the main thread', () => {
@@ -47,9 +47,11 @@ describe('getSubagentGuidanceAttachment', () => {
     expect(result[0].type).toBe('session_guidance')
     const text = result[0].text
     expect(text).toContain('# Subagent run mechanics')
-    expect(text).toContain('run ends only when you call the EndTurn tool')
+    expect(text).toContain('run ends only when you call the FinishRun tool')
     expect(text).toContain('parks and wakes when the task signals')
     expect(text).toContain('a second consecutive one ends the run')
+    expect(text).toContain('Never wait on a background task by sleeping')
+    expect(text).toContain('start a Monitor instead of polling')
     expect(text).toContain('SendMessage')
     expect(text).toContain('to "parent"')
     expect(text).toContain('Do not end your run just to ask a question')
@@ -57,19 +59,21 @@ describe('getSubagentGuidanceAttachment', () => {
 
   test('background-task bullets only when Bash is in the pool', () => {
     const text = getSubagentGuidanceAttachment(
-      contextWithTools(['SendMessage', 'EndTurn'], SUBAGENT),
+      contextWithTools(['SendMessage', 'FinishRun'], SUBAGENT),
       undefined,
     )[0].text
     expect(text).not.toContain('parks and wakes')
+    expect(text).not.toContain('Never wait on a background task by sleeping')
     expect(text).toContain('to "parent"')
   })
 
   test('parent-messaging bullet only when SendMessage is in the pool', () => {
     const text = getSubagentGuidanceAttachment(
-      contextWithTools(['Bash', 'EndTurn'], SUBAGENT),
+      contextWithTools(['Bash', 'FinishRun'], SUBAGENT),
       undefined,
     )[0].text
     expect(text).toContain('parks and wakes when the task signals')
+    expect(text).toContain('Never wait on a background task by sleeping')
     expect(text).not.toContain('to "parent"')
   })
 

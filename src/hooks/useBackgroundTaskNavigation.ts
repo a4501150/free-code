@@ -4,12 +4,15 @@ import {
   exitAgentView,
   getScopedBackgroundTasks,
 } from '../state/agentViewHelpers.js'
+import { agentToolInterruptReason } from '../tools/AgentTool/agentPark.js'
 import { isBackgroundTask } from '../tasks/types.js'
 
 /**
  * Custom hook that handles Shift+Up/Down keyboard navigation for background
  * tasks: opens the background tasks dialog when background work exists.
- * Also handles Escape to exit an agent transcript view.
+ * Also handles Escape in an agent transcript view: interrupt the viewed
+ * agent's in-flight tool (run survives, parks) or, when nothing is in
+ * flight, exit the view.
  */
 export function useBackgroundTaskNavigation(options?: {
   onOpenBackgroundTasks?: () => void
@@ -26,15 +29,25 @@ export function useBackgroundTaskNavigation(options?: {
   ).some(t => isBackgroundTask(t))
 
   const handleKeyDown = (e: KeyboardEvent): void => {
-    // Escape in viewing mode: exit the agent transcript view.
+    // Escape in viewing mode, state-based:
+    // - running and mid-round → interrupt the agent's in-flight tool only
+    //   (the agentId-addressed abort reason; runAgent re-arms and parks, the
+    //   run and its owned background tasks survive, the parent is not
+    //   notified). Stay in the view — the interrupt marker lands in the
+    //   transcript the user is looking at.
+    // - running but parked (no in-flight tool) or not running → exit the
+    //   view. The run, if any, keeps going in the background; killing it is
+    //   a deliberate gesture (panel 'x', the kill-agents chord, Ctrl+C).
     if (e.key === 'escape' && viewSelectionMode === 'viewing-agent') {
       e.preventDefault()
       const taskId = viewingAgentTaskId
       const task = taskId ? tasks[taskId] : undefined
-      if (task?.type === 'local_agent' && task.status === 'running') {
-        // Abort the agent's current work (its own abort controller),
-        // not the main session's.
-        task.abortController?.abort()
+      if (
+        task?.type === 'local_agent' &&
+        task.status === 'running' &&
+        !task.parked
+      ) {
+        task.abortController?.abort(agentToolInterruptReason(task.agentId))
         return
       }
       exitAgentView(setAppState)

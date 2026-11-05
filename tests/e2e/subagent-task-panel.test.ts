@@ -82,9 +82,9 @@ describe('subagent task panel', () => {
       // ack and later notification turns route separately.
       forAgent(createBatch()),
       forAgent(holdOnSleep()),
-      // Strict end_turn: the agent must call EndTurn to finish.
+      // Strict end_turn: the agent must call FinishRun to finish.
       forAgent(
-        toolUseResponse([{ name: 'EndTurn', input: {} }], 'agent holding'),
+        toolUseResponse([{ name: 'FinishRun', input: {} }], 'agent holding'),
       ),
       forMain(textResponse('probe spawned, standing by')),
       forMain(textResponse('probe acknowledged')),

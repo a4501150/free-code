@@ -1,16 +1,16 @@
 /**
- * EndTurn completion must not leak into the collected agent response.
+ * FinishRun completion must not leak into the collected agent response.
  *
  * The strict end_turn model ends a subagent run with a final assistant
- * message that carries an EndTurn tool_use block (alone or alongside the
+ * message that carries a FinishRun tool_use block (alone or alongside the
  * result text), plus its tool_result. Every surface that collects "the
  * agent's response" — finalizeAgentTool's content, the parent tool_result,
  * the async completion notification, partial results after a kill — must
- * extract TEXT BLOCKS ONLY, so the internal EndTurn call never reaches the
+ * extract TEXT BLOCKS ONLY, so the internal FinishRun call never reaches the
  * parent model as response content. These tests pin that invariant.
  *
  * They also pin the post-nudge skip: text the agent emits in reply to the
- * end-turn reminder (an ack or a restatement, with no real work after the
+ * finish-run reminder (an ack or a restatement, with no real work after the
  * nudge) must NOT become the delivered result — the report from before the
  * nudge is. Real work after the nudge, and replies to the owned-tasks
  * reminder, are genuine output and last-wins stands.
@@ -29,10 +29,10 @@ import {
 } from '../../src/tools/AgentTool/agentToolUtils.js'
 import { createProgressTracker } from '../../src/tasks/LocalAgentTask/LocalAgentTask.js'
 import {
-  END_TURN_REMINDER,
-  END_TURN_REMINDER_TAG,
-  END_TURN_TOOL_NAME,
-} from '../../src/tools/EndTurnTool/constants.js'
+  FINISH_RUN_REMINDER,
+  FINISH_RUN_REMINDER_TAG,
+  FINISH_RUN_TOOL_NAME,
+} from '../../src/tools/FinishRunTool/constants.js'
 import type {
   AssistantMessage,
   Message,
@@ -77,7 +77,7 @@ function userToolResult(toolUseId: string): UserMessage {
 }
 
 function endTurnBlock(id: string) {
-  return { type: 'tool_use', id, name: END_TURN_TOOL_NAME, input: {} }
+  return { type: 'tool_use', id, name: FINISH_RUN_TOOL_NAME, input: {} }
 }
 
 function endReminderUserMessage(): UserMessage {
@@ -90,7 +90,7 @@ function endReminderUserMessage(): UserMessage {
     isMeta: true,
     message: {
       role: 'user',
-      content: END_TURN_REMINDER,
+      content: FINISH_RUN_REMINDER,
     },
   } as unknown as UserMessage
 }
@@ -105,7 +105,7 @@ function ownedTasksReminderUserMessage(): UserMessage {
     isMeta: true,
     message: {
       role: 'user',
-      content: `<${END_TURN_REMINDER_TAG}>\nYou ended your message while still owning 1 running background task(s):\n- t1 (background): npm test\n</${END_TURN_REMINDER_TAG}>`,
+      content: `<${FINISH_RUN_REMINDER_TAG}>\nYou ended your message while still owning 1 running background task(s):\n- t1 (background): npm test\n</${FINISH_RUN_REMINDER_TAG}>`,
     },
   } as unknown as UserMessage
 }
@@ -126,8 +126,8 @@ function finalize(messages: Message[]) {
   )
 }
 
-describe('EndTurn does not leak into the agent response', () => {
-  test('text + EndTurn in the same final assistant message: content is text only', () => {
+describe('FinishRun does not leak into the agent response', () => {
+  test('text + FinishRun in the same final assistant message: content is text only', () => {
     const endTurnId = randomUUID()
     const result = finalize([
       assistantMessage([
@@ -138,16 +138,16 @@ describe('EndTurn does not leak into the agent response', () => {
     ])
 
     expect(result.content).toEqual([{ type: 'text', text: 'Done, all fixed.' }])
-    expect(JSON.stringify(result.content)).not.toContain(END_TURN_TOOL_NAME)
+    expect(JSON.stringify(result.content)).not.toContain(FINISH_RUN_TOOL_NAME)
     // The completion call is protocol, not work: it must not count as a
     // tool use in the <usage> trailer or the "Done (N tool uses)" line.
     expect(result.totalToolUseCount).toBe(0)
-    // stop_reason 'tool_use' from the EndTurn round must not read as an
+    // stop_reason 'tool_use' from the FinishRun round must not read as an
     // error stop in the parent tool_result.
     expect(result.errorReason).toBeUndefined()
   })
 
-  test('EndTurn-only final message: falls back to the last assistant text', () => {
+  test('FinishRun-only final message: falls back to the last assistant text', () => {
     const endTurnId = randomUUID()
     const result = finalize([
       assistantMessage([{ type: 'text', text: 'Investigated the bug.' }]),
@@ -158,10 +158,10 @@ describe('EndTurn does not leak into the agent response', () => {
     expect(result.content).toEqual([
       { type: 'text', text: 'Investigated the bug.' },
     ])
-    expect(JSON.stringify(result.content)).not.toContain(END_TURN_TOOL_NAME)
+    expect(JSON.stringify(result.content)).not.toContain(FINISH_RUN_TOOL_NAME)
   })
 
-  test('real tool calls still count; EndTurn never does', () => {
+  test('real tool calls still count; FinishRun never does', () => {
     const endTurnId = randomUUID()
     const result = finalize([
       assistantMessage([
@@ -232,7 +232,7 @@ describe('post-nudge ack text does not become the result', () => {
     ])
   })
 
-  test('EndTurn-only reply to the nudge: original report wins', () => {
+  test('FinishRun-only reply to the nudge: original report wins', () => {
     const endTurnId = randomUUID()
     const result = finalize([
       assistantMessage([{ type: 'text', text: 'Report before the nudge.' }]),

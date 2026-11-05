@@ -83,7 +83,7 @@ import { buildQueryConfig } from './query/config.js'
 import { productionDeps, type QueryDeps } from './query/deps.js'
 import type { Terminal, Continue } from './query/transitions.js'
 import { count } from './utils/array.js'
-import { END_TURN_TOOL_NAME } from './tools/EndTurnTool/constants.js'
+import { isFinishRunToolUse } from './tools/FinishRunTool/constants.js'
 
 const STREAM_RECOVERY_MAX_ATTEMPTS = 25
 
@@ -1006,12 +1006,12 @@ async function* queryLoop(
       return { reason: 'hook_stopped' }
     }
 
-    // Explicit completion: the model called EndTurn (subagent pools only).
-    // All tools in the round — EndTurn included — have executed; end the
+    // Explicit completion: the model called FinishRun (subagent pools only).
+    // All tools in the round — FinishRun included — have executed; end the
     // loop instead of recursing. Mirrors the max-turns early return below.
     // The attachment is an internal signal consumed by runAgent; it never
     // renders to the API.
-    if (toolUseBlocks.some(block => block.name === END_TURN_TOOL_NAME)) {
+    if (toolUseBlocks.some(isFinishRunToolUse)) {
       yield createAttachmentMessage({ type: 'end_turn_requested' })
       return { reason: 'end_turn', turnCount: turnCount + 1 }
     }

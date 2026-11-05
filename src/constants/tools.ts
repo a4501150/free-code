@@ -5,7 +5,7 @@ import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt.js'
 import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../tools/BackgroundTaskStopTool/prompt.js'
 import { BACKGROUND_TASK_LIST_TOOL_NAME } from '../tools/BackgroundTaskListTool/constants.js'
-import { END_TURN_TOOL_NAME } from '../tools/EndTurnTool/constants.js'
+import { FINISH_RUN_TOOL_NAME } from '../tools/FinishRunTool/constants.js'
 import { MONITOR_TOOL_NAME } from '../tools/MonitorTool/toolName.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { SHELL_TOOL_NAMES } from '../utils/shell/shellToolUtils.js'
@@ -74,7 +74,7 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
   // Injected by runAgent into every subagent pool (never main-thread pools);
   // listed here too so the async allowlist filter does not strip it if the
   // tool ever reaches a pool through the registry.
-  END_TURN_TOOL_NAME,
+  FINISH_RUN_TOOL_NAME,
 ])
 
 /*

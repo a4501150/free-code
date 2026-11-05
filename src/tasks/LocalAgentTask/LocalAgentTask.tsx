@@ -14,7 +14,7 @@ import { compactProgressLabel } from '../../services/compact/compactProgressLabe
 import type { AgentToolResult } from '../../tools/AgentTool/agentToolUtils.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import { SYNTHETIC_OUTPUT_TOOL_NAME } from '../../tools/SyntheticOutputTool/SyntheticOutputTool.js'
-import { isEndTurnToolUse } from '../../tools/EndTurnTool/constants.js'
+import { isFinishRunToolUse } from '../../tools/FinishRunTool/constants.js'
 import { asAgentId } from '../../types/ids.js'
 import type { Message } from '../../types/message.js'
 import {
@@ -161,12 +161,12 @@ export function updateProgressFromMessage(
   }
   for (const content of message.message.content) {
     if (content.type === 'tool_use') {
-      // EndTurn is completion protocol, not work — the count feeds the
+      // FinishRun is completion protocol, not work — the count feeds the
       // panel and task_progress events and must match the tool-use counts
       // shown in the Agent row ("Done (N tool uses)"). It stays in
       // recentActivities (the panel's last-activity preview) like any other
       // call, matching the transcript views that show it deliberately.
-      if (!isEndTurnToolUse(content)) {
+      if (!isFinishRunToolUse(content)) {
         tracker.toolUseCount++
       }
       // Omit StructuredOutput from preview - it's an internal tool
@@ -263,6 +263,12 @@ export type LocalAgentTaskState = TaskStateBase & {
    * undefined when not compacting. Per-task so the effects render only in
    * this agent's transcript view. */
   compacting?: AgentCompactingInfo
+  /** True while a running agent is parked: its round ended without work
+   * completing (owned background tasks or a user tool-interrupt) and the
+   * loop is awaiting a wake signal. Read by the drill-down Esc handler —
+   * parked agents have no in-flight tool to interrupt, so Esc exits the
+   * view instead. Cleared on every wake and at every terminal transition. */
+  parked?: boolean
 }
 
 export type AgentCompactingInfo = {
@@ -500,11 +506,46 @@ export function killAsyncAgent(taskId: string, setAppState: SetAppState): void {
       abortController: undefined,
       unregisterCleanup: undefined,
       selectedAgent: undefined,
+      parked: undefined,
     }
   })
   if (killed) {
     void evictTaskOutput(taskId)
   }
+}
+
+/**
+ * Set/unset the parked flag on a running agent task (runAgent parks before
+ * awaiting wake signals and clears it on wake). No-op once terminal.
+ */
+export function setAgentParked(
+  taskId: string,
+  parked: boolean,
+  setAppState: SetAppState,
+): void {
+  updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => {
+    if (task.status !== 'running' || task.parked === parked) {
+      return task
+    }
+    return { ...task, parked }
+  })
+}
+
+/**
+ * Swap the abort controller a running agent task exposes to the UI.
+ * runAgent re-arms a fresh controller after a user tool-interrupt (the
+ * aborted one is spent — every holder of its signal sees aborted forever);
+ * this keeps the drill-down Esc, the panel 'x' and kill-all aborting the
+ * LIVE controller.
+ */
+export function setAgentAbortController(
+  taskId: string,
+  abortController: AbortController,
+  setAppState: SetAppState,
+): void {
+  updateTaskState<LocalAgentTaskState>(taskId, setAppState, task =>
+    task.status === 'running' ? { ...task, abortController } : task,
+  )
 }
 
 /**
@@ -706,6 +747,7 @@ export function completeAgentTask(
       abortController: undefined,
       unregisterCleanup: undefined,
       selectedAgent: undefined,
+      parked: undefined,
     }
   })
   void evictTaskOutput(taskId)
@@ -736,6 +778,7 @@ export function failAgentTask(
       abortController: undefined,
       unregisterCleanup: undefined,
       selectedAgent: undefined,
+      parked: undefined,
     }
   })
   void evictTaskOutput(taskId)

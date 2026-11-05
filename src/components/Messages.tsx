@@ -418,7 +418,7 @@ const MessagesImpl = ({
     'Transcript',
   )
 
-  // Subagent-only tools (EndTurn) appear in agent transcripts this process
+  // Subagent-only tools (FinishRun) appear in agent transcripts this process
   // renders but never in the request toolset — augment at render time only.
   const tools = useMemo(
     () => appendRenderOnlyTools(requestTools),

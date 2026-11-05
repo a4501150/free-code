@@ -105,7 +105,7 @@ import {
   hasRequiredMcpServers,
   isBuiltInAgent,
 } from './loadAgentsDir.js'
-import { isEndTurnReminderText } from '../EndTurnTool/constants.js'
+import { isFinishRunReminderText } from '../FinishRunTool/constants.js'
 import { getPrompt } from './prompt.js'
 import { runAgent } from './runAgent.js'
 import {
@@ -1254,13 +1254,13 @@ export const AgentTool = buildTool({
 
               const normalizedNew = normalizeMessages([message])
               for (const m of normalizedNew) {
-                // End-turn nudges carry no tool blocks, so the tool-content
+                // Finish-run nudges carry no tool blocks, so the tool-content
                 // loop below would skip them — forward them explicitly to
                 // keep the nudge visible in the live drill-down.
                 if (
                   m.type === 'user' &&
                   m.message.content[0]?.type === 'text' &&
-                  isEndTurnReminderText(m.message.content[0].text)
+                  isFinishRunReminderText(m.message.content[0].text)
                 ) {
                   if (onProgress) {
                     onProgress({

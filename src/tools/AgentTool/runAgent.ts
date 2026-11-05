@@ -42,17 +42,23 @@ import {
   getQueuedCommandAttachments,
   getSubagentGuidanceAttachment,
 } from '../../utils/attachments.js'
-import { END_TURN_REMINDER } from '../EndTurnTool/constants.js'
-import { EndTurnTool } from '../EndTurnTool/EndTurnTool.js'
+import { FINISH_RUN_REMINDER } from '../FinishRunTool/constants.js'
+import { FinishRunTool } from '../FinishRunTool/FinishRunTool.js'
 import {
-  endTurnOwnedTasksReminderText,
+  finishRunOwnedTasksReminderText,
   MAX_END_REMINDERS,
   ownedTasksReminderText,
   PARK_INITIAL_IDLE_MS,
   PARK_MAX_IDLE_MS,
   parkUntilOwnedTaskSignal,
-  resolveEndTurnOwnedTasksGate,
+  agentToolInterruptReason,
+  isAgentToolInterruptReason,
+  resolveFinishRunOwnedTasksGate,
 } from './agentPark.js'
+import {
+  setAgentAbortController,
+  setAgentParked,
+} from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import type { Command } from '../../types/command.js'
 import { isAnyReasoningBlock } from '../../types/domainGuards.js'
 import type { AgentId } from '../../types/ids.js'
@@ -547,7 +553,7 @@ export async function* runAgent({
     // run is a subagent. Injected after the async-allowlist filter on
     // purpose: async agents need it most (nobody can wrap them up
     // interactively).
-    EndTurnTool,
+    FinishRunTool,
   ]
 
   const additionalWorkingDirectories = Array.from(
@@ -570,7 +576,8 @@ export async function* runAgent({
   // - Override takes precedence
   // - Async agents get a new unlinked controller (runs independently)
   // - Sync agents share parent's controller
-  const agentAbortController = override?.abortController
+  // `let`: a user tool-interrupt re-arms mid-run (see rearmAfterToolInterrupt).
+  let agentAbortController = override?.abortController
     ? override.abortController
     : isAsync
       ? new AbortController()
@@ -757,7 +764,7 @@ export async function* runAgent({
   // agentId-gated — see getSubagentGuidanceAttachment): the worker's
   // pipeline would announce it too, but only with its first tool batch,
   // and an agent that opens with a background build and an immediate
-  // EndTurn — the exact mistake this guidance exists for — must see it
+  // FinishRun — the exact mistake this guidance exists for — must see it
   // before that. The scan dedupes the pipeline's copy; a fork that
   // inherited the parent's main-thread guidance announces the
   // replacement. Context-group ordering: guidance blocks before the git
@@ -881,7 +888,7 @@ export async function* runAgent({
     `[Agent: ${agentDefinition.agentType}] Starting query | model=${resolvedAgentModel ?? 'default'} initialMessages=${initialMessages.length} systemPromptChars=${agentSystemPrompt.length} tools=${allTools.length}`,
   )
 
-  // Strict end_turn model: the run ends only when the model calls EndTurn.
+  // Strict end_turn model: the run ends only when the model calls FinishRun.
   // An implicit end (assistant message with no tool calls) is not a
   // completion — it gets one reminder round, and if the agent still owns
   // running background tasks it parks between rounds until one of them
@@ -892,12 +899,12 @@ export async function* runAgent({
   const totalMaxTurns = maxTurns ?? agentDefinition.maxTurns
   let turnsUsed = 0
   let consecutiveEndReminders = 0
-  // Gated EndTurns with owned tasks in a row (see resolveEndTurnOwnedTasksGate
+  // Gated FinishRun calls with owned tasks in a row (see resolveFinishRunOwnedTasksGate
   // for the strike semantics). A round that did work resets it to 1.
-  let endTurnOwnedTaskStrikes = 0
+  let finishRunOwnedTaskStrikes = 0
   let remindedAboutOwnedTasks = false
   let parkIdleMs = PARK_INITIAL_IDLE_MS
-  // Set at the two true-completion break sites (EndTurn, force-complete
+  // Set at the two true-completion break sites (FinishRun, force-complete
   // backstop) — the gate for the relocated SubagentStop hooks below.
   let fireStopHooks = false
   // Reminders ride the conversation (runMessages → next round's API input)
@@ -912,6 +919,80 @@ export async function* runAgent({
     runMessages.push(reminder)
     reminderOutbox.push(reminder)
   }
+
+  // A user tool-interrupt (Esc in the drill-down) spends the run's abort
+  // controller — every holder of its signal stays aborted forever, so the
+  // run could never round again. Re-arm with a fresh unlinked controller
+  // (async agents' own; the interrupt reason is agentId-addressed, so a sync
+  // child sharing its parent's controller never takes this path) and push
+  // it onto the task entry so the drill-down Esc, panel 'x' and kill-all
+  // keep aborting the LIVE controller.
+  const rearmAfterToolInterrupt = () => {
+    agentAbortController = new AbortController()
+    agentToolUseContext.abortController = agentAbortController
+    setAgentAbortController(agentId, agentAbortController, rootSetAppState)
+  }
+
+  // Park the run between rounds (owned background tasks, or a user
+  // tool-interrupt awaiting steering) until a wake signal arrives. Sets the
+  // task's parked flag around the wait — the drill-down Esc handler reads
+  // it to know the run has no in-flight tool to interrupt. Returns 'abort'
+  // when the (current) controller aborted — a kill; every other wake ends
+  // parked and hands the next round whatever woke it: notification
+  // payloads, queued drill-down/SendMessage traffic, or on idle a reminder
+  // round (backstop so an abandoned park still converges to a result).
+  const parkAndAwaitWake = async (): Promise<'abort' | 'woken'> => {
+    setAgentParked(agentId, true, rootSetAppState)
+    const wake = await parkUntilOwnedTaskSignal({
+      agentId,
+      idleMs: parkIdleMs,
+      abortSignal: agentAbortController.signal,
+      getPendingMessageCount: () =>
+        getAgentPendingMessageCount(agentId, agentGetAppState),
+    })
+    setAgentParked(agentId, false, rootSetAppState)
+    logForDebugging(`[Agent: ${agentDefinition.agentType}] Park wake: ${wake}`)
+    if (wake === 'abort') return 'abort'
+    if (wake === 'idle') {
+      parkIdleMs = Math.min(parkIdleMs * 2, PARK_MAX_IDLE_MS)
+      // Re-check ownership: a task may have exited without queueing a
+      // notification during the idle window — remind about what is still
+      // running, not the pre-park snapshot.
+      const stillOwned = getRunningOwnedShellTasks(agentId, agentGetAppState)
+      pushReminder(
+        stillOwned.length > 0
+          ? ownedTasksReminderText(stillOwned, true)
+          : FINISH_RUN_REMINDER,
+      )
+      return 'woken'
+    }
+    // Meaningful signal. Deliver its payload into the next round directly:
+    // the drain gate runs at tool-loop iteration END, so the freshly woken
+    // request would otherwise carry nothing new — the notification that
+    // woke the agent would only land in the round after, which never comes
+    // if the model ends on an empty context.
+    const notificationAttachments = await getQueuedCommandAttachments(
+      dequeueAllMatching(cmd => isAgentTaskNotification(cmd, agentId)),
+    )
+    for (const attachment of notificationAttachments) {
+      runMessages.push(createAttachmentMessage(attachment))
+    }
+    for (const attachment of getAgentPendingMessageAttachments(
+      agentToolUseContext,
+    )) {
+      runMessages.push(createAttachmentMessage(attachment))
+    }
+    parkIdleMs = PARK_INITIAL_IDLE_MS
+    remindedAboutOwnedTasks = false
+    return 'woken'
+  }
+
+  // Round-scoped user interrupt: the abort reason names this agent, which
+  // is what distinguishes it from a kill (any other reason — default abort,
+  // parent cancel cascading through a shared controller — still ends the
+  // run below exactly as before).
+  const wasToolInterrupted = () =>
+    isAgentToolInterruptReason(agentAbortController.signal.reason, agentId)
 
   try {
     while (true) {
@@ -931,6 +1012,16 @@ export async function* runAgent({
         )
         lastRecordedUuid = reminder.uuid
         yield reminder
+      }
+      // Between-rounds guard: an abort can land in the window the post-round
+      // check below never sees (this iteration skipped it — e.g. a reminder
+      // round). A kill ends the run; a tool-interrupt that reached this
+      // window re-arms and parks like the post-round path does.
+      if (agentAbortController.signal.aborted) {
+        if (!wasToolInterrupted()) break
+        rearmAfterToolInterrupt()
+        if ((await parkAndAwaitWake()) === 'abort') break
+        continue
       }
       const agentQuery = query({
         messages: [...initialMessages, ...runMessages],
@@ -1137,7 +1228,22 @@ export async function* runAgent({
 
       turnsUsed += assistantTurnsThisRound
 
-      // The round ended. Abort first, then non-implicit terminals —
+      // The round ended. A tool-interrupt addressed to THIS agent is
+      // round-scoped, not run-death: query() already delivered the round's
+      // synthetic messages (rejected tool_result + the interrupt marker),
+      // so re-arm the spent controller and park awaiting the user's next
+      // drill-down message or an owned-task notification. The run survives,
+      // the parent is not notified, and owned background tasks keep running
+      // (only run death kills them). Any other abort reason — a kill, or a
+      // parent cancel cascading through a shared sync controller — falls
+      // through to the run-death break below, unchanged.
+      if (agentAbortController.signal.aborted && wasToolInterrupted()) {
+        rearmAfterToolInterrupt()
+        if ((await parkAndAwaitWake()) === 'abort') break
+        continue
+      }
+
+      // Abort first, then non-implicit terminals —
       // max_turns, aborts, hook stops, and API errors all end the run like
       // the old single-query model. end_turn is handled by the gate below
       // (it may be converted to a reminder round); only a genuine implicit
@@ -1146,16 +1252,16 @@ export async function* runAgent({
       if (agentAbortController.signal.aborted) break
 
       if (terminal?.reason === 'end_turn') {
-        // EndTurn while owning running tasks is gated like an implicit end:
-        // models call EndTurn to "pause" for a build (two port agents ended
-        // "I'll wait for the build to complete" via EndTurn and the finally
+        // FinishRun while owning running tasks is gated like an implicit end:
+        // models call FinishRun to "pause" for a build (two port agents ended
+        // "I'll wait for the build to complete" via FinishRun and the finally
         // block killed their builds). First such call gets the reminder and
         // parks; a second consecutive no-work one is honored as deliberate
-        // abandonment. Over budget or taskless, EndTurn always honors.
+        // abandonment. Over budget or taskless, FinishRun always honors.
         const ownedTasks = getRunningOwnedShellTasks(agentId, agentGetAppState)
-        const gate = resolveEndTurnOwnedTasksGate({
+        const gate = resolveFinishRunOwnedTasksGate({
           ownedTaskCount: ownedTasks.length,
-          strikes: endTurnOwnedTaskStrikes,
+          strikes: finishRunOwnedTaskStrikes,
           roundDidWork: assistantTurnsThisRound > 1,
           overBudget: totalMaxTurns !== undefined && turnsUsed >= totalMaxTurns,
         })
@@ -1163,12 +1269,12 @@ export async function* runAgent({
           fireStopHooks = true
           break
         }
-        endTurnOwnedTaskStrikes =
-          assistantTurnsThisRound > 1 ? 1 : endTurnOwnedTaskStrikes + 1
+        finishRunOwnedTaskStrikes =
+          assistantTurnsThisRound > 1 ? 1 : finishRunOwnedTaskStrikes + 1
         // Share the flag with the implicit-end path so a later implicit end
         // over the same tasks parks directly instead of re-reminding.
         remindedAboutOwnedTasks = true
-        pushReminder(endTurnOwnedTasksReminderText(ownedTasks))
+        pushReminder(finishRunOwnedTasksReminderText(ownedTasks))
         continue
       }
 
@@ -1191,12 +1297,12 @@ export async function* runAgent({
           // result is the last text before the trailing nudges
           // (finalizeAgentTool skips post-nudge acks).
           logForDebugging(
-            `[Agent: ${agentDefinition.agentType}] Ignored ${MAX_END_REMINDERS} end reminders without EndTurn; force-completing`,
+            `[Agent: ${agentDefinition.agentType}] Ignored ${MAX_END_REMINDERS} end reminders without FinishRun; force-completing`,
           )
           fireStopHooks = true
           break
         }
-        pushReminder(END_TURN_REMINDER)
+        pushReminder(FINISH_RUN_REMINDER)
         continue
       }
 
@@ -1209,48 +1315,7 @@ export async function* runAgent({
         continue
       }
 
-      const wake = await parkUntilOwnedTaskSignal({
-        agentId,
-        idleMs: parkIdleMs,
-        abortSignal: agentAbortController.signal,
-        getPendingMessageCount: () =>
-          getAgentPendingMessageCount(agentId, agentGetAppState),
-      })
-      logForDebugging(
-        `[Agent: ${agentDefinition.agentType}] Park wake: ${wake} (owned tasks: ${ownedTasks.length})`,
-      )
-      if (wake === 'abort') break
-      if (wake === 'idle') {
-        parkIdleMs = Math.min(parkIdleMs * 2, PARK_MAX_IDLE_MS)
-        // Re-check ownership: a task may have exited without queueing a
-        // notification during the idle window — remind about what is still
-        // running, not the pre-park snapshot.
-        const stillOwned = getRunningOwnedShellTasks(agentId, agentGetAppState)
-        pushReminder(
-          stillOwned.length > 0
-            ? ownedTasksReminderText(stillOwned, true)
-            : END_TURN_REMINDER,
-        )
-        continue
-      }
-      // Meaningful signal. Deliver its payload into the next round
-      // directly: the drain gate runs at tool-loop iteration END, so the
-      // freshly woken request would otherwise carry nothing new — the
-      // notification that woke the agent would only land in the round
-      // after, which never comes if the model ends on an empty context.
-      const notificationAttachments = await getQueuedCommandAttachments(
-        dequeueAllMatching(cmd => isAgentTaskNotification(cmd, agentId)),
-      )
-      for (const attachment of notificationAttachments) {
-        runMessages.push(createAttachmentMessage(attachment))
-      }
-      for (const attachment of getAgentPendingMessageAttachments(
-        agentToolUseContext,
-      )) {
-        runMessages.push(createAttachmentMessage(attachment))
-      }
-      parkIdleMs = PARK_INITIAL_IDLE_MS
-      remindedAboutOwnedTasks = false
+      if ((await parkAndAwaitWake()) === 'abort') break
       continue
     }
 
@@ -1261,7 +1326,7 @@ export async function* runAgent({
     // SubagentStop hooks, relocated here from query's per-round stop-hook
     // path (skipStopHooks above): strict end_turn would otherwise fire them
     // once per implicit-end reminder round. They now fire once at true
-    // completion — EndTurn or the force-complete backstop — matching the
+    // completion — FinishRun or the force-complete backstop — matching the
     // single 'completed' firing of the old model. maxTurns and abort never
     // fired them and still don't. Blocking results are ignored: the agent
     // explicitly ended its run.

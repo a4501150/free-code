@@ -597,9 +597,9 @@ describe('Provider Config E2E', () => {
             },
           },
         ]),
-        // Subagent reports and ends via explicit EndTurn in one turn;
+        // Subagent reports and ends via explicit FinishRun in one turn;
         // the queue must cover it or the agent loop runs dry.
-        toolUseResponse([{ name: 'EndTurn', input: {} }], 'Tier done'),
+        toolUseResponse([{ name: 'FinishRun', input: {} }], 'Tier done'),
         textResponse('Main done'),
       ])
 
@@ -646,9 +646,9 @@ describe('Provider Config E2E', () => {
             },
           },
         ]),
-        // Subagent reports and ends via explicit EndTurn in one turn;
+        // Subagent reports and ends via explicit FinishRun in one turn;
         // the queue must cover it or the agent loop runs dry.
-        toolUseResponse([{ name: 'EndTurn', input: {} }], 'Tier done'),
+        toolUseResponse([{ name: 'FinishRun', input: {} }], 'Tier done'),
         textResponse('Main done'),
       ])
 
@@ -696,9 +696,9 @@ describe('Provider Config E2E', () => {
             },
           },
         ]),
-        // Subagent reports and ends via explicit EndTurn in one turn;
+        // Subagent reports and ends via explicit FinishRun in one turn;
         // the queue must cover it or the agent loop runs dry.
-        toolUseResponse([{ name: 'EndTurn', input: {} }], 'Tier done'),
+        toolUseResponse([{ name: 'FinishRun', input: {} }], 'Tier done'),
         textResponse('Main done'),
       ])
 

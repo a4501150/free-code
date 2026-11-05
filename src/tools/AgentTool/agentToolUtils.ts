@@ -52,9 +52,10 @@ import { emitTaskProgress as emitTaskProgressEvent } from '../../utils/task/stru
 import { getTokenCountFromUsage } from '../../utils/tokens.js'
 import { EXIT_PLAN_MODE_TOOL_NAME } from '../ExitPlanModeTool/constants.js'
 import {
-  END_TURN_REMINDER,
-  isEndTurnToolUse,
-} from '../EndTurnTool/constants.js'
+  FINISH_RUN_REMINDER,
+  isFinishRunToolUse,
+  LEGACY_END_TURN_REMINDER,
+} from '../FinishRunTool/constants.js'
 import { AGENT_TOOL_NAME, LEGACY_AGENT_TOOL_NAME } from './constants.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 export type ResolvedAgentTools = {
@@ -223,10 +224,10 @@ export function countToolUses(messages: MessageType[]): number {
   for (const m of messages) {
     if (m.type === 'assistant') {
       for (const block of m.message.content) {
-        // EndTurn is the completion protocol, not a tool call — counting it
+        // FinishRun is the completion protocol, not a tool call — counting it
         // would report one extra tool use to the parent (<usage> trailer,
         // "Done (N tool uses)") for every strict-end_turn run.
-        if (block.type === 'tool_use' && !isEndTurnToolUse(block)) {
+        if (block.type === 'tool_use' && !isFinishRunToolUse(block)) {
           count++
         }
       }
@@ -248,19 +249,19 @@ function userMessageText(m: MessageType): string | undefined {
 }
 
 /**
- * Index of the last end-turn nudge (the exact END_TURN_REMINDER meta user
- * message) in the run, or -1. The owned-tasks reminder shares the wrapper
- * tag but not the exact text and must not match: a reply to it is a
- * genuine choice to keep waiting, not protocol noise.
+ * Index of the last plain nudge (the exact FINISH_RUN_REMINDER meta user
+ * message) in the run, or -1. Resumed runs are seeded from transcripts
+ * that may hold the pre-rename wording, so both exact texts match. The
+ * owned-tasks reminder shares the wrapper tag but neither exact text and
+ * must not match: a reply to it is a genuine choice to keep waiting, not
+ * protocol noise.
  */
-function lastEndReminderIndex(messages: MessageType[]): number {
+function lastFinishRunReminderIndex(messages: MessageType[]): number {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]!
-    if (
-      m.type === 'user' &&
-      m.isMeta === true &&
-      userMessageText(m) === END_TURN_REMINDER
-    ) {
+    const text =
+      m.type === 'user' && m.isMeta === true ? userMessageText(m) : undefined
+    if (text === FINISH_RUN_REMINDER || text === LEGACY_END_TURN_REMINDER) {
       return i
     }
   }
@@ -268,7 +269,7 @@ function lastEndReminderIndex(messages: MessageType[]): number {
 }
 
 /**
- * Whether any real (non-EndTurn) tool use happened after index `from` —
+ * Whether any real (non-FinishRun) tool use happened after index `from` —
  * the difference between a post-nudge ack and a genuine new report.
  */
 function hasRealWorkAfter(messages: MessageType[], from: number): boolean {
@@ -276,7 +277,7 @@ function hasRealWorkAfter(messages: MessageType[], from: number): boolean {
     const m = messages[i]!
     if (m.type !== 'assistant') continue
     for (const block of m.message.content) {
-      if (block.type === 'tool_use' && !isEndTurnToolUse(block)) return true
+      if (block.type === 'tool_use' && !isFinishRunToolUse(block)) return true
     }
   }
   return false
@@ -289,7 +290,7 @@ function hasRealWorkAfter(messages: MessageType[], from: number): boolean {
  * else the end of the run (last text wins).
  */
 function resultSearchBound(messages: MessageType[]): number {
-  const reminderIdx = lastEndReminderIndex(messages)
+  const reminderIdx = lastFinishRunReminderIndex(messages)
   if (reminderIdx >= 0 && !hasRealWorkAfter(messages, reminderIdx)) {
     return reminderIdx
   }
@@ -357,7 +358,7 @@ export function finalizeAgentTool(
   }
   // Extract text content from the agent's response: the last assistant
   // text, walking back past pure-tool_use tails (loop exited mid-turn, or
-  // an EndTurn-only final message) and past post-nudge ack text (see
+  // a FinishRun-only final message) and past post-nudge ack text (see
   // selectResultTextBlocks).
   const content = selectResultTextBlocks(agentMessages)
 

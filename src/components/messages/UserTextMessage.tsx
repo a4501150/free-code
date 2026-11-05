@@ -16,9 +16,9 @@ import {
   isTaskNotificationText,
 } from '../../utils/messages.js'
 import {
-  extractEndTurnReminderBody,
-  isEndTurnReminderText,
-} from '../../tools/EndTurnTool/constants.js'
+  extractFinishRunReminderBody,
+  isFinishRunReminderText,
+} from '../../tools/FinishRunTool/constants.js'
 import { InjectedContextMessage } from './InjectedContextMessage.js'
 import { InterruptedByUser } from '../InterruptedByUser.js'
 import { MessageResponse } from '../MessageResponse.js'
@@ -166,13 +166,13 @@ export function UserTextMessage({
   // Harness end-turn nudge to a subagent (runAgent's reminder round). Always
   // visible — the user must see when a subagent had to be reminded to end —
   // and never rendered as user input.
-  if (isEndTurnReminderText(param.text)) {
-    const body = extractEndTurnReminderBody(param.text)
+  if (isFinishRunReminderText(param.text)) {
+    const body = extractFinishRunReminderBody(param.text)
     if (body) {
       return (
         <InjectedContextMessage
           addMargin={addMargin}
-          label="End-turn reminder"
+          label="Finish-run reminder"
           content={body}
           verbose={verbose}
         />

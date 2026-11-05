@@ -519,18 +519,24 @@ describe('Tool Use E2E', () => {
             },
           },
         ]),
-        // Concurrent agents each report and end via explicit EndTurn; the
+        // Concurrent agents each report and end via explicit FinishRun; the
         // prompt-text selector routes each agent to its own entry no matter
         // which one arrives first.
         {
           selector: (b: { messages?: unknown }) =>
             JSON.stringify(b.messages ?? '').includes('Return the word hello'),
-          response: toolUseResponse([{ name: 'EndTurn', input: {} }], 'hello'),
+          response: toolUseResponse(
+            [{ name: 'FinishRun', input: {} }],
+            'hello',
+          ),
         },
         {
           selector: (b: { messages?: unknown }) =>
             JSON.stringify(b.messages ?? '').includes('Return the word world'),
-          response: toolUseResponse([{ name: 'EndTurn', input: {} }], 'world'),
+          response: toolUseResponse(
+            [{ name: 'FinishRun', input: {} }],
+            'world',
+          ),
         },
         textResponse('Both agents finished successfully'),
       ])
@@ -602,7 +608,7 @@ describe('Tool Use E2E', () => {
             },
           },
         ]),
-        toolUseResponse([{ name: 'EndTurn', input: {} }], 'hello'),
+        toolUseResponse([{ name: 'FinishRun', input: {} }], 'hello'),
         textResponse('Agent finished'),
       ])
       const screen = await session.submitAndApprove('Run an agent', 30_000)

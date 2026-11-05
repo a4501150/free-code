@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  endTurnOwnedTasksReminderText,
+  agentToolInterruptReason,
+  finishRunOwnedTasksReminderText,
+  isAgentToolInterruptReason,
   ownedTasksReminderText,
   parkUntilOwnedTaskSignal,
   PARK_INITIAL_IDLE_MS,
-  resolveEndTurnOwnedTasksGate,
+  resolveFinishRunOwnedTasksGate,
 } from '../../src/tools/AgentTool/agentPark.js'
 import type { TaskState } from '../../src/tasks/types.js'
-import { END_TURN_REMINDER_TAG } from '../../src/tools/EndTurnTool/constants.js'
+import { FINISH_RUN_REMINDER_TAG } from '../../src/tools/FinishRunTool/constants.js'
 import {
   clearCommandQueue,
   enqueuePendingNotification,
@@ -39,6 +41,22 @@ async function settledAfter(
   ])
   return result
 }
+
+describe('agent tool-interrupt abort reason', () => {
+  test('is agentId-addressed so only the viewed run adopts it', () => {
+    const reason = agentToolInterruptReason(MY_AGENT)
+    expect(reason).toBe(`tool-interrupt:${MY_AGENT}`)
+    expect(isAgentToolInterruptReason(reason, MY_AGENT)).toBe(true)
+    // A sync child shares its parent's controller: the parent's interrupt
+    // must not read as the child's own.
+    expect(isAgentToolInterruptReason(reason, OTHER_AGENT)).toBe(false)
+    // Kills (default aborts) carry a DOMException, not a reason string.
+    expect(isAgentToolInterruptReason(new Error('killed'), MY_AGENT)).toBe(
+      false,
+    )
+    expect(isAgentToolInterruptReason(undefined, MY_AGENT)).toBe(false)
+  })
+})
 
 describe('parkUntilOwnedTaskSignal', () => {
   test('idle timer is 10 minutes, not something degenerate', () => {
@@ -106,10 +124,10 @@ describe('parkUntilOwnedTaskSignal', () => {
   })
 })
 
-describe('resolveEndTurnOwnedTasksGate', () => {
-  test('honors EndTurn with no owned tasks', () => {
+describe('resolveFinishRunOwnedTasksGate', () => {
+  test('honors FinishRun with no owned tasks', () => {
     expect(
-      resolveEndTurnOwnedTasksGate({
+      resolveFinishRunOwnedTasksGate({
         ownedTaskCount: 0,
         strikes: 0,
         roundDidWork: false,
@@ -118,9 +136,9 @@ describe('resolveEndTurnOwnedTasksGate', () => {
     ).toBe('honor')
   })
 
-  test('honors EndTurn when the turns budget is exhausted', () => {
+  test('honors FinishRun when the turns budget is exhausted', () => {
     expect(
-      resolveEndTurnOwnedTasksGate({
+      resolveFinishRunOwnedTasksGate({
         ownedTaskCount: 3,
         strikes: 0,
         roundDidWork: false,
@@ -129,9 +147,9 @@ describe('resolveEndTurnOwnedTasksGate', () => {
     ).toBe('honor')
   })
 
-  test('gates the first EndTurn with owned tasks', () => {
+  test('gates the first FinishRun with owned tasks', () => {
     expect(
-      resolveEndTurnOwnedTasksGate({
+      resolveFinishRunOwnedTasksGate({
         ownedTaskCount: 2,
         strikes: 0,
         roundDidWork: false,
@@ -140,9 +158,9 @@ describe('resolveEndTurnOwnedTasksGate', () => {
     ).toBe('gate')
   })
 
-  test('honors the second consecutive no-work EndTurn (deliberate abandon)', () => {
+  test('honors the second consecutive no-work FinishRun (deliberate abandon)', () => {
     expect(
-      resolveEndTurnOwnedTasksGate({
+      resolveFinishRunOwnedTasksGate({
         ownedTaskCount: 2,
         strikes: 1,
         roundDidWork: false,
@@ -153,7 +171,7 @@ describe('resolveEndTurnOwnedTasksGate', () => {
 
   test('a round that did work answers the previous gate and gates again', () => {
     expect(
-      resolveEndTurnOwnedTasksGate({
+      resolveFinishRunOwnedTasksGate({
         ownedTaskCount: 2,
         strikes: 1,
         roundDidWork: true,
@@ -179,7 +197,7 @@ describe('owned-task reminder texts', () => {
 
   test('ownedTasksReminderText lists tasks and wraps the reminder tag', () => {
     const text = ownedTasksReminderText([shellTask, agentTask])
-    expect(text.startsWith(`<${END_TURN_REMINDER_TAG}>`)).toBe(true)
+    expect(text.startsWith(`<${FINISH_RUN_REMINDER_TAG}>`)).toBe(true)
     expect(text).toContain('ended your message while still owning 2')
     expect(text).toContain('- bash1 (monitor): tail -f build.log')
     expect(text).toContain('- agent1 (background): port agent')
@@ -191,13 +209,13 @@ describe('owned-task reminder texts', () => {
     )
   })
 
-  test('endTurnOwnedTasksReminderText corrects the EndTurn and states the second-strike contract', () => {
-    const text = endTurnOwnedTasksReminderText([shellTask])
-    expect(text.startsWith(`<${END_TURN_REMINDER_TAG}>`)).toBe(true)
+  test('finishRunOwnedTasksReminderText corrects the FinishRun and states the second-strike contract', () => {
+    const text = finishRunOwnedTasksReminderText([shellTask])
+    expect(text.startsWith(`<${FINISH_RUN_REMINDER_TAG}>`)).toBe(true)
     expect(text).toContain('was not carried out')
     expect(text).toContain('still own 1 running background task')
-    expect(text).toContain('end your message WITHOUT calling EndTurn')
-    expect(text).toContain('call EndTurn again to end your run now')
+    expect(text).toContain('end your message WITHOUT calling FinishRun')
+    expect(text).toContain('call FinishRun again to end your run now')
     expect(text).toContain('- bash1 (monitor): tail -f build.log')
   })
 })
