@@ -5,10 +5,12 @@ import {
   existsSync,
   mkdirSync,
   renameSync,
+  statSync,
   unlinkSync,
+  type WriteStream,
 } from 'fs'
 import { arch, platform } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { pipeline } from 'stream/promises'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
 import {
@@ -20,6 +22,10 @@ import {
 const URL_PATTERN = /https:\/\/[^\s"'<>]+\.trycloudflare\.com/
 const REGISTERED_RE = /Registered tunnel connection/
 
+function exitDetail(code: number | null, sig: string | null): string {
+  return sig ? `signal ${sig}` : `code ${code}`
+}
+
 const GITHUB_RELEASE =
   'https://github.com/cloudflare/cloudflared/releases/latest/download'
 
@@ -29,6 +35,39 @@ export type CloudflaredDeps = {
   resolveBinary: () => Promise<string>
   spawnProcess: (binary: string, args: readonly string[]) => ChildProcess
   startupTimeoutMs: number
+  /**
+   * Receives every byte the process writes, from spawn to exit, appended to a
+   * persistent log. Returning null disables logging (tests). Must not throw:
+   * a broken log sink must never take the tunnel down.
+   */
+  openLog: () => WriteStream | null
+}
+
+const TUNNEL_LOG_ROTATE_BYTES = 8 * 1024 * 1024
+
+function tunnelLogPath(): string {
+  return join(getClaudeConfigHomeDir(), 'logs', 'tunnel-cloudflared.log')
+}
+
+function openTunnelLog(): WriteStream | null {
+  try {
+    const path = tunnelLogPath()
+    mkdirSync(dirname(path), { recursive: true })
+    try {
+      if (statSync(path).size > TUNNEL_LOG_ROTATE_BYTES) {
+        try {
+          unlinkSync(`${path}.1`)
+        } catch {}
+        renameSync(path, `${path}.1`)
+      }
+    } catch {}
+    const stream = createWriteStream(path, { flags: 'a' })
+    // A read-only dir or a full disk must not kill the daemon mid-write.
+    stream.on('error', () => {})
+    return stream
+  } catch {
+    return null
+  }
 }
 
 export function defaultCloudflaredDeps(): CloudflaredDeps {
@@ -37,6 +76,7 @@ export function defaultCloudflaredDeps(): CloudflaredDeps {
     spawnProcess: (bin, args) =>
       spawn(bin, [...args], { stdio: ['ignore', 'pipe', 'pipe'] }),
     startupTimeoutMs: CLOUDFLARED_STARTUP_TIMEOUT_MS,
+    openLog: openTunnelLog,
   }
 }
 
@@ -226,6 +266,39 @@ export async function runCloudflared(
   const binary = await deps.resolveBinary()
   const child: ChildProcess = deps.spawnProcess(binary, args)
 
+  // Drain the process for its WHOLE lifetime. During startup the scan below
+  // needs the output, but after readiness nothing else reads these pipes —
+  // without a persistent drain the buffer fills and cloudflared blocks on its
+  // next log write, wedging the tunnel. The log is also the only record of
+  // post-startup disconnects and errors.
+  // Args are never logged: the named-tunnel run token is one of them.
+  const log = deps.openLog()
+  const logLine = (text: string): void => {
+    log?.write(`[${new Date().toISOString()}] ${text}\n`)
+  }
+  logLine('cloudflared started')
+  child.stdout?.on('data', (chunk: Buffer) => log?.write(chunk))
+  child.stderr?.on('data', (chunk: Buffer) => log?.write(chunk))
+
+  // End the log only once the stdio pipes have fully drained: 'exit' can fire
+  // while buffered output is still flowing (why 'close' exists), so ending
+  // there would drop the crash tail the log exists to capture, and a spawn
+  // error may never produce an 'exit' at all (fd left open forever).
+  let logEnded = false
+  const endLog = (): void => {
+    if (logEnded) return
+    logEnded = true
+    log?.end()
+  }
+  let streamsOpen = (child.stdout ? 1 : 0) + (child.stderr ? 1 : 0)
+  const onStreamClosed = (): void => {
+    streamsOpen -= 1
+    if (streamsOpen <= 0) endLog()
+  }
+  child.stdout?.once('close', onStreamClosed)
+  child.stderr?.once('close', onStreamClosed)
+  if (streamsOpen === 0) endLog()
+
   const startup = new AbortController()
   const timer = setTimeout(
     () =>
@@ -243,14 +316,32 @@ export async function runCloudflared(
   }
   const onChildExit = (code: number | null, sig: string | null): void => {
     if (!startup.signal.aborted) {
-      const detail = sig ? `signal ${sig}` : `code ${code}`
-      startup.abort(new Error(`cloudflared exited before ready (${detail})`))
+      startup.abort(
+        new Error(`cloudflared exited before ready (${exitDetail(code, sig)})`),
+      )
     }
   }
   const onCallerAbort = (): void => {
     if (!startup.signal.aborted)
       startup.abort(new Error('cloudflared startup cancelled'))
   }
+
+  // Lifetime exit watch, independent of the startup-only listeners below:
+  // once the tunnel is ready nobody else notices the process dying.
+  let closed = false
+  let resolveExited: (detail: string | null) => void = () => {}
+  const whenExited = new Promise<string | null>(resolve => {
+    resolveExited = resolve
+  })
+  child.once('exit', (code, sig) => {
+    const detail = exitDetail(code, sig)
+    logLine(`cloudflared exited (${detail})`)
+    // A close we asked for is not a failure: resolve null so the caller can
+    // tell deliberate shutdown from a crashed tunnel.
+    resolveExited(
+      closed || start.signal.aborted ? null : `cloudflared exited (${detail})`,
+    )
+  })
 
   child.once('error', onChildError)
   child.once('exit', onChildExit)
@@ -270,12 +361,15 @@ export async function runCloudflared(
 
     return {
       publicUrl: readiness.publicUrl(scannedUrl),
+      whenExited,
       async close() {
+        closed = true
         start.signal.removeEventListener('abort', onAbort)
         terminate(child)
       },
     }
   } catch (err) {
+    closed = true
     terminate(child)
     throw err
   } finally {

@@ -43,6 +43,7 @@ function namedDeps(
         return child
       },
       startupTimeoutMs: 5000,
+      openLog: () => null,
       apiBase: 'https://api.test',
       fetchImpl: async (url, init) => {
         const parsed = new URL(url)

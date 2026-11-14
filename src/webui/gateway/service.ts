@@ -106,6 +106,14 @@ export function createWebService() {
           port: server.port,
           signal: tunnelAbort.signal,
         })
+        // An unexpected tunnel death must be visible: the URL no longer
+        // works, so drop it from status — `web status` only prints
+        // tunnelError when publicUrl is absent.
+        tunnel.whenExited?.then(detail => {
+          if (!detail || !status.running) return
+          status.tunnelError = detail
+          status.publicUrl = undefined
+        })
         status.publicUrl = tunnel.publicUrl
         // Teach the origin check about the public URL, or every browser request
         // through the tunnel fails the Origin comparison.

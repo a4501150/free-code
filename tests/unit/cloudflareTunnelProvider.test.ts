@@ -20,6 +20,7 @@ function deps(child: ChildProcess): CloudflareDeps {
     resolveBinary: async () => '/bin/fake',
     spawnProcess: () => child,
     startupTimeoutMs: 5000,
+    openLog: () => null,
   }
 }
 

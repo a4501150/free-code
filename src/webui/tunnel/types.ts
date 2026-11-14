@@ -6,6 +6,13 @@ export type TunnelStartOptions = {
 export type TunnelHandle = {
   publicUrl: string
   close(): Promise<void>
+  /**
+   * Settles when the tunnel process exits: a human-readable detail string on
+   * an unexpected death, null when the caller's abort signal had already
+   * fired (a deliberate close). Providers that do not supervise a process
+   * omit it.
+   */
+  whenExited?: Promise<string | null>
 }
 
 export interface TunnelProvider {
