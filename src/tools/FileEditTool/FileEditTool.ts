@@ -54,7 +54,7 @@ import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.
 import { validateInputForSettingsFileEdit } from '../../utils/settings/validateEditTool.js'
 import { FILE_EDIT_TOOL_NAME } from './constants.js'
 import { coerceEditInput } from './legacyInput.js'
-import { editRequestsFromInput, planInputAgainst } from './planning.js'
+import { editRequestFromInput, planInputAgainst } from './planning.js'
 import { getEditToolDescription } from './prompt.js'
 import {
   type FileEditInput,
@@ -126,13 +126,9 @@ export const FileEditTool = buildTool({
       ...(parsedInput.new_string !== undefined && {
         new_string: parsedInput.new_string,
       }),
-      ...(parsedInput.end_string !== undefined && {
-        end_string: parsedInput.end_string,
-      }),
       ...(parsedInput.replace_all !== undefined && {
         replace_all: parsedInput.replace_all,
       }),
-      ...(parsedInput.edits !== undefined && { edits: parsedInput.edits }),
     }
   },
   userFacingName,
@@ -149,16 +145,11 @@ export const FileEditTool = buildTool({
     return outputSchema
   },
   toAutoClassifierInput(input) {
-    const flat = editRequestsFromInput(input)
-    if ('invalid' in flat) {
+    const { old_string, new_string } = input
+    if (old_string === undefined || new_string === undefined) {
       return `${input.file_path}: <malformed edit input>`
     }
-    const pairs = flat.requests
-      .map(
-        r => `${JSON.stringify(r.oldString)} -> ${JSON.stringify(r.newString)}`,
-      )
-      .join('; ')
-    return `${input.file_path}: ${pairs}`
+    return `${input.file_path}: ${JSON.stringify(old_string)} -> ${JSON.stringify(new_string)}`
   },
   getPath(input): string {
     return input.file_path
@@ -190,37 +181,29 @@ export const FileEditTool = buildTool({
     // where "/" vs "\" can cause readFileState lookup mismatches)
     const fullFilePath = expandPath(input.file_path)
 
-    // Flatten to planner requests first: mode exclusivity (single vs edits[])
-    // is enforced here so every check below works on a uniform shape.
-    const flattened = editRequestsFromInput(input)
-    if ('invalid' in flattened) {
+    // Reject missing old_string/new_string up front; the mapped request
+    // carries everything the checks below need.
+    const mapped = editRequestFromInput(input)
+    if ('invalid' in mapped) {
       return {
         result: false,
         behavior: 'ask',
-        message: flattened.invalid,
+        message: mapped.invalid,
         errorCode: 1,
       }
     }
-    const requests = flattened.requests
+    const request = mapped.request
 
     // Reject edits to team memory files that introduce secrets.
     const secretError = checkTeamMemSecrets(
       fullFilePath,
-      requests.map(r => r.oldString + '\n' + r.newString).join('\n'),
+      request.oldString + '\n' + request.newString,
     )
     if (secretError) {
       return { result: false, message: secretError, errorCode: 0 }
     }
 
-    // No-op check per exact-mode entry (anchor-range entries replace an
-    // unknown span, so their no-op case surfaces after planning instead).
-    const noop = requests.find(
-      r =>
-        r.endString === undefined &&
-        r.oldString !== '' &&
-        r.oldString === r.newString,
-    )
-    if (noop) {
+    if (request.oldString !== '' && request.oldString === request.newString) {
       return {
         result: false,
         behavior: 'ask',
@@ -298,7 +281,7 @@ export const FileEditTool = buildTool({
     if (fileContent === null) {
       // Creation mode: an empty old_string against a missing file writes
       // new_string as the whole file (the Write tool is the other door).
-      if (requests.length === 1 && requests[0]!.oldString === '') {
+      if (request.oldString === '') {
         return { result: true }
       }
       const similarFilename = findSimilarFile(fullFilePath)
@@ -312,7 +295,7 @@ export const FileEditTool = buildTool({
       return { result: false, behavior: 'ask', message, errorCode: 4 }
     }
 
-    if (requests.length === 1 && requests[0]!.oldString === '') {
+    if (request.oldString === '') {
       return {
         result: false,
         behavior: 'ask',
@@ -378,10 +361,7 @@ export const FileEditTool = buildTool({
       input1.file_path === input2.file_path &&
       input1.old_string === input2.old_string &&
       input1.new_string === input2.new_string &&
-      input1.end_string === input2.end_string &&
-      (input1.replace_all ?? false) === (input2.replace_all ?? false) &&
-      JSON.stringify(input1.edits ?? null) ===
-        JSON.stringify(input2.edits ?? null)
+      (input1.replace_all ?? false) === (input2.replace_all ?? false)
     )
   },
   async call(
@@ -464,11 +444,11 @@ export const FileEditTool = buildTool({
         editCount = 1
         approvalNote = 'fresh'
       } else if (!fileExists) {
-        if (input.old_string !== '' || Array.isArray(input.edits)) {
+        if (input.old_string !== '') {
           throw new Error(fileDoesNotExistError(absoluteFilePath).message)
         }
-        if (input.old_string === undefined || input.new_string === undefined) {
-          // Unreachable: validateInput rejects missing single-edit fields.
+        if (input.new_string === undefined) {
+          // Unreachable: validateInput rejects missing fields.
           throw new Error(fileDoesNotExistError(absoluteFilePath).message)
         }
         updatedFile = input.new_string

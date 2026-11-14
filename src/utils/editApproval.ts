@@ -5,14 +5,12 @@
  * recognized Bash read command, or the content its own Edit/Write authored).
  *
  * An edit is approved when it verifies against current disk content AND its
- * placement is grounded in what the model saw. Uniqueness is judged per
- * request entry: a batch whose every edits[] entry matches exactly once has
- * exactly the same placement proof as N single unique-match edits, so it
- * approves blindly like one does. Timestamps are only ever a cheap
- * re-validation hint — `touch` with unchanged content approves, and after any
- * disk change a unique match still approves (blindly when the text is outside
- * the seen region); only placements that cannot name a unique target —
- * ambiguous matches and replace_all over a changed file — require a re-Read.
+ * placement is grounded in what the model saw. Timestamps are only ever a
+ * cheap re-validation hint — `touch` with unchanged content approves, and
+ * after any disk change a unique match still approves (blindly when the text
+ * is outside the seen region); only placements that cannot name a unique
+ * target — ambiguous matches and replace_all over a changed file — require
+ * a re-Read.
  */
 
 import type { EditPlan, MatchSpan } from './editMatch.js'
@@ -107,12 +105,12 @@ export function approveEdit(args: {
 }): ApprovalResult {
   const { state, currentContent, plan } = args
 
-  // No usable claim about the bytes: blind unique-match placement per entry.
-  // Unverified entries (resume rebuilds) count as no claim — their content
+  // No usable claim about the bytes: blind unique-match placement.
+  // Unverified states (resume rebuilds) count as no claim — their content
   // text may differ from what was shown, so neither the fresh check nor the
   // recovery path can trust it.
   if (!state || state.isPartialView || isUnverifiedState(state)) {
-    if (plan.entries.every(e => e.spans.length === 1)) {
+    if (plan.spans.length === 1) {
       return { ok: true, note: 'blind' }
     }
     return {
@@ -131,29 +129,23 @@ export function approveEdit(args: {
   }
 
   // Disk changed since the sighting. A unique match against current disk is
-  // the whole proof per entry — the same one a blind placement gets — so a
-  // formatter rewrite no longer forces a re-Read; the grounded-in-seen-lines
-  // case only upgrades the note. What still needs a re-Read is a replacement
-  // that cannot name its placement: replace_all or an ambiguous match over a
-  // file whose current state the model cannot picture.
-  let note: ApprovalNote = 'recovered'
-  for (const entry of plan.entries) {
-    if (entry.spans.length !== 1) {
-      return {
-        ok: false,
-        message: FILE_MODIFIED_SINCE_READ_MESSAGE,
-        errorCode: 7,
-      }
-    }
-    const seenSpan = findSeenSpan(state, entry.searchText)
-    if (
-      !seenSpan ||
-      !seenCoversLines(state, seenSpan.startLine, seenSpan.endLine)
-    ) {
-      note = 'blind-modified'
+  // the whole proof — the same one a blind placement gets — so a formatter
+  // rewrite no longer forces a re-Read; the grounded-in-seen-lines case only
+  // upgrades the note. What still needs a re-Read is a replacement that
+  // cannot name its placement: replace_all or an ambiguous match over a file
+  // whose current state the model cannot picture.
+  if (plan.spans.length !== 1) {
+    return {
+      ok: false,
+      message: FILE_MODIFIED_SINCE_READ_MESSAGE,
+      errorCode: 7,
     }
   }
-  return { ok: true, note }
+  const seenSpan = findSeenSpan(state, plan.searchText)
+  return seenSpan &&
+    seenCoversLines(state, seenSpan.startLine, seenSpan.endLine)
+    ? { ok: true, note: 'recovered' }
+    : { ok: true, note: 'blind-modified' }
 }
 
 /** True when the entry proves the model saw the entire current file content. */

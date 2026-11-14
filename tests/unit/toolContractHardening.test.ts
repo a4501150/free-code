@@ -139,11 +139,28 @@ describe('FileEdit input schema', () => {
     ).toBe(false)
   })
 
-  test('rejects the legacy edits array', () => {
+  test('rejects edits[] input of any entry shape', () => {
     expect(
       fileEditInputSchema.safeParse({
         file_path: '/repo/x.ts',
         edits: [{ op: 'delete', start: '3:abc' }],
+      }).success,
+    ).toBe(false)
+    expect(
+      fileEditInputSchema.safeParse({
+        file_path: '/repo/x.ts',
+        edits: [{ old_string: 'a', new_string: 'b' }],
+      }).success,
+    ).toBe(false)
+  })
+
+  test('rejects the removed end_string anchor-range field', () => {
+    expect(
+      fileEditInputSchema.safeParse({
+        file_path: '/repo/x.ts',
+        old_string: 'a',
+        new_string: 'b',
+        end_string: 'c',
       }).success,
     ).toBe(false)
   })

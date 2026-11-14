@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
   planEdit,
-  planEditBatch,
   stripLineRowPrefixes,
   type EditPlanRequest,
 } from '../../src/utils/editMatch.js'
@@ -39,6 +38,11 @@ describe('planEdit — exact matches', () => {
   test('missing string fails with errorCode 8', () => {
     const r = edit('a\nb', 'zzz', 'x')
     expect(!r.ok && r.failure.errorCode).toBe(8)
+  })
+
+  test('empty old_string is rejected instead of looping', () => {
+    const r = edit('a\nb', '', 'x')
+    expect(!r.ok && r.failure.errorCode).toBe(3)
   })
 
   test('missing string with too few words gives no near-miss hint', () => {
