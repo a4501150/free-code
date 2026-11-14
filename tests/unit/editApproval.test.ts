@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  approveEdit,
+  editPlacementNote,
   approveWrite,
   normalizeSeenRanges,
   seenCoversLines,
@@ -36,159 +36,157 @@ function planFor(
 
 const FILE = 'head\ncore line\ntail'
 
-describe('approveEdit', () => {
+describe('editPlacementNote', () => {
   test('fresh: disk unchanged and edited lines were seen', () => {
-    const r = approveEdit({
-      state: state({
-        content: FILE,
-        seenRanges: [{ start: 1, end: 3 }],
-        source: 'read',
+    expect(
+      editPlacementNote({
+        state: state({
+          content: FILE,
+          seenRanges: [{ start: 1, end: 3 }],
+          source: 'read',
+        }),
+        currentContent: FILE,
+        plan: planFor(FILE, 'core line', 'fixed line'),
       }),
-      currentContent: FILE,
-      plan: planFor(FILE, 'core line', 'fixed line'),
-    })
-    expect(r.ok && r.note).toBe('fresh')
+    ).toBe('fresh')
   })
 
-  test('a touch with unchanged content still approves as fresh', () => {
-    const r = approveEdit({
-      state: state({ content: FILE, timestamp: 1, seenRanges: undefined }),
-      currentContent: FILE,
-      plan: planFor(FILE, 'core line', 'fixed line'),
-    })
-    expect(r.ok && r.note).toBe('fresh')
+  test('a touch with unchanged content still reads as fresh', () => {
+    expect(
+      editPlacementNote({
+        state: state({ content: FILE, timestamp: 1, seenRanges: undefined }),
+        currentContent: FILE,
+        plan: planFor(FILE, 'core line', 'fixed line'),
+      }),
+    ).toBe('fresh')
   })
 
   test('blind-placement: current file, edited lines outside seen ranges', () => {
-    const r = approveEdit({
-      state: state({ content: FILE, seenRanges: [{ start: 1, end: 1 }] }),
-      currentContent: FILE,
-      plan: planFor(FILE, 'core line', 'fixed line'),
-    })
-    expect(r.ok && r.note).toBe('blind-placement')
+    expect(
+      editPlacementNote({
+        state: state({ content: FILE, seenRanges: [{ start: 1, end: 1 }] }),
+        currentContent: FILE,
+        plan: planFor(FILE, 'core line', 'fixed line'),
+      }),
+    ).toBe('blind-placement')
   })
 
   test('recovered: file moved on disk, match unique and inside seen lines', () => {
     // Formatter rewrote other lines; the seen line itself is unchanged.
     const now = 'HEAD\ncore line\nTAIL'
-    const r = approveEdit({
-      state: state({ content: FILE, seenRanges: [{ start: 2, end: 2 }] }),
-      currentContent: now,
-      plan: planFor(now, 'core line', 'fixed line'),
-    })
-    expect(r.ok && r.note).toBe('recovered')
-  })
-
-  test('unique match outside seen lines approves blind-modified', () => {
-    const now = 'HEAD\ncore line\nTAIL'
-    const r = approveEdit({
-      state: state({ content: FILE, seenRanges: [{ start: 1, end: 1 }] }),
-      currentContent: now,
-      plan: planFor(now, 'core line', 'fixed line'),
-    })
-    expect(r.ok && r.note).toBe('blind-modified')
-  })
-
-  test('recovered rejected for replace_all over a changed file', () => {
-    const now = 'head\ncore line\ntail\nextra'
-    const r = approveEdit({
-      state: state({ content: FILE, seenRanges: [{ start: 1, end: 3 }] }),
-      currentContent: now,
-      plan: planFor(now, 'core line', 'x', false),
-    })
-    // Single span, but 'core line' seen-span is covered — approve. Sanity:
-    // a replace_all over a changed file is the rejected shape.
-    expect(r.ok && r.note).toBe('recovered')
-
-    const dup = 'dup\ndup'
-    const r2 = approveEdit({
-      state: state({
-        content: 'a\ndup\ndup',
-        seenRanges: [{ start: 1, end: 3 }],
+    expect(
+      editPlacementNote({
+        state: state({ content: FILE, seenRanges: [{ start: 2, end: 2 }] }),
+        currentContent: now,
+        plan: planFor(now, 'core line', 'fixed line'),
       }),
-      currentContent: dup,
-      plan: planFor(dup, 'dup', 'x', true),
-    })
-    expect(!r2.ok && r2.errorCode).toBe(7)
+    ).toBe('recovered')
   })
 
-  test('no entry: unique match still applies as blind', () => {
-    const r = approveEdit({
-      state: undefined,
-      currentContent: FILE,
-      plan: planFor(FILE, 'core line', 'fixed line'),
-    })
-    expect(r.ok && r.note).toBe('blind')
+  test('unique match outside seen lines reads as blind-modified', () => {
+    const now = 'HEAD\ncore line\nTAIL'
+    expect(
+      editPlacementNote({
+        state: state({ content: FILE, seenRanges: [{ start: 1, end: 1 }] }),
+        currentContent: now,
+        plan: planFor(now, 'core line', 'fixed line'),
+      }),
+    ).toBe('blind-modified')
   })
 
-  test('no entry: replace_all over many matches needs a Read', () => {
-    const r = approveEdit({
-      state: undefined,
-      currentContent: FILE,
-      plan: planFor(FILE, 'e', '3', true),
-    })
-    expect(!r.ok && r.errorCode).toBe(6)
+  test('replace_all over a changed file reads as blind-modified', () => {
+    // The replace_all needle occurs twice in the seen content, so no single
+    // seen span can vouch for it — but the note only informs, never gates.
+    const dup = 'dup\ndup'
+    expect(
+      editPlacementNote({
+        state: state({
+          content: 'a\ndup\ndup',
+          seenRanges: [{ start: 1, end: 3 }],
+        }),
+        currentContent: dup,
+        plan: planFor(dup, 'dup', 'x', true),
+      }),
+    ).toBe('blind-modified')
   })
 
-  test('partial view entries behave like no entry', () => {
-    const r = approveEdit({
-      state: state({ content: FILE, isPartialView: true }),
-      currentContent: FILE,
-      plan: planFor(FILE, 'core line', 'fixed line'),
-    })
-    expect(r.ok && r.note).toBe('blind')
+  test('no sighting reads as blind', () => {
+    expect(
+      editPlacementNote({
+        state: undefined,
+        currentContent: FILE,
+        plan: planFor(FILE, 'core line', 'fixed line'),
+      }),
+    ).toBe('blind')
+
+    expect(
+      editPlacementNote({
+        state: undefined,
+        currentContent: FILE,
+        plan: planFor(FILE, 'e', '3', true),
+      }),
+    ).toBe('blind')
   })
 
-  test('ranged Read over an unchanged file approves replace_all (whole-content entry)', () => {
+  test('partial view behaves like no sighting', () => {
+    expect(
+      editPlacementNote({
+        state: state({ content: FILE, isPartialView: true }),
+        currentContent: FILE,
+        plan: planFor(FILE, 'core line', 'fixed line'),
+      }),
+    ).toBe('blind')
+  })
+
+  test('ranged Read over an unchanged file keeps replace_all grounded', () => {
     // The flood regression: a ranged Read stores the WHOLE current content,
-    // so replace_all on an untouched file never falls into the recovery
-    // path that always rejects it.
-    const r = approveEdit({
+    // so replace_all on an untouched file reads as placed, not blind.
+    const note = editPlacementNote({
       state: state({ content: FILE, seenRanges: [{ start: 2, end: 2 }] }),
       currentContent: FILE,
       plan: planFor(FILE, 'e', '3', true),
     })
-    expect(r.ok && (r.note === 'fresh' || r.note === 'blind-placement')).toBe(
-      true,
-    )
+    expect(note === 'fresh' || note === 'blind-placement').toBe(true)
   })
 
   test('slice entries resolve seen lines against contentFirstLine', () => {
     // Entry stores the shown window (lines 2-3 of the file) for a file too
     // large to snapshot. Seen-line math must add the window's start line.
     const now = 'HEAD\ncore line\nTAIL'
-    const r = approveEdit({
-      state: state({
-        content: 'core line\ntail',
-        seenRanges: [{ start: 2, end: 3 }],
-        contentFirstLine: 2,
+    expect(
+      editPlacementNote({
+        state: state({
+          content: 'core line\ntail',
+          seenRanges: [{ start: 2, end: 3 }],
+          contentFirstLine: 2,
+        }),
+        currentContent: now,
+        plan: planFor(now, 'core line', 'fixed line'),
       }),
-      currentContent: now,
-      plan: planFor(now, 'core line', 'fixed line'),
-    })
-    expect(r.ok && r.note).toBe('recovered')
+    ).toBe('recovered')
   })
 
-  test('unverified (resume-rebuilt) entries approve only unique-match placements', () => {
+  test('unverified (resume-rebuilt) states read as blind', () => {
     const unverified = state({
       content: FILE,
       seenRanges: undefined,
       contentVerified: false,
     })
-    const r = approveEdit({
-      state: unverified,
-      currentContent: FILE,
-      plan: planFor(FILE, 'core line', 'fixed line'),
-    })
-    expect(r.ok && r.note).toBe('blind')
+    expect(
+      editPlacementNote({
+        state: unverified,
+        currentContent: FILE,
+        plan: planFor(FILE, 'core line', 'fixed line'),
+      }),
+    ).toBe('blind')
 
-    const r2 = approveEdit({
-      state: unverified,
-      currentContent: FILE,
-      plan: planFor(FILE, 'e', '3', true),
-    })
-    expect(!r2.ok && r2.errorCode).toBe(6)
-    expect(!r2.ok && r2.message).toContain('cannot be verified')
+    expect(
+      editPlacementNote({
+        state: unverified,
+        currentContent: FILE,
+        plan: planFor(FILE, 'e', '3', true),
+      }),
+    ).toBe('blind')
   })
 })
 

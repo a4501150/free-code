@@ -4,7 +4,10 @@ export const FILE_WRITE_TOOL_NAME = 'Write'
 export const DESCRIPTION = 'Write a file to the local filesystem.'
 
 function getPreReadInstruction(): string {
-  return `\n- If this is an existing file, you MUST first have seen the file's whole current contents — with the ${FILE_READ_TOOL_NAME} tool, or a complete view from a Bash command (a partial view does not count). This tool will fail if you did not see the file first.`
+  // The whole-file channel list here must stay in sync with the allowlist in
+  // src/utils/fileSightings.ts: cat/nl snapshot the file, everything else
+  // (head/sed windows, grep/rg matches) records only a partial sighting.
+  return `\n- If this is an existing file, you MUST first have seen the file's whole current contents — with the ${FILE_READ_TOOL_NAME} tool, or a whole-file Bash read (cat or nl on the file; grep/rg/head/sed windows give only a partial view and do not count). This tool will fail if you did not see the file first.`
 }
 
 export function getWriteToolDescription(): string {

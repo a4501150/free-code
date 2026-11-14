@@ -1,16 +1,14 @@
 /**
- * Placement approval for Edit/Write, decided by content logic rather than
+ * Placement notes for Edit/Write, decided by content logic rather than
  * timestamps: an entry in the read-state ledger proves the model was SHOWN
  * specific lines of a specific file state (Read rows, Grep content rows, a
  * recognized Bash read command, or the content its own Edit/Write authored).
  *
- * An edit is approved when it verifies against current disk content AND its
- * placement is grounded in what the model saw. Timestamps are only ever a
- * cheap re-validation hint — `touch` with unchanged content approves, and
- * after any disk change a unique match still approves (blindly when the text
- * is outside the seen region); only placements that cannot name a unique
- * target — ambiguous matches and replace_all over a changed file — require
- * a re-Read.
+ * Edit itself has no seen-ledger gate: an edit applies whenever it verifies
+ * against current disk content, and the note only tells the model how much
+ * of the file's current state its context can vouch for. Write keeps a real
+ * gate — overwriting the UNSEEN rest of a file is a different risk — so
+ * approveWrite still rejects on a missing/partial sighting.
  */
 
 import type { EditPlan, MatchSpan } from './editMatch.js'
@@ -94,58 +92,35 @@ function findSeenSpan(state: FileState, searchText: string): MatchSpan | null {
 }
 
 /**
- * Approve applying `plan` (computed against current disk content) given the
- * model's seen state for the file. `plan.spans` must already be disambiguated
- * (one span, or every span for replace_all).
+ * Classify how much of `plan`'s placement the model's seen state can vouch
+ * for, given the plan (computed against current disk content). Never gates:
+ * the plan already verified against current disk, so this only picks the
+ * note that rides the result message.
  */
-export function approveEdit(args: {
+export function editPlacementNote(args: {
   state: FileState | undefined
   currentContent: string
   plan: EditPlan
-}): ApprovalResult {
+}): ApprovalNote {
   const { state, currentContent, plan } = args
 
-  // No usable claim about the bytes: blind unique-match placement.
-  // Unverified states (resume rebuilds) count as no claim — their content
-  // text may differ from what was shown, so neither the fresh check nor the
-  // recovery path can trust it.
+  // No usable claim about the bytes. Unverified states (resume rebuilds)
+  // count as no claim — their content text may differ from what was shown.
   if (!state || state.isPartialView || isUnverifiedState(state)) {
-    if (plan.spans.length === 1) {
-      return { ok: true, note: 'blind' }
-    }
-    return {
-      ok: false,
-      message: isUnverifiedState(state)
-        ? FILE_STALE_VIEW_MESSAGE
-        : FILE_NOT_READ_YET_MESSAGE,
-      errorCode: 6,
-    }
+    return 'blind'
   }
 
   if (state.content === currentContent) {
-    return spansSeen(state, plan.spans)
-      ? { ok: true, note: 'fresh' }
-      : { ok: true, note: 'blind-placement' }
+    return spansSeen(state, plan.spans) ? 'fresh' : 'blind-placement'
   }
 
-  // Disk changed since the sighting. A unique match against current disk is
-  // the whole proof — the same one a blind placement gets — so a formatter
-  // rewrite no longer forces a re-Read; the grounded-in-seen-lines case only
-  // upgrades the note. What still needs a re-Read is a replacement that
-  // cannot name its placement: replace_all or an ambiguous match over a file
-  // whose current state the model cannot picture.
-  if (plan.spans.length !== 1) {
-    return {
-      ok: false,
-      message: FILE_MODIFIED_SINCE_READ_MESSAGE,
-      errorCode: 7,
-    }
-  }
+  // Disk changed since the sighting; the grounded-in-seen-lines case
+  // upgrades the note.
   const seenSpan = findSeenSpan(state, plan.searchText)
   return seenSpan &&
     seenCoversLines(state, seenSpan.startLine, seenSpan.endLine)
-    ? { ok: true, note: 'recovered' }
-    : { ok: true, note: 'blind-modified' }
+    ? 'recovered'
+    : 'blind-modified'
 }
 
 /** True when the entry proves the model saw the entire current file content. */

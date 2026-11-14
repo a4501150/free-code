@@ -15,9 +15,8 @@ import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { countLinesChanged, getPatchFromContents } from '../../utils/diff.js'
 import {
-  approveEdit,
+  editPlacementNote,
   type ApprovalNote,
-  type ApprovalResult,
 } from '../../utils/editApproval.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { isENOENT } from '../../utils/errors.js'
@@ -317,31 +316,6 @@ export const FileEditTool = buildTool({
       }
     }
 
-    // Logic-based placement approval: what the model was shown (any source)
-    // and current disk content decide, never a bare timestamp. Scratchpad
-    // files are exempt: session temp notes have no meaningful seen-claim
-    // and multiple agents (subagents, prior sessions) write them freely.
-    const approval: ApprovalResult = isScratchpadPath(fullFilePath)
-      ? { ok: true, note: 'fresh' }
-      : approveEdit({
-          state: toolUseContext.readFileState.get(fullFilePath),
-          // Ledger contents are BOM-free; the plan still runs against the raw
-          // bytes so the write-back keeps the BOM.
-          currentContent: stripBom(fileContent),
-          plan: planned.plan,
-        })
-    if (!approval.ok) {
-      return {
-        result: false,
-        behavior: 'ask',
-        message: approval.message,
-        meta: {
-          isFilePathAbsolute: String(isAbsolute(input.file_path)),
-        },
-        errorCode: approval.errorCode,
-      }
-    }
-
     // Additional validation for Claude settings files, against the simulated
     // post-edit content.
     const settingsValidationResult = validateInputForSettingsFileEdit(
@@ -461,19 +435,21 @@ export const FileEditTool = buildTool({
         if (!planned.ok) {
           throw new Error(planned.failure.message)
         }
-        const approval: ApprovalResult = isScratchpadPath(absoluteFilePath)
-          ? { ok: true, note: 'fresh' }
-          : approveEdit({
+        // Placement note only: the plan already verified against current
+        // disk, so the seen-ledger never gates. Scratchpad files read as
+        // 'fresh': session temp notes have no meaningful seen-claim and
+        // multiple agents (subagents, prior sessions) write them freely.
+        updatedFile = planned.plan.updatedContent
+        editCount = planned.plan.spans.length
+        approvalNote = isScratchpadPath(absoluteFilePath)
+          ? 'fresh'
+          : editPlacementNote({
               state: readFileState.get(absoluteFilePath),
+              // Ledger contents are BOM-free; the plan ran against the raw
+              // bytes so the write-back keeps the BOM.
               currentContent: stripBom(originalFileContents),
               plan: planned.plan,
             })
-        if (!approval.ok) {
-          throw new Error(approval.message)
-        }
-        updatedFile = planned.plan.updatedContent
-        editCount = planned.plan.spans.length
-        approvalNote = approval.note
       }
 
       // 4. Generate the display patch. Leading tabs are rendered as spaces to
