@@ -33,7 +33,7 @@ export function getSimplePrompt(): string {
     "Every result footer states `[exit N · full output: <path>]`: the command's COMPLETE output stream lives at that path. Your inline view is the first ~30k characters of that stream; over the cap you receive a preview plus the path — read the path when you need more.",
     'A trailing `| tail`/`| head` is honored without bounding the capture: the stage is stripped before execution and applied to your inline result — you receive exactly the lines you asked for — while the complete stream stays at the footer path.',
     'Your `>` / `>>` redirects are dual-written: the target file genuinely receives the write, and the same stream is also captured at the footer path. Redirect forms a pipeline cannot express — stderr targets (`2>`), inside `$(…)`, mid-pipeline — run exactly as written: the target gets the stream, the harness does not capture it, and the footer says so.',
-    'In `rg` (ripgrep), `-r` means `--replace`, not recursive (rg is recursive by default): the grep habit `rg -rn PATTERN` silently overwrites every match with a literal `n`; use `rg -n PATTERN`.',
+    'In `rg` (ripgrep), `-r` means `--replace`, not recursive (rg is recursive by default): the grep habit `rg -rn PATTERN` silently overwrites every match with a literal `n`; use `rg -n PATTERN`. rg respects `.gitignore` by default — dropping that with `--no-ignore` in repos with large generated dirs is the usual cause of a minutes-long search; re-include only what you need with `-g <glob>` instead.',
   ]
 
   return paragraphs.join('\n\n')

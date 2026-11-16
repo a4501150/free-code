@@ -1766,6 +1766,14 @@ const _settingsSchemaValue = z
       .describe(
         'Inject agent list in messages rather than tool descriptions for better prompt cache hit rate.',
       ),
+    manageRipgreprc: z
+      .boolean()
+      .optional()
+      .describe(
+        'Release search-default globs to ~/.ripgreprc on startup (default: true). ' +
+          'The file is created only when missing; a user-owned file is never touched. ' +
+          'Skipped when RIPGREP_CONFIG_PATH is set.',
+      ),
     planModeInterviewPhase: z
       .boolean()
       .optional()

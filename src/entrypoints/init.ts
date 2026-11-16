@@ -31,6 +31,7 @@ import {
   isScratchpadEnabled,
 } from '../utils/permissions/filesystem.js'
 import { configureGlobalAgents } from '../utils/proxy.js'
+import { ensureRipgreprcRelease } from '../utils/ripgreprc.js'
 import { setShellIfWindows } from '../utils/windowsPaths.js'
 
 export const init = memoize(async (): Promise<void> => {
@@ -131,6 +132,13 @@ export const init = memoize(async (): Promise<void> => {
       logForDiagnosticsNoPII('info', 'init_scratchpad_created', {
         duration_ms: Date.now() - scratchpadStart,
       })
+    }
+
+    // Release ~/.ripgreprc search defaults (create-if-missing; ripgrep
+    // auto-loads that path). Single tiny sync write, gated on settings —
+    // must never gate startup.
+    if (ensureRipgreprcRelease()) {
+      logForDiagnosticsNoPII('info', 'init_ripgreprc_released')
     }
 
     logForDiagnosticsNoPII('info', 'init_completed', {
