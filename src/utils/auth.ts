@@ -31,7 +31,6 @@ import {
   getApiKeyFromFileDescriptor,
   getOAuthTokenFromFileDescriptor,
 } from './authFileDescriptor.js'
-import { maybeRemoveApiKeyFromMacOSKeychainThrows } from './authPortable.js'
 import {
   checkStsCallerIdentity,
   clearAwsIniCache,
@@ -42,7 +41,6 @@ import { clearBetasCaches } from './betas.js'
 import { checkHasTrustDialogAccepted } from './config.js'
 import { logAntError, logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, isBareMode, isEnvTruthy } from './envUtils.js'
-import { execSyncWithDefaults_DEPRECATED } from './execFileNoThrow.js'
 import * as lockfile from './lockfile.js'
 import { logError } from './log.js'
 import { memoizeWithTTLAsync } from './memoize.js'
@@ -50,14 +48,6 @@ import { getClaudeAIOAuthTokens } from './oauthTokenReader.js'
 import { getSecureStorage } from './secureStorage/index.js'
 
 export { getClaudeAIOAuthTokens }
-import {
-  clearLegacyApiKeyPrefetch,
-  getLegacyApiKeyPrefetchResult,
-} from './secureStorage/keychainPrefetch.js'
-import {
-  clearKeychainCache,
-  getMacOsKeychainStorageServiceName,
-} from './secureStorage/macOsKeychainHelpers.js'
 import {
   getSettings_DEPRECATED,
   getSettingsForSource,
@@ -1028,37 +1018,12 @@ export function prefetchAwsCredentialsAndBedRockInfoIfSafe(): void {
 export const getApiKeyFromConfigOrMacOSKeychain = memoize(
   (): { key: string; source: ApiKeySource } | null => {
     if (isBareMode()) return null
-    // Deliberate SecureStorage exception, not a missed migration: this reads
-    // the legacy no-suffix `Claude Code` keychain entry written by old
-    // /login flows (saveApiKey is a no-op today, so nothing here writes).
-    // Everything live — OAuth tokens, MCP/XAA tokens, plugin secrets — goes
-    // through getSecureStorage(), which is plaintext .credentials.json
-    // (0600) on every platform except macOS, where it prefers the Keychain.
-    if (process.platform === 'darwin') {
-      // keychainPrefetch.ts fires this read at main.tsx top-level in parallel
-      // with module imports. If it completed, use that instead of spawning a
-      // sync `security` subprocess here (~33ms).
-      const prefetch = getLegacyApiKeyPrefetchResult()
-      if (prefetch) {
-        if (prefetch.stdout) {
-          return { key: prefetch.stdout, source: '/login managed key' }
-        }
-        // Prefetch completed with no key — fall through to config, not keychain.
-      } else {
-        const storageServiceName = getMacOsKeychainStorageServiceName()
-        try {
-          const result = execSyncWithDefaults_DEPRECATED(
-            `security find-generic-password -a $USER -w -s "${storageServiceName}"`,
-          )
-          if (result) {
-            return { key: result, source: '/login managed key' }
-          }
-        } catch (e) {
-          logError(e)
-        }
-      }
-    }
-
+    // The macOS keychain is no longer a credential store: plaintext
+    // .credentials.json is the single backend on every platform
+    // (secureStorage/index.ts), and the legacy no-suffix API-key entry has
+    // no live writer (saveApiKey is a no-op; auth is provider-managed).
+    // A one-shot copy of the keychain's OAuth blob happens in
+    // secureStorage/keychainMigration.ts.
     return null
   },
 )
@@ -1068,17 +1033,7 @@ export async function saveApiKey(_apiKey: string): Promise<void> {
 }
 
 export async function removeApiKey(): Promise<void> {
-  await maybeRemoveApiKeyFromMacOSKeychain()
   getApiKeyFromConfigOrMacOSKeychain.cache.clear?.()
-  clearLegacyApiKeyPrefetch()
-}
-
-async function maybeRemoveApiKeyFromMacOSKeychain(): Promise<void> {
-  try {
-    await maybeRemoveApiKeyFromMacOSKeychainThrows()
-  } catch (e) {
-    logError(e)
-  }
 }
 
 // Function to store OAuth tokens in secure storage
@@ -1136,7 +1091,6 @@ export function saveOAuthTokensIfNeeded(tokens: OAuthTokens): {
  */
 export function clearOAuthTokenCache(): void {
   getClaudeAIOAuthTokens.cache?.clear?.()
-  clearKeychainCache()
 }
 
 let lastCredentialsMtimeMs = 0
@@ -1156,19 +1110,17 @@ async function invalidateOAuthCacheIfDiskChanged(): Promise<void> {
       clearOAuthTokenCache()
     }
   } catch {
-    // ENOENT — macOS keychain path (file deleted on migration). Clear only
-    // the memoize so it delegates to the keychain cache's 30s TTL instead
-    // of caching forever on top. `security find-generic-password` is
-    // ~15ms; bounded to once per 30s by the keychain cache.
+    // ENOENT — credentials file not written yet (e.g. deleted after a
+    // keychain migration attempt found nothing). Clear only the memoize so
+    // the next read re-stats instead of caching the miss forever.
     getClaudeAIOAuthTokens.cache?.clear?.()
   }
 }
 
 // In-flight dedup: when N claude.ai proxy connectors hit 401 with the same
 // token simultaneously (common at startup — #20930), only one should clear
-// caches and re-read the keychain. Without this, each call's clearOAuthTokenCache()
-// nukes readInFlight in macOsKeychainStorage and triggers a fresh spawn —
-// sync spawns stacked to 800ms+ of blocked render frames.
+// caches and re-read storage. Without this, every handler re-reads and
+// re-refreshes with the same expired token, stacking redundant work.
 const pending401Handlers = new Map<string, Promise<boolean>>()
 
 /**
@@ -1300,7 +1252,6 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
   // Re-read tokens async to check if they're still expired
   // Another process might have refreshed them
   getClaudeAIOAuthTokens.cache?.clear?.()
-  clearKeychainCache()
   const freshTokens = await getClaudeAIOAuthTokensAsync()
   if (
     !freshTokens?.refreshToken ||
@@ -1332,7 +1283,6 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
   try {
     // Check one more time after acquiring lock
     getClaudeAIOAuthTokens.cache?.clear?.()
-    clearKeychainCache()
     const lockedTokens = await getClaudeAIOAuthTokensAsync()
     if (
       !lockedTokens?.refreshToken ||
@@ -1357,13 +1307,11 @@ async function checkAndRefreshOAuthTokenIfNeededImpl(
 
     // Clear the cache after refreshing token
     getClaudeAIOAuthTokens.cache?.clear?.()
-    clearKeychainCache()
     return true
   } catch (error) {
     logError(error)
 
     getClaudeAIOAuthTokens.cache?.clear?.()
-    clearKeychainCache()
     const currentTokens = await getClaudeAIOAuthTokensAsync()
     if (currentTokens && !isOAuthTokenExpired(currentTokens.expiresAt)) {
       return true

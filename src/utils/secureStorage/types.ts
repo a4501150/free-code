@@ -77,8 +77,9 @@ export type SecureStorageData = {
 }
 
 /**
- * Storage back-end contract. Implementations include plainTextStorage,
- * macOsKeychainStorage, and fallbackStorage.
+ * Storage back-end contract. plainTextStorage is the only implementation
+ * (see index.ts); the macOS keychain exists solely as a one-shot import
+ * source in keychainMigration.ts.
  */
 export type SecureStorage = {
   /** Human-readable name — used in debug/error logs. */

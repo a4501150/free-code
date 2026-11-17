@@ -25,7 +25,6 @@ import {
   getDefaultMainLoopModel,
   renderModelName,
 } from '../../utils/model/model.js'
-import { isMacOsKeychainLocked } from '../../utils/secureStorage/macOsKeychainStorage.js'
 import { CtrlOToExpand } from '../CtrlOToExpand.js'
 import { InterruptedByUser } from '../InterruptedByUser.js'
 import { Markdown } from '../Markdown.js'
@@ -45,18 +44,9 @@ type Props = {
 }
 
 function InvalidApiKeyMessage(): React.ReactNode {
-  const isKeychainLocked = isMacOsKeychainLocked()
-
   return (
     <MessageResponse>
-      <Box flexDirection="column">
-        <Text color="error">{INVALID_API_KEY_ERROR_MESSAGE}</Text>
-        {isKeychainLocked && (
-          <Text dimColor>
-            · Run in another terminal: security unlock-keychain
-          </Text>
-        )}
-      </Box>
+      <Text color="error">{INVALID_API_KEY_ERROR_MESSAGE}</Text>
     </MessageResponse>
   )
 }

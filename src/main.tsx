@@ -1,19 +1,9 @@
-// These side-effects must run before all other imports:
-// 1. profileCheckpoint marks entry before heavy module evaluation begins
-// 2. startKeychainPrefetch fires both macOS keychain reads (OAuth + legacy API
-//    key) in parallel (~65ms on every macOS startup)
+// This side-effect must run before all other imports:
+// profileCheckpoint marks entry before heavy module evaluation begins
 import { profileCheckpoint, profileReport } from './utils/startupProfiler.js'
 
 // eslint-disable-next-line custom-rules/no-top-level-side-effects
 profileCheckpoint('main_tsx_entry')
-
-import {
-  ensureKeychainPrefetchCompleted,
-  startKeychainPrefetch,
-} from './utils/secureStorage/keychainPrefetch.js'
-
-// eslint-disable-next-line custom-rules/no-top-level-side-effects
-startKeychainPrefetch()
 
 import {
   Command as CommanderCommand,
@@ -330,7 +320,12 @@ import {
   mcpAddFromDesktopHandler,
   mcpResetChoicesHandler,
 } from './cli/handlers/mcp.js'
-import { authLogin, authStatus, authLogout } from './cli/handlers/auth.js'
+import {
+  authLogin,
+  authStatus,
+  authLogout,
+  authMigrateCredentials,
+} from './cli/handlers/auth.js'
 import {
   pluginValidateHandler,
   pluginListHandler,
@@ -806,11 +801,6 @@ async function run(): Promise<CommanderCommand> {
   // not when displaying help. This avoids the need for env variable signaling.
   program.hook('preAction', async thisCommand => {
     profileCheckpoint('preAction_start')
-    // Await the async keychain prefetch started at module evaluation. Nearly
-    // free — it completes during the ~135ms of imports above, and resolving it
-    // here keeps init()'s first settings read off the sync keychain path.
-    await ensureKeychainPrefetchCompleted()
-    profileCheckpoint('preAction_after_keychain')
     await init()
     profileCheckpoint('preAction_after_init')
 
@@ -2113,7 +2103,6 @@ async function run(): Promise<CommanderCommand> {
       }
 
       setMainLoopModelOverride(effectiveModel)
-
       // Compute resolved model for hooks (use user-specified model at launch)
       setInitialMainLoopModel(getUserSpecifiedModelSetting() || null)
       const initialMainLoopModel = getInitialMainLoopModel()
@@ -3329,14 +3318,18 @@ async function run(): Promise<CommanderCommand> {
   // (mcp, auth, plugin, skill, task, config, doctor, update, etc.) are
   // never dispatched in print mode — commander routes the prompt to the
   // default action. The subcommand registration path was measured at ~65ms
-  // on baseline — mostly the isBridgeEnabled() call (25ms settings Zod parse
-  // + 40ms sync keychain subprocess), both hidden by the try/catch that
-  // always returns false before enableConfigs().
+  // on baseline — mostly the isBridgeEnabled() call (25ms settings Zod
+  // parse), hidden by the try/catch that always returns false before
+  // enableConfigs().
   const isPrintMode =
     process.argv.includes('-p') || process.argv.includes('--print')
   if (isPrintMode) {
     profileCheckpoint('run_before_parse')
-    await program.parseAsync(process.argv)
+    try {
+      await program.parseAsync(process.argv)
+    } catch (error) {
+      reportFatalActionError(error)
+    }
     profileCheckpoint('run_after_parse')
     return program
   }
@@ -3493,6 +3486,15 @@ async function run(): Promise<CommanderCommand> {
     .description('Log out from your Anthropic account')
     .action(async () => {
       await authLogout()
+    })
+
+  auth
+    .command('migrate-credentials')
+    .description(
+      'Import credentials from the macOS keychain into .credentials.json (one-time; the keychain entry is copied, not moved)',
+    )
+    .action(async () => {
+      await authMigrateCredentials()
     })
 
   /**
@@ -3976,7 +3978,11 @@ Examples:
     })
 
   profileCheckpoint('run_before_parse')
-  await program.parseAsync(process.argv)
+  try {
+    await program.parseAsync(process.argv)
+  } catch (error) {
+    reportFatalActionError(error)
+  }
   profileCheckpoint('run_after_parse')
 
   // Record final checkpoint for total_time calculation
@@ -3986,6 +3992,21 @@ Examples:
   profileReport()
 
   return program
+}
+
+/**
+ * A rejected action must surface on stderr and exit non-zero. Without this
+ * the rejection lands in the global unhandledRejection listener
+ * (gracefulShutdown.ts), which only records to analytics — and the
+ * settings-watcher timers keep the event loop alive, so a headless run dies
+ * as a silent infinite hang (observed: fresh-profile print mode, empty
+ * provider registry -> "No models are configured" thrown, never reported).
+ */
+function reportFatalActionError(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error)
+  process.stderr.write(`${message}\n`)
+  // eslint-disable-next-line custom-rules/no-process-exit
+  process.exit(1)
 }
 
 async function logTenguInit({

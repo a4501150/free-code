@@ -36,7 +36,6 @@ import * as lockfile from '../../utils/lockfile.js'
 import { logMCPDebug } from '../../utils/log.js'
 import { getPlatform } from '../../utils/platform.js'
 import { getSecureStorage } from '../../utils/secureStorage/index.js'
-import { clearKeychainCache } from '../../utils/secureStorage/macOsKeychainHelpers.js'
 import type { SecureStorageData } from '../../utils/secureStorage/types.js'
 import { sleep } from '../../utils/sleep.js'
 import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
@@ -1464,13 +1463,11 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
   }
 
   async tokens(): Promise<OAuthTokens | undefined> {
-    // Cross-process token changes (another CC instance refreshed or invalidated)
-    // are picked up via the keychain cache TTL (see macOsKeychainStorage.ts).
-    // In-process writes already invalidate the cache via storage.update().
-    // We do NOT clearKeychainCache() here — tokens() is called by the MCP SDK's
-    // _commonHeaders on every request, and forcing a cache miss would trigger
-    // a blocking spawnSync(`security find-generic-password`) 30-40x/sec.
-    // See CPU profile: spawnSync was 7.2% of total CPU after PR #19436.
+    // Cross-process token changes (another CC instance refreshed or
+    // invalidated) are picked up on every call: the plaintext backend
+    // re-reads .credentials.json from disk (no in-process cache, no
+    // subprocess). Blocking keychain spawns used to make this call site
+    // (MCP SDK _commonHeaders, 30-40x/sec) a CPU-profile hotspot.
     const storage = getSecureStorage()
     const data = await storage.readAsync()
     const serverKey = getServerKey(this.serverName, this.serverConfig)
@@ -2100,7 +2097,6 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
 
     try {
       // Re-read tokens after acquiring lock — another process may have refreshed
-      clearKeychainCache()
       const storage = getSecureStorage()
       const data = storage.read()
       const tokenData = data?.mcpOAuth?.[serverKey]
@@ -2231,7 +2227,6 @@ export class ClaudeAuthProvider implements OAuthClientProvider {
             this.serverName,
             `Token refresh failed with invalid_grant: ${error.message}`,
           )
-          clearKeychainCache()
           const storage = getSecureStorage()
           const data = storage.read()
           const serverKey = getServerKey(this.serverName, this.serverConfig)

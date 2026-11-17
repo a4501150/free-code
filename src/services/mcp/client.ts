@@ -105,7 +105,6 @@ import { getLoggingSafeMcpBaseUrl } from './utils.js'
 import { UnauthorizedError } from '@modelcontextprotocol/client'
 import type { AssistantMessage } from 'src/types/message.js'
 import { classifyMcpToolForCollapse } from '../../tools/MCPTool/classifyForCollapse.js'
-import { clearKeychainCache } from '../../utils/secureStorage/macOsKeychainHelpers.js'
 import { sleep } from '../../utils/sleep.js'
 import {
   ClaudeAuthProvider,
@@ -2024,7 +2023,6 @@ export async function reconnectMcpServerImpl(
     // has modified stored tokens (cleared auth, saved new OAuth tokens) and then
     // asks the CLI subprocess to reconnect.  Without this, the subprocess would
     // use stale cached data and never notice the tokens were removed.
-    clearKeychainCache()
 
     await clearServerCache(name, config)
     const client = await connectToServer(name, config)

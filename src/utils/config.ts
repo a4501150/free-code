@@ -145,6 +145,9 @@ export type GlobalConfig = {
   // proxy-provisioned userID can't stomp a hand-picked roll.
   companionSeed?: string
   hasUserClaudeMdMigrationPromptShown?: boolean
+  // Set after the one-shot macOS keychain -> .credentials.json import attempt
+  // (keychainMigration.ts), regardless of whether an entry was found.
+  keychainMigrationAttemptedAt?: string
   customApiKeyResponses?: {
     approved?: string[]
     rejected?: string[]

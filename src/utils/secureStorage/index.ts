@@ -1,20 +1,17 @@
-import { createFallbackStorage } from './fallbackStorage.js'
-import { macOsKeychainStorage } from './macOsKeychainStorage.js'
 import { plainTextStorage } from './plainTextStorage.js'
 import type { SecureStorage } from './types.js'
 
 /**
- * Get the appropriate secure storage implementation for the current platform
+ * The single credential backend on every platform: plaintext
+ * <config home>/.credentials.json, mode 0600.
+ *
+ * This is a deliberate product decision, not a missing keyring integration:
+ * no keychain/keyring dependency across distros, containers, and headless
+ * CI, and no un-timed blocking subprocess on the startup path (a macOS
+ * `security` spawn waiting on an ACL dialog used to wedge `cli -p`
+ * indefinitely). The macOS keychain is read exactly once, as a copy source
+ * for the one-shot import in keychainMigration.ts.
  */
 export function getSecureStorage(): SecureStorage {
-  if (process.platform === 'darwin') {
-    return createFallbackStorage(macOsKeychainStorage, plainTextStorage)
-  }
-
-  // Plaintext is the deliberate cross-platform store, not a missing
-  // libsecret integration: credentials live in <config home>/.credentials.json
-  // mode 0600, and plaintext storage is an explicit product decision here
-  // (no keyring dependency across Linux distros/containers/headless CI).
-  // macOS additionally gets the Keychain below, with plaintext as fallback.
   return plainTextStorage
 }

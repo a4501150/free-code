@@ -36,6 +36,7 @@ import {
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
 import { logError } from '../../utils/log.js'
+import { importCredentialsFromKeychain } from '../../utils/secureStorage/keychainMigration.js'
 import {
   getProviderRegistry,
   resetProviderRegistry,
@@ -383,6 +384,43 @@ export async function authStatus(opts: {
     process.stdout.write(jsonStringify(output, null, 2) + '\n')
   }
   process.exit(loggedIn ? 0 : 1)
+}
+
+export async function authMigrateCredentials(): Promise<void> {
+  const outcome = importCredentialsFromKeychain()
+  switch (outcome.status) {
+    case 'imported':
+      process.stdout.write(
+        outcome.keys.length > 0
+          ? `Imported ${outcome.keys.length} credential block(s) from the macOS keychain into .credentials.json: ${outcome.keys.join(', ')}\n`
+          : 'Keychain entry found; .credentials.json already contains every block.\n',
+      )
+      break
+    case 'no-entry':
+      process.stdout.write(
+        'No Claude Code keychain entry found for this user; nothing to import.\n',
+      )
+      break
+    case 'not-macos':
+      process.stdout.write(
+        'macOS keychain import is macOS-only; credentials already live in .credentials.json.\n',
+      )
+      break
+    case 'malformed':
+      process.stderr.write(
+        'Keychain entry is not a JSON credential blob; nothing imported.\n',
+      )
+      process.exit(1)
+    case 'write-failed':
+      process.stderr.write('Failed to write .credentials.json.\n')
+      process.exit(1)
+    case 'timeout':
+      process.stderr.write(
+        'Keychain read timed out (5s) — a keychain permission dialog may be waiting in the GUI.\n',
+      )
+      process.exit(1)
+  }
+  process.exit(0)
 }
 
 export async function authLogout(): Promise<void> {

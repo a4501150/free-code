@@ -59,10 +59,8 @@ export const plainTextStorage = {
         flush: false,
       })
       chmodSync(storagePath, 0o600)
-      return {
-        success: true,
-        warning: 'Warning: Storing credentials in plaintext.',
-      }
+      // Plaintext IS the product design (see index.ts) — no warning.
+      return { success: true }
     } catch {
       return { success: false }
     }

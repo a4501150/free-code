@@ -19,6 +19,7 @@ import { detectCurrentRepository } from '../utils/detectRepository.js'
 import { logForDiagnosticsNoPII } from '../utils/diagLogs.js'
 import { initJetBrainsDetection } from '../utils/envDynamic.js'
 import { ConfigParseError } from '../utils/errors.js'
+import { logError } from '../utils/log.js'
 // showInvalidConfigDialog is dynamically imported in the error path to avoid loading React at init
 import {
   gracefulShutdownSync,
@@ -32,6 +33,7 @@ import {
 } from '../utils/permissions/filesystem.js'
 import { configureGlobalAgents } from '../utils/proxy.js'
 import { ensureRipgreprcRelease } from '../utils/ripgreprc.js'
+import { maybeRunKeychainMigrationOnStartup } from '../utils/secureStorage/keychainMigration.js'
 import { setShellIfWindows } from '../utils/windowsPaths.js'
 
 export const init = memoize(async (): Promise<void> => {
@@ -139,6 +141,25 @@ export const init = memoize(async (): Promise<void> => {
     // must never gate startup.
     if (ensureRipgreprcRelease()) {
       logForDiagnosticsNoPII('info', 'init_ripgreprc_released')
+    }
+
+    // One-time copy of macOS keychain credentials into .credentials.json
+    // (once per install, only when the file is absent). The `security`
+    // spawn carries a 5s hard timeout, so even a wedged keychain can't
+    // block startup — see keychainMigration.ts.
+    try {
+      const migration = maybeRunKeychainMigrationOnStartup()
+      if (
+        typeof migration === 'object' &&
+        migration.status === 'imported' &&
+        migration.keys.length > 0
+      ) {
+        logForDiagnosticsNoPII('info', 'init_keychain_credentials_imported', {
+          blocks: migration.keys.length,
+        })
+      }
+    } catch (error) {
+      logError(error)
     }
 
     logForDiagnosticsNoPII('info', 'init_completed', {
