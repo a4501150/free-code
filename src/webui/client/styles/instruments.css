@@ -429,6 +429,17 @@
   white-space: nowrap;
 }
 
+.viewer__hint {
+  color: var(--text-faint);
+}
+
+.viewer__error {
+  flex: none;
+  margin-left: auto;
+  color: var(--del);
+  font-size: 11px;
+}
+
 /* ── shell/monitor output viewer (rendered in the main column) ──── */
 
 .shellout {
@@ -454,10 +465,34 @@
   margin: 0;
   font-family: var(--mono);
   font-size: 11.5px;
+  line-height: 1.4;
   color: var(--signal);
   /* The command is the thing you came to confirm: wrap it, never clip it. */
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* Three lines at 1.4 line-height. Clamped by default when the command is
+   longer, so a heredoc script cannot push the output off the pane; the
+   expand toggle below it reveals the rest. */
+.shellout__command.is-clamped {
+  max-height: 4.2em;
+  overflow: hidden;
+}
+
+.shellout__expand {
+  align-self: flex-start;
+  padding: 0.1rem 0.5rem;
+  background: none;
+  border: 1px solid var(--rule-bright);
+  color: var(--text-dim);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.shellout__expand:hover {
+  border-color: var(--signal);
+  color: var(--signal);
 }
 
 .shellout__meta {

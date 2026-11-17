@@ -43,10 +43,35 @@ export function TaskOutputView({
   // whoever opens a running task wants to watch it, not to scroll.
   const [follow, setFollow] = useState(true)
 
+  // A heredoc script or a long one-liner can fill the whole pane with its
+  // command alone, so the command starts clamped to a few lines and only a
+  // measured overflow offers the expand toggle.
+  const commandRef = useRef<HTMLPreElement>(null)
+  const [commandExpanded, setCommandExpanded] = useState(false)
+  const [commandOverflows, setCommandOverflows] = useState(false)
+
   useEffect(() => {
     const body = bodyRef.current
     if (body && follow) body.scrollTop = body.scrollHeight
   }, [state.text, follow])
+
+  // Reset the clamp when the viewer switches to another task.
+  useEffect(() => {
+    setCommandExpanded(false)
+    setCommandOverflows(false)
+  }, [taskId])
+
+  // Measured after paint, with the clamp applied: scrollHeight sees past the
+  // max-height, so overflow is exactly "there is more than the clamp shows".
+  // Every render, because task.command may arrive after the first paint.
+  // Only measured while collapsed — expanded, the element no longer overflows
+  // and the check would hide the very button that got us here.
+  useEffect(() => {
+    if (commandExpanded) return
+    const el = commandRef.current
+    if (!el) return
+    setCommandOverflows(el.scrollHeight > el.clientHeight + 1)
+  })
 
   function onScroll(): void {
     const body = bodyRef.current
@@ -65,7 +90,26 @@ export function TaskOutputView({
     <div className="shellout">
       <header className="shellout__head">
         {task?.command ? (
-          <pre className="shellout__command">{task.command}</pre>
+          <>
+            <pre
+              ref={commandRef}
+              className={`shellout__command${
+                commandExpanded ? '' : ' is-clamped'
+              }`}
+            >
+              {task.command}
+            </pre>
+            {commandOverflows ? (
+              <button
+                type="button"
+                className="shellout__expand"
+                aria-expanded={commandExpanded}
+                onClick={() => setCommandExpanded(open => !open)}
+              >
+                {commandExpanded ? '▴ collapse command' : '▾ full command'}
+              </button>
+            ) : null}
+          </>
         ) : null}
         <div className="shellout__meta">
           <span className={`task__status is-${task?.status ?? 'unknown'}`}>
