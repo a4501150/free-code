@@ -52,6 +52,8 @@ export type TaskStateBase = {
   outputFile: string
   outputOffset: number
   notified: boolean
+  /** Set when a kill came from the user (web/SDK/TUI), not from the LLM. */
+  endedByUser?: boolean
 }
 
 export type LocalShellSpawnInput = {

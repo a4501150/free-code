@@ -24,6 +24,7 @@ export function enqueueShellNotification(
   toolUseId?: string,
   kind: BashTaskKind = 'bash',
   agentId?: AgentId,
+  byUser?: boolean,
 ): void {
   // Atomically check and set notified flag to prevent duplicate notifications.
   // If the task was already marked as notified (e.g., by BackgroundTaskStopTool), skip
@@ -55,7 +56,7 @@ export function enqueueShellNotification(
       summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" failed${exitCode !== undefined ? ` with exit code ${exitCode}` : ''}`
       break
     case 'killed':
-      summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" was stopped`
+      summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" was stopped${byUser ? ' by the user' : ''}`
       break
   }
 

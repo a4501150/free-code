@@ -13,6 +13,7 @@ import { getScopedBackgroundTasks } from 'src/state/agentViewHelpers.js'
 import { DreamTask } from 'src/tasks/DreamTask/DreamTask.js'
 import { LocalAgentTask } from 'src/tasks/LocalAgentTask/LocalAgentTask.js'
 import { LocalShellTask } from 'src/tasks/LocalShellTask/LocalShellTask.js'
+import { markTaskEndedByUser } from 'src/tasks/stopTask.js'
 import type { TaskState } from 'src/tasks/types.js'
 import type { CommandResultDisplay } from '../../commands.js'
 import {
@@ -50,6 +51,9 @@ export function BackgroundTasksDialog({
   const setAppState = useSetAppState()
 
   const onKill = (type: KillableTaskType, taskId: string): void => {
+    // Every kill from this dialog is a user action; stamp the flag before the
+    // kill so the killed notification says so.
+    markTaskEndedByUser(taskId, setAppState)
     switch (type) {
       case 'local_bash':
         void LocalShellTask.kill(taskId, setAppState)

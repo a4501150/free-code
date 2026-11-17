@@ -4,6 +4,7 @@
 import type { AppState } from '../state/AppStateStore.js'
 import type { TaskStateBase } from '../Task.js'
 import { getTaskByType } from '../tasks.js'
+import { updateTaskState } from '../utils/task/framework.js'
 import { isLocalShellTask } from './LocalShellTask/guards.js'
 
 export class StopTaskError extends Error {
@@ -21,6 +22,21 @@ type StopTaskContext = {
   setAppState: (f: (prev: AppState) => AppState) => void
 }
 
+/**
+ * Stamp `endedByUser` on a running task ahead of a direct `Task.kill` call
+ * (the TUI dialog path bypasses {@link stopTask}), so the killed
+ * notification can still say the user ended it. The agent path reads the
+ * flag later from task state, so it must be set before the abort lands.
+ */
+export function markTaskEndedByUser(
+  taskId: string,
+  setAppState: (f: (prev: AppState) => AppState) => void,
+): void {
+  updateTaskState(taskId, setAppState, t =>
+    t.status === 'running' ? { ...t, endedByUser: true } : t,
+  )
+}
+
 type StopTaskResult = {
   taskId: string
   taskType: string
@@ -35,10 +51,18 @@ type StopTaskResult = {
  * function does not have to. Throws {@link StopTaskError} when the task
  * cannot be stopped (not found, not running, or unsupported type). Callers
  * can inspect `error.code` to distinguish the failure reason.
+ *
+ * `opts.byUser` marks the kill as a user action (web stop button, SDK
+ * stop_task, TUI stop): the killed <task-notification> then says the user
+ * ended the task, so the LLM does not read it as its own doing. The flag is
+ * stamped on the task state before `kill` runs, because the agent path's
+ * notification is emitted later by the aborted run loop, which only sees
+ * state.
  */
 export async function stopTask(
   taskId: string,
   context: StopTaskContext,
+  opts?: { byUser?: boolean },
 ): Promise<StopTaskResult> {
   const { getAppState, setAppState } = context
   const appState = getAppState()
@@ -52,6 +76,12 @@ export async function stopTask(
     throw new StopTaskError(
       `Task ${taskId} is not running (status: ${task.status})`,
       'not_running',
+    )
+  }
+
+  if (opts?.byUser) {
+    updateTaskState(taskId, setAppState, t =>
+      t.status === 'running' ? { ...t, endedByUser: true } : t,
     )
   }
 

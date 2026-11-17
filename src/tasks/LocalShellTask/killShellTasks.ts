@@ -25,6 +25,7 @@ export function killTask(taskId: string, setAppState: SetAppStateFn): void {
     toolUseId?: string
     kind: BashTaskKind | undefined
     agentId?: AgentId
+    byUser: boolean
   } | null = null
   let isMonitor = false
 
@@ -58,6 +59,7 @@ export function killTask(taskId: string, setAppState: SetAppStateFn): void {
       toolUseId: task.toolUseId,
       kind: task.kind,
       agentId: task.agentId,
+      byUser: Boolean(task.endedByUser),
     }
 
     return {
@@ -102,6 +104,7 @@ export function killTask(taskId: string, setAppState: SetAppStateFn): void {
       toolUseId?: string
       kind: BashTaskKind | undefined
       agentId?: AgentId
+      byUser: boolean
     } = notificationArgs
     enqueueShellNotification(
       taskId,
@@ -112,6 +115,7 @@ export function killTask(taskId: string, setAppState: SetAppStateFn): void {
       args.toolUseId,
       args.kind,
       args.agentId,
+      args.byUser,
     )
   }
 

@@ -421,11 +421,13 @@ export function enqueueAgentNotification({
   // If the task was already marked as notified (e.g., by BackgroundTaskStopTool), skip
   // enqueueing to avoid sending redundant messages to the model.
   let shouldEnqueue = false
+  let byUser = false
   updateTaskState<LocalAgentTaskState>(taskId, setAppState, task => {
     if (task.notified) {
       return task
     }
     shouldEnqueue = true
+    byUser = Boolean(task.endedByUser)
     return {
       ...task,
       notified: true,
@@ -446,7 +448,7 @@ export function enqueueAgentNotification({
       ? `Agent "${description}" completed`
       : status === 'failed'
         ? `Agent "${description}" failed: ${error || 'Unknown error'}`
-        : `Agent "${description}" was stopped`
+        : `Agent "${description}" was stopped${byUser ? ' by the user' : ''}`
 
   const resultSection = finalMessage ? `\n<result>${finalMessage}</result>` : ''
   const usageSection = usage
