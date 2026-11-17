@@ -64,6 +64,15 @@ export type HeadlessAttachParams = {
   getPermissionMode(): string | undefined
   getCommands(): string[]
   getInProgressToolUseIds?(): ReadonlySet<string>
+  /**
+   * Deliver a text message to a background subagent (queued while running,
+   * auto-resumed from transcript when stopped). The print loop owns the
+   * tool-use context a resume needs, so it provides this.
+   */
+  messageTask(
+    taskId: string,
+    content: string,
+  ): Promise<{ ok: boolean; message: string }>
   interrupt(): void
   setModel(model: string): void
   setPermissionMode(mode: WebPermissionMode): void
@@ -127,6 +136,8 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
         getAppState: params.getAppState,
         setAppState: params.setAppState,
       }),
+
+    messageTask: (taskId, content) => params.messageTask(taskId, content),
 
     submit(content, delivery, commandId, images) {
       enqueue({

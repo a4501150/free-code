@@ -127,6 +127,9 @@ import {
   permissionPromptToolResultToPermissionDecision,
 } from 'src/utils/permissions/PermissionPromptToolResultSchema.js'
 import { createAbortController } from 'src/utils/abortController.js'
+import { messageAgentTask } from 'src/tools/AgentTool/resumeAgent.js'
+import { isLocalAgentTask } from 'src/tasks/LocalAgentTask/LocalAgentTask.js'
+import { findAgentName } from 'src/server/taskSummaries.js'
 import { createCombinedAbortSignal } from 'src/utils/combinedAbortSignal.js'
 import { generateSessionTitle } from 'src/utils/sessionTitle.js'
 import { buildSideQuestionFallbackParams } from 'src/utils/queryContext.js'
@@ -975,7 +978,11 @@ function runHeadlessStreaming(
         // terminal panel; it is not a subagent to kill.
         !(task.type === 'local_agent' && task.agentType === 'main-session')
       ) {
-        void stopTask(task.id, { getAppState, setAppState }).catch(logError)
+        void stopTask(
+          task.id,
+          { getAppState, setAppState },
+          { byUser: true },
+        ).catch(logError)
       }
     }
   }
@@ -1165,6 +1172,7 @@ function runHeadlessStreaming(
       },
       getPermissionMode: () => getAppState().toolPermissionContext.mode,
       getCommands: () => headlessCommandNames,
+      messageTask: (taskId, content) => messageTaskImpl(taskId, content),
       interrupt: () => requestStop(),
       // `run` is declared below, but only a browser command calls this.
       requestRun: () => void run(),
@@ -1182,6 +1190,52 @@ function runHeadlessStreaming(
         })
       },
     })
+  }
+
+  /**
+   * Deliver a composer message to a background subagent (WebUI task viewer).
+   *
+   * The auto-resume half needs a main-thread ToolUseContext, and none exists
+   * between turns here — reuse the one stopHooks snapshotted from the last
+   * completed main-thread turn, with a fresh abort controller so a resume is
+   * not killed by a stale turn's signal. A subagent only exists after some
+   * main turn ran, so the snapshot is virtually always present.
+   */
+  async function messageTaskImpl(
+    taskId: string,
+    content: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    const task = getAppState().tasks?.[taskId]
+    if (!task) {
+      return { ok: false, message: 'no task with that id' }
+    }
+    if (!isLocalAgentTask(task)) {
+      return {
+        ok: false,
+        message: 'only a subagent transcript can receive messages',
+      }
+    }
+    const saved = getLastCacheSafeParams()
+    if (!saved) {
+      return {
+        ok: false,
+        message: 'the session has not completed a turn yet; resume unavailable',
+      }
+    }
+    const label = findAgentName(getAppState(), task.agentId) ?? task.description
+    const result = await messageAgentTask({
+      agentId: task.agentId,
+      label,
+      message: content,
+      getAppState,
+      setAppStateForTasks: setAppState,
+      toolUseContext: {
+        ...saved.toolUseContext,
+        abortController: createAbortController(),
+      },
+      canUseTool,
+    })
+    return { ok: result.success, message: result.message }
   }
 
   // Cache SDK MCP clients to avoid reconnecting on each run
@@ -3220,10 +3274,16 @@ function runHeadlessStreaming(
         } else if (message.request.subtype === 'stop_task') {
           const { task_id: taskId } = message.request
           try {
-            await stopTask(taskId, {
-              getAppState,
-              setAppState,
-            })
+            // An SDK client stop is the user acting through the client; the
+            // killed notification should say so.
+            await stopTask(
+              taskId,
+              {
+                getAppState,
+                setAppState,
+              },
+              { byUser: true },
+            )
             sendControlResponseSuccess(message, {})
           } catch (error) {
             sendControlResponseError(message, errorMessage(error))

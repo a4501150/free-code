@@ -1,18 +1,12 @@
 import { z } from 'zod/v4'
 import type { Tool } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
-import {
-  isLocalAgentTask,
-  queuePendingMessage,
-  resolveParentAgentId,
-} from '../../tasks/LocalAgentTask/LocalAgentTask.js'
-import { isMainSessionTask } from '../../tasks/LocalMainSessionTask.js'
+import { resolveParentAgentId } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
 import { toAgentId } from '../../types/ids.js'
-import { errorMessage } from '../../utils/errors.js'
 import { enqueuePendingNotification } from '../../utils/messageQueueManager.js'
 import { deliverToSession } from '../../utils/sessionMessaging.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
-import { resumeAgentBackground } from '../AgentTool/resumeAgent.js'
+import { messageAgentTask } from '../AgentTool/resumeAgent.js'
 import { SEND_MESSAGE_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, getPrompt } from './prompt.js'
 import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
@@ -134,72 +128,18 @@ export const SendMessageTool: Tool<InputSchema, SendMessageToolOutput> =
         agentId: string,
         label: string,
       ): Promise<{ data: MessageOutput }> => {
-        const task = context.getAppState().tasks[agentId]
-        if (isLocalAgentTask(task) && !isMainSessionTask(task)) {
-          if (task.status === 'running') {
-            queuePendingMessage(
-              agentId,
-              input.message,
-              context.setAppStateForTasks ?? context.setAppState,
-            )
-            return {
-              data: {
-                success: true,
-                message: `Message queued for delivery to ${label} at its next tool round.`,
-              },
-            }
-          }
-          // task exists but stopped — auto-resume
-          try {
-            const result = await resumeAgentBackground({
-              agentId,
-              prompt: input.message,
-              toolUseContext: context,
-              canUseTool,
-              invokingRequestId: assistantMessage?.requestId,
-            })
-            return {
-              data: {
-                success: true,
-                message: `Agent "${label}" was stopped (${task.status}); resumed it in the background with your message. You'll be notified when it finishes. Output: ${result.outputFile}`,
-              },
-            }
-          } catch (e) {
-            return {
-              data: {
-                success: false,
-                message: `Agent "${label}" is stopped (${task.status}) and could not be resumed: ${errorMessage(e)}`,
-              },
-            }
-          }
-        } else {
-          // task evicted from state — try resume from disk transcript.
-          // agentId is either a registered name or a format-matching raw ID
-          // (toAgentId validates the createAgentId format, so unknown names
-          // never reach this block).
-          try {
-            const result = await resumeAgentBackground({
-              agentId,
-              prompt: input.message,
-              toolUseContext: context,
-              canUseTool,
-              invokingRequestId: assistantMessage?.requestId,
-            })
-            return {
-              data: {
-                success: true,
-                message: `Agent "${label}" had no active task; resumed from transcript in the background with your message. You'll be notified when it finishes. Output: ${result.outputFile}`,
-              },
-            }
-          } catch (e) {
-            return {
-              data: {
-                success: false,
-                message: `Agent "${label}" is registered but has no transcript to resume. It may have been cleaned up. (${errorMessage(e)})`,
-              },
-            }
-          }
-        }
+        const result = await messageAgentTask({
+          agentId,
+          label,
+          message: input.message,
+          getAppState: context.getAppState,
+          setAppStateForTasks:
+            context.setAppStateForTasks ?? context.setAppState,
+          toolUseContext: context,
+          canUseTool,
+          invokingRequestId: assistantMessage?.requestId,
+        })
+        return { data: result }
       }
 
       // Parent addressing: the agent that spawned the caller. From a

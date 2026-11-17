@@ -46,6 +46,16 @@ export type AttachRuntime = {
   killTask(taskId: string): Promise<void>
 
   /**
+   * Deliver a text message to a background subagent (SendMessage-style:
+   * queued while it runs, auto-resumed from transcript when stopped). The
+   * result carries the outcome text for the composer.
+   */
+  messageTask(
+    taskId: string,
+    content: string,
+  ): Promise<{ ok: boolean; message: string }>
+
+  /**
    * Queue a prompt. `interrupt` aborts the running turn and runs this next, as
    * one atomic queue operation rather than a cancel followed by a submit, which
    * would race.

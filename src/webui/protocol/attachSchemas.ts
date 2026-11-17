@@ -158,6 +158,13 @@ export const AttachRequestBodySchema = z.discriminatedUnion('kind', [
     kind: z.literal('kill_task'),
     taskId: z.string().min(1).max(200),
   }),
+  z.object({
+    kind: z.literal('message_task'),
+    taskId: z.string().min(1).max(200),
+    /** Text delivered to the subagent; SendMessage-style, no images. */
+    content: z.string().min(1).max(200_000),
+    commandId: z.string().min(1).max(200),
+  }),
 ])
 
 export type AttachRequestBody = z.infer<typeof AttachRequestBodySchema>

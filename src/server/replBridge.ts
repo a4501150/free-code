@@ -4,6 +4,7 @@
  */
 import { useEffect, useRef } from 'react'
 import type { UUID } from 'crypto'
+import type { CanUseToolFn, ToolUseContext } from '../Tool.ts'
 import type { AppState } from '../state/AppStateStore.ts'
 import type { Message } from '../types/message.ts'
 import type { Task } from '../utils/taskSchemas.ts'
@@ -27,9 +28,12 @@ import {
 import { buildSubmitValue, type AttachRuntime } from './runtime.ts'
 import {
   buildWebTaskSummaries,
+  findAgentName,
   getTaskTranscriptMessages,
   killAttachTask,
 } from './taskSummaries.ts'
+import { messageAgentTask } from '../tools/AgentTool/resumeAgent.ts'
+import { isLocalAgentTask } from '../tasks/LocalAgentTask/LocalAgentTask.js'
 
 export type ReplAttachBridgeParams = {
   messagesRef: { current: readonly Message[] }
@@ -44,6 +48,9 @@ export type ReplAttachBridgeParams = {
   /** The live AppState: source for task summaries, transcripts and kills. */
   getAppState: () => AppState
   setAppState: (f: (prev: AppState) => AppState) => void
+  /** A main-thread context, for auto-resuming a stopped subagent. */
+  getToolUseContext: () => ToolUseContext
+  canUseTool: CanUseToolFn
   onCancel: () => void
   onSetPermissionMode: (mode: WebPermissionMode) => void
   onSetModel: (model: string) => void
@@ -106,6 +113,31 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
           getAppState: () => latest.current.getAppState(),
           setAppState: prev => latest.current.setAppState(prev),
         }),
+
+      async messageTask(taskId, content) {
+        const task = latest.current.getAppState().tasks?.[taskId]
+        if (!task) {
+          return { ok: false, message: 'no task with that id' }
+        }
+        if (!isLocalAgentTask(task)) {
+          return {
+            ok: false,
+            message: 'only a subagent transcript can receive messages',
+          }
+        }
+        const appState = latest.current.getAppState()
+        const label = findAgentName(appState, task.agentId) ?? task.description
+        const result = await messageAgentTask({
+          agentId: task.agentId,
+          label,
+          message: content,
+          getAppState: () => latest.current.getAppState(),
+          setAppStateForTasks: prev => latest.current.setAppState(prev),
+          toolUseContext: latest.current.getToolUseContext(),
+          canUseTool: latest.current.canUseTool,
+        })
+        return { ok: result.success, message: result.message }
+      },
 
       submit(content, delivery, commandId, images) {
         enqueue({

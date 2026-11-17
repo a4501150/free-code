@@ -23,7 +23,7 @@ function isWebVisibleTask(task: TaskState): boolean {
   return !(task.type === 'local_agent' && task.agentType === 'main-session')
 }
 
-function findAgentName(
+export function findAgentName(
   appState: AppState,
   agentId: string,
 ): string | undefined {
@@ -121,6 +121,9 @@ export function isTaskDone(appState: AppState, taskId: string): boolean {
  * Stop a task through the same kill path the terminal uses
  * (`stopTask` → `Task.kill`), so notifications and cleanup are identical.
  * Throws `StopTaskError` (with a `code`) when the task cannot be stopped.
+ *
+ * The only caller is an attach runtime serving the browser's `kill_task`, so
+ * the kill is always a user action and the notification says so.
  */
 export function killAttachTask(
   taskId: string,
@@ -129,5 +132,5 @@ export function killAttachTask(
     setAppState: (f: (prev: AppState) => AppState) => void
   },
 ): Promise<void> {
-  return stopTask(taskId, context).then(() => undefined)
+  return stopTask(taskId, context, { byUser: true }).then(() => undefined)
 }

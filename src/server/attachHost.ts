@@ -837,6 +837,39 @@ export function startAttachHost(
             publishMeta()
             return
           }
+
+          case 'message_task': {
+            if (!runtime) {
+              respond(socket, requestId, false, {
+                error: {
+                  code: 'runtime_not_ready',
+                  message: 'the session is still starting',
+                },
+              })
+              return
+            }
+            if (!runtime.getTasks().some(task => task.id === body.taskId)) {
+              respond(socket, requestId, false, {
+                error: {
+                  code: 'no_such_task',
+                  message: 'no task with that id',
+                },
+              })
+              return
+            }
+            const result = await runtime.messageTask(body.taskId, body.content)
+            // Publishing right away makes the new pendingCount visible even
+            // while the recipient is between tool rounds.
+            publishTasks()
+            if (result.ok) {
+              respond(socket, requestId, true, { result })
+            } else {
+              respond(socket, requestId, false, {
+                error: { code: 'message_failed', message: result.message },
+              })
+            }
+            return
+          }
         }
       },
       onError() {

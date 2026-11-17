@@ -140,6 +140,9 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     'agent' | 'output' | null
   >(null)
   const [shellView, setShellView] = useState<ShellOutputState | null>(null)
+  // Last message_task failure, shown in the viewer banner until the next
+  // successful send or view switch.
+  const [viewerError, setViewerError] = useState<string | null>(null)
   // The task list as of the last render, so `openTask` can classify the task
   // without re-subscribing to the store on every callback rebuild.
   const tasksRef = useRef<{ id: string; taskType: string }[]>([])
@@ -236,6 +239,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         })
       }
       viewerStore.reset()
+      setViewerError(null)
       const summary = tasksRef.current.find(task => task.id === taskId)
       const kind: 'agent' | 'output' =
         summary?.taskType === 'local_bash' ||
@@ -303,6 +307,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     setViewedTaskId(null)
     setViewedTaskKind(null)
     setShellView(null)
+    setViewerError(null)
     viewerStore.reset()
   }, [gateway, viewerStore])
 
@@ -629,7 +634,16 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
             <span className="viewer__label">
               {viewedTaskKind === 'output' ? 'task' : 'subagent'}:{' '}
               {viewedTaskLabel}
+              {viewedTaskKind === 'agent' ? (
+                <span className="viewer__hint">
+                  {' '}
+                  · replies go to this agent
+                </span>
+              ) : null}
             </span>
+            {viewerError ? (
+              <span className="viewer__error">{viewerError}</span>
+            ) : null}
           </div>
         ) : null}
         {activeKey ? (
@@ -712,12 +726,38 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
           </InstrumentSheet>
         ) : null}
 
-        {activeKey ? (
+        {/* A shell output viewer is a read surface with its own stop button;
+            a composer there would look like it addresses the task while the
+            text actually goes to the main session. */}
+        {activeKey && viewedTaskKind !== 'output' ? (
           <Composer
             busy={busy}
             knownPaths={knownPaths}
-            commands={view.commands}
+            commands={viewedTaskId ? [] : view.commands}
             onSubmit={(text, delivery, images) => {
+              if (viewedTaskKind === 'agent' && viewedTaskIdRef.current) {
+                // Over a subagent transcript the composer addresses the
+                // subagent (SendMessage semantics: queued while it runs,
+                // auto-resumed when stopped). Slash commands and images do
+                // not apply to that channel.
+                void (async () => {
+                  const taskId = viewedTaskIdRef.current
+                  if (!taskId) return
+                  const answer = await gateway.request({
+                    kind: 'message_task',
+                    taskId,
+                    content: text,
+                    commandId: crypto.randomUUID(),
+                  })
+                  // The user may have switched views while it was in flight.
+                  if (viewedTaskIdRef.current !== taskId) return
+                  if (answer.ok) setViewerError(null)
+                  else
+                    setViewerError(answer.error?.message ?? 'delivery failed')
+                })()
+                setFollowSignal(n => n + 1)
+                return
+              }
               gateway.send({
                 kind: 'submit',
                 commandId: crypto.randomUUID(),

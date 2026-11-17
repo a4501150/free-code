@@ -2,11 +2,15 @@ import { promises as fsp } from 'fs'
 import { getSdkAgentProgressSummariesEnabled } from '../../bootstrap/state.js'
 import { isCoordinatorMode } from '../../coordinator/coordinatorMode.js'
 import type { ToolUseContext, CanUseToolFn } from '../../Tool.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import {
   isLocalAgentTask,
+  queuePendingMessage,
   registerAsyncAgent,
   updateAgentStreamingThinking,
 } from '../../tasks/LocalAgentTask/LocalAgentTask.js'
+import { isMainSessionTask } from '../../tasks/LocalMainSessionTask.js'
+import { errorMessage } from '../../utils/errors.js'
 import { assembleToolPool } from './assembleToolPool.js'
 import { asAgentId } from '../../types/ids.js'
 import { runWithAgentContext } from '../../utils/agentContext.js'
@@ -230,5 +234,78 @@ export async function resumeAgentBackground({
     agentId,
     description: uiDescription,
     outputFile: getTaskOutputPath(agentId),
+  }
+}
+
+/**
+ * Deliver a message to one in-process subagent, shared by SendMessageTool and
+ * the attach runtimes (a WebUI composer pointed at a subagent transcript).
+ *
+ * A running agent gets the message queued for its next tool round; a stopped
+ * or evicted agent is auto-resumed from its transcript with the message as
+ * prompt. The task store is re-read per call — an await (resume) may have
+ * changed it since the caller's snapshot.
+ */
+export async function messageAgentTask(opts: {
+  agentId: string
+  /** Display name for result texts (registry name or description). */
+  label: string
+  message: string
+  getAppState: () => AppState
+  setAppStateForTasks: (f: (prev: AppState) => AppState) => void
+  toolUseContext: ToolUseContext
+  canUseTool: CanUseToolFn
+  invokingRequestId?: string
+}): Promise<{ success: boolean; message: string }> {
+  const task = opts.getAppState().tasks[opts.agentId]
+  if (isLocalAgentTask(task) && !isMainSessionTask(task)) {
+    if (task.status === 'running') {
+      queuePendingMessage(opts.agentId, opts.message, opts.setAppStateForTasks)
+      return {
+        success: true,
+        message: `Message queued for delivery to ${opts.label} at its next tool round.`,
+      }
+    }
+    // task exists but stopped — auto-resume
+    try {
+      const result = await resumeAgentBackground({
+        agentId: opts.agentId,
+        prompt: opts.message,
+        toolUseContext: opts.toolUseContext,
+        canUseTool: opts.canUseTool,
+        invokingRequestId: opts.invokingRequestId,
+      })
+      return {
+        success: true,
+        message: `Agent "${opts.label}" was stopped (${task.status}); resumed it in the background with your message. You'll be notified when it finishes. Output: ${result.outputFile}`,
+      }
+    } catch (e) {
+      return {
+        success: false,
+        message: `Agent "${opts.label}" is stopped (${task.status}) and could not be resumed: ${errorMessage(e)}`,
+      }
+    }
+  }
+  // task evicted from state — try resume from disk transcript.
+  // agentId is either a registered name or a format-matching raw ID
+  // (toAgentId validates the createAgentId format, so unknown names
+  // never reach this block).
+  try {
+    const result = await resumeAgentBackground({
+      agentId: opts.agentId,
+      prompt: opts.message,
+      toolUseContext: opts.toolUseContext,
+      canUseTool: opts.canUseTool,
+      invokingRequestId: opts.invokingRequestId,
+    })
+    return {
+      success: true,
+      message: `Agent "${opts.label}" had no active task; resumed from transcript in the background with your message. You'll be notified when it finishes. Output: ${result.outputFile}`,
+    }
+  } catch (e) {
+    return {
+      success: false,
+      message: `Agent "${opts.label}" is registered but has no transcript to resume. It may have been cleaned up. (${errorMessage(e)})`,
+    }
   }
 }

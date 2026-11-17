@@ -1697,6 +1697,18 @@ export function REPL({
     commandNames,
     getAppState: () => store.getState(),
     setAppState,
+    // A main-thread context and the permission gate, for auto-resuming a
+    // stopped subagent when the WebUI composer messages it. The TUI
+    // getToolUseContext takes the current turn's shape; a resume is not a
+    // turn, so it gets the full message list and no per-turn delta.
+    getToolUseContext: () =>
+      getToolUseContext(
+        messagesRef.current,
+        [],
+        abortControllerRef.current ?? createAbortController(),
+        mainLoopModel,
+      ),
+    canUseTool,
     onCancel,
     onSetPermissionMode: mode => {
       setAppState(prev => {
