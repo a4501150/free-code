@@ -480,7 +480,21 @@ export function areMessagePropsEqual(prev: Props, next: Props): boolean {
   const nextIsLatest = next.latestBashOutputUUID === next.message.uuid
   if (prevIsLatest !== nextIsLatest) return false
   if (prev.isTranscriptMode !== next.isTranscriptMode) return false
-  if (prev.isStatic && next.isStatic) return true
+  if (prev.isStatic && next.isStatic) {
+    // Grouped tool-use rows keep one uuid while members grow (keyed off the
+    // first member's tool_use id), so an unchanged uuid does not imply
+    // unchanged content. Parallel backgrounded agents land tool_use + result
+    // in the same React batch, so the group reads fully-resolved/static at
+    // every growth step — bailing here would freeze the row at its first
+    // member count.
+    if (
+      prev.message.type === 'grouped_tool_use' &&
+      next.message.type === 'grouped_tool_use'
+    ) {
+      return prev.message.messages.length === next.message.messages.length
+    }
+    return true
+  }
   return false
 }
 
