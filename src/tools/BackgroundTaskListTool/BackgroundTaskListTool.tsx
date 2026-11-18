@@ -1,7 +1,7 @@
 import { z } from 'zod/v4'
 import * as React from 'react'
 import { MessageResponse } from '../../components/MessageResponse.js'
-import { Text } from '../../ink.js'
+import { Box, Text } from '../../ink.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import type { AgentId } from '../../types/ids.js'
 import type { BashTaskKind } from '../../tasks/LocalShellTask/guards.js'
@@ -143,30 +143,32 @@ export function renderToolResultMessage(output: Output): React.ReactNode {
   // result is never less informative than the tool_result itself.
   return (
     <MessageResponse>
-      {output.tasks.map(task => {
-        const kind = task.kind ?? task.task_type.replace(/^local_/, '')
-        const exit =
-          task.exit_code !== undefined ? ` · exit ${task.exit_code}` : ''
-        const agent = task.agent_type ? ` · ${task.agent_type}` : ''
-        const owner =
-          task.owner && task.owner !== 'main'
-            ? ` · owner ${task.owner_name ?? task.owner}`
-            : ''
-        return (
-          <Text key={task.task_id} dimColor={task.status !== 'running'}>
-            {`[${task.status}] ${kind} — ${task.description}${agent}${owner}${exit}`}
-          </Text>
-        )
-      })}
-      {(output.other_running_tasks ?? []).map(hint => {
-        const kind = hint.kind ?? hint.task_type.replace(/^local_/, '')
-        const ownerLabel = hint.owner_name ?? hint.owner
-        return (
-          <Text key={hint.task_id} dimColor>
-            {`[hint] [${hint.status}] ${kind} — ${hint.description} · owned by ${ownerLabel} → SendMessage to: "${hint.owner}"`}
-          </Text>
-        )
-      })}
+      <Box flexDirection="column">
+        {output.tasks.map(task => {
+          const kind = task.kind ?? task.task_type.replace(/^local_/, '')
+          const exit =
+            task.exit_code !== undefined ? ` · exit ${task.exit_code}` : ''
+          const agent = task.agent_type ? ` · ${task.agent_type}` : ''
+          const owner =
+            task.owner && task.owner !== 'main'
+              ? ` · owner ${task.owner_name ?? task.owner}`
+              : ''
+          return (
+            <Text key={task.task_id} dimColor={task.status !== 'running'}>
+              {`[${task.status}] ${kind} — ${task.description}${agent}${owner}${exit}`}
+            </Text>
+          )
+        })}
+        {(output.other_running_tasks ?? []).map(hint => {
+          const kind = hint.kind ?? hint.task_type.replace(/^local_/, '')
+          const ownerLabel = hint.owner_name ?? hint.owner
+          return (
+            <Text key={hint.task_id} dimColor>
+              {`[hint] [${hint.status}] ${kind} — ${hint.description} · owned by ${ownerLabel} → SendMessage to: "${hint.owner}"`}
+            </Text>
+          )
+        })}
+      </Box>
     </MessageResponse>
   )
 }
