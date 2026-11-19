@@ -64,6 +64,11 @@ export type LocalShellSpawnInput = {
   agentId?: AgentId
   /** UI display variant: description-as-label, dialog title, status bar pill. */
   kind?: 'bash' | 'monitor'
+  /**
+   * PTY-backed interactive run (bash-mode `!` input). Output streams raw
+   * terminal bytes; input is driven through the task_input attach frame.
+   */
+  interactive?: boolean
 }
 
 // What getTaskByType dispatches for: kill. spawn/render were never

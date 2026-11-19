@@ -341,6 +341,15 @@ async function processUserInputBase(
     }
   }
 
+  // Bash-mode values may arrive with their `!` prefix intact — the attach
+  // bridges (WebUI `!` parity) and QueryEngine keep it. Strip it here, at
+  // the single point every bash-mode entry shares, BEFORE attachment
+  // extraction so the headless path sees exactly what the TUI composer
+  // submits. (isBashModeSubmit guards the bare-`!` case at the sources.)
+  if (mode === 'bash' && inputString !== null && inputString.startsWith('!')) {
+    inputString = inputString.slice(1)
+  }
+
   if (inputString === null && mode !== 'prompt') {
     throw new Error(`Mode: ${mode} requires a string input.`)
   }
@@ -443,7 +452,7 @@ async function processUserInputBase(
     : []
   queryCheckpoint('query_attachment_loading_end')
 
-  // Bash commands
+  // Bash commands.
   if (inputString !== null && mode === 'bash') {
     return finalizeResult(
       await processBashCommand(

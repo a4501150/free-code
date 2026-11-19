@@ -78,6 +78,7 @@ export async function createBashShellProvider(
       command: string,
       opts: {
         id: number | string
+        interactive?: boolean
       },
     ): Promise<{ commandString: string; cwdFilePath: string }> {
       let snapshotFilePath = await snapshotPromise
@@ -116,7 +117,12 @@ export async function createBashShellProvider(
       // literal file named `nul` — a reserved device name that breaks git.
       // See anthropics/claude-code#4928.
       const normalizedCommand = rewriteWindowsNullRedirect(command)
-      const addStdinRedirect = shouldAddStdinRedirect(normalizedCommand)
+      // Interactive (PTY) mode: the child reads from its controlling tty —
+      // redirecting stdin from /dev/null would break password prompts, and
+      // the pipe-position rearrangement below would move a redirect that
+      // must not exist at all.
+      const addStdinRedirect =
+        !opts.interactive && shouldAddStdinRedirect(normalizedCommand)
       let quotedCommand = quoteShellCommand(normalizedCommand, addStdinRedirect)
 
       // Special handling for pipes: move stdin redirect after first command

@@ -10,11 +10,14 @@ export type ShellProvider = {
   /**
    * Build the full command string including all shell-specific setup.
    * For bash: source snapshot, session env, disable extglob, eval-wrap, pwd tracking.
+   * `interactive` (PTY mode) skips the `</dev/null` stdin injection so the
+   * child can read from its controlling tty.
    */
   buildExecCommand(
     command: string,
     opts: {
       id: number | string
+      interactive?: boolean
     },
   ): Promise<{ commandString: string; cwdFilePath: string }>
 

@@ -87,8 +87,9 @@ const SECURITY_HEADERS: Record<string, string> = {
   'content-security-policy': [
     "default-src 'self'",
     // jsdelivr is the pinned lazy-load origin for mermaid (client/components/
-    // Mermaid.tsx) and KaTeX (client/mathRender.ts); the version-pinned URLs
-    // and their sibling chunks ride this origin.
+    // Mermaid.tsx), KaTeX (client/mathRender.ts) and xterm.js
+    // (client/components/TerminalView.tsx); the version-pinned URLs and
+    // their sibling chunks ride this origin.
     "script-src 'self' https://cdn.jsdelivr.net",
     // Mermaid injects a <style> element inside the SVG it renders, which CSP
     // counts as inline style. The pinned KaTeX stylesheet is also loaded from

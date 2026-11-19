@@ -5,6 +5,7 @@ import {
   type WebPermissionDecision,
   type WebPermissionRequest,
   type WebTaskOutput,
+  type WebTaskSummary,
   type WebTaskTranscript,
 } from '../../protocol/attachSchemas.js'
 import { useGateway } from '../hooks/useGateway.js'
@@ -19,6 +20,7 @@ import { QuestionTray } from './QuestionTray.js'
 import { MenuDrawer } from './MenuDrawer.js'
 import { TopBar } from './TopBar.js'
 import { TaskOutputView, type ShellOutputState } from './TaskOutputView.js'
+import { TerminalView } from './TerminalView.js'
 import { Transcript } from './Transcript.js'
 
 /**
@@ -145,7 +147,7 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
   const [viewerError, setViewerError] = useState<string | null>(null)
   // The task list as of the last render, so `openTask` can classify the task
   // without re-subscribing to the store on every callback rebuild.
-  const tasksRef = useRef<{ id: string; taskType: string }[]>([])
+  const tasksRef = useRef<WebTaskSummary[]>([])
   tasksRef.current = view.tasks
   // Highest event seq seen, so a seeded viewer compares against the same
   // watermark as the store it mirrors.
@@ -249,7 +251,15 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
       setViewedTaskId(taskId)
       setViewedTaskKind(kind)
       if (kind === 'output') {
+        // Interactive tasks replay through a terminal emulator: they seed
+        // by subscribing from byte 0 instead of reading a text tail, so the
+        // emulator receives the complete raw stream (no "[NKB omitted]"
+        // prefix) and task_input can drive the still-running PTY.
         setShellView({ text: '', done: false, gone: false, loading: true })
+        if (summary?.interactive) {
+          gateway.send({ kind: 'subscribe_task', taskId, fromOffset: 0 })
+          return
+        }
         const answer = await gateway.request({
           kind: 'get_task_output',
           taskId,
@@ -493,6 +503,14 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     : (viewedTaskId ?? '')
   const busy = meta?.state === 'running'
   const pending = view.permissions[0]
+  const viewerState: ShellOutputState = shellView ?? {
+    text: '',
+    done: false,
+    gone: false,
+    loading: false,
+  }
+  const killTask = (taskId: string): void =>
+    gateway.send({ kind: 'kill_task', taskId })
   // The gateway names its host's home for exactly this: the browser cannot
   // browse the filesystem, and home is where a new session should start. The
   // old fallbacks remain for a gateway that does not report it.
@@ -649,21 +667,36 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
         {activeKey ? (
           viewedTaskId ? (
             viewedTaskKind === 'output' ? (
-              <TaskOutputView
-                taskId={viewedTaskId}
-                task={viewedTask}
-                state={
-                  shellView ?? {
-                    text: '',
-                    done: false,
-                    gone: false,
-                    loading: false,
+              viewedTask?.interactive ? (
+                <TerminalView
+                  taskId={viewedTaskId}
+                  task={viewedTask}
+                  state={viewerState}
+                  onInput={data =>
+                    gateway.send({
+                      kind: 'task_input',
+                      taskId: viewedTaskId,
+                      data,
+                    })
                   }
-                }
-                onKillTask={taskId =>
-                  gateway.send({ kind: 'kill_task', taskId })
-                }
-              />
+                  onResize={(cols, rows) =>
+                    gateway.send({
+                      kind: 'task_resize',
+                      taskId: viewedTaskId,
+                      cols,
+                      rows,
+                    })
+                  }
+                  onKillTask={killTask}
+                />
+              ) : (
+                <TaskOutputView
+                  taskId={viewedTaskId}
+                  task={viewedTask}
+                  state={viewerState}
+                  onKillTask={killTask}
+                />
+              )
             ) : (
               <Transcript
                 items={viewerView.items}

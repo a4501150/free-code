@@ -1840,7 +1840,8 @@ function runHeadlessStreaming(
     // the session into a fresh turn until the user drives it again. The
     // filter reads the latch live, so dequeuing a prompt re-admits them.
     const mainThreadNotHeld = (cmd: QueuedCommand) =>
-      isMainThread(cmd) && !(stopRequested && cmd.mode !== 'prompt')
+      isMainThread(cmd) &&
+      !(stopRequested && cmd.mode !== 'prompt' && cmd.mode !== 'bash')
 
     try {
       let command: QueuedCommand | undefined
@@ -1854,12 +1855,23 @@ function runHeadlessStreaming(
         while ((command = dequeue(mainThreadNotHeld))) {
           if (
             command.mode !== 'prompt' &&
+            command.mode !== 'bash' &&
             command.mode !== 'orphaned-permission' &&
             command.mode !== 'task-notification'
           ) {
             throw new Error(
               'only prompt commands are supported in streaming mode',
             )
+          }
+          // Bash-mode commands (webui `!` submits) drain singly — canBatchWith
+          // only joins prompts, so a '!'-prefixed value can never be merged
+          // into a model prompt by joinPromptValues below. They release the
+          // stop latch like prompts: a held `!` submit must run, not park.
+          if (
+            stopRequested &&
+            (command.mode === 'prompt' || command.mode === 'bash')
+          ) {
+            stopRequested = false
           }
 
           // Any prompt — user message, cron fire, attach submit — releases

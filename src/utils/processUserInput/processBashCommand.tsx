@@ -19,11 +19,13 @@ import {
   createUserMessage,
   prepareUserContent,
 } from '../messages.js'
+import { isPtySupported, normalizePtyOutput } from '../shell/ptyShell.js'
 import { resolveDefaultShell } from '../shell/resolveDefaultShell.js'
 import { isPowerShellToolEnabled } from '../shell/shellToolUtils.js'
 import { processToolResultBlock } from '../toolResultStorage.js'
 import { escapeXml } from '../xml.js'
 import type { ProcessUserInputContext } from './processUserInput.js'
+import { InteractiveBashProgress } from 'src/components/InteractiveBashProgress.js'
 
 export async function processBashCommand(
   inputString: string,
@@ -57,16 +59,37 @@ export async function processBashCommand(
   // showSpinner) stay readable here because bash-mode owns the spinner row.
   let toolJSX: Parameters<SetToolJSXFn>[0]
 
-  // Just show initial UI
+  // Interactive (PTY) mode: every `!` command runs under a PTY on supported
+  // platforms, so password prompts (sudo/ssh) work and typed keys reach the
+  // child through the InteractiveBashProgress view. PowerShell and Windows
+  // keep today's piped execution.
+  const interactive =
+    isPtySupported() && !usePowerShell
+      ? {
+          cols: process.stdout.columns ?? 80,
+          rows: process.stdout.rows ?? 24,
+        }
+      : undefined
+
+  const Progress = interactive ? InteractiveBashProgress : BashModeProgress
+
+  // PTY output carries the line discipline's CRLF; the transcript wants LF.
+  // The capture file keeps raw bytes for the WebUI terminal, so this applies
+  // at the persist edge only — success and failure paths alike.
+  const normalizePty = (text: string): string =>
+    interactive ? normalizePtyOutput(text) : text
+
+  // Just show initial UI. In interactive mode the prompt input is hidden —
+  // keystrokes belong to the child until it exits or is killed/backgrounded.
   setToolJSX({
     jsx: (
-      <BashModeProgress
+      <Progress
         input={inputString}
         progress={null}
         verbose={context.options.verbose}
       />
     ),
-    shouldHidePromptInput: false,
+    shouldHidePromptInput: !!interactive,
   })
 
   try {
@@ -82,7 +105,7 @@ export async function processBashCommand(
       setToolJSX({
         jsx: (
           <>
-            <BashModeProgress
+            <Progress
               input={inputString!}
               progress={progress.data}
               verbose={context.options.verbose}
@@ -90,7 +113,8 @@ export async function processBashCommand(
             {toolJSX?.jsx}
           </>
         ),
-        shouldHidePromptInput: toolJSX?.shouldHidePromptInput ?? false,
+        shouldHidePromptInput:
+          !!interactive || (toolJSX?.shouldHidePromptInput ?? false),
         showSpinner: false,
       })
     }
@@ -107,7 +131,10 @@ export async function processBashCommand(
           onProgress,
         )
       : await BashTool.call(
-          { command: inputString },
+          {
+            command: inputString,
+            ...(interactive ? { _interactive: interactive } : {}),
+          },
           bashModeContext,
           undefined,
           undefined,
@@ -135,8 +162,8 @@ export async function processBashCommand(
     // UserBashOutputMessage's extractTag. Escape the raw fallback only.
     const stdout =
       typeof mapped.content === 'string'
-        ? mapped.content
-        : escapeXml(data.stdout)
+        ? normalizePty(mapped.content)
+        : normalizePty(escapeXml(data.stdout))
     return {
       messages: [
         createSyntheticUserCaveatMessage(),
@@ -167,7 +194,7 @@ export async function processBashCommand(
           userMessage,
           ...attachmentMessages,
           createUserMessage({
-            content: `<bash-stdout>${escapeXml(e.stdout)}</bash-stdout><bash-stderr>${escapeXml(e.stderr)}</bash-stderr>`,
+            content: `<bash-stdout>${normalizePty(escapeXml(e.stdout))}</bash-stdout><bash-stderr>${normalizePty(escapeXml(e.stderr))}</bash-stderr>`,
           }),
         ],
         shouldQuery: false,

@@ -1,4 +1,5 @@
 import type { DomainUserContentBlock } from './types/domain.js'
+import { isBashModeSubmit } from './server/runtime.js'
 import { randomUUID } from 'crypto'
 import last from 'lodash-es/last.js'
 import {
@@ -361,6 +362,10 @@ export class QueryEngine {
       }
     }
 
+    // Bash-mode parity for SDK/attach/webui submissions: route `!`-prefixed
+    // strings to local bash execution. The prefix strip happens in
+    // processUserInput — the single point every bash-mode entry shares.
+    const isBashModeInput = isBashModeSubmit(prompt)
     const {
       messages: messagesFromUserInput,
       shouldQuery,
@@ -369,7 +374,7 @@ export class QueryEngine {
       resultText,
     } = await processUserInput({
       input: prompt,
-      mode: 'prompt',
+      mode: isBashModeInput ? 'bash' : 'prompt',
       setToolJSX: () => {},
       context: {
         ...processUserInputContext,

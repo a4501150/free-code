@@ -46,8 +46,9 @@ export function buildWebTaskSummary(
     ...(task.endTime ? { endTime: task.endTime } : {}),
     ...(task.toolUseId ? { toolUseId: task.toolUseId } : {}),
   }
-  if (task.type === 'local_bash' && task.command) {
-    summary.command = task.command
+  if (task.type === 'local_bash') {
+    if (task.command) summary.command = task.command
+    if (task.interactive) summary.interactive = true
   }
   if (task.type === 'local_agent') {
     summary.agentType = task.agentType

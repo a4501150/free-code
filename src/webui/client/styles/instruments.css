@@ -578,3 +578,12 @@
 .tool__bgchip:hover {
   border-color: var(--signal);
 }
+
+/* The interactive task's xterm pane: the emulator owns its own scrolling
+   and rendering, so the container only frames it and never interferes with
+   the canvas' sizing (the fit addon reads the container box on resize). */
+.shellout__term {
+  flex: 1;
+  min-height: 0;
+  padding: 0.4rem 0.6rem;
+}

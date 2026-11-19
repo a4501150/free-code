@@ -33,6 +33,9 @@ export type LocalShellTaskState = TaskStateBase & {
   // Monitor tool's notify_interval. Shown in the monitor detail dialog;
   // undefined for bash tasks and mirrors registered before this field.
   notifyIntervalMs?: number
+  // PTY-backed interactive run: the WebUI renders these with a terminal
+  // emulator and drives input via task_input frames.
+  interactive?: boolean
 }
 
 export function isLocalShellTask(task: unknown): task is LocalShellTaskState {

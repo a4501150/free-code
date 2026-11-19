@@ -159,6 +159,21 @@ export const AttachRequestBodySchema = z.discriminatedUnion('kind', [
     taskId: z.string().min(1).max(200),
   }),
   z.object({
+    kind: z.literal('task_input'),
+    taskId: z.string().min(1).max(200),
+    /**
+     * Bytes for the interactive task's PTY stdin, as typed by the user in
+     * the browser terminal. Never persisted to transcripts or logs.
+     */
+    data: z.string().min(1).max(1024),
+  }),
+  z.object({
+    kind: z.literal('task_resize'),
+    taskId: z.string().min(1).max(200),
+    cols: z.number().int().positive().max(1000),
+    rows: z.number().int().positive().max(1000),
+  }),
+  z.object({
     kind: z.literal('message_task'),
     taskId: z.string().min(1).max(200),
     /** Text delivered to the subagent; SendMessage-style, no images. */
@@ -292,6 +307,8 @@ export type WebTaskSummary = {
   endTime?: number
   /** local_bash: the shell command line, so the browser can echo it back. */
   command?: string
+  /** local_bash: PTY-backed interactive run — render with a terminal emulator. */
+  interactive?: boolean
   /** The tool use that spawned the task, so a ToolCard can point at it. */
   toolUseId?: string
   /** local_bash: the shell's exit code once it has one. */

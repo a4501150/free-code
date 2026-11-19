@@ -20,6 +20,7 @@ import {
 } from '../webui/protocol/attachSchemas.js'
 import type { DomainUserContentBlock } from '../types/domain.js'
 import { isTerminalTaskStatus } from '../Task.js'
+import { getPtyHandle } from '../utils/shell/ptyShell.js'
 import { StopTaskError } from '../tasks/stopTask.js'
 import {
   getTaskOutputDelta,
@@ -623,6 +624,15 @@ export function startAttachHost(
           return
         }
 
+        const respondNotInteractive = (): void =>
+          respond(socket, requestId, false, {
+            error: {
+              code: 'not_interactive',
+              message:
+                'no live interactive shell for this task (it may have finished)',
+            },
+          })
+
         switch (body.kind) {
           case 'subscribe': {
             connection.subscribed = true
@@ -835,6 +845,29 @@ export function startAttachHost(
             // The kill flips the status; do not wait for the next tick.
             publishTasks()
             publishMeta()
+            return
+          }
+
+          case 'task_input': {
+            const handle = getPtyHandle(body.taskId)
+            if (!handle) {
+              respondNotInteractive()
+              return
+            }
+            // Input is forwarded to the PTY verbatim and never persisted.
+            handle.write(body.data)
+            respond(socket, requestId, true)
+            return
+          }
+
+          case 'task_resize': {
+            const handle = getPtyHandle(body.taskId)
+            if (!handle) {
+              respondNotInteractive()
+              return
+            }
+            handle.resize(body.cols, body.rows)
+            respond(socket, requestId, true)
             return
           }
 

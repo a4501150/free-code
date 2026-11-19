@@ -346,6 +346,15 @@ const fullInputSchema = z.strictObject({
     })
     .optional()
     .describe('Internal: pre-computed sed edit result from preview'),
+  _interactive: z
+    .object({
+      cols: z.number(),
+      rows: z.number(),
+    })
+    .optional()
+    .describe(
+      'Internal: run under a PTY (bash-mode `!` input) with this terminal size',
+    ),
 })
 
 // Always omit _simulatedSedEdit from the model-facing schema. It is an internal-only
@@ -358,8 +367,9 @@ const inputSchema = isBackgroundTasksDisabled
   ? fullInputSchema.omit({
       run_in_background: true,
       _simulatedSedEdit: true,
+      _interactive: true,
     })
-  : fullInputSchema.omit({ _simulatedSedEdit: true })
+  : fullInputSchema.omit({ _simulatedSedEdit: true, _interactive: true })
 type InputSchema = typeof inputSchema
 
 // Use fullInputSchema for the type to always include run_in_background
@@ -450,6 +460,7 @@ export type Out = z.infer<OutputSchema>
 export type { BashProgress } from '../../types/tools.js'
 
 import type { BashProgress } from '../../types/tools.js'
+import { isPtySupported } from '../../utils/shell/ptyShell.js'
 
 /**
  * Checks if a command is allowed to be automatically backgrounded
@@ -1049,6 +1060,13 @@ async function* runShellCommand({
   const { command, description, timeout, run_in_background } = input
   const timeoutMs = timeout || getDefaultTimeoutMs()
 
+  // PTY (bash-mode `!`) execution: the model-facing limiter strip and
+  // redirect dual-write rewrite are SKIPPED — under a PTY the command runs
+  // exactly as typed (a trailing `| tail` belongs to the user's own intent,
+  // and tee rewrites would fight the PTY's own stream). Raw output lands in
+  // the capture file via exec's own read loop.
+  const interactive = isPtySupported() ? input._interactive : undefined
+
   let fullOutput = ''
   let lastProgressOutput = ''
   let lastTotalLines = 0
@@ -1080,7 +1098,9 @@ async function* runShellCommand({
   // receives the exact lines it asked for, and the footer names the file
   // holding the complete stream. Applied first so the redirect rewrite
   // below splices offsets of the stripped text.
-  const limiterStripped = stripTrailingOutputLimiters(command)
+  const limiterStripped = interactive
+    ? null
+    : stripTrailingOutputLimiters(command)
   const effectiveCommand = limiterStripped?.strippedCommand ?? command
 
   // Dual-write rewrite of the command's own > / >> redirects: tee-able ones
@@ -1089,7 +1109,9 @@ async function* runShellCommand({
   // file the harness already opened. Redirects a pipeline cannot express
   // (fd≥2, nested, mid-pipeline) are passed through unchanged — that stream
   // is not captured. The result footer reports both facts to the model.
-  const rewrite = rewriteRedirectsForDualWrite(effectiveCommand)
+  const rewrite = interactive
+    ? undefined
+    : rewriteRedirectsForDualWrite(effectiveCommand)
 
   const shellCommand = await exec(
     rewrite?.rewrittenCommand ?? effectiveCommand,
@@ -1097,6 +1119,7 @@ async function* runShellCommand({
     'bash',
     {
       timeout: timeoutMs,
+      interactive,
       preallocatedTaskId: rewrite?.taskId,
       limiterStages: limiterStripped?.stages,
       onProgress(lastLines, allLines, totalLines, totalBytes, isIncomplete) {
@@ -1261,6 +1284,26 @@ async function* runShellCommand({
   // Wait for the initial threshold before showing progress
   const startTime = Date.now()
   let foregroundTaskId: string | undefined = undefined
+
+  // Interactive (PTY) runs register as foreground tasks IMMEDIATELY, not
+  // after the progress threshold: the WebUI's task_output/task_input
+  // streaming needs the task id from the first byte, and an interactive
+  // session that never crosses the threshold would otherwise be invisible
+  // (and undrivable) from the browser until it finishes. The progress
+  // loop's registerForeground below is guarded by !foregroundTaskId.
+  if (interactive) {
+    foregroundTaskId = registerForeground(
+      {
+        command,
+        description: description || command,
+        shellCommand,
+        agentId,
+        interactive: true,
+      },
+      setAppState,
+      toolUseId,
+    )
+  }
 
   {
     const initialResult = await Promise.race([

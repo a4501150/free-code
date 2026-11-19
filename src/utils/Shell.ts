@@ -1,5 +1,10 @@
-import { execFileSync, spawn } from 'child_process'
-import { constants as fsConstants, readFileSync, unlinkSync } from 'fs'
+import { type ChildProcess, execFileSync, spawn } from 'child_process'
+import {
+  constants as fsConstants,
+  readFileSync,
+  unlinkSync,
+  writeSync,
+} from 'fs'
 import { type FileHandle, mkdir, open, realpath } from 'fs/promises'
 import memoize from 'lodash-es/memoize.js'
 import { isAbsolute, resolve } from 'path'
@@ -23,6 +28,12 @@ import {
 } from './ShellCommand.js'
 import { getTaskOutputDir } from './task/diskOutput.js'
 import { TaskOutput } from './task/TaskOutput.js'
+import {
+  spawnPtyChild,
+  registerPtyHandle,
+  unregisterPtyHandle,
+  type PtyChildProcess,
+} from './shell/ptyShell.js'
 import type { OutputLimiterStage } from './bash/outputCapture.js'
 import { which } from './which.js'
 
@@ -181,6 +192,14 @@ export type ExecOptions = {
    * it asked for while the complete stream stays in the file.
    */
   limiterStages?: readonly OutputLimiterStage[]
+  /**
+   * Run under a PTY (interactive mode): the child gets a controlling tty, so
+   * password prompts (sudo/ssh) work and its input can be driven through the
+   * returned command's pty handle. File mode is forced — raw PTY bytes are
+   * appended to the output file by our own read loop and also delivered via
+   * onStdout. The provider skips the `</dev/null` stdin injection.
+   */
+  interactive?: { cols: number; rows: number }
 }
 
 /**
@@ -201,6 +220,7 @@ export async function exec(
     onStdout,
     preallocatedTaskId,
     limiterStages,
+    interactive,
   } = options ?? {}
   const commandTimeout = timeout || DEFAULT_TIMEOUT
 
@@ -211,7 +231,7 @@ export async function exec(
     .padStart(4, '0')
 
   const { commandString: builtCommand, cwdFilePath } =
-    await provider.buildExecCommand(command, { id })
+    await provider.buildExecCommand(command, { id, interactive: !!interactive })
 
   let commandString = builtCommand
 
@@ -250,7 +270,9 @@ export async function exec(
   // When onStdout is provided, use pipe mode: stdout flows through
   // StreamWrapper → TaskOutput in-memory buffer instead of a file fd.
   // This lets callers receive real-time stdout callbacks.
-  const usePipeMode = !!onStdout
+  // Interactive (PTY) mode always uses the file: raw bytes are appended by
+  // our PTY read loop, so onStdout is delivered directly from the callback.
+  const usePipeMode = !!onStdout && !interactive
   const taskId = preallocatedTaskId ?? generateTaskId('local_bash')
   const taskOutput = new TaskOutput(taskId, onProgress ?? null, !usePipeMode)
   await mkdir(getTaskOutputDir(), { recursive: true })
@@ -281,32 +303,79 @@ export async function exec(
     )
   }
 
+  // Scoped outside the try so the catch can kill an interactive child that
+  // was registered before a later failure.
+  let childProcess: ChildProcess | undefined
+
   try {
-    const childProcess = spawn(binShell, shellArgs, {
-      env: {
-        ...subprocessEnv(),
-        SHELL: shellType === 'bash' ? binShell : undefined,
-        GIT_EDITOR: 'true',
-        CLAUDECODE: '1',
-        ...envOverrides,
-        ...((getInitialSettings()?.shellSessionId ?? false)
-          ? {
-              CLAUDE_CODE_SESSION_ID: getSessionId(),
-            }
-          : {}),
-      },
-      cwd,
-      stdio: usePipeMode
-        ? ['pipe', 'pipe', 'pipe']
-        : ['pipe', outputHandle?.fd, outputHandle?.fd],
-      // Don't pass the signal - we'll handle termination ourselves with tree-kill
-      detached: provider.detached,
-      // Prevent visible console window on Windows (no-op on other platforms)
-      windowsHide: true,
-    })
+    // PTY (interactive) mode: spawn through the raw node-pty addon. The
+    // returned facade is ChildProcess-shaped so wrapSpawn/ShellCommandImpl
+    // work unchanged — file mode with null stdout/stderr, exactly what the
+    // facade provides. Raw PTY bytes are appended to the output file from
+    // our own read loop (the child has no fd dup) and mirrored to onStdout
+    // for live progress.
+    const baseEnv = {
+      ...subprocessEnv(),
+      GIT_EDITOR: 'true',
+      CLAUDECODE: '1',
+      ...envOverrides,
+      ...((getInitialSettings()?.shellSessionId ?? false)
+        ? {
+            CLAUDE_CODE_SESSION_ID: getSessionId(),
+          }
+        : {}),
+    }
+    if (interactive) {
+      childProcess = spawnPtyChild({
+        file: binShell,
+        args: shellArgs,
+        env: {
+          ...baseEnv,
+          SHELL: binShell,
+          TERM: 'xterm-256color',
+        },
+        cwd,
+        cols: interactive.cols,
+        rows: interactive.rows,
+        onOutput: (bytes: Buffer) => {
+          // The output file's fd stays OURS in PTY mode — never closed
+          // below — so these writes are the file's only producer.
+          if (outputHandle !== undefined) {
+            // Synchronous write(2) on the O_APPEND fd — the kernel seeks to
+            // EOF before every write, so appends stay ordered. Sync is
+            // REQUIRED, not an optimization: an async (threadpool) write
+            // lets the exit handler's getStdout read the file before the
+            // final PTY bytes land, silently truncating the result.
+            writeSync(outputHandle.fd, bytes)
+          }
+          onStdout?.(bytes.toString('utf8'))
+        },
+        onClosed: () => {
+          if (outputHandle !== undefined) {
+            void outputHandle.close().catch(() => {})
+          }
+        },
+      })
+      registerPtyHandle(taskId, (childProcess as PtyChildProcess).pty)
+    } else {
+      childProcess = spawn(binShell, shellArgs, {
+        env: {
+          ...baseEnv,
+          SHELL: shellType === 'bash' ? binShell : undefined,
+        },
+        cwd,
+        stdio: usePipeMode
+          ? ['pipe', 'pipe', 'pipe']
+          : ['pipe', outputHandle?.fd, outputHandle?.fd],
+        // Don't pass the signal - we'll handle termination ourselves with tree-kill
+        detached: provider.detached,
+        // Prevent visible console window on Windows (no-op on other platforms)
+        windowsHide: true,
+      })
+    }
 
     const shellCommand = wrapSpawn(
-      childProcess,
+      childProcess!,
       abortSignal,
       commandTimeout,
       taskOutput,
@@ -320,7 +389,9 @@ export async function exec(
     // yields and the child's ENOENT 'error' event can fire in that window.
     // Wrapped in its own try/catch so a close failure (e.g. EIO) doesn't fall
     // through to the spawn-failure catch block, which would orphan the child.
-    if (outputHandle !== undefined) {
+    // PTY mode: the fd stays open — it IS the write path (see onOutput) and is
+    // closed from the PTY's onClosed once the child exits and the tail drains.
+    if (!interactive && outputHandle !== undefined) {
       try {
         await outputHandle.close()
       } catch {
@@ -354,6 +425,7 @@ export async function exec(
         : cwdFilePath
 
     void shellCommand.result.then(async result => {
+      if (interactive) unregisterPtyHandle(taskId)
       // Only foreground tasks update the cwd
       if (result && !preventCwdChanges && !result.backgroundTaskId) {
         try {
@@ -390,6 +462,12 @@ export async function exec(
       } catch {
         // May already be closed
       }
+    }
+    // A PTY child registered before the failing call would otherwise be
+    // orphaned with a permanent registry entry stealing foreground input.
+    if (interactive && childProcess !== undefined) {
+      childProcess.kill()
+      unregisterPtyHandle(taskId)
     }
     taskOutput.clear()
 

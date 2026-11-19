@@ -85,6 +85,19 @@ export type AttachRuntime = {
  * `executeUserInput` passes that sidecar only for the first command of a batch,
  * so a second queued image prompt would lose its images.
  */
+/**
+ * WebUI/SDK bash-mode parity: a plain string submit starting with `!` runs
+ * locally like the TUI's bash input instead of reaching the model as text.
+ * The TUI composer strips its own mode character before submission, so this
+ * only fires for attach/SDK callers; block-array submits are never bash
+ * input. A bare `!` is not a command — length must exceed the prefix.
+ */
+export function isBashModeSubmit(content: unknown): boolean {
+  return (
+    typeof content === 'string' && content.length > 1 && content.startsWith('!')
+  )
+}
+
 export function buildSubmitValue(
   content: string,
   images: readonly WebSubmitImage[] | undefined,

@@ -25,7 +25,11 @@ import {
   publishAttachTodos,
   registerAttachRuntime,
 } from './hostSingleton.ts'
-import { buildSubmitValue, type AttachRuntime } from './runtime.ts'
+import {
+  buildSubmitValue,
+  isBashModeSubmit,
+  type AttachRuntime,
+} from './runtime.ts'
 import {
   buildWebTaskSummaries,
   findAgentName,
@@ -140,8 +144,9 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
       },
 
       submit(content, delivery, commandId, images) {
+        const isBashMode = isBashModeSubmit(content)
         enqueue({
-          mode: 'prompt',
+          mode: isBashMode ? 'bash' : 'prompt',
           value: buildSubmitValue(content, images),
           priority: delivery === 'interrupt' ? 'now' : 'next',
           uuid: commandId as UUID,

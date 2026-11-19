@@ -47,7 +47,7 @@ import {
   applyPermissionUpdates,
   createSessionToolAllowUpdate,
 } from '../utils/permissions/PermissionUpdate.ts'
-import { buildSubmitValue } from './runtime.ts'
+import { buildSubmitValue, isBashModeSubmit } from './runtime.ts'
 
 export function shouldAttachHeadless(): boolean {
   return isWebuiManagedProcess()
@@ -140,8 +140,9 @@ export function startHeadlessAttach(params: HeadlessAttachParams): void {
     messageTask: (taskId, content) => params.messageTask(taskId, content),
 
     submit(content, delivery, commandId, images) {
+      const isBashMode = isBashModeSubmit(content)
       enqueue({
-        mode: 'prompt',
+        mode: isBashMode ? 'bash' : 'prompt',
         value: buildSubmitValue(content, images),
         priority: delivery === 'interrupt' ? 'now' : 'next',
         uuid: commandId as UUID,
