@@ -50,6 +50,13 @@ export interface PtyAddon {
 }
 
 let addon: PtyAddon | undefined
+/**
+ * The `spawn-helper` that lives next to whichever `pty.node` was loaded. The
+ * addon posix_spawns it for the fork+setsid+exec leg; a wrong path surfaces
+ * as "posix_spawn failed: No such file or directory" and every interactive
+ * run dies before it produces a byte.
+ */
+let addonHelperPath: string | undefined
 
 /** Only the POSIX addon is driven directly today; Windows (ConPTY) is future work. */
 export function isPtySupported(): boolean {
@@ -61,6 +68,8 @@ function resolveAddon(): PtyAddon {
 
   // Compiled binary: vendored sidecar next to the executable. execPath is
   // the bun binary itself in dev mode, where this candidate simply won't exist.
+  // Whoever rebuilds a vendored pty.node must ship its matching spawn-helper
+  // in the same directory — the addon fails every fork without it.
   const execDir = path.dirname(process.execPath)
   const sidecar = path.resolve(
     execDir,
@@ -71,6 +80,7 @@ function resolveAddon(): PtyAddon {
   )
   try {
     addon = require(sidecar) as PtyAddon
+    addonHelperPath = path.join(path.dirname(sidecar), 'spawn-helper')
     return addon
   } catch {
     // try the node_modules resolution next
@@ -89,6 +99,7 @@ function resolveAddon(): PtyAddon {
       'pty.node',
     )
     addon = require(addonPath) as PtyAddon
+    addonHelperPath = path.join(path.dirname(addonPath), 'spawn-helper')
     return addon
   } catch {
     throw new Error(
@@ -193,10 +204,9 @@ export function normalizePtyOutput(text: string): string {
 export function spawnPtyChild(opts: PtySpawnOptions): PtyChildProcess {
   const native = resolveAddon()
   const bus = new EventEmitter()
-  const platformDir = `${process.platform}-${process.arch}`
-  // node-pty's own wrapper passes this path on POSIX even where the file
-  // does not ship in the prebuilds dir — the beta addon never execs it there.
-  const helperPath = `prebuilds/${platformDir}/spawn-helper`
+  // The helper must sit beside the loaded pty.node (resolveAddon records it);
+  // a nonexistent path fails the spawn outright with ENOENT.
+  const helperPath = addonHelperPath!
 
   let closed = false
   let exited = false
