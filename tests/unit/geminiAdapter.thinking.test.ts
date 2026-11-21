@@ -32,7 +32,10 @@ const testConfig = {
   type: 'gemini',
   baseUrl: 'http://localhost:9999/v1',
   models: [{ id: 'gemini-3-pro' }],
-  auth: { gcp: { projectId: 'test-project', region: 'us-central1' } },
+  auth: {
+    active: 'gcp',
+    gcp: { projectId: 'test-project', region: 'us-central1' },
+  },
 } as unknown as ProviderConfig
 
 function makeRequest(
@@ -103,10 +106,10 @@ describe('gemini request: thinkingConfig', () => {
     )
     expect(
       (body.generationConfig as Record<string, unknown>).thinkingConfig,
-    ).toEqual({ includeThoughts: true, thinkingLevel: 'LOW' })
+    ).toEqual({ includeThoughts: true, thinkingLevel: 'low' })
   })
 
-  test('effort levels above HIGH clamp to HIGH', async () => {
+  test('effort levels above high clamp to high', async () => {
     for (const effort of ['high', 'xhigh', 'max']) {
       const body = await capturedBody(
         makeRequest({
@@ -116,17 +119,17 @@ describe('gemini request: thinkingConfig', () => {
       )
       const config = (body.generationConfig as Record<string, unknown>)
         .thinkingConfig as Record<string, unknown>
-      expect(config.thinkingLevel).toBe('HIGH')
+      expect(config.thinkingLevel).toBe('high')
     }
   })
 
-  test('an explicit budget maps to thinkingBudget', async () => {
+  test('an explicit budget maps onto a thinking level (Gemini 4 rejects thinkingBudget)', async () => {
     const body = await capturedBody(
       makeRequest({ thinking: { type: 'enabled', budgetTokens: 2048 } }),
     )
     expect(
       (body.generationConfig as Record<string, unknown>).thinkingConfig,
-    ).toEqual({ includeThoughts: true, thinkingBudget: 2048 })
+    ).toEqual({ includeThoughts: true, thinkingLevel: 'low' })
   })
 
   // Sending thinkingLevel and thinkingBudget together is an error.

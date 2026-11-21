@@ -26,9 +26,10 @@ const GEMINI_CLI_CLIENT_ID = [
   '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j',
   '.apps.googleusercontent.com',
 ].join('')
-const GEMINI_CLI_CLIENT_SECRET = ['GOCSPX-4uHgMPm-1o7Sk-geV6Cu5clX', 'Fsxl'].join(
-  '',
-)
+const GEMINI_CLI_CLIENT_SECRET = [
+  'GOCSPX-4uHgMPm-1o7Sk-geV6Cu5clX',
+  'Fsxl',
+].join('')
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const GEMINI_CLI_CREDS_FILE = join(homedir(), '.gemini', 'oauth_creds.json')
 
@@ -97,7 +98,9 @@ const getGeminiCliToken = memoizeWithTTLAsync(
       return null
     }
     const refreshToken =
-      typeof raw['refresh_token'] === 'string' ? raw['refresh_token'] : undefined
+      typeof raw['refresh_token'] === 'string'
+        ? raw['refresh_token']
+        : undefined
     const expiry =
       typeof raw['expiry_date'] === 'number' ? raw['expiry_date'] : undefined
     let accessToken =

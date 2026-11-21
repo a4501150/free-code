@@ -156,7 +156,9 @@ const GEMINI_SCHEMA_KEYS = new Set([
 function toGeminiSchema(schema: unknown): Record<string, unknown> {
   if (!schema || typeof schema !== 'object') return {}
   const out: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(schema as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(
+    schema as Record<string, unknown>,
+  )) {
     if (!GEMINI_SCHEMA_KEYS.has(key)) continue
     if (key === 'properties' && value && typeof value === 'object') {
       out[key] = Object.fromEntries(
@@ -310,23 +312,26 @@ function domainMessagesToGemini(messages: DomainMessageParam[]): {
   return { contents, toolIdToName }
 }
 
-/** Our effort names → Gemini 3 thinking levels. */
+/** Our effort names → Gemini thinking levels. Wire values are lowercase: the
+ * REST API silently treats an UPPERCASE string as unset and falls back to the
+ * model's default level (with the latency/tool-use degradation that implies). */
 const GEMINI_THINKING_LEVELS: Record<string, string> = {
-  none: 'MINIMAL',
-  minimal: 'MINIMAL',
-  low: 'LOW',
-  medium: 'MEDIUM',
-  high: 'HIGH',
-  xhigh: 'HIGH',
-  max: 'HIGH',
+  none: 'minimal',
+  minimal: 'minimal',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'high',
+  max: 'high',
 }
 
 /**
  * Build `generationConfig.thinkingConfig`.
  *
- * Gemini 3 takes a `thinkingLevel`, Gemini 2.5 a `thinkingBudget`, and sending
- * both is an error — so adaptive thinking maps to a level (the effort is
- * already a coarse dial) and an explicit budget maps to a budget.
+ * Adaptive thinking maps the effort dial onto a coarse `thinkingLevel`; an
+ * explicit budget maps onto the nearest level, because Gemini 4 rejects
+ * `thinkingBudget` outright and level + budget together is an error. The
+ * disabled path keeps the zero budget — Flash families still honor it.
  *
  * `includeThoughts` is independent of whether the model thinks: without it the
  * model still reasons and still bills for it, we just never see the summary.
