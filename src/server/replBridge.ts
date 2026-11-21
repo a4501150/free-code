@@ -17,6 +17,7 @@ import type {
   WebPermissionMode,
   WebSessionActivity,
   WebSessionState,
+  WebSlashCommand,
 } from '../webui/protocol/attachSchemas.ts'
 import {
   publishAttachMeta,
@@ -48,7 +49,7 @@ export type ReplAttachBridgeParams = {
   getPermissionMode: () => string | undefined
   getInProgressToolUseIds: () => ReadonlySet<string>
   todos: Task[] | undefined
-  commandNames: string[]
+  commandSummaries: WebSlashCommand[]
   /** The live AppState: source for task summaries, transcripts and kills. */
   getAppState: () => AppState
   setAppState: (f: (prev: AppState) => AppState) => void
@@ -85,7 +86,7 @@ export function useReplAttachBridge(params: ReplAttachBridgeParams): void {
           status: task.status,
           activeForm: task.activeForm,
         })),
-      getCommands: () => latest.current.commandNames,
+      getCommands: () => latest.current.commandSummaries,
       getPendingCommands: () => {
         const snapshot = getCommandQueueSnapshot()
         const commands: WebPendingCommand[] = []

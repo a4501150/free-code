@@ -53,7 +53,7 @@ import {
   type Command,
   type CommandResultDisplay,
   type ResumeEntrypoint,
-  getCommandName,
+  buildWebSlashCommands,
   isCommandEnabled,
 } from '../commands.js'
 import type {
@@ -660,14 +660,8 @@ export function REPL({
     [disableSlashCommands, mergedCommands],
   )
 
-  const commandNames = useMemo(
-    () => [
-      ...new Set(
-        commands
-          .filter(c => !c.isHidden)
-          .flatMap(c => [getCommandName(c), ...(c.aliases ?? [])]),
-      ),
-    ],
+  const commandSummaries = useMemo(
+    () => buildWebSlashCommands(commands),
     [commands],
   )
 
@@ -1694,7 +1688,7 @@ export function REPL({
     getPermissionMode: () => toolPermissionContext.mode,
     getInProgressToolUseIds: () => inProgressToolUseIDs,
     todos: tasksV2,
-    commandNames,
+    commandSummaries,
     getAppState: () => store.getState(),
     setAppState,
     // A main-thread context and the permission gate, for auto-resuming a

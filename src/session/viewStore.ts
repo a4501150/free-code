@@ -12,6 +12,7 @@ import type {
   WebSessionMeta,
   WebTaskSummary,
   WebTodo,
+  WebSlashCommand,
 } from '../webui/protocol/attachSchemas.js'
 import type { WebTranscriptItem } from '../webui/protocol/transcriptWire.js'
 
@@ -23,7 +24,7 @@ export type SessionView = {
   todos: WebTodo[]
   pendingCommands: WebPendingCommand[]
   models: WebModelOption[]
-  commands: string[]
+  commands: WebSlashCommand[]
   /** Background tasks (subagents, shells, monitors). Newest first. */
   tasks: WebTaskSummary[]
   lastSeq: number

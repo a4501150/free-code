@@ -285,7 +285,11 @@ import {
 import { asSessionId } from 'src/types/ids.js'
 import { jsonStringify } from '../utils/slowOperations.js'
 import { skillChangeDetector } from '../utils/skills/skillChangeDetector.js'
-import { getCommands, clearCommandsCache } from '../commands.js'
+import {
+  getCommands,
+  clearCommandsCache,
+  buildWebSlashCommands,
+} from '../commands.js'
 import { isBareMode, isEnvTruthy } from '../utils/envUtils.js'
 import { installPluginsForHeadless } from '../utils/plugins/headlessPluginInstall.js'
 import { refreshActivePlugins } from '../utils/plugins/refresh.js'
@@ -380,16 +384,6 @@ export function canBatchWith(
     next.workload === head.workload &&
     next.isMeta === head.isMeta
   )
-}
-
-function commandsToNames(cmds: Command[]): string[] {
-  return [
-    ...new Set(
-      cmds
-        .filter(c => !c.isHidden)
-        .flatMap(c => [getCommandName(c), ...(c.aliases ?? [])]),
-    ),
-  ]
 }
 
 export async function runHeadless(
@@ -1146,7 +1140,7 @@ function runHeadlessStreaming(
   // instant the socket exists, and reading that binding from above its
   // declaration throws a temporal-dead-zone error inside the socket handler,
   // which leaves the connection accepted but never answered.
-  let headlessCommandNames = commandsToNames(commands)
+  let headlessSlashCommands = buildWebSlashCommands(commands)
   if (shouldAttachHeadless()) {
     startHeadlessAttach({
       cwd: cwd(),
@@ -1171,7 +1165,7 @@ function runHeadlessStreaming(
         }
       },
       getPermissionMode: () => getAppState().toolPermissionContext.mode,
-      getCommands: () => headlessCommandNames,
+      getCommands: () => headlessSlashCommands,
       messageTask: (taskId, content) => messageTaskImpl(taskId, content),
       interrupt: () => requestStop(),
       // `run` is declared below, but only a browser command calls this.
@@ -1701,7 +1695,7 @@ function runHeadlessStreaming(
     // captured by the query loop (REPL uses AppState instead). getCommands is
     // fresh because refreshActivePlugins cleared its cache.
     currentCommands = await getCommands(cwd())
-    headlessCommandNames = commandsToNames(currentCommands)
+    headlessSlashCommands = buildWebSlashCommands(currentCommands)
 
     // Preserve SDK-provided agents (--agents CLI flag or SDK initialize
     // control_request) — both inject via parseAgentsFromJson with
@@ -1759,7 +1753,7 @@ function runHeadlessStreaming(
     clearCommandsCache()
     void getCommands(cwd()).then(newCommands => {
       currentCommands = newCommands
-      headlessCommandNames = commandsToNames(currentCommands)
+      headlessSlashCommands = buildWebSlashCommands(currentCommands)
     })
   })
 
@@ -2743,7 +2737,7 @@ function runHeadlessStreaming(
             ])
             if (cmdsR.status === 'fulfilled') {
               currentCommands = cmdsR.value
-              headlessCommandNames = commandsToNames(currentCommands)
+              headlessSlashCommands = buildWebSlashCommands(currentCommands)
             } else {
               logError(cmdsR.reason)
             }

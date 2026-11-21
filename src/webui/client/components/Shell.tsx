@@ -311,6 +311,29 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     [gateway, viewerStore],
   )
 
+  /**
+   * A `!` command run while attached lands in the task list as an
+   * interactive task; the terminal is the response to what the user just
+   * typed, so it opens itself. Tasks already interactive at attach time are
+   * baselined instead — a reconnect or attaching to a session someone else
+   * drives must not hijack the view on every poll.
+   */
+  const seenInteractive = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    const interactive = view.tasks.filter(task => task.interactive)
+    if (!seenInteractive.current) {
+      seenInteractive.current = new Set(interactive.map(task => task.id))
+      return
+    }
+    const fresh = interactive.find(
+      task =>
+        !seenInteractive.current!.has(task.id) &&
+        (task.status === 'running' || task.status === 'pending'),
+    )
+    for (const task of interactive) seenInteractive.current.add(task.id)
+    if (fresh) void openTask(fresh.id)
+  }, [view.tasks, openTask])
+
   const closeTask = useCallback(() => {
     const taskId = viewedTaskIdRef.current
     if (taskId) gateway.send({ kind: 'unsubscribe_task', taskId })
@@ -332,6 +355,9 @@ export function Shell({ csrf }: { csrf: string }): React.ReactElement {
     (processKey: string, sessionId: string) => {
       store.reset()
       closeTask()
+      // Re-baseline against whoever serves the session now: what was
+      // already interactive under the old process is not "new".
+      seenInteractive.current = null
       setActiveKey(processKey)
       setActiveSessionId(sessionId)
       // Whatever produced the key — a click, a create, a resumed selection —

@@ -114,6 +114,7 @@ import {
   getCommandName,
   isCommandEnabled,
 } from './types/command.js'
+import type { WebSlashCommand } from './webui/protocol/attachSchemas.js'
 
 // Re-export types from the centralized location
 export type {
@@ -504,4 +505,23 @@ export function formatDescriptionWithSource(cmd: Command): string {
   }
 
   return `${cmd.description} (${getSettingSourceName(cmd.source)})`
+}
+
+/**
+ * The slash-command completion list for attached WebUI clients: the same
+ * hidden-filtered, alias-flattened, first-name-wins set the TUI typeahead
+ * shows, each entry carrying its annotated description. Both attach
+ * producers (REPL bridge, headless bridge) build it here so the two
+ * sessions present one list shape.
+ */
+export function buildWebSlashCommands(cmds: Command[]): WebSlashCommand[] {
+  const byName = new Map<string, WebSlashCommand>()
+  for (const cmd of cmds) {
+    if (cmd.isHidden) continue
+    const description = formatDescriptionWithSource(cmd)
+    for (const name of [getCommandName(cmd), ...(cmd.aliases ?? [])]) {
+      if (!byName.has(name)) byName.set(name, { name, description })
+    }
+  }
+  return [...byName.values()]
 }

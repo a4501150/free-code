@@ -8,6 +8,7 @@ import type {
   WebSubmitImage,
   WebTaskSummary,
   WebTodo,
+  WebSlashCommand,
 } from '../webui/protocol/attachSchemas.ts'
 import type { TaskTranscriptMessages } from './taskSummaries.ts'
 
@@ -28,7 +29,7 @@ export type AttachRuntime = {
   getModel(): string | undefined
   getPermissionMode(): string | undefined
   getTodos(): WebTodo[]
-  getCommands(): string[]
+  getCommands(): WebSlashCommand[]
   getPendingCommands(): WebPendingCommand[]
   getInProgressToolUseIds(): ReadonlySet<string>
 

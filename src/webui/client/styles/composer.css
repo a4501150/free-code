@@ -136,6 +136,24 @@
   color: var(--signal);
 }
 
+/* Name and description share one line; the description is the disposable
+   half, so it ellipsizes first and the name stays readable. */
+.composer__suggestion-name {
+  color: inherit;
+}
+
+.composer__suggestion-hint {
+  margin-left: 0.6rem;
+  color: var(--text-faint);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+  display: inline-block;
+  vertical-align: bottom;
+}
+
 @media (min-width: 48rem) {
   .composer__suggestions button {
     padding: 0.2rem 0.6rem;

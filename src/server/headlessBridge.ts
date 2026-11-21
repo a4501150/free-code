@@ -27,6 +27,7 @@ import type {
   WebPermissionMode,
   WebSessionActivity,
   WebSessionState,
+  WebSlashCommand,
 } from '../webui/protocol/attachSchemas.ts'
 import {
   getAttachHost,
@@ -62,7 +63,7 @@ export type HeadlessAttachParams = {
   isRunning(): boolean
   getModel(): string | undefined
   getPermissionMode(): string | undefined
-  getCommands(): string[]
+  getCommands(): WebSlashCommand[]
   getInProgressToolUseIds?(): ReadonlySet<string>
   /**
    * Deliver a text message to a background subagent (queued while running,

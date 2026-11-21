@@ -341,6 +341,15 @@ export type WebTaskOutput = {
   done: boolean
 }
 
+/**
+ * One slash-command completion entry. `name` carries no leading slash;
+ * aliases appear as their own entries sharing the command's description.
+ */
+export type WebSlashCommand = {
+  name: string
+  description?: string
+}
+
 export type AttachEventBody =
   | {
       kind: 'snapshot'
@@ -351,7 +360,7 @@ export type AttachEventBody =
       pendingCommands: WebPendingCommand[]
       /** Static for the process, so it rides the snapshot and not every meta. */
       models: WebModelOption[]
-      commands: string[]
+      commands: WebSlashCommand[]
       tasks?: WebTaskSummary[]
     }
   | { kind: 'transcript'; patch: TranscriptPatch }

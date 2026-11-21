@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { WebSlashCommand } from '../../protocol/attachSchemas.js'
 import {
   imageFilesFrom,
   prepareImage,
@@ -10,6 +11,19 @@ const MAX_IMAGES = 4
 
 type Suggestion = { value: string; hint?: string }
 
+/**
+ * The completion token the caret sits in, or '' — matched against the text
+ * before the caret, so a token anywhere in the message (with the caret on
+ * it) completes. A `/` or `@` only opens completion at a word boundary:
+ * paths like `src/utils` and emails like `a@b` are not tokens.
+ */
+export function completionToken(value: string, cursor: number): string {
+  const match = /(?:^|\s)(\/[^\s]*)$|(?:^|\s)(@[^\s]*)$/i.exec(
+    value.slice(0, cursor),
+  )
+  return match ? (match[1] ?? match[2] ?? '') : ''
+}
+
 /** Narrower than a plain string, so it satisfies the protocol's media enum. */
 export type SubmitImage = {
   mediaType: PendingImage['mediaType']
@@ -19,10 +33,14 @@ export type SubmitImage = {
 /**
  * The prompt editor.
  *
- * Autocomplete for slash commands and `@` file mentions. The file list comes
- * from what the transcript has already touched: the browser has no filesystem
- * access, and asking the session to walk the tree on every keystroke would be a
- * poor trade for a phone on a tunnel.
+ * Autocomplete for slash commands and `@` file mentions, triggered wherever
+ * the caret sits inside such a token — a command named mid-sentence completes
+ * just like one at the start. A slash only opens completion at a word
+ * boundary (start of input or after whitespace), so paths like `src/utils`
+ * never trigger it. The file list comes from what the transcript has already
+ * touched: the browser has no filesystem access, and asking the session to
+ * walk the tree on every keystroke would be a poor trade for a phone on a
+ * tunnel.
  */
 export function Composer({
   busy,
@@ -33,7 +51,7 @@ export function Composer({
 }: {
   busy: boolean
   knownPaths: string[]
-  commands: string[]
+  commands: WebSlashCommand[]
   onSubmit(
     text: string,
     delivery: 'next' | 'interrupt',
@@ -42,24 +60,30 @@ export function Composer({
   onInterrupt(): void
 }): React.ReactElement {
   const [value, setValue] = useState('')
+  // The caret, not the end of the input, decides where the token is: the
+  // user may complete mid-message or move the caret back before typing.
+  const [cursor, setCursor] = useState(0)
   const [selected, setSelected] = useState(0)
   const [images, setImages] = useState<PendingImage[]>([])
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  // The caret a completed token should land on, applied after React pushes
+  // the new value (setSelectionRange against the old value snaps back).
+  const pendingSelection = useRef<number | null>(null)
 
-  const token = useMemo(() => {
-    const match = /(^\/[^\s]*)$|(@[^\s]*)$/i.exec(value)
-    return match ? (match[1] ?? match[2] ?? '') : ''
-  }, [value])
+  const token = useMemo(() => completionToken(value, cursor), [value, cursor])
 
   const suggestions = useMemo<Suggestion[]>(() => {
     if (token.startsWith('/')) {
       const query = token.toLowerCase()
       return commands
-        .map(name => (name.startsWith('/') ? name : `/${name}`))
-        .filter(c => c.toLowerCase().startsWith(query))
-        .map(value => ({ value }))
+        .filter(c => `/${c.name}`.toLowerCase().startsWith(query))
+        .slice(0, 12)
+        .map(command => ({
+          value: `/${command.name}`,
+          hint: command.description,
+        }))
     }
     if (token.startsWith('@')) {
       const needle = token.slice(1).toLowerCase()
@@ -71,10 +95,21 @@ export function Composer({
     return []
   }, [token, knownPaths, commands])
 
+  useEffect(() => {
+    if (pendingSelection.current !== null && inputRef.current) {
+      const pos = pendingSelection.current
+      pendingSelection.current = null
+      inputRef.current.setSelectionRange(pos, pos)
+    }
+  }, [value])
+
   function accept(suggestion: Suggestion): void {
+    const start = cursor - token.length
+    pendingSelection.current = start + suggestion.value.length + 1
     setValue(
-      value.slice(0, value.length - token.length) + suggestion.value + ' ',
+      value.slice(0, start) + suggestion.value + ' ' + value.slice(cursor),
     )
+    setCursor(pendingSelection.current)
     setSelected(0)
     inputRef.current?.focus()
   }
@@ -117,6 +152,7 @@ export function Composer({
     for (const image of images) URL.revokeObjectURL(image.previewUrl)
     setImages([])
     setValue('')
+    setCursor(0)
     setSelected(0)
     setError('')
   }
@@ -137,7 +173,14 @@ export function Composer({
                   accept(suggestion)
                 }}
               >
-                {suggestion.value}
+                <span className="composer__suggestion-name">
+                  {suggestion.value}
+                </span>
+                {suggestion.hint ? (
+                  <span className="composer__suggestion-hint">
+                    {suggestion.hint}
+                  </span>
+                ) : null}
               </button>
             </li>
           ))}
@@ -171,7 +214,12 @@ export function Composer({
           value={value}
           rows={1}
           placeholder="Message, or / for a command"
-          onChange={event => setValue(event.target.value)}
+          onChange={event => {
+            setValue(event.target.value)
+            setCursor(event.target.selectionStart ?? event.target.value.length)
+          }}
+          onSelect={event => setCursor(event.currentTarget.selectionStart)}
+          onClick={event => setCursor(event.currentTarget.selectionStart)}
           onPaste={event => {
             const files = imageFilesFrom(event.clipboardData.items)
             if (!files.length) return

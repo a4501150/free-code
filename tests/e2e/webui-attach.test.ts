@@ -161,6 +161,12 @@ describe('WebUI attach', () => {
       await client.request({ kind: 'subscribe' })
       const snapshot = await collector.waitForEvent('snapshot')
 
+      // Slash-command completion rides the snapshot with its description:
+      // the browser must be able to render the dropdown from it alone.
+      expect(
+        typeof snapshot.commands.find(c => c.name === 'compact')?.description,
+      ).toBe('string')
+
       const submitted = await client.request({
         kind: 'submit',
         commandId: crypto.randomUUID(),

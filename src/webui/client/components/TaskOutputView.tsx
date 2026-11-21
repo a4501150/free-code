@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
+import { parseAnsi, type AnsiStyle } from '../ansi.js'
 import type { WebTaskSummary } from '../../protocol/attachSchemas.js'
 
 /** What the shell/monitor viewer holds while the task streams. */
@@ -15,6 +17,43 @@ export type ShellOutputState = {
 
 function isRunning(task: WebTaskSummary | undefined): boolean {
   return !task || (task.status !== 'completed' && task.status !== 'failed')
+}
+
+function styleToCss(style: AnsiStyle): CSSProperties {
+  return {
+    color: style.inverse ? style.background : style.color,
+    background: style.inverse ? style.color : style.background,
+    fontWeight: style.bold ? 700 : undefined,
+    opacity: style.dim ? 0.65 : undefined,
+    textDecoration: style.underline ? 'underline' : undefined,
+  }
+}
+
+/**
+ * Style only the tail of a multi-megabyte build log: re-parsing the whole
+ * text on every append would cost more than the pane is worth. The window
+ * starts at a newline so a cut line does not misplace a color.
+ */
+const ANSI_WINDOW_CHARS = 200_000
+
+function useAnsiBody(text: string): React.ReactNode {
+  return useMemo(() => {
+    let window = text
+    if (text.length > ANSI_WINDOW_CHARS) {
+      const cut = text.length - ANSI_WINDOW_CHARS
+      const nl = text.lastIndexOf('\n', cut)
+      window = text.slice(nl === -1 || nl < cut - 65_536 ? cut : nl + 1)
+    }
+    return parseAnsi(window).map((seg, i) =>
+      seg.style ? (
+        <span key={i} style={styleToCss(seg.style)}>
+          {seg.text}
+        </span>
+      ) : (
+        seg.text
+      ),
+    )
+  }, [text])
 }
 
 /**
@@ -79,6 +118,8 @@ export function TaskOutputView({
     const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 24
     setFollow(atBottom)
   }
+
+  const body = useAnsiBody(state.text)
 
   const running = task ? isRunning(task) : !state.done && !state.gone
   const stoppable =
@@ -163,7 +204,11 @@ export function TaskOutputView({
       >
         {state.loading && !state.text
           ? 'reading output…'
-          : state.text || (running ? 'no output yet' : '')}
+          : state.text
+            ? body
+            : running
+              ? 'no output yet'
+              : ''}
       </pre>
     </div>
   )

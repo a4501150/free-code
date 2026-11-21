@@ -581,9 +581,70 @@
 
 /* The interactive task's xterm pane: the emulator owns its own scrolling
    and rendering, so the container only frames it and never interferes with
-   the canvas' sizing (the fit addon reads the container box on resize). */
+   the canvas' sizing (the fit addon reads the container box on resize).
+   The wrapper exists so the "tap to type" hint can float over the box
+   without stealing the tap meant to focus it. */
+.shellout__termwrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .shellout__term {
   flex: 1;
   min-height: 0;
   padding: 0.4rem 0.6rem;
+}
+
+/* xterm's hidden textarea is a descendant of the box, so :focus-within
+   tracks "the user can type right now" without any client-side state. */
+.shellout__termwrap:focus-within .shellout__hint {
+  display: none;
+}
+
+.shellout__hint {
+  position: absolute;
+  left: 50%;
+  bottom: 0.6rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+  padding: 0.15rem 0.6rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--signal-sunk);
+  color: var(--signal);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+/* Phone-reachable keys the soft keyboard cannot produce. */
+.shellout__keys {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.35rem 0.6rem;
+  padding-bottom: calc(0.35rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--rule);
+  background: var(--bg-raised);
+}
+
+.shellout__key {
+  min-width: 2.2rem;
+  padding: 0.45rem 0.4rem;
+  background: var(--bg-sunk);
+  border: 1px solid var(--rule-bright);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  /* The min-width and padding give the ~44px touch target; this only
+     suppresses the double-tap-zoom delay on top of it. */
+  touch-action: manipulation;
+}
+
+.shellout__key:active {
+  border-color: var(--signal);
+  color: var(--signal);
 }
