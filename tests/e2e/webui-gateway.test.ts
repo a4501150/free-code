@@ -23,6 +23,7 @@ import {
   sendDaemonControl,
 } from '../../src/webui/daemonControl'
 import { connectAttachClient } from '../../src/webui/gateway/attachClient'
+import { WEBUI_ATTACH_ENV } from '../../src/utils/webuiManagedProcess'
 import type { AttachEventBody } from '../../src/webui/protocol/attachSchemas'
 import type { WebTranscriptItem } from '../../src/webui/protocol/transcriptWire'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
@@ -47,8 +48,11 @@ async function makeDirs(): Promise<Dirs> {
 }
 
 function env(dirs: Dirs): Record<string, string> {
+  // A test run started from inside a webui session must not leak the attach
+  // marker into the CLI's env: it decides whether `web restart` detaches.
+  const { [WEBUI_ATTACH_ENV]: _attach, ...rest } = process.env
   return {
-    ...process.env,
+    ...rest,
     FREECODE_CONFIG_DIR: dirs.config,
     CLAUDE_CONFIG_DIR: dirs.config,
     HOME: dirs.home,
@@ -59,9 +63,10 @@ async function runCli(
   dirs: Dirs,
   args: string[],
   stdin?: string,
+  extraEnv?: Record<string, string>,
 ): Promise<string> {
   const proc = Bun.spawn([CLI, ...args], {
-    env: env(dirs),
+    env: { ...env(dirs), ...extraEnv },
     stdin: stdin === undefined ? 'ignore' : new TextEncoder().encode(stdin),
     stdout: 'pipe',
     stderr: 'pipe',
@@ -1284,6 +1289,67 @@ describe('WebUI gateway', () => {
     expect(restarted).toContain('https://kept-name.example')
     expect(await runCli(dirs, ['web', 'status'])).toContain(
       'https://kept-name.example',
+    )
+  })
+
+  test('a restart from inside a web session finishes after the caller dies', async () => {
+    dirs = await makeDirs()
+    const started = await runCli(
+      dirs,
+      [
+        'web',
+        'start',
+        '--tunnel',
+        'command',
+        '--tunnel-command',
+        'echo https://bg-restart.example; sleep 60',
+        '--password-stdin',
+      ],
+      PASSWORD,
+    )
+    expect(started).toContain('https://bg-restart.example')
+    {
+      const p = await captureDaemonPid(dirs)
+      if (p) daemonPids.push(p)
+    }
+    const firstPid = (
+      await readFile(join(dirs.config, 'daemon.pid'), 'utf-8')
+    ).trim()
+
+    // The attach env var marks a caller the restart will take down with the
+    // daemon (a `!` command's session): it must hand the sequence to a
+    // detached child and return before touching the daemon.
+    const out = await runCli(dirs, ['web', 'restart'], undefined, {
+      [WEBUI_ATTACH_ENV]: '1234',
+    })
+    expect(out).toContain('in the background')
+
+    await waitFor(
+      async () => {
+        try {
+          return (
+            await readFile(join(dirs.config, 'daemon.pid'), 'utf-8')
+          ).trim()
+        } catch {
+          return ''
+        }
+      },
+      pid => pid !== '' && pid !== firstPid,
+      {
+        description: 'the detached restart to replace the daemon',
+        timeoutMs: 30_000,
+      },
+    )
+    const secondPid = (
+      await readFile(join(dirs.config, 'daemon.pid'), 'utf-8')
+    ).trim()
+    daemonPids.push(parseInt(secondPid, 10))
+    // The detached child starts the server and tunnel in sequence; give the
+    // whole bring-up the same room the pid swap got.
+    await waitFor(
+      () => runCli(dirs, ['web', 'status']),
+      out => out.includes('https://bg-restart.example'),
+      { description: 'the restarted daemon to serve again', timeoutMs: 30_000 },
     )
   })
 

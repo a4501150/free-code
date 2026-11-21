@@ -1,4 +1,6 @@
+import { spawn } from 'child_process'
 import { readAuthFile, writeAuthFile } from './gateway/auth.js'
+import { WEBUI_ATTACH_ENV } from '../utils/webuiManagedProcess.js'
 import {
   sendDaemonControl,
   type DaemonControlResponse,
@@ -345,6 +347,26 @@ export async function webMain(args: string[]): Promise<void> {
       const options: WebStartOptions = {
         ...previous.options,
         ...(previous.subdomain ? { subdomain: previous.subdomain } : {}),
+      }
+
+      // The caller may itself be a process the daemon started — `code web
+      // restart` as a `!` command runs inside an attached session, and
+      // stopping the daemon tears that session down, killing this process
+      // half-way through the sequence. Sessions carry the attach env var and
+      // pass it to their children, so its presence means "inline here would
+      // kill the restart": run it in a detached child, which no part of the
+      // dying tree can reach. Same re-exec assumption as the daemon's own
+      // spawn: this process's binary restarts itself.
+      const insideWebui = process.env[WEBUI_ATTACH_ENV] !== undefined
+      if (insideWebui && !rest.includes('--detached-child')) {
+        const child = spawn(
+          process.execPath,
+          ['web', 'restart', '--detached-child'],
+          { detached: true, stdio: 'ignore' },
+        )
+        child.unref()
+        print('Restarting the web daemon in the background.')
+        return
       }
 
       const stopResult = await sendDaemonControl({ kind: 'web.stop' })
