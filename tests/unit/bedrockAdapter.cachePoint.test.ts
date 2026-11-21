@@ -6,30 +6,23 @@
  * field on the block it follows. The adapter used to drop our `cache_control`
  * markers entirely, which meant Bedrock got no prompt caching at all.
  */
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
+import { describe, test, expect } from 'bun:test'
 import { bedrockAdapter } from '../../src/services/api/adapters/bedrock-adapter-impl.js'
 import type { ProviderConfig } from '../../src/utils/settings/types.js'
 import type { DomainMessageRequest } from '../../src/services/api/domain-transport.js'
 
+// Proxy-managed bearer auth keeps these tests off the local AWS credential
+// chain.
 const testConfig: ProviderConfig = {
   type: 'bedrock-converse',
   baseUrl: 'http://localhost:9999',
   models: [{ id: 'us.anthropic.claude-sonnet-4-6' }],
-  auth: { aws: { region: 'us-east-1' } },
+  auth: {
+    active: 'bearer',
+    bearer: { token: 'test-token' },
+    aws: { region: 'us-east-1' },
+  },
 } as ProviderConfig
-
-let previousSkipAuth: string | undefined
-beforeAll(() => {
-  previousSkipAuth = process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH
-  process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH = '1'
-})
-afterAll(() => {
-  if (previousSkipAuth === undefined) {
-    delete process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH
-  } else {
-    process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH = previousSkipAuth
-  }
-})
 
 function eventStreamResponse() {
   return () =>
