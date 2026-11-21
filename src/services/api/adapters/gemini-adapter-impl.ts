@@ -129,6 +129,58 @@ interface GeminiContent {
 
 // ── Domain → Gemini request translation ────────────────────────────
 
+// Gemini function declarations only accept an OpenAPI subset; JSON Schema
+// keywords like $schema, additionalProperties and propertyNames make the
+// whole request fail validation.
+const GEMINI_SCHEMA_KEYS = new Set([
+  'type',
+  'format',
+  'description',
+  'nullable',
+  'enum',
+  'default',
+  'minimum',
+  'maximum',
+  'minLength',
+  'maxLength',
+  'pattern',
+  'minItems',
+  'maxItems',
+  'properties',
+  'required',
+  'items',
+  'propertyOrdering',
+  'anyOf',
+])
+
+function toGeminiSchema(schema: unknown): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return {}
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(schema as Record<string, unknown>)) {
+    if (!GEMINI_SCHEMA_KEYS.has(key)) continue
+    if (key === 'properties' && value && typeof value === 'object') {
+      out[key] = Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([name, sub]) => [
+          name,
+          toGeminiSchema(sub),
+        ]),
+      )
+    } else if (key === 'items') {
+      out[key] = toGeminiSchema(value)
+    } else if (key === 'anyOf' && Array.isArray(value)) {
+      out[key] = value.map(toGeminiSchema)
+    } else if (key === 'type' && Array.isArray(value)) {
+      // JSON Schema union like ["string","null"] → Gemini type + nullable
+      const types = value.filter(t => t !== 'null')
+      out.type = types[0] ?? 'string'
+      if (value.includes('null')) out.nullable = true
+    } else {
+      out[key] = value
+    }
+  }
+  return out
+}
+
 function domainToolsToGemini(
   tools: DomainToolDefinition[],
 ): Record<string, unknown> {
@@ -136,7 +188,9 @@ function domainToolsToGemini(
     functionDeclarations: tools.map(tool => ({
       name: tool.name,
       ...(tool.description ? { description: tool.description } : {}),
-      parameters: tool.input_schema || { type: 'object', properties: {} },
+      parameters: tool.input_schema
+        ? toGeminiSchema(tool.input_schema)
+        : { type: 'object', properties: {} },
     })),
   }
 }
@@ -299,9 +353,20 @@ function domainThinkingToGemini(
     }
   }
 
+  // Gemini 4 models reject thinkingBudget entirely and take a coarse
+  // thinkingLevel instead, so map the explicit budget onto it.
+  const budget = thinking.budgetTokens
+  let level: string
+  if (budget <= 4096) level = 'low'
+  else if (budget <= 16384) level = 'medium'
+  else if (budget <= 32768) level = 'high'
+  else level = 'xhigh'
+  if (level === 'xhigh' && /carbon|argon/.test(request.model)) {
+    level = 'high' // carbon/argon have no xhigh level
+  }
   return {
     includeThoughts: true,
-    thinkingBudget: thinking.budgetTokens,
+    thinkingLevel: level,
   }
 }
 
