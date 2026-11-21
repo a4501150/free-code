@@ -191,14 +191,20 @@ describe('agentic system prompt request assembly', () => {
 
   test('default prompt rebuilds byte-identically across per-turn re-invocations', async () => {
     setupProvider()
-    // openai-responses carries the system block as one `instructions`
-    // string. The varying attribution header is Anthropic-type-only, so
-    // it must not appear here at all.
+    // openai-responses carries the system block as the leading developer
+    // message in `input` (GPT-6.2+ excludes top-level `instructions` from
+    // prompt caching, so it must not ride there). The varying attribution
+    // header is Anthropic-type-only, so it must not appear here at all.
     const wireInstructions = async (): Promise<string> => {
       const prompt = await getSystemPrompt([])
       const body = await captureBody(asSystemPrompt(prompt), 'sdk')
-      expect(typeof body.instructions).toBe('string')
-      return body.instructions as string
+      expect(body.instructions).toBeUndefined()
+      const input = body.input as Array<Record<string, unknown>>
+      expect(input[0]?.role).toBe('developer')
+      const content = input[0]?.content as Array<Record<string, unknown>>
+      const text = content?.[0]?.text
+      expect(typeof text).toBe('string')
+      return text as string
     }
 
     const firstWire = await wireInstructions()

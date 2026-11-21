@@ -345,11 +345,22 @@ function domainRequestToCodexBody(
 
   const input = domainMessagesToCodexInput(request.messages)
 
+  // GPT-6.2+ appends top-level `instructions` after `input`, outside every
+  // cache breakpoint, so that text is billed uncached on each request. The
+  // system prompt must ride as the first input item (a developer message) to
+  // participate in prefix caching — the shape codex-rs itself ships.
+  if (instructions) {
+    input.unshift({
+      type: 'message',
+      role: 'developer',
+      content: [{ type: 'input_text', text: instructions }],
+    })
+  }
+
   const codexBody: Record<string, unknown> = {
     model: request.model,
     store: false,
     stream: true,
-    instructions,
     input,
     tool_choice: 'auto',
     parallel_tool_calls: true,
