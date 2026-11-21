@@ -501,16 +501,14 @@ export function startDeferredPrefetches(): void {
   prefetchSystemContextIfSafe()
   const registry = getProviderRegistry()
   const credRefresh = registry.getCapabilities().credentialRefresh
-  if (
-    credRefresh === 'aws' &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)
-  ) {
+  // Skip prefetching when the provider delegates auth to a proxy bearer
+  // token — the prefetched local credentials would never be consumed.
+  const prefetchAuth =
+    registry.getDefaultProvider()?.config.auth?.active !== 'bearer'
+  if (credRefresh === 'aws' && prefetchAuth) {
     void prefetchAwsCredentialsAndBedRockInfoIfSafe()
   }
-  if (
-    credRefresh === 'gcp' &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)
-  ) {
+  if (credRefresh === 'gcp' && prefetchAuth) {
     void prefetchGcpCredentialsIfSafe()
   }
   void countFilesRoundedRg(getCwd(), AbortSignal.timeout(3000), [])

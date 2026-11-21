@@ -49,6 +49,7 @@ import {
 import { isDebugToStdErr, logForDebugging } from '../../../utils/debug.js'
 import { isEnvTruthy } from '../../../utils/envUtils.js'
 import { getUserAgent } from '../../../utils/http.js'
+import { resolveApiKey, resolveBearerToken } from './authResolution.js'
 import { getProviderRegistry } from '../../../utils/model/providerRegistry.js'
 import type { ResolvedProviderTarget } from '../adapter.js'
 import { resolveProviderForModel } from './resolve.js'
@@ -143,9 +144,7 @@ function resolveAuthHeaders(
 
   switch (auth.active) {
     case 'apiKey': {
-      const key =
-        auth.apiKey?.key ||
-        (auth.apiKey?.keyEnv ? process.env[auth.apiKey.keyEnv] : undefined)
+      const key = resolveApiKey(auth)
       if (!key) return {}
       if (provider.config.type === 'anthropic') {
         return { 'x-api-key': key }
@@ -153,9 +152,7 @@ function resolveAuthHeaders(
       return { Authorization: `Bearer ${key}` }
     }
     case 'bearer': {
-      const token =
-        auth.bearer?.token ||
-        (auth.bearer?.tokenEnv ? process.env[auth.bearer.tokenEnv] : undefined)
+      const token = resolveBearerToken(auth)
       if (!token) return {}
       return { Authorization: `Bearer ${token}` }
     }

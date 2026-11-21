@@ -10,8 +10,8 @@ import {
   anthropicMessageToDomain,
   type WireMessage,
 } from '../../../types/domainConversion.js'
-import { isEnvTruthy } from '../../../utils/envUtils.js'
 import { getUserAgent } from '../../../utils/http.js'
+import { resolveApiKey, resolveBearerToken } from './authResolution.js'
 import { logError } from '../../../utils/log.js'
 import { normalizeModelStringForAPI } from '../../../utils/model/modelResolution.js'
 import {
@@ -55,27 +55,62 @@ import {
 
 // ── Auth ─────────────────────────────────────────────────────────────
 
+// One credential instance per process: it caches MSAL tokens internally,
+// so constructing per request would re-acquire from Entra every time.
+const getAzureFoundryToken = getBearerTokenProvider(
+  new AzureCredential(),
+  'https://cognitiveservices.azure.com/.default',
+)
+
 async function getFoundryAuth(
   config: ProviderConfig,
 ): Promise<{ headerName: string; headerValue: string }> {
   const auth = config.auth
-  if (auth?.active === 'apiKey') {
-    const key =
-      auth.apiKey?.key ||
-      (auth.apiKey?.keyEnv ? process.env[auth.apiKey.keyEnv] : undefined)
-    if (key) return { headerName: 'x-api-key', headerValue: key }
+  switch (auth?.active) {
+    case 'bearer': {
+      const token = resolveBearerToken(auth)
+      if (token) {
+        return { headerName: 'Authorization', headerValue: `Bearer ${token}` }
+      }
+      throw new DomainConnectionError({
+        normalized: {
+          kind: 'auth',
+          message: 'auth.active is "bearer" but no bearer token is configured',
+          providerType: 'foundry',
+          raw: null,
+        },
+        cause: new Error('Missing Foundry bearer token'),
+      })
+    }
+    case 'apiKey': {
+      const key = resolveApiKey(auth)
+      if (key) return { headerName: 'x-api-key', headerValue: key }
+      throw new DomainConnectionError({
+        normalized: {
+          kind: 'auth',
+          message: 'auth.active is "apiKey" but no API key is configured',
+          providerType: 'foundry',
+          raw: null,
+        },
+        cause: new Error('Missing Foundry API key'),
+      })
+    }
+    case 'azure': {
+      const token = await getAzureFoundryToken()
+      return { headerName: 'Authorization', headerValue: `Bearer ${token}` }
+    }
+    default:
+      throw new DomainConnectionError({
+        normalized: {
+          kind: 'auth',
+          message:
+            'No Foundry credentials resolved (set auth.active to "bearer" for proxy-managed auth, "apiKey", or "azure" for local Entra credentials)',
+          providerType: 'foundry',
+          raw: null,
+        },
+        cause: new Error('Failed to resolve Foundry auth'),
+      })
   }
-
-  if (isEnvTruthy(process.env.CLAUDE_CODE_SKIP_FOUNDRY_AUTH)) {
-    return { headerName: 'x-api-key', headerValue: '' }
-  }
-
-  const tokenProvider = getBearerTokenProvider(
-    new AzureCredential(),
-    'https://cognitiveservices.azure.com/.default',
-  )
-  const token = await tokenProvider()
-  return { headerName: 'Authorization', headerValue: `Bearer ${token}` }
 }
 
 // ── Adapter ──────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ import { NoAuthSigner } from '@smithy/core'
 import { NodeHttpHandler } from '@smithy/node-http-handler'
 import memoize from 'lodash-es/memoize.js'
 import { refreshAndGetAwsCredentials } from '../auth.js'
-import { getAWSRegion, isEnvTruthy } from '../envUtils.js'
+import { getAWSRegion } from '../envUtils.js'
 import { logError } from '../log.js'
 import { getProviderRegistry } from './providerRegistry.js'
 import { getAWSClientProxyConfig } from '../proxy.js'
@@ -19,6 +19,14 @@ import { getAWSClientProxyConfig } from '../proxy.js'
 // still import everything Bedrock-related from this module.
 export { isFoundationModel } from './bedrockInferenceProfiles.js'
 
+// Bearer auth means a proxy manages upstream credentials, so the SDK clients
+// must not sign requests themselves.
+function bedrockUsesProxyAuth(): boolean {
+  return (
+    getProviderRegistry().getDefaultProvider()?.config.auth?.active === 'bearer'
+  )
+}
+
 async function createBedrockClient() {
   // Match the Anthropic Bedrock SDK's region behavior exactly:
   // - Reads AWS_REGION or AWS_DEFAULT_REGION env vars (not AWS config files)
@@ -26,7 +34,7 @@ async function createBedrockClient() {
   // This ensures we query profiles from the same region the client will use
   const region = getAWSRegion()
 
-  const skipAuth = isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)
+  const skipAuth = bedrockUsesProxyAuth()
 
   const bedrockEndpoint =
     getProviderRegistry().getDefaultProvider()?.config.baseUrl
@@ -64,7 +72,7 @@ async function createBedrockClient() {
 
 export async function createBedrockRuntimeClient() {
   const region = getAWSRegion()
-  const skipAuth = isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)
+  const skipAuth = bedrockUsesProxyAuth()
 
   const bedrockEndpoint =
     getProviderRegistry().getDefaultProvider()?.config.baseUrl

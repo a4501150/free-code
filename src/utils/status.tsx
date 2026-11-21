@@ -14,7 +14,7 @@ import {
   MAX_MEMORY_CHARACTER_COUNT,
 } from './claudemd.js'
 import { getDoctorDiagnostic } from './doctorDiagnostic.js'
-import { getAWSRegion, isEnvTruthy } from './envUtils.js'
+import { getAWSRegion } from './envUtils.js'
 import { getDisplayPath } from './file.js'
 import { formatNumber } from './format.js'
 import {
@@ -322,11 +322,6 @@ export function buildAPIProviderProperties(): Property[] {
         label: 'AWS region',
         value: getAWSRegion(),
       })
-      if (isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)) {
-        properties.push({
-          value: 'AWS auth skipped',
-        })
-      }
     } else if (providerType === 'vertex') {
       const gcp = defaultProvider?.config.auth?.gcp
       if (gcp?.projectId) {
@@ -339,17 +334,6 @@ export function buildAPIProviderProperties(): Property[] {
         label: 'Default region',
         value: gcp?.region ?? 'us-east5',
       })
-      if (isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)) {
-        properties.push({
-          value: 'GCP auth skipped',
-        })
-      }
-    } else if (providerType === 'foundry') {
-      if (isEnvTruthy(process.env.CLAUDE_CODE_SKIP_FOUNDRY_AUTH)) {
-        properties.push({
-          value: 'Microsoft Foundry auth skipped',
-        })
-      }
     }
   }
 

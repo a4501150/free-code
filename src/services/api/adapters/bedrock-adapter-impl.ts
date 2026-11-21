@@ -67,7 +67,7 @@ import {
   DomainUserAbortError,
 } from '../domain-errors.js'
 import { refreshAndGetAwsCredentials } from '../../../utils/auth.js'
-import { isEnvTruthy } from '../../../utils/envUtils.js'
+import { resolveBearerToken } from './authResolution.js'
 import {
   assertOkResponse,
   assertResponseBody,
@@ -83,21 +83,66 @@ interface AwsCredentials {
   sessionToken?: string
 }
 
-async function getAwsCredentials(): Promise<AwsCredentials | null> {
-  if (process.env.AWS_BEARER_TOKEN_BEDROCK) {
-    return null
-  }
-  if (!isEnvTruthy(process.env.CLAUDE_CODE_SKIP_BEDROCK_AUTH)) {
-    const creds = await refreshAndGetAwsCredentials()
-    if (creds) {
-      return {
-        accessKeyId: creds.accessKeyId,
-        secretAccessKey: creds.secretAccessKey,
-        sessionToken: creds.sessionToken,
-      }
+interface BedrockAuth {
+  /** Send as `Authorization: Bearer` as-is (proxy-managed upstream auth). */
+  bearerToken?: string
+  /** Native AWS credentials to SigV4-sign the request with. */
+  credentials?: AwsCredentials
+}
+
+async function resolveBedrockAuth(
+  config: ProviderConfig,
+): Promise<BedrockAuth> {
+  const auth = config.auth
+  switch (auth?.active) {
+    case 'bearer': {
+      const token =
+        resolveBearerToken(auth) || process.env.AWS_BEARER_TOKEN_BEDROCK
+      if (token) return { bearerToken: token }
+      throw new DomainConnectionError({
+        normalized: {
+          kind: 'auth',
+          message:
+            'auth.active is "bearer" but no bearer token is configured (set auth.bearer.token or AWS_BEARER_TOKEN_BEDROCK)',
+          providerType: 'bedrock-converse',
+          raw: null,
+        },
+        cause: new Error('Missing Bedrock bearer token'),
+      })
     }
+    case 'aws': {
+      const creds = await refreshAndGetAwsCredentials()
+      if (creds) {
+        return {
+          credentials: {
+            accessKeyId: creds.accessKeyId,
+            secretAccessKey: creds.secretAccessKey,
+            sessionToken: creds.sessionToken,
+          },
+        }
+      }
+      throw new DomainConnectionError({
+        normalized: {
+          kind: 'auth',
+          message: 'auth.active is "aws" but no AWS credentials are available',
+          providerType: 'bedrock-converse',
+          raw: null,
+        },
+        cause: new Error('Missing AWS credentials'),
+      })
+    }
+    default:
+      throw new DomainConnectionError({
+        normalized: {
+          kind: 'auth',
+          message:
+            'No Bedrock credentials resolved (set auth.active to "bearer" for proxy-managed auth, or "aws" for local AWS credentials)',
+          providerType: 'bedrock-converse',
+          raw: null,
+        },
+        cause: new Error('Failed to resolve Bedrock auth'),
+      })
   }
-  return null
 }
 
 // ── SigV4 signing ──────────────────────────────────────────────────
@@ -966,15 +1011,17 @@ export const bedrockAdapter: ProviderAdapter = {
       Accept: 'application/vnd.amazon.eventstream',
     }
 
-    const creds = await getAwsCredentials()
-    if (creds) {
+    const bedrockAuth = await resolveBedrockAuth(config)
+    if (bedrockAuth.bearerToken) {
+      requestHeaders['Authorization'] = `Bearer ${bedrockAuth.bearerToken}`
+    } else if (bedrockAuth.credentials) {
       const signedHeaders = await signRequest(
         converseUrl,
         'POST',
         requestHeaders,
         bodyStr,
         region,
-        creds,
+        bedrockAuth.credentials,
       )
       Object.assign(requestHeaders, signedHeaders)
     }
@@ -1031,15 +1078,17 @@ export const bedrockAdapter: ProviderAdapter = {
       Accept: 'application/json',
     }
 
-    const creds = await getAwsCredentials()
-    if (creds) {
+    const bedrockAuth = await resolveBedrockAuth(config)
+    if (bedrockAuth.bearerToken) {
+      requestHeaders['Authorization'] = `Bearer ${bedrockAuth.bearerToken}`
+    } else if (bedrockAuth.credentials) {
       const signedHeaders = await signRequest(
         converseUrl,
         'POST',
         requestHeaders,
         bodyStr,
         region,
-        creds,
+        bedrockAuth.credentials,
       )
       Object.assign(requestHeaders, signedHeaders)
     }

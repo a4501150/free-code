@@ -31,7 +31,10 @@ import {
   getProviderRegistry,
   type ResolvedProvider,
 } from '../../../utils/model/providerRegistry.js'
-import { GoogleAuth } from 'google-auth-library'
+import {
+  resolveGoogleAccessToken,
+  requireGoogleAccessToken,
+} from './googleAuth.js'
 import type {
   DomainMessageRequest,
   DomainMessageResponse,
@@ -97,43 +100,6 @@ function translateToGeminiContents(
     if (parts.length > 0) out.push({ role, parts })
   }
   return out
-}
-
-async function getGcpAccessToken(
-  config: ProviderConfig,
-): Promise<{ token: string; projectId?: string } | null> {
-  try {
-    const hasProjectEnvVar =
-      process.env['GCLOUD_PROJECT'] ||
-      process.env['GOOGLE_CLOUD_PROJECT'] ||
-      process.env['gcloud_project'] ||
-      process.env['google_cloud_project']
-    const hasKeyFile =
-      process.env['GOOGLE_APPLICATION_CREDENTIALS'] ||
-      process.env['google_application_credentials']
-
-    const googleAuth = new GoogleAuth({
-      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-      ...(hasProjectEnvVar || hasKeyFile
-        ? {}
-        : { projectId: config.auth?.gcp?.projectId }),
-    })
-    const authClient = await googleAuth.getClient()
-    const headers = (await authClient.getRequestHeaders()) as unknown as Record<
-      string,
-      string | undefined
-    >
-    const token = headers['Authorization']?.replace('Bearer ', '')
-    if (!token) return null
-    const projectId =
-      headers['x-goog-user-project'] ||
-      (await googleAuth.getProjectId()) ||
-      undefined
-    return { token, projectId: projectId ?? undefined }
-  } catch (err) {
-    logError(err)
-    return null
-  }
 }
 
 // ── Gemini wire types ──────────────────────────────────────────────
@@ -748,18 +714,7 @@ export const geminiAdapter: ProviderAdapter = {
   ): Promise<DomainStreamingResponse> {
     const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
-    const authResult = await getGcpAccessToken(config)
-    if (!authResult) {
-      throw new DomainConnectionError({
-        normalized: {
-          kind: 'auth',
-          message: 'Failed to obtain GCP access token for Gemini',
-          providerType: 'gemini',
-          raw: null,
-        },
-        cause: new Error('Failed to obtain GCP access token'),
-      })
-    }
+    const authResult = await requireGoogleAccessToken(config, 'gemini')
 
     const region = config.auth?.gcp?.region || 'us-central1'
     const projectId = config.auth?.gcp?.projectId || authResult.projectId || ''
@@ -808,18 +763,7 @@ export const geminiAdapter: ProviderAdapter = {
   ): Promise<DomainMessageResponse> {
     const { config } = provider
     const fetch = fetchOverride ?? globalThis.fetch
-    const authResult = await getGcpAccessToken(config)
-    if (!authResult) {
-      throw new DomainConnectionError({
-        normalized: {
-          kind: 'auth',
-          message: 'Failed to obtain GCP access token for Gemini',
-          providerType: 'gemini',
-          raw: null,
-        },
-        cause: new Error('Failed to obtain GCP access token'),
-      })
-    }
+    const authResult = await requireGoogleAccessToken(config, 'gemini')
 
     const region = config.auth?.gcp?.region || 'us-central1'
     const projectId = config.auth?.gcp?.projectId || authResult.projectId || ''
@@ -899,7 +843,7 @@ export const geminiAdapter: ProviderAdapter = {
       ) as ResolvedProvider | null
       if (!resolved || resolved.config.type !== 'gemini') return null
 
-      const access = await getGcpAccessToken(resolved.config)
+      const access = await resolveGoogleAccessToken(resolved.config)
       if (!access) return null
 
       const region = resolved.config.auth?.gcp?.region || 'us-central1'

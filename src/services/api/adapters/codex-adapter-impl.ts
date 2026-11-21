@@ -61,6 +61,7 @@ import {
   handleFetchError,
   makeStreamingResponse,
 } from './native-fetch-helpers.js'
+import { resolveApiKey, resolveBearerToken } from './authResolution.js'
 
 // ── Tokenizer ──────────────────────────────────────────────────────
 
@@ -138,13 +139,9 @@ async function resolveCodexAuth(config: ProviderConfig): Promise<{
   const auth = config.auth
   let token: string | undefined
   if (auth?.active === 'apiKey') {
-    token =
-      auth.apiKey?.key ||
-      (auth.apiKey?.keyEnv ? process.env[auth.apiKey.keyEnv] : undefined)
+    token = resolveApiKey(auth)
   } else if (auth?.active === 'bearer') {
-    token =
-      auth.bearer?.token ||
-      (auth.bearer?.tokenEnv ? process.env[auth.bearer.tokenEnv] : undefined)
+    token = resolveBearerToken(auth)
   } else if (auth?.active === 'oauth') {
     // Codex-login token block with request-path refresh: expired tokens are
     // renewed (and rewritten into modelSettings.json) before the header is built.

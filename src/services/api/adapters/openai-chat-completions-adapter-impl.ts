@@ -57,6 +57,7 @@ import {
   makeStreamingResponse,
 } from './native-fetch-helpers.js'
 import { ensureCodexLoginFresh } from '../../oauth/logins/codex.js'
+import { resolveApiKey, resolveBearerToken } from './authResolution.js'
 
 // ── Auth resolution ─────────────────────────────────────────────────
 
@@ -66,13 +67,9 @@ async function resolveOpenAIChatCompletionsAuthHeaders(
   const auth = config.auth
   let token: string | undefined
   if (auth?.active === 'apiKey') {
-    token =
-      auth.apiKey?.key ||
-      (auth.apiKey?.keyEnv ? process.env[auth.apiKey.keyEnv] : undefined)
+    token = resolveApiKey(auth)
   } else if (auth?.active === 'bearer') {
-    token =
-      auth.bearer?.token ||
-      (auth.bearer?.tokenEnv ? process.env[auth.bearer.tokenEnv] : undefined)
+    token = resolveBearerToken(auth)
   } else if (auth?.active === 'oauth') {
     // Codex-login token block with request-path refresh.
     token = (await ensureCodexLoginFresh(config))?.accessToken

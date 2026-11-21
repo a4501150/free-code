@@ -1,5 +1,3 @@
-import { GoogleAuth } from 'google-auth-library'
-
 import {
   applyAnthropicRequestFeatures,
   describeAnthropicCacheFeatures,
@@ -9,8 +7,6 @@ import {
   anthropicMessageToDomain,
   type WireMessage,
 } from '../../../types/domainConversion.js'
-import { refreshGcpCredentialsIfNeeded } from '../../../utils/auth.js'
-import { isEnvTruthy } from '../../../utils/envUtils.js'
 import { getUserAgent } from '../../../utils/http.js'
 import { logError } from '../../../utils/log.js'
 import { normalizeModelStringForAPI } from '../../../utils/model/modelResolution.js'
@@ -19,6 +15,7 @@ import {
   type ResolvedProvider,
 } from '../../../utils/model/providerRegistry.js'
 import type { NormalizedApiError } from '../../../utils/normalizedError.js'
+import { requireGoogleAccessToken } from './googleAuth.js'
 import type {
   ProviderConfig,
   ProviderType,
@@ -58,39 +55,7 @@ import {
 async function getVertexAccessToken(
   config: ProviderConfig,
 ): Promise<{ token: string; projectId?: string }> {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_SKIP_VERTEX_AUTH)) {
-    return { token: '', projectId: config.auth?.gcp?.projectId }
-  }
-
-  await refreshGcpCredentialsIfNeeded()
-
-  const hasProjectEnvVar =
-    process.env['GCLOUD_PROJECT'] ||
-    process.env['GOOGLE_CLOUD_PROJECT'] ||
-    process.env['gcloud_project'] ||
-    process.env['google_cloud_project']
-  const hasKeyFile =
-    process.env['GOOGLE_APPLICATION_CREDENTIALS'] ||
-    process.env['google_application_credentials']
-
-  const googleAuth = new GoogleAuth({
-    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-    ...(hasProjectEnvVar || hasKeyFile || !config.auth?.gcp?.projectId
-      ? {}
-      : { projectId: config.auth.gcp.projectId }),
-  })
-
-  const authClient = await googleAuth.getClient()
-  const headers = (await authClient.getRequestHeaders()) as unknown as Record<
-    string,
-    string | undefined
-  >
-  const token = headers['Authorization']?.replace('Bearer ', '') || ''
-  const projectId =
-    headers['x-goog-user-project'] ||
-    (await googleAuth.getProjectId()) ||
-    undefined
-  return { token, projectId: projectId ?? undefined }
+  return requireGoogleAccessToken(config, 'vertex')
 }
 
 // ── URL helpers ──────────────────────────────────────────────────────
