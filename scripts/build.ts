@@ -230,7 +230,7 @@ await ensureCurrentSearchTools()
 await ensureCurrentAgentBrowser()
 
 // Copy vendored native tools next to the compiled binary
-const vendorDirs = ['ripgrep', 'search-tools', 'agent-browser']
+const vendorDirs = ['ripgrep', 'search-tools', 'agent-browser', 'node-pty']
 for (const vendorDir of vendorDirs) {
   const vendorSrc = resolve(process.cwd(), 'vendor', vendorDir)
   const vendorDst = resolve(dirname(outfile), 'vendor', vendorDir)
