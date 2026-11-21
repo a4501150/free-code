@@ -620,9 +620,46 @@ export type ReadFileRangeResult = {
 }
 
 /**
+ * Shorten a byte window to the last character boundary, so a window that
+ * ends mid-sequence never decodes its tail to U+FFFD. Delta readers resume
+ * at the reported offset and receive the held bytes with their sequence
+ * completed on the next read; decoding them here would corrupt the
+ * character permanently (the same failure `readLinesReverse` carries raw
+ * bytes across chunks to avoid — emoji, CJK and other multi-byte output
+ * lose far more than one byte to a single split).
+ *
+ * A truncation is at most 3 continuation bytes past its lead byte, so the
+ * walk-back is capped: a longer tail is invalid data, holding it back could
+ * never complete it, and a zero-length delta read would stall a poll that
+ * advances by `bytesRead`. Invalid tails decode to U+FFFD and move on.
+ */
+function utf8TrimmedLength(buffer: Buffer, length: number): number {
+  let i = length - 1
+  let back = 0
+  while (i >= 0 && back < 4 && (buffer[i]! & 0xc0) === 0x80) {
+    i--
+    back++
+  }
+  if (i < 0 || back === 4) return length
+  const lead = buffer[i]!
+  const size =
+    (lead & 0xe0) === 0xc0
+      ? 2
+      : (lead & 0xf0) === 0xe0
+        ? 3
+        : (lead & 0xf8) === 0xf0
+          ? 4
+          : 1
+  return size > 1 && length - i < size ? i : length
+}
+
+/**
  * Read up to `maxBytes` from a file starting at `offset`.
  * Returns a flat string from Buffer — no sliced string references to a
  * larger parent. Returns null if the file is smaller than the offset.
+ * `bytesRead` never counts a trailing partial UTF-8 sequence: the content
+ * is always valid text, and a delta reader resuming at `offset + bytesRead`
+ * re-reads those bytes whole.
  */
 export async function readFileRange(
   path: string,
@@ -651,16 +688,22 @@ export async function readFileRange(
     totalRead += bytesRead
   }
 
+  const complete = utf8TrimmedLength(buffer, totalRead)
   return {
-    content: buffer.toString('utf8', 0, totalRead),
-    bytesRead: totalRead,
+    content: buffer.toString('utf8', 0, complete),
+    bytesRead: complete,
     bytesTotal: size,
   }
 }
 
 /**
  * Read the last `maxBytes` of a file.
- * Returns the whole file if it's smaller than maxBytes.
+ * Returns the whole file if it's smaller than maxBytes. The window starts
+ * at the file-size-relative offset, which can land mid-sequence: leading
+ * continuation bytes are dropped and `bytesRead` is measured from the first
+ * character boundary, so a caller computing `bytesTotal - bytesRead` gets an
+ * offset that resumes the stream on valid text. A trailing partial sequence
+ * is dropped the same way `readFileRange` defers it.
  */
 export async function tailFile(
   path: string,
@@ -689,9 +732,13 @@ export async function tailFile(
     totalRead += bytesRead
   }
 
+  let start = 0
+  while (start < totalRead && start < 3 && (buffer[start]! & 0xc0) === 0x80)
+    start++
+  const complete = utf8TrimmedLength(buffer, totalRead)
   return {
-    content: buffer.toString('utf8', 0, totalRead),
-    bytesRead: totalRead,
+    content: buffer.toString('utf8', start, complete),
+    bytesRead: complete - start,
     bytesTotal: size,
   }
 }

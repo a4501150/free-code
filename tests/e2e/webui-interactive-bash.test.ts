@@ -88,7 +88,9 @@ describe('WebUI interactive bash', () => {
       const submitted = await client.request({
         kind: 'submit',
         commandId: crypto.randomUUID(),
-        content: `! bash -c 'read -s -p "WebPass: " p; echo "got $p"'`,
+        content:
+          `! bash -c 'printf "\\033[32m🎉 ready\\033[0m\\n"; ` +
+          `read -s -p "WebPass: " p; echo "got $p"'`,
         delivery: 'next',
         sessionEpoch: snapshot.meta.sessionEpoch,
       })
@@ -119,6 +121,16 @@ describe('WebUI interactive bash', () => {
         fromOffset: 0,
       })
       expect(streaming.ok).toBe(true)
+
+      // Invariant: byte-range deltas carry valid text only. A split
+      // multi-byte sequence would surface as U+FFFD in the frame the
+      // browser feeds to xterm and corrupt the character forever.
+      await collector.waitForEvent(
+        'task_output',
+        event =>
+          event.append.includes('🎉 ready') && !event.append.includes('\uFFFD'),
+        'the colored emoji line to stream intact',
+      )
 
       await collector.waitForEvent(
         'task_output',
