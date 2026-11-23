@@ -12,7 +12,7 @@ import type { ChildSession, ChildSessions } from './childSessions.js'
  * restarts (opt out with `assistant.enabled: false`), and the browser presents
  * it as the main chat (`role: 'assistant'` on its session-list row). It is an
  * ordinary gateway child — headless, attachable — spawned with `--assistant`
- * so it carries the assistant persona, and by default with
+ * so it carries the assistant mode block, and by default with
  * `--dangerously-skip-permissions` (nobody is attached to answer its prompts;
  * opt out with assistant.dangerouslySkipPermissions: false). It is
  * event-driven:
@@ -81,8 +81,9 @@ export async function bootstrapAssistantSession(
   await mkdir(workspace, { recursive: true, mode: 0o700 })
   // A headless child has no UI to accept the trust dialog, and the child's
   // main.tsx gates assistant-mode activation on checkHasTrustDialogAccepted()
-  // — without a persisted trust record here it silently runs with the persona,
-  // attachments, and transcript flushes disabled. The user opted in via
+  // — without a persisted trust record here it silently runs with the
+  // assistant mode guidance, attachments, and transcript flushes disabled.
+  // The user opted in via
   // assistant.enabled, so bootstrap force-persists trust for the workspace on
   // every boot; the write goes through the config module's locked state.json
   // path and is a no-op once the record exists.

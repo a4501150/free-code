@@ -1247,8 +1247,8 @@ async function run(): Promise<CommanderCommand> {
       // `assistant_mode` attachment.      //
       // Trust gate: .freecode/freecode.json is attacker-controllable in an
       // untrusted clone. We run ~1000 lines before showSetupScreens() shows
-      // the trust dialog, and by then the assistant persona would already
-      // ride the transcript. Refuse to activate until the directory has
+      // the trust dialog, and by then the assistant mode block would
+      // already ride the transcript. Refuse to activate until the directory has
       // been explicitly trusted.
       let assistantEnabled = false
       if (
@@ -1274,9 +1274,6 @@ async function run(): Promise<CommanderCommand> {
           // mode check passes (trust dialog accepted).
           assistantEnabled = true
           setAssistantActive(true)
-          // One-time: give the assistant a persona file it can grow into
-          // its identity (never overwrites an existing one).
-          assistantModule.seedAssistantPersonaFile()
         }
       }
 
@@ -2454,9 +2451,6 @@ async function run(): Promise<CommanderCommand> {
             : 'flag'
           : undefined,
         thinkingConfig,
-        assistantActivationPath: assistantEnabled
-          ? assistantModule.getAssistantActivationPath()
-          : undefined,
       })
 
       // Register PID file for concurrent-session detection (~/.freecode/sessions/)
@@ -4028,7 +4022,6 @@ async function logTenguInit({
   systemPromptFlag,
   appendSystemPromptFlag,
   thinkingConfig,
-  assistantActivationPath,
 }: {
   hasInitialPrompt: boolean
   hasStdin: boolean
@@ -4050,7 +4043,6 @@ async function logTenguInit({
   systemPromptFlag: 'file' | 'flag' | undefined
   appendSystemPromptFlag: 'file' | 'flag' | undefined
   thinkingConfig: ThinkingConfig
-  assistantActivationPath: string | undefined
 }): Promise<void> {
   try {
   } catch (error) {

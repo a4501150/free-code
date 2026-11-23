@@ -1589,10 +1589,6 @@ const _settingsSchemaValue = z
           .describe(
             'The webui gateway keeps one long-lived assistant session running (it also serves it as the main chat in the browser). Defaults to on; set to false to opt out. --assistant in the TUI joins that session; it cannot initialize one.',
           ),
-        name: z
-          .string()
-          .optional()
-          .describe('Display name for the assistant persona.'),
         coordinator: z
           .boolean()
           .optional()
@@ -1607,7 +1603,7 @@ const _settingsSchemaValue = z
           ),
       })
       .optional()
-      .describe('Assistant persona settings.'),
+      .describe('Assistant mode settings.'),
     messageActionsEnabled: z
       .boolean()
       .optional()

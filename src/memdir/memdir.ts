@@ -363,7 +363,7 @@ export function buildAssistantDailyLogBlock(): string {
   // The concrete path (not a placeholder pattern) so the assistant needs no
   // date arithmetic to append. It varies on date change, which re-announces
   // the whole assistant_mode block once a day — a fair price for an
-  // actionable path, and the block already re-announces on persona edits.
+  // actionable path, and the block already re-announces on guidance edits.
   const dailyLogPath = getAssistantDailyLogPath()
 
   return [

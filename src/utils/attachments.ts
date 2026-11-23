@@ -90,10 +90,7 @@ import {
   mcpToolCatalogDisabled,
 } from '../services/toolCatalog/exposure.js'
 import { prependBullets } from '../constants/prompts.js'
-import {
-  buildAssistantModeBlock,
-  getAssistantActivationPath,
-} from '../assistant/index.js'
+import { buildAssistantModeBlock } from '../assistant/index.js'
 import { getAssistantDailyLogPath } from '../memdir/memdir.js'
 import { isBriefEnabled } from '../tools/BriefTool/BriefTool.js'
 import { getSnippetForTwoFileDiff } from 'src/tools/FileEditTool/utils.js'
@@ -726,7 +723,7 @@ export type Attachment =
     }
   | {
       type: 'assistant_mode'
-      /** Fully rendered block (persona, autonomy, brief, memory policy). */
+      /** Fully rendered block (autonomy, brief, memory policy). */
       text: string
     }
   | {
@@ -969,7 +966,7 @@ export async function getAttachments(
     maybe('assistant_mode', () =>
       Promise.resolve(getAssistantModeAttachment(toolUseContext, messages)),
     ),
-    // Persona/memory files surfaced next to the assistant_mode carrier so the
+    // Memory files surfaced next to the assistant_mode carrier so the
     // assistant can Read/Edit them by path (same main-thread gate).
     maybe('assistant_context_files', () =>
       getAssistantContextFileAttachments(toolUseContext, messages),
@@ -1950,12 +1947,12 @@ function lastAnnouncementText(
 }
 
 /**
- * Assistant-mode guidance (persona, autonomy policy, brief reply rules,
- * daily-log memory policy) carried as a message instead of a system-prompt
+ * Assistant-mode guidance (autonomy policy, brief reply rules, daily-log
+ * memory policy) carried as a message instead of a system-prompt
  * branch, so the cached system block stays identical across modes. Same
  * wholesale-replacement scan as session_guidance: no prior announcement
  * (session start, post-compaction) re-arms the full block. Main thread only —
- * subagents get their scoped task and need no persona. A brief-only session
+ * subagents get their scoped task. A brief-only session
  * (user opted into /brief without assistant mode) gets just the reply rules.
  */
 export function getAssistantModeAttachment(
@@ -1993,15 +1990,15 @@ export function getCoordinatorModeAttachment(
 }
 
 /**
- * Stat keys of the assistant context files already surfaced. Mirrors the
- * persona cache in assistant/index.ts: steady state costs one stat per file
- * and no read; a changed file (mtime/size) re-reads and re-announces.
+ * Stat keys of the assistant context files already surfaced: steady state
+ * costs one stat per file and no read; a changed file (mtime/size) re-reads
+ * and re-announces.
  */
 const assistantContextFileStats = new Map<string, string>()
 
 /**
- * The assistant's own surface files — persona (assistant.md), the distilled
- * memory index (MEMORY.md), and today's daily log — surfaced as ordinary
+ * The assistant's own surface files — the distilled memory index
+ * (MEMORY.md) and today's daily log — surfaced as ordinary
  * file attachments so they are path-addressable in context like @-mentioned
  * files. Main-thread + assistant-only, same gate as the assistant_mode
  * carrier; missing files are skipped (the daily log appears on first write).
@@ -2018,8 +2015,6 @@ export async function getAssistantContextFileAttachments(
   if (!getAssistantActive()) return []
 
   const paths: string[] = []
-  const personaPath = getAssistantActivationPath()
-  if (personaPath) paths.push(personaPath)
   if (isAutoMemoryEnabled()) {
     paths.push(getAutoMemEntrypoint(), getAssistantDailyLogPath())
   }
