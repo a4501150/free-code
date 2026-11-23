@@ -203,6 +203,15 @@ describe('owned-task reminder texts', () => {
     expect(text).toContain('- agent1 (background): port agent')
   })
 
+  test('ownedTasksReminderText tells the model how to keep waiting', () => {
+    const idleText = ownedTasksReminderText([shellTask], true)
+    for (const text of [ownedTasksReminderText([shellTask]), idleText]) {
+      expect(text).toContain('reply with no tool calls at all')
+      expect(text).toContain('no-op commands (echo, true, sleep)')
+      expect(text).toContain("polling the task's output file")
+    }
+  })
+
   test('ownedTasksReminderText idle variant says still waiting', () => {
     expect(ownedTasksReminderText([shellTask], true)).toContain(
       'Still waiting on 1 background task(s) you own',
@@ -214,7 +223,7 @@ describe('owned-task reminder texts', () => {
     expect(text.startsWith(`<${FINISH_RUN_REMINDER_TAG}>`)).toBe(true)
     expect(text).toContain('was not carried out')
     expect(text).toContain('still own 1 running background task')
-    expect(text).toContain('end your message WITHOUT calling FinishRun')
+    expect(text).toContain('end your message with no tool calls at all')
     expect(text).toContain('call FinishRun again to end your run now')
     expect(text).toContain('- bash1 (monitor): tail -f build.log')
   })

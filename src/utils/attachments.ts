@@ -1869,12 +1869,12 @@ export function getSubagentGuidanceAttachment(
   const hasBash = pool.some(tool => tool.name === BASH_TOOL_NAME)
   const hasSendMessage = pool.some(tool => tool.name === SEND_MESSAGE_TOOL_NAME)
   const items = [
-    `Your run ends only when you call the ${FINISH_RUN_TOOL_NAME} tool — ending a message without tool calls does not end it; you will be reminded to continue working or call ${FINISH_RUN_TOOL_NAME}.`,
+    `Your run ends only when you call the ${FINISH_RUN_TOOL_NAME} tool — ending a message without tool calls does not end it: while you own running background tasks it parks the run until they signal; otherwise you will be reminded to continue working or call ${FINISH_RUN_TOOL_NAME}.`,
     hasBash
-      ? `Background tasks you own (Bash with run_in_background, Monitor) deliver their completion notifications to you while your run stays open. To wait out a long task, start it and end your message WITHOUT calling ${FINISH_RUN_TOOL_NAME} — your run parks and wakes when the task signals.`
+      ? `Background tasks you own (Bash with run_in_background, Monitor) deliver their completion notifications to you while your run stays open. To wait out a long task, start it and end your message with no tool calls (not ${FINISH_RUN_TOOL_NAME}) — your run parks and wakes when the task signals.`
       : null,
     hasBash
-      ? `Never wait on a background task by sleeping or polling its output file (sleep N; grep …) — that burns your turns. Start it, end your message, and the task's completion notification wakes you; to watch for a condition, start a Monitor instead of polling.`
+      ? `Never wait on a background task by sleeping, no-op commands (echo, true, sleep), or polling its output file — every tool call starts a new round immediately and burns turns. Start it, end your message with no tool calls, and the task's completion notification wakes you; to watch for a condition, start a Monitor instead of polling.`
       : null,
     hasBash
       ? `${FINISH_RUN_TOOL_NAME} ends your run and kills every background task you still own. With one running, a first ${FINISH_RUN_TOOL_NAME} is gated with a reminder; a second consecutive one ends the run and abandons the tasks.`

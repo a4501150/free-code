@@ -902,6 +902,10 @@ export async function* runAgent({
   // Gated FinishRun calls with owned tasks in a row (see resolveFinishRunOwnedTasksGate
   // for the strike semantics). A round that did work resets it to 1.
   let finishRunOwnedTaskStrikes = 0
+  // Set once per run (first implicit-end reminder or FinishRun gate) and
+  // deliberately never cleared: a park wake already proves the model chose
+  // to wait, so re-arming the reminder on every wake would nag a parked
+  // waiter back into polling (the rope-bench busy-wait).
   let remindedAboutOwnedTasks = false
   let parkIdleMs = PARK_INITIAL_IDLE_MS
   // Set at the two true-completion break sites (FinishRun, force-complete
@@ -983,7 +987,6 @@ export async function* runAgent({
       runMessages.push(createAttachmentMessage(attachment))
     }
     parkIdleMs = PARK_INITIAL_IDLE_MS
-    remindedAboutOwnedTasks = false
     return 'woken'
   }
 

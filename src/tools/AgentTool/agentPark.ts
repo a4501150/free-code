@@ -175,7 +175,7 @@ export function ownedTasksReminderText(
   const lead = idle
     ? `Still waiting on ${tasks.length} background task(s) you own:\n${ownedTaskListLines(tasks)}`
     : `You ended your message while still owning ${tasks.length} running background task(s):\n${ownedTaskListLines(tasks)}`
-  return `<${FINISH_RUN_REMINDER_TAG}>\n${lead}\nWait for them to finish (their notifications are delivered to you), stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME}, or call ${FINISH_RUN_TOOL_NAME} to end your run — ending it kills the tasks you still own.\n</${FINISH_RUN_REMINDER_TAG}>`
+  return `<${FINISH_RUN_REMINDER_TAG}>\n${lead}\nTo keep waiting, reply with no tool calls at all — your run parks and their completion notifications wake you. Do not answer this reminder with work, no-op commands (echo, true, sleep), or by polling the task's output file. To end your run now, stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME} or call ${FINISH_RUN_TOOL_NAME} — ending it kills the tasks you still own.\n</${FINISH_RUN_REMINDER_TAG}>`
 }
 
 /**
@@ -185,5 +185,5 @@ export function ownedTasksReminderText(
  * keeps the gate from trapping an agent that genuinely wants out.
  */
 export function finishRunOwnedTasksReminderText(tasks: TaskState[]): string {
-  return `<${FINISH_RUN_REMINDER_TAG}>\nYour ${FINISH_RUN_TOOL_NAME} call was not carried out: you still own ${tasks.length} running background task(s), and ending your run kills them.\n${ownedTaskListLines(tasks)}\nTo wait for them, end your message WITHOUT calling ${FINISH_RUN_TOOL_NAME} — your run stays open and their completion notifications are delivered to you. To abandon them, stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME} or call ${FINISH_RUN_TOOL_NAME} again to end your run now.\n</${FINISH_RUN_REMINDER_TAG}>`
+  return `<${FINISH_RUN_REMINDER_TAG}>\nYour ${FINISH_RUN_TOOL_NAME} call was not carried out: you still own ${tasks.length} running background task(s), and ending your run kills them.\n${ownedTaskListLines(tasks)}\nTo wait for them, end your message with no tool calls at all — do not call ${FINISH_RUN_TOOL_NAME}; your run stays open, parks, and their completion notifications wake you. To abandon them, stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME} or call ${FINISH_RUN_TOOL_NAME} again to end your run now.\n</${FINISH_RUN_REMINDER_TAG}>`
 }

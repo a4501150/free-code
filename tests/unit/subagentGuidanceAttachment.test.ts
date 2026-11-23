@@ -48,9 +48,11 @@ describe('getSubagentGuidanceAttachment', () => {
     const text = result[0].text
     expect(text).toContain('# Subagent run mechanics')
     expect(text).toContain('run ends only when you call the FinishRun tool')
+    expect(text).toContain('parks the run until they signal')
     expect(text).toContain('parks and wakes when the task signals')
     expect(text).toContain('a second consecutive one ends the run')
     expect(text).toContain('Never wait on a background task by sleeping')
+    expect(text).toContain('no-op commands (echo, true, sleep)')
     expect(text).toContain('start a Monitor instead of polling')
     expect(text).toContain('SendMessage')
     expect(text).toContain('to "parent"')

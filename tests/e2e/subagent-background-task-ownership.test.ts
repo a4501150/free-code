@@ -279,4 +279,113 @@ describe('subagent background task ownership', () => {
     expect(lastMain).toBeDefined()
     expect(userTextBlob(lastMain!)).toContain('done waiting')
   })
+
+  test('post-wake implicit end parks silently — no second owned-tasks reminder', async () => {
+    // Regression: parkAndAwaitWake used to reset remindedAboutOwnedTasks on
+    // every meaningful wake, so an agent that answered the first reminder
+    // and kept ending text-only after each notification was re-nagged per
+    // wake — the repeated "still owning" rounds pushed models back into
+    // polling/no-op busy-waits. The reminder gate must fire once per run.
+    server.reset([
+      forMain(
+        toolUseResponse([
+          {
+            name: 'Agent',
+            input: {
+              description: 'double park probe agent',
+              prompt:
+                'Background two sleeps, wait for both to finish, then report and end.',
+            },
+          },
+        ]),
+      ),
+      // Agent iteration 1: background BOTH sleeps in one response.
+      forAgent(
+        toolUseResponse([
+          {
+            name: 'Bash',
+            input: {
+              command: 'sleep 4',
+              description: 'short park sleep',
+              run_in_background: true,
+            },
+          },
+          {
+            name: 'Bash',
+            input: {
+              command: 'sleep 15',
+              description: 'long park sleep',
+              run_in_background: true,
+            },
+          },
+        ]),
+      ),
+      // Iteration 2: text-only end — implicit, so the strict loop answers
+      // with the (single) owned-tasks reminder…
+      forAgent(textResponse('waiting for both')),
+      // Iteration 3 (reminder round): choose to wait — text-only end parks.
+      forAgent(textResponse('ok, parked for both')),
+      // Iteration 4 (wake round 1, short sleep done): text-only end again —
+      // must re-park SILENTLY (no second reminder round before the long
+      // sleep's notification).
+      forAgent(textResponse('short one done, still waiting for the long one')),
+      // Iteration 5 (wake round 2, long sleep done): both tasks finished,
+      // so the single FinishRun is honored (zero owned tasks).
+      forAgent(
+        toolUseResponse([{ name: 'FinishRun', input: {} }], 'both done'),
+      ),
+      // Main turn 2: acknowledge.
+      forMain(textResponse('probe finished')),
+    ])
+
+    session = await startSession({
+      additionalArgs: ['--dangerously-skip-permissions'],
+      readyText: 'bypass permissions on',
+      settings: {
+        backgroundTasksEnabled: true,
+        skipDangerousModePermissionPrompt: true,
+      },
+    })
+
+    await session.submitAndApprove('spawn the double park probe agent', 30_000)
+
+    // Wait for the first wake (short sleep ~4s) and the parent's receipt
+    // (after the long sleep ~15s) before asserting — notification-driven.
+    await waitForRequest(
+      server,
+      req =>
+        agentRequests([req]).length === 1 &&
+        userTextBlob(req).includes('<task-notification>'),
+      { description: 'first park wake round', timeoutMs: 60_000 },
+    )
+    await waitForRequest(
+      server,
+      req =>
+        JSON.stringify(req.body.system ?? '').includes('interactive agent') &&
+        userTextBlob(req).includes('both done'),
+      {
+        description: 'parent receives the parked agent result',
+        timeoutMs: 60_000,
+      },
+    )
+
+    const log = server.getRequestLog()
+    const agentReqs = agentRequests(log)
+
+    // Two wake rounds deliver one task-notification each.
+    const wakeReqs = agentReqs.filter(req =>
+      userTextBlob(req).includes('<task-notification>'),
+    )
+    expect(wakeReqs.length).toBe(2)
+
+    // The reminder fired exactly ONCE per run: history accumulates user
+    // messages, so the LAST agent request carries every reminder ever
+    // delivered — a second "still owning" round (the old per-wake re-arm)
+    // would double the count.
+    const lastAgentReq = agentReqs.at(-1)
+    expect(lastAgentReq).toBeDefined()
+    const stillOwningCount =
+      userTextBlob(lastAgentReq!).match(/still owning/g)?.length ?? 0
+    expect(stillOwningCount).toBe(1)
+  })
 })
