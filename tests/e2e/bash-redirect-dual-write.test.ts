@@ -128,13 +128,85 @@ describe('Bash redirect dual-write', () => {
     expect(result).toContain('row 100')
     expect(result).not.toContain('row 001')
     expect(result).toContain(
-      '[trailing tail/head applied to your inline result; the complete stream is in the file below]',
+      '[trailing tail/head/grep applied to your inline result; the complete stream is in the file below]',
     )
 
     // The complete stream — all 100 rows — stays in the footer path file.
     const pathMatch = /\[exit 0 · full output: ([^\]]+)\]/.exec(result)
     expect(pathMatch).not.toBeNull()
     const full = await readFile(pathMatch![1], 'utf-8')
+    expect((full.match(/row \d+/g) ?? []).length).toBe(100)
+  })
+
+  test('a stripped trailing grep delivers matching lines only, full stream preserved', async () => {
+    session = await startSession()
+
+    server.reset([
+      toolUseResponse([
+        {
+          name: 'Bash',
+          input: {
+            command:
+              "for i in $(seq 1 100); do printf 'row %03d\\n' $i; done | grep -E 'row 0(0[13579])'",
+          },
+        },
+      ]),
+      textResponse('Done'),
+    ])
+    await session.submitAndApprove('Print rows and grep the odd early ones')
+    const log = await waitForRequestCount(server, 2, {
+      description: 'grep filter tool_result request',
+    })
+    const result = getToolResultString(log)
+
+    // The model receives exactly the matching lines…
+    expect(result).toContain('row 001')
+    expect(result).toContain('row 003')
+    expect(result).toContain('row 009')
+    expect(result).not.toContain('row 002')
+    expect(result).not.toContain('row 010')
+    expect(result).toContain(
+      '[trailing tail/head/grep applied to your inline result; the complete stream is in the file below]',
+    )
+
+    // …while the complete stream — all 100 rows — stays in the footer file.
+    const pathMatch = /\[exit 0 · full output: ([^\]]+)\]/.exec(result)
+    expect(pathMatch).not.toBeNull()
+    const full = await readFile(pathMatch![1], 'utf-8')
+    expect((full.match(/row \d+/g) ?? []).length).toBe(100)
+  })
+
+  test('a command-list trailing stage discloses the combined-output scope', async () => {
+    session = await startSession()
+
+    server.reset([
+      toolUseResponse([
+        {
+          name: 'Bash',
+          input: {
+            command:
+              "echo 'header line'; for i in $(seq 1 100); do printf 'row %03d\\n' $i; done | tail -3",
+          },
+        },
+      ]),
+      textResponse('Done'),
+    ])
+    await session.submitAndApprove('Print header and rows, tail the rows')
+    const log = await waitForRequestCount(server, 2, {
+      description: 'list window tool_result request',
+    })
+    const result = getToolResultString(log)
+
+    // The window covered the COMBINED output: the header plus the final rows
+    // are inside a 3-line window taken over everything, so only the last 3
+    // lines of the combined stream survive — and the footer says so.
+    expect(result).toContain(
+      '[trailing tail/head/grep applied to the COMBINED output of every command in your line — not only the last; the complete stream is in the file below]',
+    )
+    const pathMatch = /\[exit 0 · full output: ([^\]]+)\]/.exec(result)
+    expect(pathMatch).not.toBeNull()
+    const full = await readFile(pathMatch![1], 'utf-8')
+    expect(full).toContain('header line')
     expect((full.match(/row \d+/g) ?? []).length).toBe(100)
   })
 })

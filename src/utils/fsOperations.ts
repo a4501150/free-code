@@ -697,6 +697,37 @@ export async function readFileRange(
 }
 
 /**
+ * Read an entire file as a flat string (valid UTF-8 — a trailing partial
+ * sequence is dropped like readFileRange). For grep-stage delivery, where
+ * matches may sit anywhere and byte-bounding the read would silently miss
+ * them; practical capture files are megabytes.
+ */
+export async function readFileFull(path: string): Promise<{
+  content: string
+  bytesTotal: number
+}> {
+  await using fh = await open(path, 'r')
+  const size = (await fh.stat()).size
+  const buffer = Buffer.allocUnsafe(size)
+  let totalRead = 0
+  while (totalRead < size) {
+    const { bytesRead } = await fh.read(
+      buffer,
+      totalRead,
+      size - totalRead,
+      totalRead,
+    )
+    if (bytesRead === 0) break
+    totalRead += bytesRead
+  }
+  const complete = utf8TrimmedLength(buffer, totalRead)
+  return {
+    content: buffer.toString('utf8', 0, complete),
+    bytesTotal: size,
+  }
+}
+
+/**
  * Read the last `maxBytes` of a file.
  * Returns the whole file if it's smaller than maxBytes. The window starts
  * at the file-size-relative offset, which can land mid-sequence: leading

@@ -337,7 +337,19 @@ describe('Bash result footer', () => {
       limiterStripped: true,
     })
     expect(out).toContain(
-      '[trailing tail/head applied to your inline result; the complete stream is in the file below]',
+      '[trailing tail/head/grep applied to your inline result; the complete stream is in the file below]',
+    )
+    const listed = map({
+      stdout: 'c\nd\n',
+      stderr: '',
+      interrupted: false,
+      outputPath: '/tmp/tasks/b5.output',
+      exitCode: 0,
+      limiterStripped: true,
+      limiterListCommand: true,
+    })
+    expect(listed).toContain(
+      '[trailing tail/head/grep applied to the COMBINED output of every command in your line — not only the last; the complete stream is in the file below]',
     )
   })
 
@@ -442,6 +454,119 @@ describe('Trailing tail/head strip', () => {
     const cmd = 'echo "caf\u00e9 — done" | tail -2'
     expect(stripCmd(cmd)!.strippedCommand).toBe('echo "caf\u00e9 — done"')
   })
+
+  test('strips a strict trailing grep with -E', () => {
+    const r = stripCmd("make | grep -E 'err|FAILED'")
+    expect(r!.strippedCommand).toBe('make')
+    expect(r!.stages).toEqual([
+      {
+        tool: 'grep',
+        pattern: 'err|FAILED',
+        fixed: false,
+        ignoreCase: false,
+        invert: false,
+      },
+    ])
+  })
+
+  test('strips -F, -i, -v and combined flag forms', () => {
+    expect(stripCmd('make | grep -F "error:"')!.stages).toEqual([
+      {
+        tool: 'grep',
+        pattern: 'error:',
+        fixed: true,
+        ignoreCase: false,
+        invert: false,
+      },
+    ])
+    expect(stripCmd('make | grep -iE warning')!.stages).toEqual([
+      {
+        tool: 'grep',
+        pattern: 'warning',
+        fixed: false,
+        ignoreCase: true,
+        invert: false,
+      },
+    ])
+    expect(stripCmd('make | grep -v -E "^(cc|gcc)"')!.stages).toEqual([
+      {
+        tool: 'grep',
+        pattern: '^(cc|gcc)',
+        fixed: false,
+        ignoreCase: false,
+        invert: true,
+      },
+    ])
+    expect(stripCmd("make | grep -ivE 'info'")!.stages).toEqual([
+      {
+        tool: 'grep',
+        pattern: 'info',
+        fixed: false,
+        ignoreCase: true,
+        invert: true,
+      },
+    ])
+  })
+
+  test('grep chains with tail/head in pipeline order', () => {
+    const r = stripCmd('cmd | grep -E x | tail -20')
+    expect(r!.strippedCommand).toBe('cmd')
+    expect(r!.stages).toEqual([
+      {
+        tool: 'grep',
+        pattern: 'x',
+        fixed: false,
+        ignoreCase: false,
+        invert: false,
+      },
+      { tool: 'tail', lines: 20 },
+    ])
+    const r2 = stripCmd('cmd | tail -100 | grep -F error')
+    expect(r2!.stages).toEqual([
+      { tool: 'tail', lines: 100 },
+      {
+        tool: 'grep',
+        pattern: 'error',
+        fixed: true,
+        ignoreCase: false,
+        invert: false,
+      },
+    ])
+  })
+
+  test('translates POSIX bracket classes at strip time', () => {
+    expect(stripCmd("cmd | grep -E '[[:digit:]]+ err'")!.stages).toEqual([
+      {
+        tool: 'grep',
+        pattern: '[0-9]+ err',
+        fixed: false,
+        ignoreCase: false,
+        invert: false,
+      },
+    ])
+  })
+
+  test('non-strict greps run as written', () => {
+    // bare pattern (BRE), other flags, file operands, both -E and -F,
+    // invalid regex, unknown POSIX class, lookaround, $-laden double quotes
+    expect(stripCmd('cmd | grep error')).toBeNull()
+    expect(stripCmd('cmd | grep -n error')).toBeNull()
+    expect(stripCmd('cmd | grep -c error')).toBeNull()
+    expect(stripCmd("cmd | grep -E 'x' extra.txt")).toBeNull()
+    expect(stripCmd('cmd | grep -E -F x')).toBeNull()
+    expect(stripCmd("cmd | grep -E '('")).toBeNull()
+    expect(stripCmd('cmd | grep -E "[[:weird:]]"')).toBeNull()
+    expect(stripCmd('cmd | grep -E "(?=x)"')).toBeNull()
+    expect(stripCmd('cmd | grep -E "$VAR"')).toBeNull()
+  })
+
+  test('command lists flag listCommand; single pipelines and groups do not', () => {
+    expect(stripCmd('echo a; seq | head -3')!.listCommand).toBe(true)
+    expect(stripCmd('echo a && seq | tail -3')!.listCommand).toBe(true)
+    expect(stripCmd('seq | head -3')!.listCommand).toBe(false)
+    expect(stripCmd('(echo a; seq) | head -3')!.listCommand).toBe(false)
+    expect(stripCmd('echo $(a | tail) | tail -3')!.listCommand).toBe(false)
+  })
 })
 
 describe('Limiter stage application (delivery window)', () => {
@@ -487,5 +612,96 @@ describe('Limiter stage application (delivery window)', () => {
 
   test('no stages is a passthrough', () => {
     expect(apply('anything', [])).toBe('anything')
+  })
+
+  test('grep stages filter lines (regex, fixed, ignoreCase, invert)', () => {
+    const text = 'ok\nerror one\nfine\nERROR two\nerr three\n'
+    const re = applyLimiterStages(text, [
+      {
+        tool: 'grep',
+        pattern: 'error',
+        fixed: false,
+        ignoreCase: false,
+        invert: false,
+      },
+    ])
+    expect(re).toBe('error one\n')
+    const reI = applyLimiterStages(text, [
+      {
+        tool: 'grep',
+        pattern: 'error',
+        fixed: false,
+        ignoreCase: true,
+        invert: false,
+      },
+    ])
+    expect(reI).toBe('error one\nERROR two\n')
+    const fixed = applyLimiterStages(text, [
+      {
+        tool: 'grep',
+        pattern: 'ERROR',
+        fixed: true,
+        ignoreCase: false,
+        invert: false,
+      },
+    ])
+    expect(fixed).toBe('ERROR two\n')
+    const invert = applyLimiterStages(text, [
+      {
+        tool: 'grep',
+        pattern: 'error',
+        fixed: false,
+        ignoreCase: false,
+        invert: true,
+      },
+    ])
+    expect(invert).toBe('ok\nfine\nERROR two\nerr three\n')
+  })
+
+  test('grep chains with windows in pipeline order', () => {
+    const text = 'e1\nok\ne2\nok\ne3\n'
+    // `| grep -E ^e | tail -2` — last 2 matching lines.
+    const a = applyLimiterStages(text, [
+      {
+        tool: 'grep',
+        pattern: '^e',
+        fixed: false,
+        ignoreCase: false,
+        invert: false,
+      },
+      { tool: 'tail', lines: 2 },
+    ])
+    expect(a).toBe('e2\ne3\n')
+    // `| tail -2 | grep ^e` — matches within the last 2 lines only.
+    const b = applyLimiterStages(text, [
+      { tool: 'tail', lines: 2 },
+      {
+        tool: 'grep',
+        pattern: '^e',
+        fixed: false,
+        ignoreCase: false,
+        invert: false,
+      },
+    ])
+    expect(b).toBe('e3\n')
+  })
+
+  test('over-cap grep-only results keep the start', () => {
+    const big = `${'match x'.repeat(3)}\n`.repeat(10) // 300 chars
+    const out = applyLimiterStages(
+      big,
+      [
+        {
+          tool: 'grep',
+          pattern: 'match',
+          fixed: false,
+          ignoreCase: false,
+          invert: false,
+        },
+      ],
+      50,
+    )
+    expect(out.length).toBe(50)
+    expect(out.startsWith('match')).toBe(true)
   })
 })

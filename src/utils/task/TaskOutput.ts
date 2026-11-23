@@ -1,7 +1,7 @@
 import { unlink } from 'fs/promises'
 import { CircularBuffer } from '../CircularBuffer.js'
 import { logForDebugging } from '../debug.js'
-import { readFileRange, tailFile } from '../fsOperations.js'
+import { readFileFull, readFileRange, tailFile } from '../fsOperations.js'
 import { getMaxOutputLength } from '../shell/outputLimits.js'
 import { safeJoinLines } from '../stringUtils.js'
 import {
@@ -281,10 +281,11 @@ export class TaskOutput {
    * Get stdout. In file mode, reads from the output file.
    * In pipe mode, returns the in-memory buffer or tail from CircularBuffer.
    *
-   * `limiterStages` are the model's stripped trailing `| tail`/`| head`
-   * stages, applied to the capture file so the inline result carries the
-   * exact lines the model asked for; without them the read is head-capped
-   * as before. Ignored in pipe mode (hooks never strip stages).
+   * `limiterStages` are the model's stripped trailing `| tail`/`| head`/
+   * strict `| grep` stages, applied to the capture file so the inline
+   * result carries the exact lines the model asked for; without them the
+   * read is head-capped as before. Ignored in pipe mode (hooks never strip
+   * stages).
    */
   async getStdout(
     limiterStages?: readonly OutputLimiterStage[],
@@ -308,14 +309,23 @@ export class TaskOutput {
   ): Promise<string> {
     const maxBytes = getMaxOutputLength()
     try {
-      // Windowed delivery: apply the model's requested tail/head to the
-      // capture file. The read stays bounded by maxBytes — tail windows
-      // read the file's end (tailFile), head windows its start — so a
-      // window larger than the cap delivers the cap's worth of lines at
-      // the end the model asked for, with the complete stream at the
-      // footer path for the rest.
+      // Windowed/filtered delivery: apply the model's stripped stages to
+      // the capture file. The read stays bounded by maxBytes for tail
+      // windows (the file's END, via tailFile) and head windows (its
+      // start) — a window larger than the cap delivers the cap's worth of
+      // lines at the end the model asked for. A grep-FIRST stage filters
+      // before any window, so matches may sit anywhere in the stream and
+      // the read cannot be byte-bounded without silently missing them —
+      // read the whole file (build logs are MBs in practice; the filtered
+      // result is capped by applyLimiterStages regardless).
       if (limiterStages !== undefined && limiterStages.length > 0) {
-        if (limiterStages[0]!.tool === 'tail') {
+        const first = limiterStages[0]!
+        if (first.tool === 'grep') {
+          const full = await readFileFull(this.path)
+          this.#outputFileSize = full.bytesTotal
+          return applyLimiterStages(full.content, limiterStages, maxBytes)
+        }
+        if (first.tool === 'tail') {
           const t = await tailFile(this.path, maxBytes)
           this.#outputFileSize = t.bytesTotal
           return applyLimiterStages(t.content, limiterStages, maxBytes)

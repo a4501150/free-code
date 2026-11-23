@@ -133,7 +133,9 @@ export function importCredentialsFromKeychain(deps?: {
       importedKeys.push(key)
     }
   }
-  if (importedKeys.length > 0 && !plainTextStorage.update(existing)) {
+  // update() returns {success}, not a boolean — the bare call is always
+  // truthy and would misreport a failed write as 'imported'.
+  if (importedKeys.length > 0 && !plainTextStorage.update(existing).success) {
     return { status: 'write-failed' }
   }
   return { status: 'imported', keys: importedKeys }

@@ -314,18 +314,33 @@ export function rewriteRedirectsForDualWrite(
 
 // --- Trailing tail/head stage strip -----------------------------------------
 
-/** One stripped `| tail …`/`| head …` stage: the model's requested inline window. */
-export type OutputLimiterStage = {
-  tool: 'tail' | 'head'
-  /** Line count; both tools default to 10 when the model wrote no count. */
-  lines: number
-}
+/** One stripped trailing stage: the model's requested inline window/filter. */
+export type OutputLimiterStage =
+  | {
+      tool: 'tail' | 'head'
+      /** Line count; both tools default to 10 when the model wrote no count. */
+      lines: number
+    }
+  | {
+      tool: 'grep'
+      /** Pattern exactly as the shell would hand it to grep (unquoted, with
+       * POSIX classes already translated to JS-compatible source). */
+      pattern: string
+      /** -F: fixed string; otherwise -E extended regex. */
+      fixed: boolean
+      ignoreCase: boolean
+      invert: boolean
+    }
 
 export type OutputLimiterStrip = {
-  /** Command with every trailing tail/head stage removed. */
+  /** Command with every strippable trailing stage removed. */
   strippedCommand: string
   /** The stripped stages in pipeline order — the delivery window to honor. */
   stages: OutputLimiterStage[]
+  /** The model's line was a command LIST (`a; b | tail`, `a && b | head`):
+   * the stripped window/filter covers the COMBINED capture of every
+   * statement, not just the last pipeline — the footer must say so. */
+  listCommand: boolean
 }
 
 // Strict trailing-stage forms: `tail`/`head` with a literal line count
@@ -336,6 +351,90 @@ export type OutputLimiterStrip = {
 // left to execute exactly as written.
 const TAIL_STAGE = /^tail(?:\s+(?:-n\s*(\d+)|-(\d+)))?$/
 const HEAD_STAGE = /^head(?:\s+(?:-n\s*(\d+)|-(\d+)))?$/
+
+// Strict trailing `grep` stage: optional flag tokens from {E, F, i, v}
+// (combined `-iE` or separate `-i -E`), then exactly ONE pattern operand.
+// Exactly one of -E/-F must appear — a bare pattern is BRE, whose escaping
+// rules a JS RegExp cannot reproduce faithfully (silent alternation
+// mismatches), so it declines and executes as written. Pattern operand
+// forms: 'single-quoted' (content literal — inside single quotes a
+// backslash is literal too), "double-quoted" (no $, backtick or backslash —
+// expansion/escapes are ambiguous, decline rather than guess), or bare (no
+// whitespace, quotes or shell metacharacters).
+const GREP_STAGE =
+  /^grep(?<flags>(?:\s+-[EFiv]+)*)\s+(?<pattern>'[^']*'|"[^\\$`"]*"|[^\s'"|<>&;$()\\]+)$/
+
+/** POSIX bracket classes → JS-compatible class bodies. Unknown classes are
+ * left verbatim and the pattern declines: `[[:foo:]]` does NOT make a JS
+ * RegExp throw — it silently becomes a different character class. */
+const POSIX_CLASSES: Record<string, string> = {
+  alpha: 'A-Za-z',
+  digit: '0-9',
+  alnum: 'A-Za-z0-9',
+  upper: 'A-Z',
+  lower: 'a-z',
+  space: '\\s',
+  blank: ' \\t',
+  xdigit: '0-9A-Fa-f',
+  word: '\\w',
+  punct: '!-/:-@\\[-`{-~',
+  cntrl: '\\x00-\\x1f\\x7f',
+  graph: '\\x21-\\x7e',
+  print: '\\x20-\\x7e',
+}
+
+/** Translate `[[:class:]]` to `[JS-class]`; unknown classes stay verbatim
+ * (the caller declines on any survivor). */
+function translatePosixClasses(pattern: string): string {
+  return pattern.replace(/\[\[:([a-z]+):\]\]/g, (match, name: string) =>
+    POSIX_CLASSES[name] !== undefined ? `[${POSIX_CLASSES[name]}]` : match,
+  )
+}
+
+/** Parse a strict trailing grep stage to a filter descriptor, or null when
+ * the form is not strict (caller lets it execute as written). Validation
+ * happens at STRIP time on purpose: constructing the JS RegExp here
+ * guarantees the delivery-time application can never throw. */
+function tryParseGrepStage(
+  stageText: string,
+): Extract<OutputLimiterStage, { tool: 'grep' }> | null {
+  const match = GREP_STAGE.exec(stageText)
+  if (match?.groups === undefined) return null
+  const flagChars = new Set(match.groups.flags!.replace(/[\s-]/g, ''))
+  // Exactly one matcher flavor; -E -F together declines (real grep lets
+  // the later one win — not worth emulating).
+  if (Number(flagChars.has('E')) + Number(flagChars.has('F')) !== 1) return null
+
+  const operand = match.groups.pattern!
+  const bare = !operand.startsWith("'") && !operand.startsWith('"')
+  const pattern = bare ? operand : operand.slice(1, -1)
+
+  if (flagChars.has('F')) {
+    return {
+      tool: 'grep',
+      pattern,
+      fixed: true,
+      ignoreCase: flagChars.has('i'),
+      invert: flagChars.has('v'),
+    }
+  }
+  const translated = translatePosixClasses(pattern)
+  // Surviving POSIX classes, collating elements, or lookaround syntax
+  // diverge between ERE and JS silently — never strip those.
+  if (/\[\[:|\[\[[.=]|\(\?/.test(translated)) return null
+  try {
+    new RegExp(translated)
+  } catch {
+    return null
+  }
+  return {
+    tool: 'grep',
+    pattern: translated,
+    fixed: false,
+    ignoreCase: flagChars.has('i'),
+    invert: flagChars.has('v'),
+  }
+}
 
 /**
  * Strip one trailing `| tail …` / `| head …` stage: returns the command
@@ -362,10 +461,12 @@ function tryStripOneStage(
     .trim()
   const tailMatch = TAIL_STAGE.exec(stageText)
   const headMatch = HEAD_STAGE.exec(stageText)
-  if (!tailMatch && !headMatch) return null
+  const grepStage = tailMatch || headMatch ? null : tryParseGrepStage(stageText)
+  if (!tailMatch && !headMatch && grepStage === null) return null
 
   const stripped = bytes.subarray(0, lastPipe).toString('utf8').trimEnd()
   if (stripped === '') return null
+  if (grepStage !== null) return { stripped, stage: grepStage }
   // Both tools default to 10 lines when the model wrote no count; the two
   // capture groups cover `-n N` and `-N`.
   const count = (tailMatch ?? headMatch)!
@@ -381,17 +482,31 @@ function tryStripOneStage(
 
 /**
  * Pre-training habit: models end commands with `| tail`/`| head` to cap
- * their own context. Executing that stage would truncate the stream BEFORE
- * the harness captures it — the user's live output view reads the same file
- * the capture writes — so every STRICT trailing tail/head stage is stripped
- * and the complete stream captured instead. The stripped stages ride the
- * result and TaskOutput applies them to the capture file at delivery, so the
- * model still receives exactly the lines it asked for (inline under the
- * limit, else preview + file path + exit code). Chains
- * (`cmd | tail -20 | head -5`) strip one stage per iteration and are reported
- * in pipeline order. Returns null when nothing was strippable — the caller
- * execs unchanged.
+ * their own context, and `| grep …` to pre-filter for signal lines.
+ * Executing those stages would truncate the stream BEFORE the harness
+ * captures it — the user's live output view reads the same file the capture
+ * writes — so every STRICT trailing stage is stripped and the complete
+ * stream captured instead. The stripped stages ride the result and
+ * TaskOutput applies them to the capture file at delivery, so the model
+ * still receives exactly the lines it asked for (inline under the limit,
+ * else preview + file path + exit code). Chains (`cmd | grep -E x | tail
+ * -20`) strip one stage per iteration and are reported in pipeline order.
+ * Returns null when nothing was strippable — the caller execs unchanged.
  */
+/** Whether the command's top level is a LIST of statements (`a; b`,
+ * `a && b`) rather than a single command/pipeline — a trailing stage then
+ * windows/filters every statement's COMBINED output at delivery. Nested
+ * lists (inside a subshell or substitution) do not count: `(a; b) | tail`
+ * pipes exactly what the model grouped, so no disclosure is needed. */
+function isCommandList(command: string): boolean {
+  const root = parseCommandRaw(command)
+  if (!root) return false
+  const statements = root.children.filter(
+    c => c.type === 'command' || c.type === 'pipeline' || c.type === 'list',
+  )
+  return statements.length > 1 || statements.some(c => c.type === 'list')
+}
+
 export function stripTrailingOutputLimiters(
   command: string,
 ): OutputLimiterStrip | null {
@@ -406,16 +521,37 @@ export function stripTrailingOutputLimiters(
   }
   if (strippedStages.length === 0) return null
   // Stripped rightmost-first; pipeline order is the reverse.
-  return { strippedCommand: current, stages: strippedStages.reverse() }
+  return {
+    strippedCommand: current,
+    stages: strippedStages.reverse(),
+    listCommand: isCommandList(command),
+  }
+}
+
+/** Apply one grep stage as a line filter. The pattern was validated at
+ * strip time, so the RegExp construction cannot throw here. */
+function filterLinesByGrep(
+  lines: string[],
+  stage: Extract<OutputLimiterStage, { tool: 'grep' }>,
+): string[] {
+  const match = (line: string): boolean => {
+    if (stage.fixed) {
+      return stage.ignoreCase
+        ? line.toLowerCase().includes(stage.pattern.toLowerCase())
+        : line.includes(stage.pattern)
+    }
+    return new RegExp(stage.pattern, stage.ignoreCase ? 'i' : '').test(line)
+  }
+  return lines.filter(line => match(line) !== stage.invert)
 }
 
 /**
- * Apply stripped tail/head stages to captured text, in pipeline order:
- * `tail -20 | head -5` yields the first 5 of the last 20 lines. A trailing
- * newline is preserved as real tail/head would print one. When the windowed
- * text exceeds maxChars, the cap preserves the model's intent — a
- * tail-most window keeps its END (the lines it asked for), a head-most
- * window keeps its start.
+ * Apply stripped tail/head/grep stages to captured text, in pipeline
+ * order: `tail -20 | head -5` yields the first 5 of the last 20 lines,
+ * `grep -E err | tail -5` the last 5 matching lines. A trailing newline is
+ * preserved as real tail/head would print one. When the result exceeds
+ * maxChars, the cap preserves the model's intent — a tail-most window keeps
+ * its END (the lines it asked for), anything else keeps its start.
  */
 export function applyLimiterStages(
   text: string,
@@ -427,10 +563,14 @@ export function applyLimiterStages(
   const body = hadTrailingNewline ? text.slice(0, -1) : text
   let lines = body === '' ? [] : body.split('\n')
   for (const stage of stages) {
-    lines =
-      stage.tool === 'tail'
-        ? lines.slice(-stage.lines)
-        : lines.slice(0, stage.lines)
+    if (stage.tool === 'grep') {
+      lines = filterLinesByGrep(lines, stage)
+    } else {
+      lines =
+        stage.tool === 'tail'
+          ? lines.slice(-stage.lines)
+          : lines.slice(0, stage.lines)
+    }
   }
   let out = lines.join('\n')
   if (hadTrailingNewline && out !== '') out += '\n'

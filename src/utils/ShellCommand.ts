@@ -39,8 +39,11 @@ export type ExecResult = {
       mode: 'tee' | 'passthrough'
     }>
   }
-  /** Set when trailing `| tail`/`| head` stages were stripped before exec. */
+  /** Set when trailing `| tail`/`| head`/`| grep` stages were stripped before exec. */
   limiterStripped?: boolean
+  /** Set when the stripped stage belonged to a command LIST: the delivery
+   * window/filter covered every statement's combined output. */
+  limiterListCommand?: boolean
   /** Error message when the command failed before spawning (e.g., deleted cwd). */
   preSpawnError?: string
 }

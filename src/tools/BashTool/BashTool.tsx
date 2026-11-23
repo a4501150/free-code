@@ -449,7 +449,13 @@ const outputSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      'Set when a trailing `| tail`/`| head` stage was stripped before execution and applied to the inline result — the complete stream is in the output file',
+      'Set when a trailing `| tail`/`| head`/`| grep` stage was stripped before execution and applied to the inline result — the complete stream is in the output file',
+    ),
+  limiterListCommand: z
+    .boolean()
+    .optional()
+    .describe(
+      'Set when the stripped trailing stage came from a command LIST (`a; b | tail -3`): the window/filter covered the COMBINED output of every command in the line, not only the last',
     ),
 })
 
@@ -700,6 +706,7 @@ export const BashTool = buildTool({
       exitCode,
       redirectRewritten,
       limiterStripped,
+      limiterListCommand,
     },
     toolUseID,
   ): DomainToolResultBlockParam {
@@ -764,7 +771,9 @@ export const BashTool = buildTool({
     // carries the exit code.
     let footer = ''
     if (limiterStripped) {
-      footer += `[trailing tail/head applied to your inline result; the complete stream is in the file below]\n`
+      footer += limiterListCommand
+        ? '[trailing tail/head/grep applied to the COMBINED output of every command in your line — not only the last; the complete stream is in the file below]\n'
+        : '[trailing tail/head/grep applied to your inline result; the complete stream is in the file below]\n'
     }
     if (redirectRewritten) {
       const teeTargets = redirectRewritten.targets
@@ -1010,6 +1019,7 @@ export const BashTool = buildTool({
       exitCode: result.code,
       redirectRewritten: result.redirectRewritten,
       limiterStripped: result.limiterStripped,
+      limiterListCommand: result.limiterListCommand,
     }
 
     return {
@@ -1147,6 +1157,7 @@ async function* runShellCommand({
   function withRewriteInfo(r: ExecResult): ExecResult {
     if (limiterStripped !== null) {
       r.limiterStripped = true
+      if (limiterStripped.listCommand) r.limiterListCommand = true
     }
     if (rewrite) {
       r.redirectRewritten = {

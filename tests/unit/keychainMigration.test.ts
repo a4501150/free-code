@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -35,7 +36,15 @@ function storagePath(): string {
   return join(configDir, '.credentials.json')
 }
 
+// The production code gates on darwin before consulting the injected
+// `security` spawn — stub the platform so the fakes are actually exercised.
+const prevPlatform = process.platform
+
 beforeEach(() => {
+  Object.defineProperty(process, 'platform', {
+    value: 'darwin',
+    configurable: true,
+  })
   configDir = mkdtempSync(join(tmpdir(), 'kc-migration-'))
   prevConfigDir = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = configDir
@@ -44,6 +53,10 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  Object.defineProperty(process, 'platform', {
+    value: prevPlatform,
+    configurable: true,
+  })
   if (prevConfigDir === undefined) {
     delete process.env.CLAUDE_CONFIG_DIR
   } else {
@@ -119,6 +132,16 @@ describe('importCredentialsFromKeychain', () => {
       execSecurity: () => 'not json',
     })
     expect(outcome).toEqual({ status: 'malformed' })
+  })
+
+  test('a failed store write surfaces as write-failed, not imported', () => {
+    // update() returns {success}, so the guard must read .success — a
+    // directory at the storage path forces the write to fail.
+    mkdirSync(storagePath())
+    const outcome = importCredentialsFromKeychain({
+      execSecurity: () => JSON.stringify(KEYCHAIN_BLOB),
+    })
+    expect(outcome).toEqual({ status: 'write-failed' })
   })
 })
 
