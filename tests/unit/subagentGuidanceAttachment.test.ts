@@ -47,7 +47,9 @@ describe('getSubagentGuidanceAttachment', () => {
     expect(result[0].type).toBe('session_guidance')
     const text = result[0].text
     expect(text).toContain('# Subagent run mechanics')
-    expect(text).toContain('run ends only when you call the FinishRun tool')
+    expect(text).toContain(
+      'Your run ends when you end your message with no tool calls',
+    )
     expect(text).toContain('parks the run until they signal')
     expect(text).toContain('parks and wakes when the task signals')
     expect(text).toContain('a second consecutive one ends the run')

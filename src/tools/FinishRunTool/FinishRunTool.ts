@@ -1,5 +1,10 @@
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
+import {
+  getRunningOwnedShellTasks,
+  namedTaskIds,
+} from '../../tasks/ownership.js'
+import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../BackgroundTaskStopTool/prompt.js'
 import { DESCRIPTION, FINISH_RUN_TOOL_NAME } from './constants.js'
 
 const inputSchema = z.strictObject({})
@@ -47,7 +52,7 @@ export const FinishRunTool = buildTool({
     return true
   },
   async description() {
-    return 'End your run (kills owned background tasks); your last text message is your result'
+    return 'End your run now, killing owned background tasks; not needed to finish — a final text message with no tool calls completes the run and is your result'
   },
   async prompt() {
     return DESCRIPTION
@@ -65,7 +70,22 @@ export const FinishRunTool = buildTool({
   renderToolUseMessage() {
     return 'Ending run...'
   },
-  async call() {
+  async call(_input, toolUseContext) {
+    // The owned-tasks gate lives in runAgent (strike semantics, parks), but
+    // its decision arrives only after this result. Claiming completion here
+    // while the gate is about to refuse produced "Run complete." followed
+    // by "was not carried out" in the same turn — state the truth instead.
+    const ownedTasks = getRunningOwnedShellTasks(
+      toolUseContext.agentId,
+      toolUseContext.getAppState,
+    )
+    if (ownedTasks.length > 0) {
+      return {
+        data: {
+          message: `FinishRun received, but you still own ${ownedTasks.length} running background task(s) (${namedTaskIds(ownedTasks.map(t => t.id))}), so the run is not complete yet. To wait for them, reply with no tool calls at all — the run parks and their completion notifications wake you. To end the run now, stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME} or call ${FINISH_RUN_TOOL_NAME} again with no work between.`,
+        },
+      }
+    }
     return { data: { message: 'Run complete.' } }
   },
 } satisfies ToolDef<InputSchema, Output>)

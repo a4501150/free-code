@@ -1866,7 +1866,7 @@ export function getSubagentGuidanceAttachment(
   const hasBash = pool.some(tool => tool.name === BASH_TOOL_NAME)
   const hasSendMessage = pool.some(tool => tool.name === SEND_MESSAGE_TOOL_NAME)
   const items = [
-    `Your run ends only when you call the ${FINISH_RUN_TOOL_NAME} tool — ending a message without tool calls does not end it: while you own running background tasks it parks the run until they signal; otherwise you will be reminded to continue working or call ${FINISH_RUN_TOOL_NAME}.`,
+    `Your run ends when you end your message with no tool calls and no running background tasks you own — your final text is delivered to the caller as your result. While you own running background tasks, such an end parks the run until they signal.`,
     hasBash
       ? `Background tasks you own (Bash with run_in_background, Monitor) deliver their completion notifications to you while your run stays open. To wait out a long task, start it and end your message with no tool calls (not ${FINISH_RUN_TOOL_NAME}) — your run parks and wakes when the task signals.`
       : null,
@@ -1874,7 +1874,7 @@ export function getSubagentGuidanceAttachment(
       ? `Never wait on a background task by sleeping, no-op commands (echo, true, sleep), or polling its output file — every tool call starts a new round immediately and burns turns. Start it, end your message with no tool calls, and the task's completion notification wakes you; to watch for a condition, start a Monitor instead of polling.`
       : null,
     hasBash
-      ? `${FINISH_RUN_TOOL_NAME} ends your run and kills every background task you still own. With one running, a first ${FINISH_RUN_TOOL_NAME} is gated with a reminder; a second consecutive one ends the run and abandons the tasks.`
+      ? `${FINISH_RUN_TOOL_NAME} ends your run immediately and kills every background task you still own — use it only to abandon them, not to finish. With one running, a first ${FINISH_RUN_TOOL_NAME} is gated with a reminder; a second consecutive one ends the run and abandons the tasks.`
       : null,
     hasSendMessage
       ? `If you need your parent's input — a decision, an approval, missing instructions — call ${SEND_MESSAGE_TOOL_NAME} with to "parent": your run stays open, the message reaches your parent, and the reply arrives as a message to you. Do not end your run just to ask a question.`
@@ -3103,9 +3103,9 @@ function isToolResultBlock(b: unknown): b is ToolResultBlock {
 
 /**
  * Check whether a user message's content contains tool_result blocks.
- * This is more reliable than checking `toolUseResult === undefined` because
- * sub-agent tool result messages explicitly set `toolUseResult` to `undefined`
- * when `preserveToolUseResults` is false (the default for Explore agents).
+ * Checking `toolUseResult === undefined` alone is unreliable: sub-agent tool
+ * result messages set `toolUseResult` to `undefined` whenever their context
+ * has the field dropped, so the content blocks are the source of truth.
  */
 function hasToolResultContent(content: unknown): boolean {
   return Array.isArray(content) && content.some(isToolResultBlock)

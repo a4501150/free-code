@@ -20,6 +20,8 @@
  */
 
 import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { RequestLogEntry } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { forAgent, forMain } from '../helpers/agent-routes'
@@ -280,6 +282,103 @@ describe('subagent background task ownership', () => {
     expect(userTextBlob(lastMain!)).toContain('done waiting')
   })
 
+  test('park-wake notification persists to the sidechain transcript', async () => {
+    // Regression (round-boundary attachment drop): every attachment the
+    // subagent's query() yielded — drained task notifications included —
+    // was shown in the live view but never recorded and never carried
+    // into the next round, so the model's own completion notifications
+    // evaporated at each round boundary and the subagent's JSONL held
+    // none of them.
+    server.reset([
+      forMain(
+        toolUseResponse([
+          {
+            name: 'Agent',
+            input: {
+              description: 'persist probe agent',
+              prompt:
+                'Background a short sleep, wait for it to finish, then report and end.',
+            },
+          },
+        ]),
+      ),
+      // Agent iteration 1: background the sleep.
+      forAgent(
+        toolUseResponse([
+          {
+            name: 'Bash',
+            input: {
+              command: PARK_SLEEP,
+              description: 'persist probe sleep',
+              run_in_background: true,
+            },
+          },
+        ]),
+      ),
+      // Iteration 2: text-only end — reminder round follows.
+      forAgent(textResponse('waiting for it')),
+      // Iteration 3 (reminder round): another text-only end parks.
+      forAgent(textResponse('ok, still waiting')),
+      // Iteration 4 (wake round): notification delivered; report and end.
+      forAgent(
+        toolUseResponse([{ name: 'FinishRun', input: {} }], 'done waiting'),
+      ),
+      // Main turn 2: acknowledge.
+      forMain(textResponse('probe finished')),
+    ])
+
+    session = await startSession({
+      additionalArgs: ['--dangerously-skip-permissions'],
+      readyText: 'bypass permissions on',
+      settings: {
+        backgroundTasksEnabled: true,
+        skipDangerousModePermissionPrompt: true,
+      },
+    })
+
+    await session.submitAndApprove('spawn the persist probe agent', 30_000)
+    await waitForRequest(
+      server,
+      req =>
+        JSON.stringify(req.body.system ?? '').includes('interactive agent') &&
+        userTextBlob(req).includes('done waiting'),
+      {
+        description: 'parent receives the parked agent result',
+        timeoutMs: 60_000,
+      },
+    )
+
+    // The sleep's completion notification must be IN the subagent's
+    // sidechain JSONL on disk — recorded at the park wake, not merely
+    // surfaced live and dropped. Scoped by this agent's unique prompt text
+    // so a leftover file from another run can't satisfy the assertion.
+    const configDir = session.configDirPath
+    expect(configDir).not.toBeNull()
+    const projectsDir = join(configDir!, 'projects')
+    const agentJsonls: string[] = []
+    for (const projectKey of readdirSync(projectsDir)) {
+      const projectDir = join(projectsDir, projectKey)
+      for (const entry of readdirSync(projectDir)) {
+        const subagentsDir = join(projectDir, entry, 'subagents')
+        if (!existsSync(subagentsDir)) continue
+        agentJsonls.push(
+          ...readdirSync(subagentsDir)
+            .filter(f => f.endsWith('.jsonl'))
+            .map(f => join(subagentsDir, f)),
+        )
+      }
+    }
+    expect(agentJsonls.length).toBeGreaterThan(0)
+    const persisted = agentJsonls.find(f => {
+      const text = readFileSync(f, 'utf8')
+      return (
+        text.includes('persist probe sleep') &&
+        text.includes('<task-notification>')
+      )
+    })
+    expect(persisted).toBeDefined()
+  })
+
   test('post-wake implicit end parks silently — no second owned-tasks reminder', async () => {
     // Regression: parkAndAwaitWake used to reset remindedAboutOwnedTasks on
     // every meaningful wake, so an agent that answered the first reminder
@@ -387,5 +486,71 @@ describe('subagent background task ownership', () => {
     const stillOwningCount =
       userTextBlob(lastAgentReq!).match(/still owning/g)?.length ?? 0
     expect(stillOwningCount).toBe(1)
+  })
+
+  test('text-only end with no owned tasks completes the run — no reminder, no FinishRun', async () => {
+    // Implicit completion: a text-only end with the queue drained and no
+    // running owned tasks COMPLETES the run, the final text being the
+    // delivered result. The old strict end_turn model answered such an end
+    // with an end-turn reminder (and force-completed after repeats) — the
+    // reminder loop that pushed models into no-op busy-waits.
+    server.reset([
+      forMain(
+        toolUseResponse([
+          {
+            name: 'Agent',
+            input: {
+              description: 'implicit completion probe agent',
+              prompt: 'Run one quick command, then report and finish.',
+            },
+          },
+        ]),
+      ),
+      // Agent iteration 1: one quick foreground command.
+      forAgent(
+        toolUseResponse([
+          {
+            name: 'Bash',
+            input: { command: 'echo probe', description: 'quick probe' },
+          },
+        ]),
+      ),
+      // Iteration 2 (tool-result round): text-only end — nothing running,
+      // queue empty: the run completes on this turn.
+      forAgent(textResponse('probe ran clean, nothing to flag')),
+      // Main turn 2: acknowledge.
+      forMain(textResponse('probe finished')),
+    ])
+
+    session = await startSession({
+      additionalArgs: ['--dangerously-skip-permissions'],
+      readyText: 'bypass permissions on',
+      settings: {
+        backgroundTasksEnabled: true,
+        skipDangerousModePermissionPrompt: true,
+      },
+    })
+
+    await session.submitAndApprove('spawn the implicit probe agent', 30_000)
+    await waitForRequest(
+      server,
+      req =>
+        JSON.stringify(req.body.system ?? '').includes('interactive agent') &&
+        userTextBlob(req).includes('probe ran clean'),
+      {
+        description: 'parent receives the implicit-end result',
+        timeoutMs: 60_000,
+      },
+    )
+
+    const log = server.getRequestLog()
+    const agentReqs = agentRequests(log)
+    // Exactly two agent rounds: the tool round and the text-only end. A
+    // reminder round (old behavior) would have produced a third.
+    expect(agentReqs.length).toBe(2)
+    // No end-turn reminder was ever delivered.
+    for (const req of agentReqs) {
+      expect(userTextBlob(req)).not.toContain('end-turn-reminder')
+    }
   })
 })

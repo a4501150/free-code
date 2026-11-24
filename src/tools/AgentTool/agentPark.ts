@@ -47,14 +47,6 @@ export function isAgentToolInterruptReason(
 export const PARK_INITIAL_IDLE_MS = 10 * 60 * 1000
 /** Cap for the exponential idle backoff (10 → 20 → 40 → 60 min). */
 export const PARK_MAX_IDLE_MS = 60 * 60 * 1000
-/**
- * Backstop for the strict end_turn model: consecutive implicit ends with no
- * owned tasks and no FinishRun call after this many reminders force-complete
- * the run (mirrors the silent maxTurns end; the delivered result skips
- * post-nudge ack text — see finalizeAgentTool's extraction).
- */
-export const MAX_END_REMINDERS = 2
-
 export type ParkWake = 'signal' | 'idle' | 'abort'
 
 /**
@@ -127,8 +119,7 @@ export type FinishRunOwnedTasksGate = 'honor' | 'gate'
  *   let the park machinery wait for the tasks.
  *
  * A round that did work before the FinishRun answered the previous gate —
- * only consecutive no-work FinishRun calls count as the second strike, mirroring
- * consecutiveEndReminders in runAgent.
+ * only consecutive no-work FinishRun calls count as the second strike.
  */
 export function resolveFinishRunOwnedTasksGate(opts: {
   ownedTaskCount: number
@@ -187,3 +178,15 @@ export function ownedTasksReminderText(
 export function finishRunOwnedTasksReminderText(tasks: TaskState[]): string {
   return `<${FINISH_RUN_REMINDER_TAG}>\nYour ${FINISH_RUN_TOOL_NAME} call was not carried out: you still own ${tasks.length} running background task(s), and ending your run kills them.\n${ownedTaskListLines(tasks)}\nTo wait for them, end your message with no tool calls at all — do not call ${FINISH_RUN_TOOL_NAME}; your run stays open, parks, and their completion notifications wake you. To abandon them, stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME} or call ${FINISH_RUN_TOOL_NAME} again to end your run now.\n</${FINISH_RUN_REMINDER_TAG}>`
 }
+
+/**
+ * Park-idle wake with nothing left running: every owned task finished
+ * during the idle window without queueing a notification. The model's last
+ * text was a "waiting…" message, which would otherwise become the
+ * delivered result — ask for the final report; the next text-only end
+ * completes the run (implicit completion). Deliberately NOT exact-matched
+ * by the post-nudge ack skip in finalizeAgentTool: its reply IS the result.
+ */
+export const FINAL_REPORT_PROMPT = `<${FINISH_RUN_REMINDER_TAG}>
+Your background tasks have finished. Reply with your final report as a plain text message with no tool calls — that completes your run and the report is delivered to your caller.
+</${FINISH_RUN_REMINDER_TAG}>`

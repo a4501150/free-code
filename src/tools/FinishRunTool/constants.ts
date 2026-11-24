@@ -19,13 +19,16 @@ export const LEGACY_END_TURN_TOOL_NAME = 'EndTurn'
 export const FINISH_RUN_REMINDER_TAG = 'end-turn-reminder'
 
 /**
- * The nudge runAgent delivers on a reminder round. "Already delivered — do
- * not restate" is load-bearing: an earlier wording told the model its most
- * recent text would become the result, which it read as "resend the report",
- * and the restatement then replaced the original report as the subagent's
- * delivered result (finalizeAgentTool picks the last text). Wrapped in the
- * tag above so every consumer can recognize it without string-matching the
- * body.
+ * The end-turn nudge the strict end_turn model delivered on a reminder
+ * round — no longer sent (implicit completion replaced it: a text-only end
+ * with nothing running completes the run), but kept verbatim for resumed
+ * transcripts: the UI must keep rendering old nudge rows and
+ * finalizeAgentTool's ack-skip matches them by exact text. "Already
+ * delivered — do not restate" was load-bearing: an earlier wording told the
+ * model its most recent text would become the result, which it read as
+ * "resend the report", and the restatement then replaced the original
+ * report as the subagent's delivered result (finalizeAgentTool picks the
+ * last text).
  */
 export const FINISH_RUN_REMINDER = `<${FINISH_RUN_REMINDER_TAG}>
 You ended your turn without calling the ${FINISH_RUN_TOOL_NAME} tool, so your run is still active and your caller is still waiting.
@@ -82,7 +85,6 @@ export function isFinishRunToolUse(block: {
   )
 }
 
-export const DESCRIPTION = `Signals that your work is complete and ends your run.
-Your most recent text message is delivered to the caller as your final result, so write your report BEFORE or TOGETHER WITH this call — the tool takes no content.
-Ending your run kills every background task you still own (backgrounded bash, monitors). To wait for a running task instead of abandoning it, end your message with no tool calls at all — your run parks, and the task's completion notification is delivered to you. With owned tasks running, a first call is gated with a reminder; a second consecutive call ends the run and abandons them.
-This is the ONLY way to finish your run: ending your message without tool calls does not end it — with running tasks you own it parks until they signal; otherwise you will be asked again to either continue working or call this tool.`
+export const DESCRIPTION = `Ends your run immediately, killing every background task you still own (backgrounded bash, monitors).
+You do NOT need this tool to finish your run: ending your message with a final report and no tool calls completes the run, and that text is delivered to the caller as your result.
+Use this tool only to abandon owned background tasks. With owned tasks running, a first call is gated with a reminder; a second consecutive call ends the run and abandons them. To wait for a running task instead, end your message with no tool calls at all — your run parks, and the task's completion notification is delivered to you.`

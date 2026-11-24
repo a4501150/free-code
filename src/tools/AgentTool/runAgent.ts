@@ -35,6 +35,7 @@ import { executeStopHooks } from '../../utils/hooks.js'
 import {
   dequeueAllMatching,
   isAgentTaskNotification,
+  someCommand,
 } from '../../utils/messageQueueManager.js'
 import {
   getAgentPendingMessageAttachments,
@@ -42,11 +43,10 @@ import {
   getQueuedCommandAttachments,
   getSubagentGuidanceAttachment,
 } from '../../utils/attachments.js'
-import { FINISH_RUN_REMINDER } from '../FinishRunTool/constants.js'
 import { FinishRunTool } from '../FinishRunTool/FinishRunTool.js'
 import {
+  FINAL_REPORT_PROMPT,
   finishRunOwnedTasksReminderText,
-  MAX_END_REMINDERS,
   ownedTasksReminderText,
   PARK_INITIAL_IDLE_MS,
   PARK_MAX_IDLE_MS,
@@ -64,6 +64,7 @@ import { isAnyReasoningBlock } from '../../types/domainGuards.js'
 import type { AgentId } from '../../types/ids.js'
 import type {
   AssistantMessage,
+  AttachmentMessage,
   Message,
   ProgressMessage,
   RequestStartEvent,
@@ -252,6 +253,17 @@ type QueryMessage =
   | TombstoneMessage
 
 /**
+ * Carriers that must never enter a subagent's CARRIED context:
+ * max_turns_reached is a signal (its effect rides the Terminal return) and
+ * structured_output is a per-request UI segment. Everything else an agent's
+ * query() yields is recorded and carried. Distinct from the same-named set
+ * in sessionStorage.ts, which gates transcript LOGGING.
+ */
+const NON_CARRIED_ATTACHMENT_TYPES: ReadonlySet<
+  import('../../utils/attachments.js').Attachment['type']
+> = new Set(['max_turns_reached', 'structured_output'])
+
+/**
  * Type guard to check if a message from query() is a recordable Message type.
  * Matches the types we want to record: assistant, user, progress, or system compact_boundary.
  */
@@ -284,7 +296,6 @@ export async function* runAgent({
   override,
   model,
   maxTurns,
-  preserveToolUseResults,
   availableTools,
   allowedTools,
   onCacheSafeParams,
@@ -319,8 +330,6 @@ export async function* runAgent({
    * agent definition, not by the main model. */
   model?: string
   maxTurns?: number
-  /** Preserve toolUseResult on messages for subagents with viewable transcripts */
-  preserveToolUseResults?: boolean
   /** Precomputed tool pool for the worker agent. Computed by the caller
    * (AgentTool.tsx) to avoid a circular dependency between runAgent and tools.ts.
    * Always contains the full tool pool assembled with the worker's own permission
@@ -755,10 +764,14 @@ export async function* runAgent({
         : undefined,
   })
 
-  // Preserve tool use results for subagents with viewable transcripts
-  if (preserveToolUseResults) {
-    agentToolUseContext.preserveToolUseResults = true
-  }
+  // Every subagent's transcript is viewable in the agent drill-down, and
+  // the TUI renders tool results (Bash output above all) from the
+  // structured toolUseResult field — without it the drill-down shows only
+  // error strings (the error path never dropped the field). The field is
+  // UI/persistence-side only; the API request builds from the
+  // tool_result content blocks, so preserving it costs memory, not
+  // context tokens.
+  agentToolUseContext.preserveToolUseResults = true
 
   // Turn-0 subagent run-mechanics seed (the session_guidance carrier,
   // agentId-gated — see getSubagentGuidanceAttachment): the worker's
@@ -888,17 +901,19 @@ export async function* runAgent({
     `[Agent: ${agentDefinition.agentType}] Starting query | model=${resolvedAgentModel ?? 'default'} initialMessages=${initialMessages.length} systemPromptChars=${agentSystemPrompt.length} tools=${allTools.length}`,
   )
 
-  // Strict end_turn model: the run ends only when the model calls FinishRun.
-  // An implicit end (assistant message with no tool calls) is not a
-  // completion — it gets one reminder round, and if the agent still owns
-  // running background tasks it parks between rounds until one of them
-  // signals. See agentPark.ts for the wake sources and backoff.
+  // Implicit-completion model: a text-only end (assistant message with no
+  // tool calls) with the queue drained and no owned running background
+  // tasks COMPLETES the run — the final text is the delivered result, which
+  // is what models are trained to do. With owned tasks running, the first
+  // implicit end gets one reminder round and further ones park between
+  // rounds until a task signals (see agentPark.ts for wake sources and
+  // backoff). FinishRun remains the explicit early exit: it ends the run
+  // immediately and abandons (kills) the tasks the agent still owns.
   const runMessages: Message[] = []
   // `turnsUsed` carries the maxTurns budget across re-entries — query counts
   // turns per call, so a fresh budget per round would multiply the cap.
   const totalMaxTurns = maxTurns ?? agentDefinition.maxTurns
   let turnsUsed = 0
-  let consecutiveEndReminders = 0
   // Gated FinishRun calls with owned tasks in a row (see resolveFinishRunOwnedTasksGate
   // for the strike semantics). A round that did work resets it to 1.
   let finishRunOwnedTaskStrikes = 0
@@ -908,8 +923,8 @@ export async function* runAgent({
   // waiter back into polling (the rope-bench busy-wait).
   let remindedAboutOwnedTasks = false
   let parkIdleMs = PARK_INITIAL_IDLE_MS
-  // Set at the two true-completion break sites (FinishRun, force-complete
-  // backstop) — the gate for the relocated SubagentStop hooks below.
+  // Set at the true-completion break sites (FinishRun honored, implicit
+  // completion) — the gate for the relocated SubagentStop hooks below.
   let fireStopHooks = false
   // Reminders ride the conversation (runMessages → next round's API input)
   // but must also surface: yielded into the stream (drill-down/task views
@@ -922,6 +937,41 @@ export async function* runAgent({
     const reminder = createUserMessage({ content, isMeta: true })
     runMessages.push(reminder)
     reminderOutbox.push(reminder)
+  }
+
+  // Carriers that must never enter the carried context (see the module-scope
+  // NON_CARRIED_ATTACHMENT_TYPES). Everything else yielded or drained below
+  // — task notifications, task statuses, the stateless-scan carriers — is
+  // both recorded and carried.
+  //
+  // Record an attachment message to the sidechain transcript and carry it
+  // into the next round's context (runMessages → next round's API input) —
+  // query() owns an attachment only for the round it built, so without this
+  // the model's own completion notifications evaporate at every round
+  // boundary and post-compact carriers re-announced in full on every round.
+  // The await resolves at write-enqueue; the per-file FIFO drain keeps the
+  // on-disk chain ordered after it.
+  const recordAndCarryAttachment = async (
+    message: AttachmentMessage,
+  ): Promise<void> => {
+    if (NON_CARRIED_ATTACHMENT_TYPES.has(message.attachment.type)) return
+    await recordSidechainTranscript([message], agentId, lastRecordedUuid).catch(
+      err => logForDebugging(`Failed to record sidechain transcript: ${err}`),
+    )
+    lastRecordedUuid = message.uuid
+    runMessages.push(message)
+  }
+
+  // Park-wake and the implicit-end handler share the notification drain:
+  // dequeue every task notification addressed to this agent and carry each
+  // one into the next round.
+  const drainAgentTaskNotifications = async (): Promise<void> => {
+    const attachments = await getQueuedCommandAttachments(
+      dequeueAllMatching(cmd => isAgentTaskNotification(cmd, agentId)),
+    )
+    for (const attachment of attachments) {
+      await recordAndCarryAttachment(createAttachmentMessage(attachment))
+    }
   }
 
   // A user tool-interrupt (Esc in the drill-down) spends the run's abort
@@ -966,7 +1016,7 @@ export async function* runAgent({
       pushReminder(
         stillOwned.length > 0
           ? ownedTasksReminderText(stillOwned, true)
-          : FINISH_RUN_REMINDER,
+          : FINAL_REPORT_PROMPT,
       )
       return 'woken'
     }
@@ -975,16 +1025,11 @@ export async function* runAgent({
     // request would otherwise carry nothing new — the notification that
     // woke the agent would only land in the round after, which never comes
     // if the model ends on an empty context.
-    const notificationAttachments = await getQueuedCommandAttachments(
-      dequeueAllMatching(cmd => isAgentTaskNotification(cmd, agentId)),
-    )
-    for (const attachment of notificationAttachments) {
-      runMessages.push(createAttachmentMessage(attachment))
-    }
+    await drainAgentTaskNotifications()
     for (const attachment of getAgentPendingMessageAttachments(
       agentToolUseContext,
     )) {
-      runMessages.push(createAttachmentMessage(attachment))
+      await recordAndCarryAttachment(createAttachmentMessage(attachment))
     }
     parkIdleMs = PARK_INITIAL_IDLE_MS
     return 'woken'
@@ -1154,8 +1199,10 @@ export async function* runAgent({
           continue
         }
 
-        // Yield attachment messages (e.g., structured_output) without
-        // recording them. The end_turn / max_turns signals ride the
+        // Attachment messages yielded by this round's query(): record and
+        // carry every non-ephemeral one (recordAndCarryAttachment) so the
+        // next round's context still holds it — query() built it into only
+        // THIS round's request. The end_turn / max_turns signals ride the
         // Terminal return, not flags here.
         if (message.type === 'attachment') {
           if (message.attachment.type === 'max_turns_reached') {
@@ -1163,6 +1210,7 @@ export async function* runAgent({
               `[Agent: ${agentDefinition.agentType}] Reached max turns limit (${message.attachment.maxTurns})`,
             )
           }
+          await recordAndCarryAttachment(message)
           yield message
           continue
         }
@@ -1288,28 +1336,26 @@ export async function* runAgent({
       // The reminder rounds share one maxTurns budget with the work rounds.
       if (totalMaxTurns !== undefined && turnsUsed >= totalMaxTurns) break
 
-      const ownedTasks = getRunningOwnedShellTasks(agentId, agentGetAppState)
-      if (ownedTasks.length === 0) {
-        // A round that did work before ending answered the previous
-        // reminder — only consecutive no-work implicit ends count.
-        if (assistantTurnsThisRound > 1) consecutiveEndReminders = 0
-        consecutiveEndReminders++
-        if (consecutiveEndReminders > MAX_END_REMINDERS) {
-          // Backstop: MAX_END_REMINDERS reminders were delivered and
-          // ignored. End like maxTurns does — silently; the delivered
-          // result is the last text before the trailing nudges
-          // (finalizeAgentTool skips post-nudge acks).
-          logForDebugging(
-            `[Agent: ${agentDefinition.agentType}] Ignored ${MAX_END_REMINDERS} end reminders without FinishRun; force-completing`,
-          )
-          fireStopHooks = true
-          break
-        }
-        pushReminder(FINISH_RUN_REMINDER)
+      // A notification can land in the window between the last tool-loop
+      // drain and this implicit end — query() returns 'completed' before
+      // its own drain when the turn had no tool calls. Deliver it before
+      // any reminder decision: an end over a just-finished task must not
+      // remind while its result sits undrained, and an end while other
+      // tasks still run must not remind before the finished one's payload
+      // is in context. (dequeueAllMatching is a no-op on an empty queue.)
+      if (someCommand(cmd => isAgentTaskNotification(cmd, agentId))) {
+        await drainAgentTaskNotifications()
         continue
       }
 
-      consecutiveEndReminders = 0
+      const ownedTasks = getRunningOwnedShellTasks(agentId, agentGetAppState)
+      if (ownedTasks.length === 0) {
+        // Implicit completion: a text-only end with the queue drained and
+        // nothing running — the model's final text IS the run's result.
+        fireStopHooks = true
+        break
+      }
+
       if (!remindedAboutOwnedTasks) {
         // The first implicit end with owned tasks never parks silently —
         // the model must consciously choose to wait.
@@ -1327,12 +1373,10 @@ export async function* runAgent({
     }
 
     // SubagentStop hooks, relocated here from query's per-round stop-hook
-    // path (skipStopHooks above): strict end_turn would otherwise fire them
-    // once per implicit-end reminder round. They now fire once at true
-    // completion — FinishRun or the force-complete backstop — matching the
-    // single 'completed' firing of the old model. maxTurns and abort never
-    // fired them and still don't. Blocking results are ignored: the agent
-    // explicitly ended its run.
+    // path (skipStopHooks above): firing per-round would mean once per
+    // reminder round. They fire once at true completion — FinishRun honored
+    // or implicit completion. maxTurns and abort never fire them. Blocking
+    // results are ignored: the agent explicitly ended its run.
     if (fireStopHooks) {
       void (async () => {
         try {
