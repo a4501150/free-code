@@ -93,8 +93,10 @@ export async function processBashCommand(
   const normalizePty = (text: string): string =>
     interactive ? normalizePtyOutput(text) : text
 
-  // Just show initial UI. In interactive mode the prompt input is hidden —
-  // keystrokes belong to the child until it exits or is killed/backgrounded.
+  // Just show initial UI. In interactive mode the panel holds the DOM
+  // focus (tabIndex + autoFocus in InteractiveBashProgress), so tree-
+  // dispatched keydowns land there and never reach the prompt container —
+  // the prompt row and the UI after it stay painted.
   setToolJSX({
     jsx: (
       <Progress
@@ -103,7 +105,7 @@ export async function processBashCommand(
         verbose={context.options.verbose}
       />
     ),
-    shouldHidePromptInput: !!interactive,
+    shouldHidePromptInput: false,
   })
 
   try {
@@ -127,8 +129,7 @@ export async function processBashCommand(
             {toolJSX?.jsx}
           </>
         ),
-        shouldHidePromptInput:
-          !!interactive || (toolJSX?.shouldHidePromptInput ?? false),
+        shouldHidePromptInput: toolJSX?.shouldHidePromptInput ?? false,
         showSpinner: false,
       })
     }

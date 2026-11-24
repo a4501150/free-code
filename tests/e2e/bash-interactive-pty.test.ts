@@ -106,7 +106,8 @@ describe('Bash interactive PTY', () => {
 
     await sendBashLine(session, `! sleep 30`)
 
-    // The interactive panel owns the screen with the prompt input hidden.
+    // The interactive panel mounts and takes the DOM focus; the prompt
+    // stays painted below it but receives no keys while the run is live.
     await session.waitForScreen(
       screen => screen.includes('╭') && screen.includes('Esc kill'),
       { description: 'interactive panel mounted', timeoutMs: 30_000 },

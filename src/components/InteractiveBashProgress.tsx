@@ -1,5 +1,4 @@
-import * as React from 'react'
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Box, useInput } from '../ink.js'
 import { RawAnsi } from '../ink/components/RawAnsi.js'
 import { stringWidth } from '../ink/stringWidth.js'
@@ -52,9 +51,21 @@ function labeledBorder(
  * turns it into a background task exactly like a non-interactive command.
  */
 export function InteractiveBashProgress({ input }: Props): React.ReactNode {
+  // The panel participates in the DOM focus system (tabIndex + autoFocus):
+  // while the run is live it is the activeElement, so tree-dispatched
+  // keydowns land here and never reach the prompt container — which stays
+  // mounted and visible below the box, together with the rows after it.
+  // Keypress forwarding rides the legacy useInput channel because
+  // KeyboardEvent normalizes away the raw escape sequence the child's
+  // line discipline expects; the channel only fires for keys the tree did
+  // not consume and is gated on panel focus, so a dialog that steals
+  // focus can no longer type into the child.
+  const [focused, setFocused] = useState(true)
+
   useInput((textInput, key, event) => {
     if (key.escape) return
     if (key.ctrl && textInput === 'b') return
+    if (!focused) return
     const sequence = event.keypress.sequence
     if (sequence) getSinglePtyHandle()?.write(sequence)
   })
@@ -92,15 +103,25 @@ export function InteractiveBashProgress({ input }: Props): React.ReactNode {
       }),
       labeledBorder(
         '╰',
-        'interactive · Esc kill · Ctrl+B background',
+        focused
+          ? 'interactive · Esc kill · Ctrl+B background'
+          : 'unfocused · click to interact · Esc kill · Ctrl+B background',
         '╯',
         panelWidth,
       ),
     ]
-  }, [snapshot, input, cols, panelRows])
+  }, [snapshot, input, cols, panelRows, focused])
 
   return (
-    <Box flexDirection="column" marginLeft={PTY_PANEL_MARGIN} marginTop={1}>
+    <Box
+      flexDirection="column"
+      marginLeft={PTY_PANEL_MARGIN}
+      marginTop={1}
+      tabIndex={0}
+      autoFocus
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
       <RawAnsi lines={lines} width={cols + 2} />
     </Box>
   )
