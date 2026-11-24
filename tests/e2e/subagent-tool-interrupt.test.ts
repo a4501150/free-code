@@ -99,8 +99,12 @@ describe('subagent tool interrupt from the drill-down', () => {
 
     await session.submitAndApprove('spawn the probe agent', 30_000)
 
-    // Give the shell-task state machine a beat to register the agent's
-    // hold before navigating (same cadence as the scope test).
+    // Wait for the footer's agent row before navigating — a fixed sleep
+    // raced the row's registration under load, leaving the Down keys
+    // navigating a list without the agent row (same fix as
+    // subagent-background-task-scope), then give the shell-task state
+    // machine a beat to register the agent's hold.
+    await session.waitForText('local agent', 60_000)
     await sleep(1000)
 
     // Enter the agent's transcript view: footer task list → agent row →
