@@ -1118,7 +1118,14 @@ class Project {
           // Enqueue write — appendToFile handles ENOENT by creating directories
           void this.enqueueWrite(targetFile, entry)
 
-          if (!isAgentSidechain) {
+          if (isAgentSidechain) {
+            // Keep the per-agent dedup set warm for
+            // recordSidechainTranscript (see getSidechainUuidsForFile).
+            // Awaited, not detached: the add must land inside this
+            // trackWrite, before the next recordSidechainTranscript read.
+            const agentUuids = await getSidechainUuidsForFile(targetFile)
+            agentUuids.add(entry.uuid)
+          } else {
             // messageSet is main-file-authoritative. Sidechain entries go to a
             // separate agent file — adding their UUIDs here causes recordTranscript
             // to skip them on the main thread, so the message is never written to
@@ -1205,27 +1212,17 @@ export function recordTranscript(
     const cleanedMessages = cleanMessagesForLogging(messages)
     const sessionId = getSessionId() as UUID
     const messageSet = await getSessionMessages(sessionId)
-    const newMessages: typeof cleanedMessages = []
-    let startingParentUuid: UUID | undefined = startingParentUuidHint
-    let seenNewMessage = false
-    for (const m of cleanedMessages) {
-      if (messageSet.has(m.uuid as UUID)) {
-        // Only track skipped messages that form a prefix. After compaction,
-        // messagesToKeep appear AFTER new CB/summary, so this skips them.
-        if (!seenNewMessage && isChainParticipant(m)) {
-          startingParentUuid = m.uuid as UUID
-        }
-      } else {
-        newMessages.push(m)
-        seenNewMessage = true
-      }
-    }
+    const { newMessages, parentUuid } = filterNewChainMessages(
+      cleanedMessages,
+      messageSet,
+      startingParentUuidHint,
+    )
     if (newMessages.length > 0) {
       await getProject().insertMessageChain(
         newMessages,
         false,
         undefined,
-        startingParentUuid,
+        parentUuid,
       )
     }
     // Return the last ACTUALLY recorded chain-participant's UUID, OR the
@@ -1235,9 +1232,7 @@ export function recordTranscript(
     // message is already in messageSet). Progress is skipped — it's written
     // to the JSONL but nothing chains TO it (see isChainParticipant).
     const lastRecorded = newMessages.findLast(isChainParticipant)
-    return (
-      (lastRecorded?.uuid as UUID | undefined) ?? startingParentUuid ?? null
-    )
+    return (lastRecorded?.uuid as UUID | undefined) ?? parentUuid ?? null
   })
 }
 
@@ -1246,12 +1241,91 @@ export async function recordSidechainTranscript(
   agentId?: string,
   startingParentUuid?: UUID | null,
 ) {
-  await getProject().insertMessageChain(
-    cleanMessagesForLogging(messages),
-    true,
-    agentId,
-    startingParentUuid,
-  )
+  const cleanedMessages = cleanMessagesForLogging(messages)
+  if (!agentId) {
+    await getProject().insertMessageChain(
+      cleanedMessages,
+      true,
+      undefined,
+      startingParentUuid,
+    )
+    return
+  }
+  // Idempotent per agent file: a resume re-records its entire seed, and the
+  // seed IS the agent's persisted transcript — deduping against the agent's
+  // OWN uuids (never the main-session set, which fork-inherited messages
+  // legitimately share — see appendEntry's sidechain bypass) keeps every
+  // resume from doubling the file. The skipped prefix advances the parent
+  // cursor like recordTranscript, so the fresh tail (the resume prompt)
+  // chains to the last persisted uuid.
+  const agentFile = getAgentTranscriptPath(asAgentId(agentId))
+  await getProject().trackWrite(async () => {
+    const { newMessages, parentUuid } = filterNewChainMessages(
+      cleanedMessages,
+      await getSidechainUuidsForFile(agentFile),
+      startingParentUuid,
+    )
+    if (newMessages.length > 0) {
+      await getProject().insertMessageChain(
+        newMessages,
+        true,
+        agentId,
+        parentUuid,
+      )
+    }
+  })
+}
+
+/**
+ * Partition messages into the ones not yet persisted and the parent cursor
+ * for the fresh tail — the shared core of recordTranscript and
+ * recordSidechainTranscript. A message already in `existingUuids` only
+ * advances the cursor while it is still a PREFIX (before any new message):
+ * growing-array callers always re-record a prefix (correct chaining), while
+ * compaction's new CB/summary appear BEFORE the re-recorded tail, so those
+ * skipped messages must not touch the cursor. Callers pass the hint as the
+ * starting cursor; the prefix walk only ever refines it.
+ */
+function filterNewChainMessages<T extends Message>(
+  cleanedMessages: T[],
+  existingUuids: Set<UUID>,
+  startingParentUuid?: UUID | null,
+): { newMessages: T[]; parentUuid: UUID | undefined } {
+  const newMessages: typeof cleanedMessages = []
+  let parentUuid: UUID | undefined = startingParentUuid ?? undefined
+  let seenNewMessage = false
+  for (const m of cleanedMessages) {
+    if (existingUuids.has(m.uuid as UUID)) {
+      if (!seenNewMessage && isChainParticipant(m)) {
+        parentUuid = m.uuid as UUID
+      }
+    } else {
+      newMessages.push(m)
+      seenNewMessage = true
+    }
+  }
+  return { newMessages, parentUuid }
+}
+
+/**
+ * Message uuids already persisted to a sidechain file, keyed by the
+ * file PATH — the per-agent analogue of getSessionMessages. Memoized and
+ * kept warm by appendEntry's sidechain branch so the per-message recording
+ * hot path never re-reads the file. loadTranscriptFile resolves to empty
+ * maps for a file that doesn't exist yet (it catches read errors itself,
+ * like every caller here), so an empty set is the true cold state.
+ */
+const getSidechainUuidsForFile = memoize(
+  async (agentFile: string): Promise<Set<UUID>> => {
+    const { messages } = await loadTranscriptFile(agentFile)
+    return new Set(messages.keys())
+  },
+  (agentFile: string) => agentFile,
+)
+
+/** Test/session-switch hook for the sidechain uuid cache. */
+export function clearAgentSidechainUuidsCache(): void {
+  getSidechainUuidsForFile.cache.clear?.()
 }
 
 /**
