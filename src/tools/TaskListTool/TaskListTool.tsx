@@ -1,7 +1,7 @@
 import { z } from 'zod/v4'
 import * as React from 'react'
 import { MessageResponse } from '../../components/MessageResponse.js'
-import { Text } from '../../ink.js'
+import { Box, Text } from '../../ink.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import {
   getMainTaskListId,
@@ -123,11 +123,13 @@ export const TaskListTool = buildTool({
     const lines = formatTaskListText(tasks).split('\n')
     return (
       <MessageResponse>
-        {lines.map((line, i) => (
-          <Text key={i} dimColor={!line.startsWith('#')}>
-            {line}
-          </Text>
-        ))}
+        <Box flexDirection="column">
+          {lines.map((line, i) => (
+            <Text key={i} dimColor={!line.startsWith('#')}>
+              {line}
+            </Text>
+          ))}
+        </Box>
       </MessageResponse>
     )
   },

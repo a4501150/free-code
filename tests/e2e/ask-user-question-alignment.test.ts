@@ -230,7 +230,35 @@ describe('AskUserQuestion Alignment', () => {
     await session.waitForText('Chat about this', 30_000)
 
     for (let i = 0; i < 4; i++) await session.sendSpecialKey('Down')
+
+    // Probe-and-repair around swallowed input: under suite load a single
+    // keystroke burst can fail to echo at all (the row still shows
+    // "Type something." after the full budget — observed in a verify run,
+    // not just slow paint). sendLine already recovers this way. Resend only
+    // the missing piece — nothing echoed → the whole burst; x's echoed but
+    // the tail missing → just the tail — so the 140-x wrap math (chosen to
+    // leave no single-x row) never changes and a late first burst cannot
+    // double the content.
+    const echoProbe = () =>
+      session
+        .waitForScreen(s => s.includes('OTHER_END'), {
+          currentPaneOnly: true,
+          timeoutMs: 15_000,
+          description: 'Other input echo in the dialog',
+        })
+        .then(() => true)
+        .catch(() => false)
+
     await session.sendText(`${'x'.repeat(140)}OTHER_END`)
+    let echoed = await echoProbe()
+    if (!echoed) {
+      const screen = await session.capturePane()
+      await session.sendText(
+        /^\s*x/m.test(screen) ? 'OTHER_END' : `${'x'.repeat(140)}OTHER_END`,
+      )
+      echoed = await echoProbe()
+    }
+    expect(echoed).toBe(true)
 
     // Wait on the pane grid, not the log: the assertions below check the
     // wrapped continuation row, which only exists in the rendered grid.
@@ -240,7 +268,7 @@ describe('AskUserQuestion Alignment', () => {
         s.split('\n').some(line => /^\s+x{2,}/.test(line)),
       {
         currentPaneOnly: true,
-        timeoutMs: 10_000,
+        timeoutMs: 20_000,
         description: 'wrapped Other input to render in the dialog',
       },
     )

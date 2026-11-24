@@ -130,7 +130,7 @@ function VerboseToolUse({
           { tools, verbose: true },
         )}
       {isResolved && !isError && toolResult !== undefined && (
-        <Box>
+        <Box flexDirection="column">
           {tool.renderToolResultMessage?.(toolResult, [], {
             verbose: true,
             tools,
@@ -232,6 +232,7 @@ export function CollapsedReadSearchContent({
   )
   const maxTaskCreateCountRef = useRef(0)
   const maxTaskUpdateCountRef = useRef(0)
+  const maxTaskListCountRef = useRef(0)
   maxTaskCreateCountRef.current = Math.max(
     maxTaskCreateCountRef.current,
     message.taskCreateCount ?? 0,
@@ -240,12 +241,17 @@ export function CollapsedReadSearchContent({
     maxTaskUpdateCountRef.current,
     message.taskUpdateCount ?? 0,
   )
+  maxTaskListCountRef.current = Math.max(
+    maxTaskListCountRef.current,
+    message.taskListCount ?? 0,
+  )
   const readCount = maxReadCountRef.current
   const searchCount = maxSearchCountRef.current
   const listCount = maxListCountRef.current
   const mcpCallCount = maxMcpCountRef.current
   const taskCreateCount = maxTaskCreateCountRef.current
   const taskUpdateCount = maxTaskUpdateCountRef.current
+  const taskListCount = maxTaskListCountRef.current
   // Subtract commands surfaced as "Committed …" / "Created PR …" so the
   // same command isn't counted twice. gitOpBashCount is read live (no max-ref
   // needed — it's 0 until results arrive, then only grows).
@@ -260,6 +266,7 @@ export function CollapsedReadSearchContent({
     bashCount > 0 ||
     gitOpBashCount > 0 ||
     taskCreateCount > 0 ||
+    taskListCount > 0 ||
     taskUpdateCount > 0
 
   const readPaths = message.readFilePaths
@@ -573,6 +580,26 @@ export function CollapsedReadSearchContent({
       <Text key="bash">
         {verb} <Text bold>{bashCount}</Text> bash{' '}
         {bashCount === 1 ? 'command' : 'commands'}
+      </Text>,
+    )
+  }
+
+  if (taskListCount > 0) {
+    const isFirst = nonMemParts.length === 0
+    const verb = catActive('taskList')
+      ? isFirst
+        ? 'Listing'
+        : 'listing'
+      : isFirst
+        ? 'Listed'
+        : 'listed'
+    if (!isFirst) {
+      nonMemParts.push(<Text key="comma-task-list">, </Text>)
+    }
+    nonMemParts.push(
+      <Text key="task-list">
+        {verb} <Text bold>{taskListCount}</Text>{' '}
+        {taskListCount === 1 ? 'task list' : 'task lists'}
       </Text>,
     )
   }

@@ -1,7 +1,7 @@
 import { z } from 'zod/v4'
 import * as React from 'react'
 import { MessageResponse } from '../../components/MessageResponse.js'
-import { Text } from '../../ink.js'
+import { Box, Text } from '../../ink.js'
 import type { TaskStateBase } from '../../Task.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import {
@@ -70,18 +70,20 @@ export function renderToolResultMessage(content: unknown): React.ReactNode {
   const lines = formatListAgentsResult(content as Output).split('\n')
   return (
     <MessageResponse>
-      {lines.map((line, i) => (
-        <Text
-          key={i}
-          dimColor={
-            !line.startsWith('agent ') &&
-            !line.startsWith('session ') &&
-            !line.startsWith('parent ')
-          }
-        >
-          {line}
-        </Text>
-      ))}
+      <Box flexDirection="column">
+        {lines.map((line, i) => (
+          <Text
+            key={i}
+            dimColor={
+              !line.startsWith('agent ') &&
+              !line.startsWith('session ') &&
+              !line.startsWith('parent ')
+            }
+          >
+            {line}
+          </Text>
+        ))}
+      </Box>
     </MessageResponse>
   )
 }

@@ -499,6 +499,7 @@ export type CollapsedCategory =
   | 'mcp'
   | 'bash'
   | 'taskCreate'
+  | 'taskList'
   | 'taskUpdate'
   | 'memSearch'
   | 'memRead'
@@ -538,7 +539,11 @@ export function getPendingCollapsedCategories(
       )
     } else if (toolInfo.isTaskManagement) {
       pending.add(
-        toolInfo.name === TASK_CREATE_TOOL_NAME ? 'taskCreate' : 'taskUpdate',
+        toolInfo.name === TASK_CREATE_TOOL_NAME
+          ? 'taskCreate'
+          : toolInfo.name === TASK_LIST_TOOL_NAME
+            ? 'taskList'
+            : 'taskUpdate',
       )
     } else if (toolInfo.isAbsorbedSilently) {
       // No verb section to keep in present tense.
@@ -708,6 +713,7 @@ type GroupAccumulator = {
   mcpServerNames?: Set<string>
   // Task management tool calls — split by verb for the summary label
   taskCreateCount: number
+  taskListCount: number
   taskUpdateCount: number
   // Bash commands that aren't search/read (tracked separately for "Ran N bash commands")
   bashCount?: number
@@ -741,6 +747,7 @@ function createEmptyGroup(): GroupAccumulator {
     memoryReadFilePaths: new Set(),
     memoryWriteCount: 0,
     taskCreateCount: 0,
+    taskListCount: 0,
     taskUpdateCount: 0,
     nonMemSearchArgs: [],
     memorySearchArgs: [],
@@ -829,6 +836,9 @@ function createCollapsedGroup(
   if (group.taskCreateCount > 0) {
     result.taskCreateCount = group.taskCreateCount
   }
+  if (group.taskListCount > 0) {
+    result.taskListCount = group.taskListCount
+  }
   if (group.taskUpdateCount > 0) {
     result.taskUpdateCount = group.taskUpdateCount
   }
@@ -900,6 +910,8 @@ export function collapseReadSearchGroups(
         const count = countToolUses(msg)
         if (toolInfo.name === TASK_CREATE_TOOL_NAME) {
           currentGroup.taskCreateCount += count
+        } else if (toolInfo.name === TASK_LIST_TOOL_NAME) {
+          currentGroup.taskListCount += count
         } else {
           currentGroup.taskUpdateCount += count
         }

@@ -470,6 +470,7 @@ export type CollapsedReadSearchGroup = {
   memorySearchArgs?: string[]
   teamMemorySearchArgs?: string[]
   taskCreateCount?: number
+  taskListCount?: number
   taskUpdateCount?: number
   mcpCallCount?: number
   mcpServerNames?: string[]
