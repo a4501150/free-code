@@ -210,6 +210,23 @@ export function isAgentTaskNotification(
 }
 
 /**
+ * Agent-addressed queue traffic: a task notification, or a prompt the user
+ * queued from that agent's transcript view (stamped with agentId at
+ * enqueue). Both must drain into the agent's conversation and wake a
+ * parked agent — without the prompt arm, input typed in an agent view
+ * while busy carried no agentId and drained to the main thread.
+ */
+export function isAgentAddressedCommand(
+  command: QueuedCommand,
+  agentId: AgentId,
+): boolean {
+  return (
+    isAgentTaskNotification(command, agentId) ||
+    (command.mode === 'prompt' && command.agentId === agentId)
+  )
+}
+
+/**
  * Check if there are commands in the queue.
  */
 export function hasCommandsInQueue(): boolean {

@@ -1,4 +1,5 @@
 import type { UUID } from 'crypto'
+import type { AgentId } from '../types/ids.js'
 
 import { type Command, getCommandName, isCommandEnabled } from '../commands.js'
 import { selectableUserMessagesFilter } from './messagePredicates.js'
@@ -90,6 +91,12 @@ export type PromptInputHelpers = {
 export type HandlePromptSubmitParams = BaseExecutionParams & {
   // Direct user input path (set when called from onSubmit, absent for queue processor)
   input?: string
+  /**
+   * Agent whose transcript view the input was submitted from. A busy-session
+   * enqueue stamps it on the queue entry so it drains into that agent's
+   * conversation instead of the main thread's.
+   */
+  queuedAgentId?: AgentId
   mode?: PromptInputMode
   pastedContents?: Record<number, PastedContent>
   helpers: PromptInputHelpers
@@ -325,6 +332,9 @@ export async function handlePromptSubmit(
       pastedContents: hasImages ? pastedContents : undefined,
       skipSlashCommands,
       uuid,
+      // Only prompt mode: the agent drain (INLINE_NOTIFICATION_MODES) never
+      // takes bash entries, so stamping one would strand it in the queue.
+      agentId: mode === 'prompt' ? params.queuedAgentId : undefined,
     })
 
     onInputChange('')

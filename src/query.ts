@@ -58,7 +58,7 @@ import {
 import {
   remove as removeFromQueue,
   getCommandsByMaxPriority,
-  isAgentTaskNotification,
+  isAgentAddressedCommand,
   isSlashCommand,
 } from './utils/messageQueueManager.js'
 import { notifyCommandLifecycle } from './utils/commandLifecycle.js'
@@ -1048,11 +1048,12 @@ async function* queryLoop(
       cmd => {
         if (isSlashCommand(cmd)) return false
         if (isMainThread) return cmd.agentId === undefined
-        // Subagents only drain task-notifications addressed to them — never
-        // user prompts, even if someone stamps an agentId on one.
+        // Subagents drain what is addressed to them — task notifications
+        // and prompts queued from their own transcript view (agentId-stamped
+        // at enqueue). Main-view prompts never carry an agentId.
         return (
           currentAgentId !== undefined &&
-          isAgentTaskNotification(cmd, currentAgentId)
+          isAgentAddressedCommand(cmd, currentAgentId)
         )
       },
     )

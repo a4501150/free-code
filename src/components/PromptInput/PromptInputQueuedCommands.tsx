@@ -96,6 +96,7 @@ function PromptInputQueuedCommandsImpl(): React.ReactNode {
   // already indent themselves). Gate mirrors the brief-spinner/message
   // check elsewhere.
   const useBriefLayout = useAppState(s => s.isBriefOnly)
+  const viewingAgentTaskId = useAppState(s => s.viewingAgentTaskId)
 
   // createUserMessage mints a fresh UUID per call; without memoization, streaming
   // re-renders defeat Message's areMessagePropsEqual (compares uuid) → flicker.
@@ -105,7 +106,16 @@ function PromptInputQueuedCommandsImpl(): React.ReactNode {
     // (scheduled tasks) are system-generated and hidden.
     // Channel messages are the exception — isMeta but shown so the keyboard
     // user sees what arrived.
-    const visibleCommands = queuedCommands.filter(isQueuedCommandVisible)
+    // A prompt queued from an agent's transcript view (agentId-stamped at
+    // enqueue) shows ONLY in that view; the main view's queue area shows
+    // main-addressed prompts. Notifications and system traffic stay
+    // view-global.
+    const visibleCommands = queuedCommands.filter(
+      cmd =>
+        isQueuedCommandVisible(cmd) &&
+        (cmd.mode !== 'prompt' ||
+          (cmd.agentId ?? undefined) === (viewingAgentTaskId ?? undefined)),
+    )
     if (visibleCommands.length === 0) return null
     const processedCommands = processQueuedCommands(visibleCommands)
     return normalizeMessages(
@@ -119,11 +129,12 @@ function PromptInputQueuedCommandsImpl(): React.ReactNode {
         return createUserMessage({ content })
       }),
     )
-  }, [queuedCommands])
+  }, [queuedCommands, viewingAgentTaskId])
 
-  // Show the leader's queued commands in every view, agent transcripts
-  // included — input typed while viewing an agent lands in this same queue,
-  // and hiding it there made queued messages look like they vanished.
+  // The queue area renders in every view (agent transcripts included), with
+  // prompt entries scoped to the view they were queued from — hiding an
+  // agent-view prompt everywhere made queued messages look like they
+  // vanished, and showing it on main made it look like it rerouted there.
   if (messages === null) {
     return null
   }

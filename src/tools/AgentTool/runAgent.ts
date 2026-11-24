@@ -34,7 +34,7 @@ import { getRunningOwnedShellTasks } from '../../tasks/ownership.js'
 import { executeStopHooks } from '../../utils/hooks.js'
 import {
   dequeueAllMatching,
-  isAgentTaskNotification,
+  isAgentAddressedCommand,
   someCommand,
 } from '../../utils/messageQueueManager.js'
 import {
@@ -962,12 +962,12 @@ export async function* runAgent({
     runMessages.push(message)
   }
 
-  // Park-wake and the implicit-end handler share the notification drain:
-  // dequeue every task notification addressed to this agent and carry each
-  // one into the next round.
-  const drainAgentTaskNotifications = async (): Promise<void> => {
+  // Park-wake and the implicit-end handler share the queue drain: dequeue
+  // every command addressed to this agent (task notifications, and prompts
+  // queued from its own transcript view) and carry each into the next round.
+  const drainAgentAddressedCommands = async (): Promise<void> => {
     const attachments = await getQueuedCommandAttachments(
-      dequeueAllMatching(cmd => isAgentTaskNotification(cmd, agentId)),
+      dequeueAllMatching(cmd => isAgentAddressedCommand(cmd, agentId)),
     )
     for (const attachment of attachments) {
       await recordAndCarryAttachment(createAttachmentMessage(attachment))
@@ -1025,7 +1025,7 @@ export async function* runAgent({
     // request would otherwise carry nothing new — the notification that
     // woke the agent would only land in the round after, which never comes
     // if the model ends on an empty context.
-    await drainAgentTaskNotifications()
+    await drainAgentAddressedCommands()
     for (const attachment of getAgentPendingMessageAttachments(
       agentToolUseContext,
     )) {
@@ -1343,8 +1343,8 @@ export async function* runAgent({
       // remind while its result sits undrained, and an end while other
       // tasks still run must not remind before the finished one's payload
       // is in context. (dequeueAllMatching is a no-op on an empty queue.)
-      if (someCommand(cmd => isAgentTaskNotification(cmd, agentId))) {
-        await drainAgentTaskNotifications()
+      if (someCommand(cmd => isAgentAddressedCommand(cmd, agentId))) {
+        await drainAgentAddressedCommands()
         continue
       }
 

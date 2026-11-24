@@ -11,7 +11,7 @@ import {
 } from '../FinishRunTool/constants.js'
 import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../BackgroundTaskStopTool/prompt.js'
 import {
-  isAgentTaskNotification,
+  isAgentAddressedCommand,
   someCommand,
   subscribeToCommandQueue,
 } from '../../utils/messageQueueManager.js'
@@ -51,8 +51,9 @@ export type ParkWake = 'signal' | 'idle' | 'abort'
 
 /**
  * Wait until something happens that a parked agent should look at:
- * - 'signal': a queued command is addressed to this agent (a task
- *   notification) or its pendingMessages grew (SendMessage traffic).
+ * - 'signal': queued traffic is addressed to this agent (a task
+ *   notification, or a prompt queued from its transcript view) or its
+ *   pendingMessages grew (SendMessage traffic).
  *   Subscribers fire on EVERY queue mutation, so the predicate re-checks
  *   and keeps waiting when the change was for someone else.
  * - 'idle': the backoff timer elapsed — the caller sends a reminder round.
@@ -82,10 +83,11 @@ export function parkUntilOwnedTaskSignal(opts: {
       resolve(wake)
     }
     const checkForSignal = () => {
-      // Same predicate the wake path drains with (isAgentTaskNotification):
-      // waking on a command the drain won't take would burn a model round.
+      // Same predicate the wake path drains with
+      // (isAgentAddressedCommand): waking on a command the drain won't
+      // take would burn a model round.
       const hasNotification = someCommand(cmd =>
-        isAgentTaskNotification(cmd, opts.agentId),
+        isAgentAddressedCommand(cmd, opts.agentId),
       )
       if (hasNotification || opts.getPendingMessageCount() > 0) {
         done('signal')

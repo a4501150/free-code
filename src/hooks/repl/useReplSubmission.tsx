@@ -8,6 +8,8 @@ import { feature } from 'bun:bundle'
 import * as React from 'react'
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Text } from '../../ink.js'
+import type { AgentId } from '../../types/ids.js'
+import { getActiveAgentForInput } from '../../state/selectors.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage } from '../../utils/errors.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
@@ -441,11 +443,19 @@ export function useReplSubmission(deps: {
 
       await d.awaitPendingHooks()
 
+      // The transcript view the input targeted: a busy-session enqueue
+      // stamps it on the queue entry so it drains into that agent's
+      // conversation instead of the main thread's.
+      const submitTarget = getActiveAgentForInput(store.getState())
       await handlePromptSubmit({
         input,
         helpers,
         queryGuard: d.queryGuard,
         isExternalLoading: d.isExternalLoading,
+        queuedAgentId:
+          submitTarget.type === 'named_agent'
+            ? (submitTarget.task.id as AgentId)
+            : undefined,
         mode: d.inputMode,
         commands: d.commands,
         onInputChange: d.setInputValue,

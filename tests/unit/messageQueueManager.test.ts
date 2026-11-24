@@ -9,6 +9,7 @@ import {
   enqueuePendingNotification,
   getCommandQueueLength,
   getCommandQueueSnapshot,
+  isAgentAddressedCommand,
   popAllEditable,
   restoreQueue,
 } from '../../src/utils/messageQueueManager.js'
@@ -126,5 +127,41 @@ describe('command queue', () => {
     enqueue(cmd('user'))
     restoreQueue([])
     expect(getCommandQueueLength()).toBe(0)
+  })
+
+  test('isAgentAddressedCommand matches own prompts and notifications, nothing else', () => {
+    const agent = asAgentId('agent123')
+    const other = asAgentId('agent456')
+    // A prompt queued from this agent's transcript view (stamped at enqueue).
+    expect(
+      isAgentAddressedCommand(cmd('steer', { agentId: agent }), agent),
+    ).toBe(true)
+    // Main-view prompts carry no agentId.
+    expect(isAgentAddressedCommand(cmd('steer'), agent)).toBe(false)
+    // Another agent's prompt must not match.
+    expect(
+      isAgentAddressedCommand(cmd('steer', { agentId: other }), agent),
+    ).toBe(false)
+    // Task notifications still match by their own mode.
+    expect(
+      isAgentAddressedCommand(
+        { value: 'done', mode: 'task-notification', agentId: agent },
+        agent,
+      ),
+    ).toBe(true)
+    expect(
+      isAgentAddressedCommand(
+        { value: 'done', mode: 'task-notification', agentId: other },
+        agent,
+      ),
+    ).toBe(false)
+    // Bash-mode entries never match — the agent drain cannot take them, so
+    // stamping one would strand it in the queue forever.
+    expect(
+      isAgentAddressedCommand(
+        { value: 'ls', mode: 'bash', agentId: agent },
+        agent,
+      ),
+    ).toBe(false)
   })
 })

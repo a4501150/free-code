@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { randomUUID } from 'crypto'
+import { getActiveAgentForInput } from '../../state/selectors.js'
 import { fireCompanionObserver } from '../../buddy/observer.js'
 import { count } from '../../utils/array.js'
 import { logForDebugging } from '../../utils/debug.js'
@@ -67,6 +68,7 @@ import type {
   UserMessage,
 } from '../../types/message.js'
 import type { EffortValue } from '../../utils/effort.js'
+import type { AgentId } from '../../types/ids.js'
 import type { ProcessUserInputContext } from '../../utils/processUserInput/processUserInput.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import type { MCPServerConnection } from '../../services/mcp/types.js'
@@ -448,12 +450,20 @@ export function useReplQueryExecution({
     ): Promise<void> => {
       const thisGeneration = queryGuard.tryStart()
       if (thisGeneration === null) {
+        // Stamp the queue entry with the transcript view the input targeted:
+        // an agentId-carrying prompt drains into THAT agent's conversation
+        // (query.ts's gate + the park wake), never into the main thread.
+        const target = getActiveAgentForInput(store.getState())
+        const agentId =
+          target.type === 'named_agent'
+            ? (target.task.id as AgentId)
+            : undefined
         newMessages
           .filter((m): m is UserMessage => m.type === 'user' && !m.isMeta)
           .map(_ => getContentText(_.message.content))
           .filter(_ => _ !== null)
           .forEach((msg, i) => {
-            enqueue({ value: msg, mode: 'prompt' })
+            enqueue({ value: msg, mode: 'prompt', agentId })
           })
         return
       }
