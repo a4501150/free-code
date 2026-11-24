@@ -36,14 +36,16 @@ export function mayStopTask(
 }
 
 /**
- * Running shell/monitor tasks owned by `agentId` — the park condition for the
- * strict end_turn model (an agent that still owns running background tasks
- * does not complete on an implicit end) and the kill list for
- * killShellTasksForAgent, so the predicate lives in one place. Structural on
- * the state reader so React-free callers don't import the store.
+ * Running shell/monitor tasks owned by `agentId` (undefined = the main
+ * session; main-thread tasks carry no agentId stamp) — the park condition for
+ * the strict end_turn model (an agent that still owns running background tasks
+ * does not complete on an implicit end), the kill list for
+ * killShellTasksForAgent, and the live-task check for the Bash wait nudge, so
+ * the predicate lives in one place. Structural on the state reader so
+ * React-free callers don't import the store.
  */
 export function getRunningOwnedShellTasks(
-  agentId: AgentId,
+  agentId: AgentId | undefined,
   getAppState: () => { tasks?: { [taskId: string]: TaskState } },
 ): TaskState[] {
   const tasks = getAppState().tasks ?? {}
@@ -53,6 +55,12 @@ export function getRunningOwnedShellTasks(
       task.agentId === agentId &&
       task.status === 'running',
   )
+}
+
+/** "(task b1, task b2)" — the human-readable task-id list shared by the
+ * wait nudge and FinishRun's gated result text. */
+export function namedTaskIds(ids: string[]): string {
+  return ids.map(id => `task ${id}`).join(', ')
 }
 
 /**

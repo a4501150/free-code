@@ -66,7 +66,16 @@ export type ShellCommand = {
 }
 
 const SIGKILL = 137
-const SIGTERM = 143
+
+/**
+ * The exit code and stderr marker the harness's own timeout kill produces
+ * (SIGTERM + the prepended line in #handleExit). Consumers that need to
+ * recognize a timeout kill — e.g. the Bash wait nudge — share these so the
+ * signature cannot drift from what this module emits.
+ */
+export const SHELL_TIMEOUT_EXIT_CODE = 143
+const SIGTERM = SHELL_TIMEOUT_EXIT_CODE
+export const SHELL_TIMEOUT_OUTPUT_MARKER = 'Command timed out after'
 
 // Background tasks write stdout/stderr directly to a file fd (no JS involvement),
 // so a stuck append loop can fill the disk. Poll file size and kill when exceeded.

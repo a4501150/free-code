@@ -44,7 +44,7 @@ import {
   fileHistoryTrackEdit,
 } from '../../utils/fileHistory.js'
 import { recordBashReadSighting } from '../../utils/fileSightings.js'
-import { truncate } from '../../utils/format.js'
+import { formatDuration, truncate } from '../../utils/format.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
 import { expandPath } from '../../utils/path.js'
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
@@ -61,6 +61,13 @@ import { semanticBoolean } from '../../utils/semanticBoolean.js'
 import { semanticNumber } from '../../utils/semanticNumber.js'
 import { EndTruncatingAccumulator } from '../../utils/stringUtils.js'
 import { BACKGROUND_TASK_NUDGE } from '../../utils/task/backgroundNudge.js'
+import {
+  decideWaitNudge,
+  scanPriorWaitNudges,
+  WAIT_NUDGE_KINDS,
+} from '../../utils/task/waitNudge.js'
+import { getRunningOwnedShellTasks } from '../../tasks/ownership.js'
+import { detectBlockingWait } from '../../utils/bash/sleepWait.js'
 import { getTaskOutputPath } from '../../utils/task/diskOutput.js'
 import { TaskOutput } from '../../utils/task/TaskOutput.js'
 import { isOutputLineTruncated } from '../../utils/terminal.js'
@@ -457,6 +464,18 @@ const outputSchema = z.object({
     .describe(
       'Set when the stripped trailing stage came from a command LIST (`a; b | tail -3`): the window/filter covered the COMBINED output of every command in the line, not only the last',
     ),
+  waitNudge: z
+    .enum(WAIT_NUDGE_KINDS)
+    .optional()
+    .describe(
+      'Kind of blocking-wait nudge attached to this result (foreground sleep, sleep-polling loop, or tail -f): end-turn when the caller owns running background tasks, monitor otherwise, timeout-killed when the wait outlasted the Bash timeout',
+    ),
+  waitNudgeText: z
+    .string()
+    .optional()
+    .describe(
+      'Rendered blocking-wait nudge text; the TUI shows the same text to the user',
+    ),
 })
 
 type OutputSchema = typeof outputSchema
@@ -610,6 +629,36 @@ export const BashTool = buildTool({
       return { isSearch: false, isRead: false, isList: false }
     return isSearchOrReadBashCommand(parsed.data.command)
   },
+  async validateInput(input) {
+    // A top-level sleep whose literal duration outlasts the effective
+    // timeout is guaranteed to be SIGTERM'd with nothing to show — reject
+    // before burning the wait. Backgrounded sleeps are exempt: the
+    // foreground timeout never kills them (long timers as self-wake
+    // background tasks are a legitimate pattern). Loop-body sleeps are not
+    // statically bounded, so they pass here; the result-time wait nudge
+    // covers them.
+    // `run_in_background` is schema-conditional (only present under
+    // backgroundTasksEnabled), so it is read structurally, not typed.
+    if ((input as { run_in_background?: boolean }).run_in_background) {
+      return { result: true }
+    }
+    const topSeconds = detectBlockingWait(input.command)?.topSleepSeconds
+    if (topSeconds !== undefined) {
+      const timeoutMs = input.timeout || getDefaultTimeoutMs()
+      if (topSeconds * 1000 >= timeoutMs) {
+        const duration =
+          topSeconds === Number.POSITIVE_INFINITY
+            ? 'an unbounded duration'
+            : formatDuration(topSeconds * 1000)
+        return {
+          result: false,
+          errorCode: 1,
+          message: `A foreground \`sleep\` of ${duration} cannot finish under this command's timeout of ${formatDuration(timeoutMs)} — it would be killed with no output. Waiting never makes background work finish sooner: end the turn (background task notifications arrive on their own), or use the Monitor tool to watch a file or process. If you truly need a bounded pause, re-issue with a \`timeout\` parameter that covers it.`,
+        }
+      }
+    }
+    return { result: true }
+  },
   get inputSchema(): InputSchema {
     return inputSchema
   },
@@ -707,6 +756,7 @@ export const BashTool = buildTool({
       redirectRewritten,
       limiterStripped,
       limiterListCommand,
+      waitNudgeText,
     },
     toolUseID,
   ): DomainToolResultBlockParam {
@@ -793,6 +843,12 @@ export const BashTool = buildTool({
       footer += `[exit ${exitCode} · full output: ${outputPath}]`
     }
 
+    // Blocking-wait nudge: decided in call() (it needs live task state and
+    // the transcript), rendered here — same text the TUI shows the user.
+    if (waitNudgeText) {
+      footer += `\n[wait] ${waitNudgeText}`
+    }
+
     return {
       tool_use_id: toolUseID,
       type: 'tool_result',
@@ -831,6 +887,7 @@ export const BashTool = buildTool({
     let progressCounter = 0
     let wasInterrupted = false
     let result: ExecResult
+    let waitNudgeDecision: ReturnType<typeof decideWaitNudge> = null
 
     const isMainThread = !toolUseContext.agentId
     const preventCwdChanges = !isMainThread
@@ -891,6 +948,30 @@ export const BashTool = buildTool({
         '',
       )
 
+      // Blocking-wait nudge: a foreground result that spent its call in a
+      // `sleep`/polling loop/`tail -f` gets a once-per-kind footer saying
+      // HOW to wait instead (end the turn / Monitor). Skipped for
+      // backgrounded results (they never blocked) and PTY runs.
+      waitNudgeDecision =
+        !isInterrupt &&
+        result.backgroundTaskId === undefined &&
+        !input._interactive
+          ? decideWaitNudge({
+              command: input.command,
+              output: result.stdout || '',
+              exitCode: result.code,
+              timeoutMs: input.timeout || getDefaultTimeoutMs(),
+              ownRunningTaskIds: getRunningOwnedShellTasks(
+                toolUseContext.agentId,
+                getAppState,
+              ).map(task => task.id),
+              monitorAvailable: isBackgroundTasksEnabled(),
+              // Thunk: the transcript scan runs only when a blocking wait was
+              // detected, not on every foreground Bash result.
+              priorKinds: () => scanPriorWaitNudges(toolUseContext.messages),
+            })
+          : null
+
       // Check for git index.lock error (stderr is in stdout now)
 
       if (!preventCwdChanges) {
@@ -906,7 +987,15 @@ export const BashTool = buildTool({
       if (result.preSpawnError) {
         throw new Error(result.preSpawnError)
       }
-      if (interpretationResult.isError && !isInterrupt) {
+      // A timeout-killed blocking wait does not take the error path: the
+      // ShellError result is a plain string the transcript guard cannot
+      // scan, so the nudge rides the structured Out instead — the merged
+      // output already carries "Command timed out after …" either way.
+      if (
+        interpretationResult.isError &&
+        !isInterrupt &&
+        waitNudgeDecision?.kind !== 'timeout-killed'
+      ) {
         // Pass '' for stdout to avoid duplication in getErrorParts()
         // and processBashCommand.
         throw new ShellError(
@@ -1020,6 +1109,8 @@ export const BashTool = buildTool({
       redirectRewritten: result.redirectRewritten,
       limiterStripped: result.limiterStripped,
       limiterListCommand: result.limiterListCommand,
+      waitNudge: waitNudgeDecision?.kind,
+      waitNudgeText: waitNudgeDecision?.text,
     }
 
     return {

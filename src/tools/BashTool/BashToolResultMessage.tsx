@@ -46,6 +46,7 @@ export default function BashToolResultMessage({
     returnCodeInterpretation,
     noOutputExpected,
     backgroundTaskId,
+    waitNudgeText,
   },
   verbose,
   timeoutMs,
@@ -74,10 +75,21 @@ export default function BashToolResultMessage({
           <Text dimColor>{cwdResetWarning}</Text>
         </MessageResponse>
       ) : null}
+      {waitNudgeText ? (
+        <MessageResponse>
+          <Text dimColor>{waitNudgeText}</Text>
+        </MessageResponse>
+      ) : null}
+      {waitNudgeText ? (
+        <MessageResponse>
+          <Text dimColor>{waitNudgeText}</Text>
+        </MessageResponse>
+      ) : null}
       {stdout === '' && stderr.trim() === '' && !cwdResetWarning ? (
         backgroundTaskId ? (
           // The model's own nudge from the tool_result, shown verbatim so
-          // the user sees exactly what the model was told.
+          // the user sees exactly what the model was told (same contract
+          // as the waitNudgeText row above).
           <MessageResponse>
             <Box flexDirection="column">
               <Text dimColor>
