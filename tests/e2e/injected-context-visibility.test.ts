@@ -234,7 +234,31 @@ describe('Injected context visibility', () => {
         timeoutMs: 30_000,
         description: 'the turn request for the wire comparison',
       })
-      const serialized = JSON.stringify(log[0]!.body.messages)
+      // MCP connect timing is per-session noise: the mcp_instructions_delta
+      // / mcp_tools_delta announces ride whichever request follows the
+      // connection, so under load one session's first request carries them
+      // and the other's does not (observed in the full-suite run). The
+      // announcements are stateless-scan carriers, not turn content, and
+      // this comparison is about the display setting — drop MCP-bearing
+      // system-reminder blocks from both sides.
+      const messages = log[0]!.body.messages as Array<{
+        content: Array<{ text?: string }>
+      }>
+      const serialized = JSON.stringify(
+        messages.map(m => ({
+          ...m,
+          content: Array.isArray(m.content)
+            ? m.content.filter(
+                block =>
+                  !(
+                    typeof block.text === 'string' &&
+                    block.text.includes('<system-reminder>') &&
+                    block.text.includes('MCP')
+                  ),
+              )
+            : m.content,
+        })),
+      )
       // Each session gets its own mkdtemp config dir and cwd, and both paths
       // appear inside the skills/keybindings reminder — both literally and
       // dashified as the project key of the tool-catalog manifest path. The

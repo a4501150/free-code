@@ -117,7 +117,10 @@ describe('subagent background task scope', () => {
     await session.submitAndApprove('spawn the probe agent', 30_000)
 
     // Give both shell-task state machines a beat to register their
-    // backgrounded sleeps before navigating.
+    // backgrounded sleeps before navigating — and wait for the footer's
+    // agent row first: a fixed sleep raced the row's registration under
+    // load, leaving the Down keys navigating a list without the agent row.
+    await session.waitForText('local agent', 60_000)
     await sleep(1000)
 
     // Enter the agent's transcript view: focus the footer task list, move

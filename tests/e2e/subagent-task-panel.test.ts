@@ -101,6 +101,13 @@ describe('subagent task panel', () => {
 
     await session.submitAndApprove('spawn the probe agent', 30_000)
 
+    // The footer registers the backgrounded agent row asynchronously. A
+    // blind keypress sequence raced ahead of it under load — the Downs
+    // landed before the task list had the agent row, Enter opened
+    // nothing, and the pane assertion below timed out. The status line's
+    // agent counter is the observable that the row exists.
+    await session.waitForText('local agent', 60_000)
+
     // Focus the footer task list and move down to the agent row (main is
     // the first row), then open the agent's transcript view.
     await session.sendKeys('Down')
