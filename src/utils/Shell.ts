@@ -32,8 +32,10 @@ import {
   spawnPtyChild,
   registerPtyHandle,
   unregisterPtyHandle,
+  isForegroundPtyTask,
   type PtyChildProcess,
 } from './shell/ptyShell.js'
+import { appendPtyScreenDelta } from './shell/ptyScreen.js'
 import type { OutputLimiterStage } from './bash/outputCapture.js'
 import { which } from './which.js'
 
@@ -348,6 +350,11 @@ export async function exec(
             // final PTY bytes land, silently truncating the result.
             writeSync(outputHandle.fd, bytes)
           }
+          // Raw bytes to the TUI's VT screen — only while this run is the
+          // foreground interactive one: a Ctrl+B-backgrounded run keeps
+          // emitting after the panel disarms, and those bytes must never
+          // leak into the next armed screen.
+          if (isForegroundPtyTask(taskId)) appendPtyScreenDelta(bytes)
           onStdout?.(bytes.toString('utf8'))
         },
         onClosed: () => {

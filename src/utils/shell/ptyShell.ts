@@ -175,6 +175,15 @@ export function getSinglePtyHandle(): PtyHandle | undefined {
 }
 
 /**
+ * Whether taskId is the foreground interactive run — the one the TUI's VT
+ * panel tracks. Backgrounded runs stay drivable from the WebUI via
+ * getPtyHandle(taskId) but must not feed the panel.
+ */
+export function isForegroundPtyTask(taskId: string): boolean {
+  return foregroundPtyTaskId === taskId
+}
+
+/**
  * A ChildProcess-shaped facade over the raw PTY addon so ShellCommandImpl's
  * file-mode handling (null stdout/stderr, tree-kill by pid, 'exit' event)
  * works without modification. Signal deaths surface as 128+signal on the

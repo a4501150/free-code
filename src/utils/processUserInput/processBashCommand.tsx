@@ -20,6 +20,12 @@ import {
   prepareUserContent,
 } from '../messages.js'
 import { isPtySupported, normalizePtyOutput } from '../shell/ptyShell.js'
+import {
+  armPtyScreen,
+  disarmPtyScreen,
+  ptyPanelColsFor,
+  ptyPanelRowsFor,
+} from '../shell/ptyScreen.js'
 import { resolveDefaultShell } from '../shell/resolveDefaultShell.js'
 import { isPowerShellToolEnabled } from '../shell/shellToolUtils.js'
 import { processToolResultBlock } from '../toolResultStorage.js'
@@ -61,15 +67,23 @@ export async function processBashCommand(
 
   // Interactive (PTY) mode: every `!` command runs under a PTY on supported
   // platforms, so password prompts (sudo/ssh) work and typed keys reach the
-  // child through the InteractiveBashProgress view. PowerShell and Windows
-  // keep today's piped execution.
+  // child through the InteractiveBashProgress view. The child gets the
+  // PANEL's dimensions — not the terminal's — so full-screen apps draw for
+  // the box they are actually shown in. PowerShell and Windows keep today's
+  // piped execution.
   const interactive =
     isPtySupported() && !usePowerShell
       ? {
-          cols: process.stdout.columns ?? 80,
-          rows: process.stdout.rows ?? 24,
+          cols: ptyPanelColsFor(process.stdout.columns ?? 80),
+          rows: ptyPanelRowsFor(process.stdout.rows ?? 24),
         }
       : undefined
+
+  // Arm the VT screen before the panel mounts: the panel's first render
+  // reads the store snapshot, and Shell.ts's read loop starts feeding
+  // deltas the moment the PTY spawns. (Arming also resolves the lazy
+  // @xterm/headless load, once per process.)
+  if (interactive) await armPtyScreen(interactive.cols, interactive.rows)
 
   const Progress = interactive ? InteractiveBashProgress : BashModeProgress
 
@@ -213,5 +227,6 @@ export async function processBashCommand(
     }
   } finally {
     setToolJSX(null)
+    disarmPtyScreen()
   }
 }
