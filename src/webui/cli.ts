@@ -238,9 +238,18 @@ async function ensureDaemon(): Promise<boolean> {
   const { daemonMain } = await import('../daemon/main.js')
   await daemonMain(['start'])
 
-  for (let attempt = 0; attempt < 50; attempt++) {
-    await Bun.sleep(100)
-    if (await sendDaemonControl({ kind: 'web.status' }, 2000)) return true
+  // Fast path first (100ms polls for 5s — the idle-machine budget), then a
+  // slower tail: under a loaded machine (concurrent builds, test suites)
+  // the daemon's control socket binds well past 5s, and giving up then
+  // reported "did not come up" for a daemon that was about to answer.
+  for (const { attempts, delayMs } of [
+    { attempts: 50, delayMs: 100 },
+    { attempts: 60, delayMs: 250 },
+  ]) {
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      await Bun.sleep(delayMs)
+      if (await sendDaemonControl({ kind: 'web.status' }, 2000)) return true
+    }
   }
   print('The daemon did not come up.')
   return false
