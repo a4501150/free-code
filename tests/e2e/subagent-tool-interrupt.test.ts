@@ -18,7 +18,11 @@ import { describe, test as bunTest, expect, setDefaultTimeout } from 'bun:test'
 import type { RequestLogEntry } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { forAgent, forMain } from '../helpers/agent-routes'
-import { userTextBlob, waitForRequest } from '../helpers/mock-server-wait'
+import {
+  agentRequests,
+  userTextBlob,
+  waitForRequest,
+} from '../helpers/mock-server-wait'
 import {
   TmuxSession,
   createLoggingTest,
@@ -36,12 +40,6 @@ const AGENT_HOLD = 'sleep 90'
 const AGENT_PROMPT = 'Hold a foreground sleep.'
 const STEER_TEXT = 'stop holding and finish now'
 const AGENT_REPORT = 'steered, done'
-
-function agentRequests(log: RequestLogEntry[]): RequestLogEntry[] {
-  return log.filter(req =>
-    JSON.stringify(req.body.system ?? '').includes('agent for Claude Code'),
-  )
-}
 
 describe('subagent tool interrupt from the drill-down', () => {
   const { server, startSession } = setupE2ESuite()

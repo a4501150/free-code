@@ -108,6 +108,7 @@ import {
 import { isFinishRunReminderText } from '../FinishRunTool/constants.js'
 import { getPrompt } from './prompt.js'
 import { runAgent } from './runAgent.js'
+import type { AgentRunOutcome } from './agentPark.js'
 import {
   renderGroupedAgentToolUse,
   renderToolResultMessage,
@@ -844,6 +845,9 @@ export const AgentTool = buildTool({
           // Track if an error occurred during iteration
           let syncAgentError: Error | undefined
           let wasAborted = false
+          // runAgent's AgentRunOutcome — the truthful stop reason when the
+          // run ended via the truncated-end backstop (see finalizeAgentTool).
+          let syncRunOutcome: AgentRunOutcome | undefined
           let worktreeResult: {
             worktreePath?: string
             worktreeBranch?: string
@@ -906,7 +910,7 @@ export const AgentTool = buildTool({
                       // Timeout prevents blocking if MCP server cleanup hangs.
                       // .catch() prevents unhandled rejection if timeout wins the race.
                       await Promise.race([
-                        agentIterator.return(undefined).catch(() => {}),
+                        agentIterator.return({}).catch(() => {}),
                         sleep(1000),
                       ])
                       // Initialize progress tracking from existing messages
@@ -923,7 +927,9 @@ export const AgentTool = buildTool({
                           toolUseContext.options.tools,
                         )
                       }
-                      for await (const msg of runAgent({
+                      // Manual iteration so runAgent's AgentRunOutcome
+                      // return reaches finalizeAgentTool below.
+                      const backgroundedStream = runAgent({
                         ...runAgentParams,
                         isAsync: true, // Agent is now running in background
                         override: {
@@ -954,7 +960,15 @@ export const AgentTool = buildTool({
                             event,
                             rootSetAppState,
                           ),
-                      })) {
+                      })
+                      let backgroundedOutcome: AgentRunOutcome | undefined
+                      while (true) {
+                        const next = await backgroundedStream.next()
+                        if (next.done) {
+                          backgroundedOutcome = next.value
+                          break
+                        }
+                        const msg = next.value
                         // Forward final usage from non-Anthropic providers'
                         // message_delta stream events to the tracker. Don't
                         // record to transcript or count tool uses.
@@ -1018,7 +1032,10 @@ export const AgentTool = buildTool({
                       const agentResult = finalizeAgentTool(
                         agentMessages,
                         backgroundedTaskId,
-                        metadata,
+                        {
+                          ...metadata,
+                          terminalErrorReason: backgroundedOutcome?.errorReason,
+                        },
                         tracker,
                       )
 
@@ -1125,7 +1142,10 @@ export const AgentTool = buildTool({
                 continue
               }
               const { result } = raceResult
-              if (result.done) break
+              if (result.done) {
+                syncRunOutcome = result.value
+                break
+              }
               const value = result.value
 
               // Non-Anthropic providers emit final usage at message_delta, not
@@ -1414,7 +1434,10 @@ export const AgentTool = buildTool({
           const agentResult = finalizeAgentTool(
             agentMessages,
             syncAgentId,
-            metadata,
+            {
+              ...metadata,
+              terminalErrorReason: syncRunOutcome?.errorReason,
+            },
             syncTracker,
           )
 

@@ -54,9 +54,11 @@ import { EXIT_PLAN_MODE_TOOL_NAME } from '../ExitPlanModeTool/constants.js'
 import {
   FINISH_RUN_REMINDER,
   isFinishRunToolUse,
+  isRealToolUse,
   LEGACY_END_TURN_REMINDER,
 } from '../FinishRunTool/constants.js'
 import { AGENT_TOOL_NAME, LEGACY_AGENT_TOOL_NAME } from './constants.js'
+import type { AgentRunOutcome } from './agentPark.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
 export type ResolvedAgentTools = {
   hasWildcard: boolean
@@ -227,7 +229,7 @@ export function countToolUses(messages: MessageType[]): number {
         // FinishRun is the completion protocol, not a tool call — counting it
         // would report one extra tool use to the parent (<usage> trailer,
         // "Done (N tool uses)") for every strict-end_turn run.
-        if (block.type === 'tool_use' && !isFinishRunToolUse(block)) {
+        if (isRealToolUse(block)) {
           count++
         }
       }
@@ -277,7 +279,7 @@ function hasRealWorkAfter(messages: MessageType[], from: number): boolean {
     const m = messages[i]!
     if (m.type !== 'assistant') continue
     for (const block of m.message.content) {
-      if (block.type === 'tool_use' && !isFinishRunToolUse(block)) return true
+      if (isRealToolUse(block)) return true
     }
   }
   return false
@@ -340,6 +342,13 @@ export function finalizeAgentTool(
     startTime: number
     agentType: string
     isAsync: boolean
+    /**
+     * Truthful stop reason from runAgent's AgentRunOutcome — set only when
+     * the run ended via the truncated-end backstop (a stream cut or empty
+     * follow-up turn is never a completion). Takes precedence over the
+     * stop_reason derivation below, which cannot see that distinction.
+     */
+    terminalErrorReason?: string
   },
   tracker: ProgressTracker,
 ): AgentToolResult {
@@ -378,13 +387,14 @@ export function finalizeAgentTool(
   // UI use this to render "Stopped: ..." instead of "Done". Also walk back
   // past any synthetic tail to pick up the real last turn's usage payload.
   const stopReason = lastAssistantMessage.message.stop_reason
-  const errorReason = lastAssistantMessage.isApiErrorMessage
+  const derivedErrorReason = lastAssistantMessage.isApiErrorMessage
     ? (lastAssistantMessage.error ?? 'unknown')
     : stopReason === 'max_tokens'
       ? 'max_output_tokens'
       : stopReason === 'model_context_window_exceeded'
         ? 'context_window_exceeded'
         : undefined
+  const errorReason = metadata.terminalErrorReason ?? derivedErrorReason
   let usageSource: AssistantMessage = lastAssistantMessage
   if (lastAssistantMessage.isApiErrorMessage) {
     const realLast = agentMessages.findLast(
@@ -557,7 +567,7 @@ export async function runAsyncAgentLifecycle({
   abortController: AbortController
   makeStream: (
     onCacheSafeParams: ((p: CacheSafeParams) => void) | undefined,
-  ) => AsyncGenerator<MessageType | StreamEvent, void>
+  ) => AsyncGenerator<MessageType | StreamEvent, AgentRunOutcome>
   metadata: Parameters<typeof finalizeAgentTool>[2]
   description: string
   toolUseContext: ToolUseContext
@@ -587,7 +597,18 @@ export async function runAsyncAgentLifecycle({
           stopSummarization = stop
         }
       : undefined
-    for await (const value of makeStream(onCacheSafeParams)) {
+    // Manual iteration so runAgent's AgentRunOutcome return — the truthful
+    // stop reason for a truncated-end backstop — is captured for
+    // finalizeAgentTool.
+    const stream = makeStream(onCacheSafeParams)
+    let runOutcome: AgentRunOutcome | undefined
+    while (true) {
+      const next = await stream.next()
+      if (next.done) {
+        runOutcome = next.value
+        break
+      }
+      const value = next.value
       // Forward final usage from non-Anthropic providers' message_delta
       // stream events to the tracker. Don't record to transcript or count
       // tool uses (claude.ts mutates the assistant message's usage in place,
@@ -648,7 +669,10 @@ export async function runAsyncAgentLifecycle({
     const agentResult = finalizeAgentTool(
       agentMessages,
       taskId,
-      metadata,
+      {
+        ...metadata,
+        terminalErrorReason: runOutcome?.errorReason,
+      },
       tracker,
     )
 

@@ -25,7 +25,11 @@ import { join } from 'node:path'
 import type { RequestLogEntry } from '../helpers/mock-server'
 import { textResponse, toolUseResponse } from '../helpers/fixture-builders'
 import { forAgent, forMain } from '../helpers/agent-routes'
-import { userTextBlob, waitForRequest } from '../helpers/mock-server-wait'
+import {
+  agentRequests,
+  userTextBlob,
+  waitForRequest,
+} from '../helpers/mock-server-wait'
 import { TmuxSession, createLoggingTest, setupE2ESuite } from './tmux-helpers'
 
 setDefaultTimeout(180_000)
@@ -37,12 +41,6 @@ const AGENT_SLEEP = 'sleep 120'
 const PARK_SLEEP = 'sleep 10'
 const AGENT_DESC = 'agent dev server'
 const PARENT_DESC = 'parent hold server'
-
-function agentRequests(log: RequestLogEntry[]): RequestLogEntry[] {
-  return log.filter(req =>
-    JSON.stringify(req.body.system ?? '').includes('agent for Claude Code'),
-  )
-}
 
 describe('subagent background task ownership', () => {
   const { server, startSession } = setupE2ESuite()
@@ -118,7 +116,7 @@ describe('subagent background task ownership', () => {
       server,
       req =>
         agentRequests([req]).length === 1 &&
-        userTextBlob(req).includes('still owning'),
+        userTextBlob(req).includes('running background task(s)'),
       { description: 'owned-tasks reminder round', timeoutMs: 60_000 },
     )
     await waitForRequest(
@@ -164,7 +162,7 @@ describe('subagent background task ownership', () => {
     // the still-running sleep is gated with its own reminder, and the
     // second FinishRun ends the run (the main session receives the result).
     const reqWithReminder = agentReqs.find(req =>
-      userTextBlob(req).includes('still owning'),
+      userTextBlob(req).includes('running background task(s)'),
     )
     expect(reqWithReminder).toBeDefined()
     const reminderBlob = userTextBlob(reqWithReminder!)
@@ -176,7 +174,9 @@ describe('subagent background task ownership', () => {
       userTextBlob(req).includes('was not carried out'),
     )
     expect(reqWithGate).toBeDefined()
-    expect(userTextBlob(reqWithGate!)).toContain('call FinishRun again')
+    expect(userTextBlob(reqWithGate!)).toContain(
+      'call FinishRun in the same message',
+    )
     // The parent's final request carries the agent's report.
     const mainReqs = log.filter(req =>
       JSON.stringify(req.body.system ?? '').includes('interactive agent'),
@@ -270,7 +270,7 @@ describe('subagent background task ownership', () => {
     )
     expect(wakeReq).toBeDefined()
     const wakeBlob = userTextBlob(wakeReq!)
-    expect(wakeBlob).toContain('still owning')
+    expect(wakeBlob).toContain('running background task(s)')
     expect(wakeBlob).toContain('<task-notification>')
 
     // The run completed: the parent's final request carries the report.
@@ -479,13 +479,14 @@ describe('subagent background task ownership', () => {
 
     // The reminder fired exactly ONCE per run: history accumulates user
     // messages, so the LAST agent request carries every reminder ever
-    // delivered — a second "still owning" round (the old per-wake re-arm)
-    // would double the count.
+    // delivered — a second parked-with-tasks round (the old per-wake
+    // re-arm) would double the count.
     const lastAgentReq = agentReqs.at(-1)
     expect(lastAgentReq).toBeDefined()
-    const stillOwningCount =
-      userTextBlob(lastAgentReq!).match(/still owning/g)?.length ?? 0
-    expect(stillOwningCount).toBe(1)
+    const parkedReminderCount =
+      userTextBlob(lastAgentReq!).match(/running background task\(s\)/g)
+        ?.length ?? 0
+    expect(parkedReminderCount).toBe(1)
   })
 
   test('text-only end with no owned tasks completes the run — no reminder, no FinishRun', async () => {

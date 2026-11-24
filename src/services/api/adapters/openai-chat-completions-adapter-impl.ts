@@ -341,6 +341,10 @@ async function* parseOpenAIStream(
   let inReasoningBlock = false
   let hadToolCalls = false
   let lastFinishReason: string | null = null
+  // Whether the endpoint declared the message finished (a finish_reason
+  // chunk or [DONE]). Reader EOF without either is a severed stream, not a
+  // clean end — see the check after the read loop.
+  let sawTerminal = false
   const toolCallIndexMap = new Map<number, number>()
   let observedReasoningField: 'reasoning_content' | 'reasoning' | undefined
   const observedReasoningDetails: unknown[] = []
@@ -416,7 +420,10 @@ async function* parseOpenAIStream(
         if (!trimmed.startsWith('data: ')) continue
 
         const dataStr = trimmed.slice(6)
-        if (dataStr === '[DONE]') continue
+        if (dataStr === '[DONE]') {
+          sawTerminal = true
+          continue
+        }
 
         let chunk: Record<string, unknown>
         try {
@@ -573,6 +580,7 @@ async function* parseOpenAIStream(
         }
 
         if (finishReason) {
+          sawTerminal = true
           lastFinishReason = finishReason
           yield* flushPendingReasoning()
           if (currentTextBlockStarted) {
@@ -614,6 +622,23 @@ async function* parseOpenAIStream(
   yield* flushPendingReasoning()
   for (const [, blockIdx] of toolCallIndexMap) {
     yield { type: 'content_block_stop', index: blockIdx }
+  }
+
+  // A stream whose body ended without declaring the message finished was
+  // severed mid-generation (server closed the connection). Fabricating the
+  // terminal events below would hand the caller a normal-looking message
+  // whose text stops mid-sentence — and end_turn would make a truncated
+  // subagent run look complete. Throw instead: the mid-stream retry path
+  // (isRetryableMidStreamError) re-requests, and only an exhausted retry
+  // surfaces as an API error.
+  if (!sawTerminal) {
+    const cause = new Error('Stream ended without finish_reason or [DONE]')
+    const normalized = normalizeError({ mid_stream: true, cause }, providerType)
+    throw new DomainTransportError({
+      normalized: { ...normalized, kind: 'transport' },
+      raw: cause,
+      cause,
+    })
   }
 
   const usagePayload = {

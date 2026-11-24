@@ -85,6 +85,16 @@ export function isFinishRunToolUse(block: {
   )
 }
 
+/**
+ * Whether a content block is real work: a tool call that is not the
+ * FinishRun completion protocol (which is internal run mechanics, not
+ * tooling). Shared by tool-use counting, work detection and the
+ * round-work tracking in runAgent.
+ */
+export function isRealToolUse(block: { type: string; name?: string }): boolean {
+  return block.type === 'tool_use' && !isFinishRunToolUse(block)
+}
+
 export const DESCRIPTION = `Ends your run immediately, killing every background task you still own (backgrounded bash, monitors).
 You do NOT need this tool to finish your run: ending your message with a final report and no tool calls completes the run, and that text is delivered to the caller as your result.
 Use this tool only to abandon owned background tasks. With owned tasks running, a first call is gated with a reminder; a second consecutive call ends the run and abandons them. To wait for a running task instead, end your message with no tool calls at all — your run parks, and the task's completion notification is delivered to you.`

@@ -9,6 +9,7 @@ import { openaiChatCompletionsAdapter } from '../../src/services/api/adapters/op
 import type { ProviderConfig } from '../../src/utils/settings/types.js'
 import type { DomainMessageRequest } from '../../src/services/api/domain-transport.js'
 import type { DomainStreamEvent } from '../../src/types/domain.js'
+import { DomainTransportError } from '../../src/services/api/domain-errors.js'
 
 const testConfig: ProviderConfig = {
   type: 'openai-chat-completions',
@@ -244,6 +245,45 @@ describe('OpenAI CC adapter: createStream', () => {
     result.release()
 
     expect(result.requestId).toBe('req-test-123')
+  })
+
+  test('a stream severed before finish_reason/[DONE] throws DomainTransportError, not a clean end', async () => {
+    globalThis.fetch = async () =>
+      sseResponse([
+        'data: {"choices":[{"delta":{"content":"partial text that stops mid-"},"finish_reason":null}]}\n\n',
+        // Body EOF here — no finish_reason, no [DONE], no usage chunk.
+      ])
+
+    const result = await openaiChatCompletionsAdapter.createStream(
+      { providerName: 'test', config: testConfig },
+      makeRequest(),
+      new AbortController().signal,
+    )
+    const events = await collectEvents(result.stream).catch(err => err)
+    result.release()
+
+    expect(events).toBeInstanceOf(DomainTransportError)
+    expect((events as Error & { raw: Error }).raw.message).toContain(
+      'without finish_reason',
+    )
+  })
+
+  test('a stream severed after finish_reason but before [DONE] still ends cleanly', async () => {
+    globalThis.fetch = async () =>
+      sseResponse([
+        'data: {"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}\n\n',
+        // Some endpoints close right after the terminal chunk, without [DONE].
+      ])
+
+    const result = await openaiChatCompletionsAdapter.createStream(
+      { providerName: 'test', config: testConfig },
+      makeRequest(),
+      new AbortController().signal,
+    )
+    const events = await collectEvents(result.stream)
+    result.release()
+
+    expect(events.some(e => e.type === 'message_stop')).toBe(true)
   })
 })
 

@@ -16,6 +16,11 @@ export async function* parseAnthropicSSEStream(
   const decoder = new TextDecoder()
   const convertStreamEvent = createAnthropicStreamEventConverter()
   let buffer = ''
+  // Whether the stream declared the message finished (message_stop). Reader
+  // EOF without it is a severed stream — a server that closed the
+  // connection mid-generation — not a clean end; treating it as one handed
+  // the caller a normal-looking message whose content stops mid-thought.
+  let sawMessageStop = false
 
   try {
     while (true) {
@@ -60,6 +65,7 @@ export async function* parseAnthropicSSEStream(
         }
 
         if (parsed.type === 'ping') continue
+        if (parsed.type === 'message_stop') sawMessageStop = true
 
         const domainEvent = convertStreamEvent(parsed as WireStreamEvent)
         if (domainEvent) yield domainEvent
@@ -69,5 +75,15 @@ export async function* parseAnthropicSSEStream(
     }
   } finally {
     reader.releaseLock()
+  }
+
+  if (!sawMessageStop) {
+    const cause = new Error('Stream ended without message_stop')
+    const normalized = normalizeError({ mid_stream: true, cause }, providerType)
+    throw new DomainTransportError({
+      normalized: { ...normalized, kind: 'transport' },
+      raw: cause,
+      cause,
+    })
   }
 }

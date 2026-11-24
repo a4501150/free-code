@@ -4,12 +4,12 @@
 // can import it without pulling ink.
 
 import type { AgentId } from '../../types/ids.js'
+import type { Message } from '../../types/message.js'
 import type { TaskState } from '../../tasks/types.js'
 import {
   FINISH_RUN_REMINDER_TAG,
   FINISH_RUN_TOOL_NAME,
 } from '../FinishRunTool/constants.js'
-import { BACKGROUND_TASK_STOP_TOOL_NAME } from '../BackgroundTaskStopTool/prompt.js'
 import {
   isAgentAddressedCommand,
   someCommand,
@@ -48,6 +48,18 @@ export const PARK_INITIAL_IDLE_MS = 10 * 60 * 1000
 /** Cap for the exponential idle backoff (10 → 20 → 40 → 60 min). */
 export const PARK_MAX_IDLE_MS = 60 * 60 * 1000
 export type ParkWake = 'signal' | 'idle' | 'abort'
+
+/**
+ * The run's terminal disposition, returned by the runAgent generator (the
+ * value a manual `.next()` sees alongside done). Normal ends carry an empty
+ * object; a run stopped by the truncated-end backstop carries the truthful
+ * errorReason its finalize site must report instead of "completed". Lives
+ * here (not runAgent.ts) so agentToolUtils can consume it without an import
+ * cycle — runAgent already imports this module.
+ */
+export type AgentRunOutcome = {
+  errorReason?: typeof ENDED_WITHOUT_FINAL_MESSAGE
+}
 
 /**
  * Wait until something happens that a parked agent should look at:
@@ -153,42 +165,102 @@ function ownedTaskListLines(tasks: TaskState[]): string {
 }
 
 /**
- * Reminder texts for the strict end_turn model: isMeta user messages that
- * ride the conversation, the sidechain transcript and the drill-down (the
- * outbox in runAgent delivers them). Both are wrapped in
- * FINISH_RUN_REMINDER_TAG so the UI renders them as visible reminder rows;
- * only FINISH_RUN_REMINDER itself (exact text, from FinishRunTool/constants)
- * triggers the post-nudge ack skip in finalizeAgentTool — a reply to either
- * of these is a genuine decision, not protocol noise.
+ * The two run-mechanics reminders (isMeta user messages that ride the
+ * conversation, the sidechain transcript and the drill-down — the outbox
+ * in runAgent delivers them). Both are wrapped in FINISH_RUN_REMINDER_TAG
+ * so the UI renders them as visible reminder rows. Neither is exact-matched
+ * by the post-nudge ack skip in finalizeAgentTool (only the legacy
+ * FINISH_RUN_REMINDER texts are): a reply to either is a genuine decision
+ * — often the final report itself — and must stay deliverable as the
+ * result.
+ *
+ * TEXT A — the run did not end, and nothing is running: the model's turn
+ * either carried no text at all (a severed stream or an empty follow-up
+ * call) or it woke from a park whose tasks all finished. One action:
+ * continue, or report.
  */
-export function ownedTasksReminderText(
-  tasks: TaskState[],
-  idle = false,
+export function runNotEndedReminderText(
+  reason: 'truncated' | 'tasksFinished',
 ): string {
-  const lead = idle
-    ? `Still waiting on ${tasks.length} background task(s) you own:\n${ownedTaskListLines(tasks)}`
-    : `You ended your message while still owning ${tasks.length} running background task(s):\n${ownedTaskListLines(tasks)}`
-  return `<${FINISH_RUN_REMINDER_TAG}>\n${lead}\nTo keep waiting, reply with no tool calls at all — your run parks and their completion notifications wake you. Do not answer this reminder with work, no-op commands (echo, true, sleep), or by polling the task's output file. To end your run now, stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME} or call ${FINISH_RUN_TOOL_NAME} — ending it kills the tasks you still own.\n</${FINISH_RUN_REMINDER_TAG}>`
+  const lines: string[] = []
+  if (reason === 'tasksFinished') {
+    lines.push('Your background tasks have finished.')
+  }
+  lines.push(
+    reason === 'truncated'
+      ? 'Your run has not ended: your last turn was cut off before it delivered anything to your caller.'
+      : 'Your run has not ended: your last turn delivered no final report to your caller.',
+  )
+  lines.push(
+    'Continue whatever remains of your work. When it is done, reply with your final report as a plain text message with no tool calls — that ends your run.',
+  )
+  return `<${FINISH_RUN_REMINDER_TAG}>\n${lines.join('\n')}\n</${FINISH_RUN_REMINDER_TAG}>`
 }
 
 /**
- * The gated FinishRun's reminder. "Not carried out" must be unambiguous: the
- * model just saw FinishRun's own tool result, so the reminder corrects it
- * head-on, and the second-strike contract ("call it again to end now")
- * keeps the gate from trapping an agent that genuinely wants out.
+ * TEXT B — the run is open with background tasks the agent owns still
+ * running. Two options only: wait silently (a no-tool-call end parks the
+ * run; task notifications wake it) or finish (report + FinishRun in the
+ * SAME message — a report followed by FinishRun across two turns counts as
+ * work and gets gated again; the second consecutive no-work FinishRun is
+ * honored). The finishRunGated prefix corrects the model that just saw
+ * FinishRun's own tool result tell it the run ended: without it, the model
+ * believes its run is over and abandons the wait.
  */
-export function finishRunOwnedTasksReminderText(tasks: TaskState[]): string {
-  return `<${FINISH_RUN_REMINDER_TAG}>\nYour ${FINISH_RUN_TOOL_NAME} call was not carried out: you still own ${tasks.length} running background task(s), and ending your run kills them.\n${ownedTaskListLines(tasks)}\nTo wait for them, end your message with no tool calls at all — do not call ${FINISH_RUN_TOOL_NAME}; your run stays open, parks, and their completion notifications wake you. To abandon them, stop them with ${BACKGROUND_TASK_STOP_TOOL_NAME} or call ${FINISH_RUN_TOOL_NAME} again to end your run now.\n</${FINISH_RUN_REMINDER_TAG}>`
+export function parkedWithTasksReminderText(
+  tasks: TaskState[],
+  opts: { finishRunGated?: boolean } = {},
+): string {
+  const lead = opts.finishRunGated
+    ? `Your ${FINISH_RUN_TOOL_NAME} call was not carried out: you still own ${tasks.length} running background task(s), and ending your run kills them.`
+    : `You own ${tasks.length} running background task(s):`
+  return `<${FINISH_RUN_REMINDER_TAG}>\n${lead}\n${ownedTaskListLines(tasks)}\nTo keep waiting, end your message with no tool calls at all — your run stays alive and their completion notifications wake you. Do not wait by polling, or with no-op commands (echo, true, sleep).\nIf your work is finished, write your final report and call ${FINISH_RUN_TOOL_NAME} in the same message — all background tasks you own will be killed.\n</${FINISH_RUN_REMINDER_TAG}>`
 }
 
 /**
- * Park-idle wake with nothing left running: every owned task finished
- * during the idle window without queueing a notification. The model's last
- * text was a "waiting…" message, which would otherwise become the
- * delivered result — ask for the final report; the next text-only end
- * completes the run (implicit completion). Deliberately NOT exact-matched
- * by the post-nudge ack skip in finalizeAgentTool: its reply IS the result.
+ * Whether an implicit end (query() 'completed': the last turn had no tool
+ * calls) is a DELIBERATE text-only end and not a truncated/empty stream.
+ * terminal.reason and stop_reason cannot tell them apart — providers exist
+ * that write stop_reason: null on healthy ends — so the shape of the run's
+ * tail decides: the last assistant-or-user message must be an assistant
+ * message carrying at least one text block. A user tail (tool result, nudge,
+ * resume prompt) or a reasoning-only/tool-only assistant tail means the
+ * model never spoke last: the turn was cut off or the follow-up call
+ * produced nothing. The live-run analogue of
+ * filterOrphanedThinkingOnlyMessages, which already drops thinking-only
+ * tails when building a resume seed.
+ *
+ * Reads the TAIL of the two arrays in order (initialMessages then
+ * runMessages — the seeded context followed by the round's own messages),
+ * backward, without copying: the gate runs at every round boundary.
  */
-export const FINAL_REPORT_PROMPT = `<${FINISH_RUN_REMINDER_TAG}>
-Your background tasks have finished. Reply with your final report as a plain text message with no tool calls — that completes your run and the report is delivered to your caller.
-</${FINISH_RUN_REMINDER_TAG}>`
+export function implicitEndIsDeliberate(
+  initialMessages: readonly Message[],
+  runMessages: readonly Message[],
+): boolean {
+  for (const list of [runMessages, initialMessages]) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i]!
+      if (m.type !== 'assistant' && m.type !== 'user') continue
+      if (m.type !== 'assistant') return false
+      return m.message.content.some(block => block.type === 'text')
+    }
+  }
+  return false
+}
+
+/**
+ * Recovery rounds granted to a run whose implicit end was not deliberate
+ * (see implicitEndIsDeliberate) before the truthful backstop ends it. One:
+ * a transient stream blip recovers on the nudge, while a deterministic
+ * truncation (a provider choking on the very token the model keeps
+ * retrying) would burn a round on every nudge.
+ */
+export const MAX_TRUNCATED_END_NUDGES = 1
+
+/**
+ * Truthful stop reason for a run stopped by the truncated-end backstop —
+ * nothing its final turn wrote reached the caller as a result. Consumed by
+ * finalizeAgentTool (terminalErrorReason) and asserted in the e2e.
+ */
+export const ENDED_WITHOUT_FINAL_MESSAGE = 'ended_without_final_message'

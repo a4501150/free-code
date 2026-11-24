@@ -1,15 +1,22 @@
 import { describe, expect, test } from 'bun:test'
 import {
   agentToolInterruptReason,
-  finishRunOwnedTasksReminderText,
+  implicitEndIsDeliberate,
   isAgentToolInterruptReason,
-  ownedTasksReminderText,
+  MAX_TRUNCATED_END_NUDGES,
+  parkedWithTasksReminderText,
   parkUntilOwnedTaskSignal,
   PARK_INITIAL_IDLE_MS,
   resolveFinishRunOwnedTasksGate,
+  runNotEndedReminderText,
 } from '../../src/tools/AgentTool/agentPark.js'
+import type { Message } from '../../src/types/message.js'
 import type { TaskState } from '../../src/tasks/types.js'
-import { FINISH_RUN_REMINDER_TAG } from '../../src/tools/FinishRunTool/constants.js'
+import {
+  FINISH_RUN_REMINDER,
+  FINISH_RUN_REMINDER_TAG,
+  LEGACY_END_TURN_REMINDER,
+} from '../../src/tools/FinishRunTool/constants.js'
 import {
   clearCommandQueue,
   enqueuePendingNotification,
@@ -181,7 +188,7 @@ describe('resolveFinishRunOwnedTasksGate', () => {
   })
 })
 
-describe('owned-task reminder texts', () => {
+describe('run-mechanics reminder texts', () => {
   const shellTask = {
     type: 'local_bash',
     id: 'bash1',
@@ -195,36 +202,154 @@ describe('owned-task reminder texts', () => {
     description: 'port agent',
   } as unknown as TaskState
 
-  test('ownedTasksReminderText lists tasks and wraps the reminder tag', () => {
-    const text = ownedTasksReminderText([shellTask, agentTask])
+  test('runNotEndedReminderText states the two actions and wraps the tag', () => {
+    // The plain variant is not produced by any call site: a textless end
+    // is always truncated; a park-idle wake always had tasks finish.
+    const text = runNotEndedReminderText('tasksFinished')
     expect(text.startsWith(`<${FINISH_RUN_REMINDER_TAG}>`)).toBe(true)
-    expect(text).toContain('ended your message while still owning 2')
-    expect(text).toContain('- bash1 (monitor): tail -f build.log')
-    expect(text).toContain('- agent1 (background): port agent')
+    expect(text).toContain('Your run has not ended')
+    expect(text).toContain('no final report to your caller')
+    expect(text).toContain('Continue whatever remains')
+    expect(text).toContain('background tasks have finished')
+    expect(text).not.toContain('cut off')
   })
 
-  test('ownedTasksReminderText tells the model how to keep waiting', () => {
-    const idleText = ownedTasksReminderText([shellTask], true)
-    for (const text of [ownedTasksReminderText([shellTask]), idleText]) {
-      expect(text).toContain('reply with no tool calls at all')
-      expect(text).toContain('no-op commands (echo, true, sleep)')
-      expect(text).toContain("polling the task's output file")
+  test('runNotEndedReminderText variants state their reason', () => {
+    const truncated = runNotEndedReminderText('truncated')
+    expect(truncated).toContain('cut off before it delivered anything')
+    expect(truncated).not.toContain('no final report')
+    expect(truncated).not.toContain('background tasks have finished')
+  })
+
+  test('runNotEndedReminderText is not the legacy ack-skip nudge', () => {
+    // The post-nudge ack skip in finalizeAgentTool matches the two legacy
+    // texts exactly; a reply to this reminder must stay deliverable as the
+    // run's result.
+    const variants = [
+      runNotEndedReminderText('truncated'),
+      runNotEndedReminderText('tasksFinished'),
+    ]
+    for (const text of variants) {
+      expect(text).not.toBe(FINISH_RUN_REMINDER)
+      expect(text).not.toBe(LEGACY_END_TURN_REMINDER)
     }
   })
 
-  test('ownedTasksReminderText idle variant says still waiting', () => {
-    expect(ownedTasksReminderText([shellTask], true)).toContain(
-      'Still waiting on 1 background task(s) you own',
-    )
+  test('parkedWithTasksReminderText lists tasks, offers both options, wraps the tag', () => {
+    const text = parkedWithTasksReminderText([shellTask, agentTask])
+    expect(text.startsWith(`<${FINISH_RUN_REMINDER_TAG}>`)).toBe(true)
+    expect(text).toContain('You own 2 running background task(s)')
+    expect(text).toContain('- bash1 (monitor): tail -f build.log')
+    expect(text).toContain('- agent1 (background): port agent')
+    expect(text).toContain('no tool calls at all')
+    expect(text).toContain('no-op commands (echo, true, sleep)')
+    expect(text).toContain('call FinishRun in the same message')
+    expect(text).toContain('will be killed')
+    expect(text).not.toContain('was not carried out')
   })
 
-  test('finishRunOwnedTasksReminderText corrects the FinishRun and states the second-strike contract', () => {
-    const text = finishRunOwnedTasksReminderText([shellTask])
-    expect(text.startsWith(`<${FINISH_RUN_REMINDER_TAG}>`)).toBe(true)
+  test('parkedWithTasksReminderText gated variant corrects the FinishRun', () => {
+    const text = parkedWithTasksReminderText([shellTask], {
+      finishRunGated: true,
+    })
     expect(text).toContain('was not carried out')
     expect(text).toContain('still own 1 running background task')
-    expect(text).toContain('end your message with no tool calls at all')
-    expect(text).toContain('call FinishRun again to end your run now')
     expect(text).toContain('- bash1 (monitor): tail -f build.log')
+  })
+
+  test('MAX_TRUNCATED_END_NUDGES grants exactly one recovery round', () => {
+    expect(MAX_TRUNCATED_END_NUDGES).toBe(1)
+  })
+})
+
+describe('implicitEndIsDeliberate', () => {
+  const assistant = (blocks: Array<{ type: string }>): Message =>
+    ({
+      type: 'assistant',
+      message: { role: 'assistant', content: blocks },
+    }) as unknown as Message
+  const user = (content: unknown): Message =>
+    ({
+      type: 'user',
+      message: { role: 'user', content },
+    }) as unknown as Message
+  const progress = (): Message => ({ type: 'progress' }) as unknown as Message
+
+  test('a text-carrying assistant tail is deliberate', () => {
+    expect(
+      implicitEndIsDeliberate(
+        [],
+        [
+          user('task prompt'),
+          assistant([{ type: 'reasoning' }, { type: 'text', text: 'report' }]),
+        ],
+      ),
+    ).toBe(true)
+  })
+
+  test('a reasoning-only assistant tail is a truncated end', () => {
+    expect(
+      implicitEndIsDeliberate(
+        [],
+        [user('task prompt'), assistant([{ type: 'reasoning' }])],
+      ),
+    ).toBe(false)
+  })
+
+  test('a tool-use assistant tail is a truncated end', () => {
+    expect(
+      implicitEndIsDeliberate(
+        [],
+        [
+          assistant([{ type: 'text', text: 'working' }]),
+          assistant([{ type: 'tool_use', id: 't1', name: 'Bash', input: {} }]),
+        ],
+      ),
+    ).toBe(false)
+  })
+
+  test('a tool-result user tail is a truncated end (empty follow-up call)', () => {
+    expect(
+      implicitEndIsDeliberate(
+        [],
+        [
+          assistant([{ type: 'tool_use', id: 't1', name: 'Bash', input: {} }]),
+          user([{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }]),
+        ],
+      ),
+    ).toBe(false)
+  })
+
+  test('progress and attachment tails are skipped, not judged', () => {
+    expect(
+      implicitEndIsDeliberate(
+        [],
+        [
+          assistant([{ type: 'text', text: 'report' }]),
+          progress(),
+          {
+            type: 'attachment',
+            attachment: { type: 'structured_output' },
+          } as unknown as Message,
+        ],
+      ),
+    ).toBe(true)
+  })
+
+  test('an empty round is not deliberate', () => {
+    expect(implicitEndIsDeliberate([], [])).toBe(false)
+  })
+
+  test('a round that produced nothing substantive falls back to the seed tail', () => {
+    // runMessages empty: the gate judges the seed's tail — an
+    // assistant-with-text seed tail is deliberate, a user prompt tail is
+    // not.
+    expect(
+      implicitEndIsDeliberate(
+        [assistant([{ type: 'text', text: 'report' }])],
+        [],
+      ),
+    ).toBe(true)
+    expect(implicitEndIsDeliberate([user('resume prompt')], [])).toBe(false)
   })
 })

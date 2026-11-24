@@ -110,7 +110,7 @@ function ownedTasksReminderUserMessage(): UserMessage {
   } as unknown as UserMessage
 }
 
-function finalize(messages: Message[]) {
+function finalize(messages: Message[], terminalErrorReason?: string) {
   return finalizeAgentTool(
     messages,
     'a_probe',
@@ -121,6 +121,7 @@ function finalize(messages: Message[]) {
       startTime: Date.now(),
       agentType: 'general-purpose',
       isAsync: false,
+      ...(terminalErrorReason !== undefined ? { terminalErrorReason } : {}),
     },
     createProgressTracker(),
   )
@@ -309,5 +310,25 @@ describe('post-nudge ack text does not become the result', () => {
     ])
 
     expect(partial).toBe('Real partial report.')
+  })
+})
+
+describe('terminalErrorReason precedence', () => {
+  test('runAgent\u2019s truncated-end backstop wins over the stop_reason derivation', () => {
+    // The last assistant turn of a severed stream carries stop_reason
+    // max_tokens in some backends — without the outcome field finalize
+    // would blame max_tokens instead of reporting the truncation.
+    const result = finalize(
+      [assistantMessage([{ type: 'text', text: 'partial' }])],
+      'ended_without_final_message',
+    )
+    expect(result.errorReason).toBe('ended_without_final_message')
+  })
+
+  test('absent terminalErrorReason leaves the derivation untouched', () => {
+    const result = finalize([
+      assistantMessage([{ type: 'text', text: 'done' }]),
+    ])
+    expect(result.errorReason).toBeUndefined()
   })
 })

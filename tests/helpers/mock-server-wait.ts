@@ -1,4 +1,16 @@
+import { AGENT_SYSTEM_PHRASE } from './agent-routes'
 import { waitFor, type WaitForOptions } from './wait-helpers'
+import type { RequestLogEntry } from './mock-server'
+
+/**
+ * Requests whose system prompt names the subagent (the shared routing
+ * phrase) — the per-agent view over the mock request log.
+ */
+export function agentRequests(log: RequestLogEntry[]): RequestLogEntry[] {
+  return log.filter(req =>
+    JSON.stringify(req.body.system ?? '').includes(AGENT_SYSTEM_PHRASE),
+  )
+}
 
 export type RequestLogServer<TRequest> = {
   getRequestLog(): TRequest[]

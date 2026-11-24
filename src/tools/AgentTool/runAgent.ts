@@ -44,16 +44,20 @@ import {
   getSubagentGuidanceAttachment,
 } from '../../utils/attachments.js'
 import { FinishRunTool } from '../FinishRunTool/FinishRunTool.js'
+import { isRealToolUse } from '../FinishRunTool/constants.js'
 import {
-  FINAL_REPORT_PROMPT,
-  finishRunOwnedTasksReminderText,
-  ownedTasksReminderText,
+  ENDED_WITHOUT_FINAL_MESSAGE,
+  type AgentRunOutcome,
+  implicitEndIsDeliberate,
+  MAX_TRUNCATED_END_NUDGES,
+  parkedWithTasksReminderText,
   PARK_INITIAL_IDLE_MS,
   PARK_MAX_IDLE_MS,
   parkUntilOwnedTaskSignal,
   agentToolInterruptReason,
   isAgentToolInterruptReason,
   resolveFinishRunOwnedTasksGate,
+  runNotEndedReminderText,
 } from './agentPark.js'
 import {
   setAgentAbortController,
@@ -284,6 +288,10 @@ function isRecordableMessage(
   )
 }
 
+// Re-exported for consumers that type their iterators against runAgent's
+// return (defined in agentPark.ts to keep agentToolUtils cycle-free).
+export type { AgentRunOutcome } from './agentPark.js'
+
 export async function* runAgent({
   agentDefinition,
   promptMessages,
@@ -375,7 +383,7 @@ export async function* runAgent({
    * createSubagentContext deliberately drops the parent's UI callbacks, so
    * this is the only channel by which subagent compaction reaches the UI. */
   onCompactProgress?: (event: CompactProgressEvent) => void
-}): AsyncGenerator<Message | StreamEvent, void> {
+}): AsyncGenerator<Message | StreamEvent, AgentRunOutcome> {
   // Track subagent usage for feature discovery
 
   const appState = toolUseContext.getAppState()
@@ -901,13 +909,16 @@ export async function* runAgent({
     `[Agent: ${agentDefinition.agentType}] Starting query | model=${resolvedAgentModel ?? 'default'} initialMessages=${initialMessages.length} systemPromptChars=${agentSystemPrompt.length} tools=${allTools.length}`,
   )
 
-  // Implicit-completion model: a text-only end (assistant message with no
-  // tool calls) with the queue drained and no owned running background
-  // tasks COMPLETES the run — the final text is the delivered result, which
-  // is what models are trained to do. With owned tasks running, the first
-  // implicit end gets one reminder round and further ones park between
-  // rounds until a task signals (see agentPark.ts for wake sources and
-  // backoff). FinishRun remains the explicit early exit: it ends the run
+  // Implicit-completion model: a DELIBERATE text-only end (assistant
+  // message with no tool calls whose final turn carries text — see
+  // implicitEndIsDeliberate) with the queue drained and no owned running
+  // background tasks COMPLETES the run — the final text is the delivered
+  // result, which is what models are trained to do. A truncated/empty end
+  // gets one recovery nudge, then a truthful stop (never a stale mid-run
+  // text as the result). With owned tasks running, the first implicit end
+  // gets one reminder round and further ones park between rounds until a
+  // task signals (see agentPark.ts for wake sources and backoff).
+  // FinishRun remains the explicit early exit: it ends the run
   // immediately and abandons (kills) the tasks the agent still owns.
   const runMessages: Message[] = []
   // `turnsUsed` carries the maxTurns budget across re-entries — query counts
@@ -923,9 +934,17 @@ export async function* runAgent({
   // waiter back into polling (the rope-bench busy-wait).
   let remindedAboutOwnedTasks = false
   let parkIdleMs = PARK_INITIAL_IDLE_MS
+  // Consecutive truncated/empty implicit ends without intervening tool work
+  // (see implicitEndIsDeliberate). Beyond MAX_TRUNCATED_END_NUDGES the run
+  // stops with the truthful ended_without_final_message reason instead of
+  // delivering a stale mid-run text as its result.
+  let consecutiveTruncatedEnds = 0
+  let truncatedEndNudgesDelivered = 0
   // Set at the true-completion break sites (FinishRun honored, implicit
   // completion) — the gate for the relocated SubagentStop hooks below.
   let fireStopHooks = false
+  // The generator's return value (AgentRunOutcome): empty on normal ends.
+  const runOutcome: AgentRunOutcome = {}
   // Reminders ride the conversation (runMessages → next round's API input)
   // but must also surface: yielded into the stream (drill-down/task views
   // pick them up via the consumers) and recorded to the sidechain
@@ -1015,8 +1034,8 @@ export async function* runAgent({
       const stillOwned = getRunningOwnedShellTasks(agentId, agentGetAppState)
       pushReminder(
         stillOwned.length > 0
-          ? ownedTasksReminderText(stillOwned, true)
-          : FINAL_REPORT_PROMPT,
+          ? parkedWithTasksReminderText(stillOwned)
+          : runNotEndedReminderText('tasksFinished'),
       )
       return 'woken'
     }
@@ -1093,6 +1112,11 @@ export async function* runAgent({
       let terminal: Terminal | undefined
       let assistantTurnsThisRound = 0
       let lastAssistantIsApiError = false
+      // Work signal for the truncated-end counter: a round that ran tools
+      // before truncating deserves a fresh nudge (unlike
+      // assistantTurnsThisRound > 1, this counts the one-tool-turn shape
+      // whose empty follow-up call is itself the truncation).
+      let roundHadToolUse = false
       while (true) {
         const next = await agentQuery.next()
         if (next.done) {
@@ -1260,6 +1284,9 @@ export async function* runAgent({
           if (message.type === 'assistant') {
             assistantTurnsThisRound++
             lastAssistantIsApiError = message.isApiErrorMessage === true
+            if (message.message.content.some(isRealToolUse)) {
+              roundHadToolUse = true
+            }
           }
           // Accumulate for strict-loop re-entry: the next round's query() is
           // seeded with these on top of the initial messages.
@@ -1325,7 +1352,9 @@ export async function* runAgent({
         // Share the flag with the implicit-end path so a later implicit end
         // over the same tasks parks directly instead of re-reminding.
         remindedAboutOwnedTasks = true
-        pushReminder(finishRunOwnedTasksReminderText(ownedTasks))
+        pushReminder(
+          parkedWithTasksReminderText(ownedTasks, { finishRunGated: true }),
+        )
         continue
       }
 
@@ -1333,8 +1362,40 @@ export async function* runAgent({
         terminal?.reason === 'completed' && !lastAssistantIsApiError
       if (!implicitEnd) break
 
+      const overBudget =
+        totalMaxTurns !== undefined && turnsUsed >= totalMaxTurns
+
+      // A truncated or empty end is NOT a completion. terminal.reason
+      // 'completed' only says the last turn carried no tool calls, and
+      // stop_reason cannot referee (providers exist that write null on
+      // healthy ends) — the shape of the tail decides
+      // (implicitEndIsDeliberate). A live session showed streams cut
+      // mid-generation completing runs and delivering stale mid-run text
+      // as the result. One recovery nudge; a second consecutive
+      // truncated end, or an exhausted budget, stops the run truthfully.
+      if (!implicitEndIsDeliberate(initialMessages, runMessages)) {
+        // A truncation after real tool work is a fresh truncation — it
+        // deserves a fresh nudge, not the backstop. The per-run cap keeps
+        // an agent without a turns budget (work between truncations resets
+        // the consecutive count) from nudging forever.
+        if (roundHadToolUse) consecutiveTruncatedEnds = 0
+        consecutiveTruncatedEnds++
+        truncatedEndNudgesDelivered++
+        if (
+          overBudget ||
+          consecutiveTruncatedEnds > MAX_TRUNCATED_END_NUDGES ||
+          truncatedEndNudgesDelivered > MAX_TRUNCATED_END_NUDGES
+        ) {
+          fireStopHooks = true
+          runOutcome.errorReason = ENDED_WITHOUT_FINAL_MESSAGE
+          break
+        }
+        pushReminder(runNotEndedReminderText('truncated'))
+        continue
+      }
+
       // The reminder rounds share one maxTurns budget with the work rounds.
-      if (totalMaxTurns !== undefined && turnsUsed >= totalMaxTurns) break
+      if (overBudget) break
 
       // A notification can land in the window between the last tool-loop
       // drain and this implicit end — query() returns 'completed' before
@@ -1360,7 +1421,7 @@ export async function* runAgent({
         // The first implicit end with owned tasks never parks silently —
         // the model must consciously choose to wait.
         remindedAboutOwnedTasks = true
-        pushReminder(ownedTasksReminderText(ownedTasks))
+        pushReminder(parkedWithTasksReminderText(ownedTasks))
         continue
       }
 
@@ -1406,6 +1467,8 @@ export async function* runAgent({
     if (isBuiltInAgent(agentDefinition) && agentDefinition.callback) {
       agentDefinition.callback()
     }
+
+    return runOutcome
   } finally {
     // Clean up agent-specific MCP servers (runs on normal completion, abort, or error)
     await mcpCleanup()
