@@ -16,10 +16,11 @@ import {
   TOOL_USE_ID_TAG,
 } from '../../constants/xml.js'
 import { getTaskOutputPath } from './diskOutput.js'
+import { escapeXml } from '../xml.js'
 
 export function renderTaskNotificationBlock(fields: {
   taskId: string
-  /** Pre-escaped by the caller when the summary can contain XML metachars. */
+  /** Raw summary; escaped here before interpolation into <summary>. */
   summary: string
   /** Omit for non-terminal (progress) notices. */
   status?: string
@@ -44,6 +45,6 @@ export function renderTaskNotificationBlock(fields: {
   return `<${TASK_NOTIFICATION_TAG}>
 <${TASK_ID_TAG}>${fields.taskId}</${TASK_ID_TAG}>${toolUseIdLine}${taskTypeLine}
 <${OUTPUT_FILE_TAG}>${getTaskOutputPath(fields.taskId)}</${OUTPUT_FILE_TAG}>${statusLine}
-<${SUMMARY_TAG}>${fields.summary}</${SUMMARY_TAG}>${fields.extraSections ?? ''}
+<${SUMMARY_TAG}>${escapeXml(fields.summary)}</${SUMMARY_TAG}>${fields.extraSections ?? ''}
 </${TASK_NOTIFICATION_TAG}>`
 }

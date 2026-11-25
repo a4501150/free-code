@@ -16,6 +16,7 @@ import {
 import type { TaskState } from '../../tasks/types.js'
 import { enqueuePendingNotification } from '../messageQueueManager.js'
 import { enqueueStructuredEvent } from '../structuredEventQueue.js'
+import { escapeXml } from '../xml.js'
 import { getTaskOutputDelta, getTaskOutputPath } from './diskOutput.js'
 
 // Standard polling interval for all tasks
@@ -256,7 +257,7 @@ function enqueueTaskNotification(attachment: TaskAttachment): void {
 <${TASK_TYPE_TAG}>${attachment.taskType}</${TASK_TYPE_TAG}>
 <${OUTPUT_FILE_TAG}>${outputPath}</${OUTPUT_FILE_TAG}>
 <${STATUS_TAG}>${attachment.status}</${STATUS_TAG}>
-<${SUMMARY_TAG}>Task "${attachment.description}" ${statusText}</${SUMMARY_TAG}>
+<${SUMMARY_TAG}>Task "${escapeXml(attachment.description)}" ${statusText}</${SUMMARY_TAG}>
 </${TASK_NOTIFICATION_TAG}>`
 
   enqueuePendingNotification({ value: message, mode: 'task-notification' })

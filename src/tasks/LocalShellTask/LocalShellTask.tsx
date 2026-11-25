@@ -1,12 +1,5 @@
 import { feature } from 'bun:bundle'
 import { stat } from 'fs/promises'
-import {
-  OUTPUT_FILE_TAG,
-  SUMMARY_TAG,
-  TASK_ID_TAG,
-  TASK_NOTIFICATION_TAG,
-  TOOL_USE_ID_TAG,
-} from '../../constants/xml.js'
 import type { AppState } from '../../state/AppStateStore.js'
 import type {
   LocalShellSpawnInput,
@@ -27,7 +20,7 @@ import {
   getTaskOutputPath,
 } from '../../utils/task/diskOutput.js'
 import { registerTask, updateTaskState } from '../../utils/task/framework.js'
-import { escapeXml } from '../../utils/xml.js'
+import { renderTaskNotificationBlock } from '../../utils/task/notification.js'
 import {
   backgroundAgentTask,
   isLocalAgentTask,
@@ -108,19 +101,16 @@ function startStallWatchdog(
             // overlapping tick's callback sees cancelled=true and bails.
             cancelled = true
             clearInterval(timer)
-            const toolUseIdLine = toolUseId
-              ? `\n<${TOOL_USE_ID_TAG}>${toolUseId}</${TOOL_USE_ID_TAG}>`
-              : ''
             const summary = `${BACKGROUND_BASH_SUMMARY_PREFIX}"${description}" appears to be waiting for interactive input`
             // No <status> tag — print.ts treats <status> as a terminal
             // signal and an unknown value falls through to 'completed',
             // falsely closing the task for structured consumers. Statusless
             // notifications are skipped by the SDK emitter (progress ping).
-            const message = `<${TASK_NOTIFICATION_TAG}>
-<${TASK_ID_TAG}>${taskId}</${TASK_ID_TAG}>${toolUseIdLine}
-<${OUTPUT_FILE_TAG}>${outputPath}</${OUTPUT_FILE_TAG}>
-<${SUMMARY_TAG}>${escapeXml(summary)}</${SUMMARY_TAG}>
-</${TASK_NOTIFICATION_TAG}>
+            const message = `${renderTaskNotificationBlock({
+              taskId,
+              summary,
+              ...(toolUseId !== undefined ? { toolUseId } : {}),
+            })}
 Last output:
 ${content.trimEnd()}
 

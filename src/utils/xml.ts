@@ -14,3 +14,15 @@ export function escapeXml(s: string): string {
 export function escapeXmlAttr(s: string): string {
   return escapeXml(s).replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
+
+/**
+ * Inverse of `escapeXml` — turn escaped element text back into raw characters.
+ * Replace the named entities first, `&amp;` last, so a literal `&lt;` in the
+ * source text (escaped to `&amp;lt;`) round-trips instead of collapsing.
+ */
+export function unescapeXml(s: string): string {
+  return s.replace(/&(?:lt|gt);/g, c => (c === '&lt;' ? '<' : '>')).replace(
+    /&amp;/g,
+    '&',
+  )
+}

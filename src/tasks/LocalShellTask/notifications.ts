@@ -9,7 +9,6 @@ import type { AgentId } from '../../types/ids.js'
 import { enqueuePendingNotification } from '../../utils/messageQueueManager.js'
 import { updateTaskState } from '../../utils/task/framework.js'
 import { renderTaskNotificationBlock } from '../../utils/task/notification.js'
-import { escapeXml } from '../../utils/xml.js'
 import type { BashTaskKind } from './guards.js'
 
 /** Prefix that identifies a LocalShellTask summary to the UI collapse transform. */
@@ -63,7 +62,7 @@ export function enqueueShellNotification(
   const message = renderTaskNotificationBlock({
     taskId,
     status,
-    summary: escapeXml(summary),
+    summary,
     ...(toolUseId !== undefined ? { toolUseId } : {}),
   })
 

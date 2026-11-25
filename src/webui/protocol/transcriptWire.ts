@@ -22,6 +22,7 @@ import {
   isTaskNotificationText,
   NO_RESPONSE_REQUESTED,
 } from '../../utils/messages.js'
+import { unescapeXml } from '../../utils/xml.js'
 import {
   MONITOR_OUTPUT_TAG,
   STATUS_TAG,
@@ -218,7 +219,9 @@ export function parseTaskNotification(
   if (!block) return null
 
   const taskId = extractTag(block, TASK_ID_TAG)?.trim()
-  const summary = extractTag(block, SUMMARY_TAG)?.trim() ?? ''
+  // Escaped inside the block (renderTaskNotificationBlock); wire consumers
+  // render it as plain text, so restore the raw characters here.
+  const summary = unescapeXml(extractTag(block, SUMMARY_TAG)?.trim() ?? '')
   const rawStatus = extractTag(block, STATUS_TAG)?.trim()
   const status =
     rawStatus === 'completed' ||

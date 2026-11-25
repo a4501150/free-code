@@ -9,6 +9,7 @@ import {
   TASK_TYPE_TAG,
 } from '../../constants/xml.js'
 import { extractTag } from '../../utils/messages.js'
+import { unescapeXml } from '../../utils/xml.js'
 import { MessageResponse } from '../MessageResponse.js'
 
 type Props = {
@@ -45,7 +46,9 @@ export function UserAgentNotificationMessage({
   verbose,
   showInjectedContext,
 }: Props): React.ReactNode {
-  const summary = extractTag(text, SUMMARY_TAG)
+  // <summary> holds XML-escaped text (renderTaskNotificationBlock escapes it
+  // so metachars in descriptions can't inject tags) — unescape for display.
+  const summary = unescapeXml(extractTag(text, SUMMARY_TAG) ?? '')
   const status = extractTag(text, STATUS_TAG)
   const taskType = extractTag(text, TASK_TYPE_TAG)?.trim() ?? null
   const color = getStatusColor(status, taskType)
