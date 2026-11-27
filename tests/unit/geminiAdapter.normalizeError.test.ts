@@ -61,4 +61,55 @@ describe('geminiAdapter.normalizeError', () => {
     )
     expect(e.kind).toBe('rate_limit')
   })
+
+  test('HTTP 400 INVALID_ARGUMENT with input token count overflow → context_overflow', () => {
+    const e = geminiAdapter.normalizeError(
+      {
+        status: 400,
+        body: JSON.stringify({
+          error: {
+            code: 400,
+            status: 'INVALID_ARGUMENT',
+            message:
+              'The input token count (202188) exceeds the maximum number of tokens allowed (131072).',
+          },
+        }),
+      },
+      'gemini',
+    )
+    expect(e.kind).toBe('context_overflow')
+  })
+
+  test('HTTP 400 without Google status with input token overflow message → context_overflow', () => {
+    const e = geminiAdapter.normalizeError(
+      {
+        status: 400,
+        body: JSON.stringify({
+          error: {
+            message:
+              'The input token count exceeds the maximum number of tokens allowed 1048576.',
+          },
+        }),
+      },
+      'gemini',
+    )
+    expect(e.kind).toBe('context_overflow')
+  })
+
+  test('HTTP 400 INVALID_ARGUMENT with non-overflow message stays invalid_request', () => {
+    const e = geminiAdapter.normalizeError(
+      {
+        status: 400,
+        body: JSON.stringify({
+          error: {
+            code: 400,
+            status: 'INVALID_ARGUMENT',
+            message: 'Requests ending with a model turn are not supported.',
+          },
+        }),
+      },
+      'gemini',
+    )
+    expect(e.kind).toBe('invalid_request')
+  })
 })

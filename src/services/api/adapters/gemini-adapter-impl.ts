@@ -31,6 +31,7 @@ import {
   getProviderRegistry,
   type ResolvedProvider,
 } from '../../../utils/model/providerRegistry.js'
+import { normalizeModelStringForAPI } from '../../../utils/model/modelResolution.js'
 import {
   resolveGoogleAccessToken,
   requireGoogleAccessToken,
@@ -305,6 +306,25 @@ function domainMessagesToGemini(messages: DomainMessageParam[]): {
     }
 
     if (parts.length > 0) {
+      // Vertex AI Gemini 3.6+/4 rejects a user turn where text or inlineData
+      // trails a functionResponse ("Requests ending with a model turn are not
+      // supported."). Split after the last functionResponse on every user turn
+      // (not just the last) so prefix bytes stay identical across turns for
+      // automatic prefix caching and cache-sharing forks.
+      if (role === 'user') {
+        let lastFnRespIdx = -1
+        for (let i = parts.length - 1; i >= 0; i--) {
+          if (parts[i]!.functionResponse !== undefined) {
+            lastFnRespIdx = i
+            break
+          }
+        }
+        if (lastFnRespIdx >= 0 && lastFnRespIdx < parts.length - 1) {
+          contents.push({ role, parts: parts.slice(0, lastFnRespIdx + 1) })
+          contents.push({ role, parts: parts.slice(lastFnRespIdx + 1) })
+          continue
+        }
+      }
       contents.push({ role, parts })
     }
   }
@@ -773,6 +793,12 @@ function parseGeminiNonStreamingResponse(
 
 // ── Adapter ────────────────────────────────────────────────────────
 
+// Gemini reports prompt-size overflow as INVALID_ARGUMENT (400) rather than a
+// distinct status code, e.g. "The input token count (202188) exceeds the
+// maximum number of tokens allowed (131072)."
+const GEMINI_CONTEXT_OVERFLOW_RE =
+  /\binput token count\b.*exceeds the maximum number of tokens|\btoken count\b.*exceeds.*maximum/i
+
 export const geminiAdapter: ProviderAdapter = {
   providerType: 'gemini',
 
@@ -922,7 +948,8 @@ export const geminiAdapter: ProviderAdapter = {
       const baseUrl =
         resolved.config.baseUrl ||
         `https://${region}-aiplatform.googleapis.com/v1`
-      const url = `${baseUrl.replace(/\/$/, '')}/projects/${configProjectId}/locations/${region}/publishers/google/models/${model}:countTokens`
+      const apiModel = normalizeModelStringForAPI(model)
+      const url = `${baseUrl.replace(/\/$/, '')}/projects/${configProjectId}/locations/${region}/publishers/google/models/${apiModel}:countTokens`
 
       const body: Record<string, unknown> = {
         contents: translateToGeminiContents(messages),
@@ -994,6 +1021,14 @@ export const geminiAdapter: ProviderAdapter = {
     const reclassifyByGoogleStatus = (
       base: NormalizedApiError,
     ): NormalizedApiError => {
+      if (
+        (googleStatus === 'INVALID_ARGUMENT' ||
+          base.kind === 'invalid_request') &&
+        errMessage &&
+        GEMINI_CONTEXT_OVERFLOW_RE.test(errMessage)
+      ) {
+        return { ...base, kind: 'context_overflow' }
+      }
       if (!googleStatus) return base
       if (googleStatus === 'RESOURCE_EXHAUSTED') {
         return { ...base, kind: 'rate_limit' }

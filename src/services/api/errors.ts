@@ -81,9 +81,11 @@ export function parsePromptTooLongTokenCounts(rawMessage: string): {
   actualTokens: number | undefined
   limitTokens: number | undefined
 } {
-  const match = rawMessage.match(
-    /prompt is too long[^0-9]*(\d+)\s*tokens?\s*>\s*(\d+)/i,
-  )
+  const match =
+    rawMessage.match(/prompt is too long[^0-9]*(\d+)\s*tokens?\s*>\s*(\d+)/i) ??
+    rawMessage.match(
+      /input token count\s*\((\d+)\)\s*exceeds the maximum number of tokens allowed\s*\(?(\d+)\)?/i,
+    )
   return {
     actualTokens: match ? parseInt(match[1]!, 10) : undefined,
     limitTokens: match ? parseInt(match[2]!, 10) : undefined,

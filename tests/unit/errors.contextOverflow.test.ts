@@ -3,6 +3,7 @@ import { DomainTransportError } from '../../src/services/api/domain-errors.js'
 import {
   classifyAPIError,
   getAssistantMessageFromError,
+  getPromptTooLongTokenGap,
   isPromptTooLongMessage,
 } from '../../src/services/api/errors.js'
 import type { NormalizedApiError } from '../../src/utils/normalizedError.js'
@@ -41,5 +42,25 @@ describe('coded context overflow mapping', () => {
       if (previousApiKey === undefined) delete process.env.ANTHROPIC_API_KEY
       else process.env.ANTHROPIC_API_KEY = previousApiKey
     }
+  })
+
+  test('parses token gap from Gemini context_overflow error details', () => {
+    const error = new DomainTransportError({
+      normalized: {
+        kind: 'context_overflow',
+        message:
+          'The input token count (550000) exceeds the maximum number of tokens allowed (500000).',
+        status: 400,
+        providerType: 'gemini',
+        raw: null,
+      },
+      status: 400,
+      headers: {},
+    })
+    const message = getAssistantMessageFromError(error, 'google:gemini-4-neon')
+
+    expect(isPromptTooLongMessage(message)).toBe(true)
+    expect(classifyAPIError(error)).toBe('prompt_too_long')
+    expect(getPromptTooLongTokenGap(message)).toBe(50000)
   })
 })

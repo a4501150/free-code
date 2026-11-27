@@ -23,6 +23,8 @@ mock.module('google-auth-library', () => ({
 
 const { geminiAdapter } =
   await import('../../src/services/api/adapters/gemini-adapter-impl.js')
+const { initProviderRegistry, resetProviderRegistry } =
+  await import('../../src/utils/model/providerRegistry.js')
 type ProviderConfig = import('../../src/utils/settings/types.js').ProviderConfig
 type DomainMessageRequest =
   import('../../src/services/api/domain-transport.js').DomainMessageRequest
@@ -419,5 +421,202 @@ describe('gemini non-streaming: thought parts', () => {
       type: 'text',
       providerState: { gemini: { thoughtSignature: 'sig-e' } },
     })
+  })
+})
+
+describe('gemini outbound: functionResponse turn splitting', () => {
+  type GeminiContent = { role: string; parts: Record<string, unknown>[] }
+
+  async function contentsFor(messages: DomainMessageRequest['messages']) {
+    const body = await capturedBody(makeRequest({ messages }))
+    return body.contents as GeminiContent[]
+  }
+
+  test('splits trailing text after tool_result into a separate user turn', async () => {
+    const contents = await contentsFor([
+      { role: 'user', content: [{ type: 'text', text: 'check file' }] },
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'toolu_1',
+            name: 'Read',
+            input: { path: 'a.ts' },
+          },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', content: 'ok' },
+          { type: 'text', text: 'CRITICAL: Respond with TEXT ONLY.' },
+        ],
+      },
+    ])
+
+    expect(contents).toHaveLength(4)
+    expect(contents[2]).toEqual({
+      role: 'user',
+      parts: [
+        { functionResponse: { name: 'Read', response: { content: 'ok' } } },
+      ],
+    })
+    expect(contents[3]).toEqual({
+      role: 'user',
+      parts: [{ text: 'CRITICAL: Respond with TEXT ONLY.' }],
+    })
+  })
+
+  test('keeps parallel tool_results together and moves trailing text and image to the next user turn', async () => {
+    const contents = await contentsFor([
+      { role: 'user', content: [{ type: 'text', text: 'go' }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', id: 'toolu_1', name: 'Read', input: {} },
+          { type: 'tool_use', id: 'toolu_2', name: 'Bash', input: {} },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', content: 'r1' },
+          { type: 'tool_result', tool_use_id: 'toolu_2', content: 'r2' },
+          { type: 'text', text: '<system-reminder>note</system-reminder>' },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: 'AAAA',
+            },
+          },
+        ],
+      },
+    ])
+
+    expect(contents).toHaveLength(4)
+    expect(contents[2]).toEqual({
+      role: 'user',
+      parts: [
+        { functionResponse: { name: 'Read', response: { content: 'r1' } } },
+        { functionResponse: { name: 'Bash', response: { content: 'r2' } } },
+      ],
+    })
+    expect(contents[3]).toEqual({
+      role: 'user',
+      parts: [
+        { text: '<system-reminder>note</system-reminder>' },
+        { inlineData: { mimeType: 'image/png', data: 'AAAA' } },
+      ],
+    })
+  })
+
+  test('does not split pure functionResponse or leading-text user turns', async () => {
+    const contents = await contentsFor([
+      { role: 'user', content: [{ type: 'text', text: 'go' }] },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: {} }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', content: 'r1' },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'toolu_2', name: 'Bash', input: {} }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'note before result' },
+          { type: 'tool_result', tool_use_id: 'toolu_2', content: 'r2' },
+        ],
+      },
+    ])
+
+    expect(contents).toHaveLength(5)
+    expect(contents[2]!.parts).toHaveLength(1)
+    expect(contents[4]!.parts).toHaveLength(2)
+  })
+
+  test('splits mid-history turns the same way to keep cached prefixes byte-stable', async () => {
+    const contents = await contentsFor([
+      { role: 'user', content: [{ type: 'text', text: 'go' }] },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: {} }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', content: 'r1' },
+          { type: 'text', text: 'mid-turn note' },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'acknowledged' }],
+      },
+      { role: 'user', content: [{ type: 'text', text: 'next' }] },
+    ])
+
+    expect(contents.map(c => c.role)).toEqual([
+      'user',
+      'model',
+      'user',
+      'user',
+      'model',
+      'user',
+    ])
+    expect(contents[2]!.parts).toEqual([
+      { functionResponse: { name: 'Read', response: { content: 'r1' } } },
+    ])
+    expect(contents[3]!.parts).toEqual([{ text: 'mid-turn note' }])
+  })
+})
+
+describe('gemini countTokens', () => {
+  test('strips the provider prefix from the :countTokens model URL', async () => {
+    const origFetch = globalThis.fetch
+    let requestedUrl = ''
+    initProviderRegistry({
+      google: {
+        type: 'gemini',
+        baseUrl: 'http://localhost:9999/vertex-gemini/v1',
+        auth: {
+          active: 'bearer',
+          bearer: { token: 'test-bearer' },
+          gcp: { projectId: 'test-project', region: 'global' },
+        },
+        models: [{ id: 'gemini-4-neon' }],
+      } as unknown as ProviderConfig,
+    })
+    globalThis.fetch = (async (url: string | URL) => {
+      requestedUrl = String(url)
+      return new Response(JSON.stringify({ totalTokens: 42 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    try {
+      const result = await geminiAdapter.countTokens(
+        [{ role: 'user', content: 'hello' }],
+        [],
+        'google:gemini-4-neon',
+      )
+      expect(requestedUrl).toBe(
+        'http://localhost:9999/vertex-gemini/v1/projects/test-project/locations/global/publishers/google/models/gemini-4-neon:countTokens',
+      )
+      expect(result).toEqual({ inputTokens: 42, outputTokens: 0 })
+    } finally {
+      globalThis.fetch = origFetch
+      resetProviderRegistry()
+    }
   })
 })
